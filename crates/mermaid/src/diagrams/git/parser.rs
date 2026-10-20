@@ -1,93 +1,70 @@
 //! Pele's `diagrams/git/parser.ts`.
 
-use std::sync::LazyLock;
-
 use crate::{
     detect::Kind,
     diagrams::common::tokens::{
-        Reader, Table, TokenType, acc_descr, acc_descr_value, acc_title, acc_title_value,
-        directive, keyword, newline, single_line_comment, string, string_value, title, title_value,
-        tokenize, whitespace, yaml,
+        Header, Reader, TokenType, acc_descr, acc_title, directive, keyword, newline,
+        single_line_comment, string, string_value, title, token_kinds, whitespace, yaml,
     },
     error::Error,
     js,
 };
 
-const CHERRY_PICK: i32 = 0;
-const GIT_GRAPH_COLON: i32 = 1;
-const HIGHLIGHT: i32 = 2;
-const GIT_GRAPH: i32 = 3;
-const CHECKOUT: i32 = 4;
-const REVERSE: i32 = 5;
-const PARENT: i32 = 6;
-const COMMIT: i32 = 7;
-const NORMAL: i32 = 8;
-const BRANCH: i32 = 9;
-const ORDER: i32 = 10;
-const SWITCH: i32 = 11;
-const TYPE: i32 = 12;
-const MERGE: i32 = 13;
-const MSG: i32 = 14;
-const TAG: i32 = 15;
-const ID: i32 = 16;
-const LR: i32 = 17;
-const TB: i32 = 18;
-const BT: i32 = 19;
-const COLON: i32 = 20;
-const ACC_DESCR: i32 = 21;
-const ACC_TITLE: i32 = 22;
-const TITLE: i32 = 23;
-const INT: i32 = 24;
-const STRING: i32 = 25;
-const NEWLINE: i32 = 26;
-const REFERENCE: i32 = 31;
-
-static TOKENS: LazyLock<Table> = LazyLock::new(|| {
-    Table::new(vec![
-        word("cherry-pick"),
-        TokenType::literal("gitGraph:", "gitGraph:"),
-        word("HIGHLIGHT"),
-        keyword("gitGraph").longer(NAME),
-        word("checkout"),
-        word("REVERSE"),
-        TokenType::literal("parent:", "parent:"),
-        word("commit"),
-        word("NORMAL"),
-        word("branch"),
-        TokenType::literal("order:", "order:"),
-        word("switch"),
-        TokenType::literal("type:", "type:"),
-        word("merge"),
-        TokenType::literal("msg:", "msg:"),
-        TokenType::literal("tag:", "tag:"),
-        TokenType::literal("id:", "id:"),
-        word("LR"),
-        word("TB"),
-        word("BT"),
-        TokenType::literal(":", ":"),
+token_kinds! {
+    enum Token {
+        CherryPick = word("cherry-pick"),
+        GitGraphColon = TokenType::literal("gitGraph:"),
+        Highlight = word("HIGHLIGHT"),
+        GitGraph = keyword("gitGraph").longer(&[Token::Reference]),
+        Checkout = word("checkout"),
+        Reverse = word("REVERSE"),
+        Parent = TokenType::literal("parent:"),
+        Commit = word("commit"),
+        Normal = word("NORMAL"),
+        Branch = word("branch"),
+        Order = TokenType::literal("order:"),
+        Switch = word("switch"),
+        Type = TokenType::literal("type:"),
+        Merge = word("merge"),
+        Msg = TokenType::literal("msg:"),
+        Tag = TokenType::literal("tag:"),
+        Id = TokenType::literal("id:"),
+        Lr = word("LR"),
+        Tb = word("TB"),
+        Bt = word("BT"),
+        Colon = TokenType::literal(":"),
         // Without a closing brace the block form scans to the end of the
         // text, and a brace is not a token on its own, so the first failure
         // is final.
-        acc_descr().opener(r"[\t ]*accDescr\s*\{"),
-        acc_title(),
-        title(),
-        TokenType::regex("INT", r"0|[1-9][0-9]*(?!\.)", None),
-        string(),
-        newline(),
-        whitespace(),
-        yaml(),
-        directive(),
-        single_line_comment(),
-        TokenType::regex("REFERENCE", r"\w([-\./\w]*[-\w])?", None),
-    ])
-});
-
-const NAME: &[&str] = &["REFERENCE"];
+        AccDescr = acc_descr().opener(r"[\t ]*accDescr\s*\{"),
+        AccTitle = acc_title(),
+        Title = title(),
+        Int = TokenType::regex("INT", r"0|[1-9][0-9]*(?!\.)", None),
+        String = string(),
+        Newline = newline(),
+        Whitespace = whitespace(),
+        Yaml = yaml(),
+        Directive = directive(),
+        Comment = single_line_comment(),
+        Reference = TokenType::regex("REFERENCE", r"\w([-\./\w]*[-\w])?", None),
+    }
+}
 
 /// A keyword that is the start of a longer name is part of that name:
 /// `commits` is a branch.
-fn word(name: &'static str) -> TokenType {
-    TokenType::literal(name, name).longer(NAME)
+fn word(name: &'static str) -> TokenType<Token> {
+    TokenType::literal(name).longer(&[Token::Reference])
+}
+
+impl Token {
+    fn direction(self) -> Option<&'static str> {
+        match self {
+            Self::Lr => Some("LR"),
+            Self::Tb => Some("TB"),
+            Self::Bt => Some("BT"),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -127,168 +104,151 @@ pub enum StatementAst {
 #[derive(Default)]
 pub struct GitGraphAst {
     pub dir: Option<&'static str>,
-    pub title: Option<String>,
-    pub acc_title: Option<String>,
-    pub acc_descr: Option<String>,
+    pub header: Header,
     pub statements: Vec<StatementAst>,
 }
 
-fn end_of_line(r: &mut Reader) -> Result<(), Error> {
-    if r.kind() == -1 {
-        return Ok(());
-    }
-    if r.kind() != NEWLINE {
-        return Err(r.fail("a line break or the end of input"));
-    }
-    while r.kind() == NEWLINE {
-        r.i += 1;
-    }
-    Ok(())
+struct Parser<'s> {
+    r: Reader<'s, Token>,
 }
 
-fn name(r: &mut Reader) -> Result<String, Error> {
-    match r.kind() {
-        REFERENCE => Ok(r.take().to_string()),
-        STRING => Ok(string_value(r.take())),
-        _ => Err(r.fail("a branch name")),
-    }
-}
-
-fn quoted(r: &mut Reader) -> Result<String, Error> {
-    Ok(string_value(r.expect(STRING)?))
-}
-
-fn commit_type(r: &mut Reader) -> Result<CommitTypeName, Error> {
-    let kind = match r.kind() {
-        NORMAL => CommitTypeName::Normal,
-        REVERSE => CommitTypeName::Reverse,
-        HIGHLIGHT => CommitTypeName::Highlight,
-        _ => return Err(r.fail("NORMAL, REVERSE, or HIGHLIGHT")),
-    };
-    r.i += 1;
-    Ok(kind)
-}
-
-pub fn parse_git(src: &str) -> Result<GitGraphAst, Error> {
-    let tokens = tokenize(src, &TOKENS, Kind::GitGraph)?;
-    let mut r = Reader::new(&tokens, &TOKENS, Kind::GitGraph);
-    let mut ast = GitGraphAst::default();
-
-    while r.kind() == NEWLINE {
-        r.i += 1;
-    }
-    if !r.accept(GIT_GRAPH_COLON) {
-        r.expect(GIT_GRAPH)?;
-        let next = tokens.kinds.get(r.i + 1).copied();
-        if matches!(r.kind(), LR | TB | BT) && next == Some(COLON) {
-            ast.dir = Some(match r.kind() {
-                LR => "LR",
-                TB => "TB",
-                _ => "BT",
-            });
-            r.i += 2;
-        } else {
-            r.accept(COLON);
+impl Parser<'_> {
+    fn name(&mut self) -> Result<String, Error> {
+        match self.r.kind() {
+            Some(Token::Reference) => Ok(self.r.take().to_string()),
+            Some(Token::String) => Ok(string_value(self.r.take())),
+            _ => Err(self.r.fail("a branch name")),
         }
     }
 
-    while r.kind() != -1 {
-        match r.kind() {
-            NEWLINE => r.i += 1,
-            ACC_DESCR => {
-                ast.acc_descr = Some(acc_descr_value(r.take()));
-                end_of_line(&mut r)?;
-            }
-            ACC_TITLE => {
-                ast.acc_title = Some(acc_title_value(r.take()));
-                end_of_line(&mut r)?;
-            }
-            TITLE => {
-                ast.title = Some(title_value(r.take()));
-                end_of_line(&mut r)?;
-            }
-            COMMIT => {
-                r.i += 1;
+    fn quoted(&mut self) -> Result<String, Error> {
+        Ok(string_value(self.r.expect(Token::String)?))
+    }
+
+    fn commit_type(&mut self) -> Result<CommitTypeName, Error> {
+        let kind = match self.r.kind() {
+            Some(Token::Normal) => CommitTypeName::Normal,
+            Some(Token::Reverse) => CommitTypeName::Reverse,
+            Some(Token::Highlight) => CommitTypeName::Highlight,
+            _ => return Err(self.r.fail("NORMAL, REVERSE, or HIGHLIGHT")),
+        };
+        self.r.bump();
+        Ok(kind)
+    }
+
+    fn statement(&mut self, kind: Token) -> Result<StatementAst, Error> {
+        self.r.bump();
+        let statement = match kind {
+            Token::Commit => {
                 let (mut id, mut message, mut tags, mut kind) = (None, None, Vec::new(), None);
                 loop {
-                    if r.accept(ID) {
-                        id = Some(quoted(&mut r)?);
-                    } else if r.accept(TAG) {
-                        tags.push(quoted(&mut r)?);
-                    } else if r.accept(TYPE) {
-                        kind = Some(commit_type(&mut r)?);
-                    } else if r.accept(MSG) || r.kind() == STRING {
-                        message = Some(quoted(&mut r)?);
+                    if self.r.accept(Token::Id) {
+                        id = Some(self.quoted()?);
+                    } else if self.r.accept(Token::Tag) {
+                        tags.push(self.quoted()?);
+                    } else if self.r.accept(Token::Type) {
+                        kind = Some(self.commit_type()?);
+                    } else if self.r.accept(Token::Msg) || self.r.at(Token::String) {
+                        message = Some(self.quoted()?);
                     } else {
                         break;
                     }
                 }
-                end_of_line(&mut r)?;
-                ast.statements.push(StatementAst::Commit {
+                StatementAst::Commit {
                     id,
                     message,
                     tags,
                     kind,
-                });
-            }
-            BRANCH => {
-                r.i += 1;
-                let name = name(&mut r)?;
-                let mut order = None;
-                if r.accept(ORDER) {
-                    order = Some(js::parse_int(r.expect(INT)?, 10));
                 }
-                end_of_line(&mut r)?;
-                ast.statements.push(StatementAst::Branch { name, order });
             }
-            MERGE => {
-                r.i += 1;
-                let branch = name(&mut r)?;
+            Token::Branch => {
+                let name = self.name()?;
+                let mut order = None;
+                if self.r.accept(Token::Order) {
+                    order = Some(js::parse_int(self.r.expect(Token::Int)?, 10));
+                }
+                StatementAst::Branch { name, order }
+            }
+            Token::Merge => {
+                let branch = self.name()?;
                 let (mut id, mut tags, mut kind) = (None, Vec::new(), None);
                 loop {
-                    if r.accept(ID) {
-                        id = Some(quoted(&mut r)?);
-                    } else if r.accept(TAG) {
-                        tags.push(quoted(&mut r)?);
-                    } else if r.accept(TYPE) {
-                        kind = Some(commit_type(&mut r)?);
+                    if self.r.accept(Token::Id) {
+                        id = Some(self.quoted()?);
+                    } else if self.r.accept(Token::Tag) {
+                        tags.push(self.quoted()?);
+                    } else if self.r.accept(Token::Type) {
+                        kind = Some(self.commit_type()?);
                     } else {
                         break;
                     }
                 }
-                end_of_line(&mut r)?;
-                ast.statements.push(StatementAst::Merge {
+                StatementAst::Merge {
                     branch,
                     id,
                     tags,
                     kind,
-                });
+                }
             }
-            CHECKOUT | SWITCH => {
-                r.i += 1;
-                let branch = name(&mut r)?;
-                end_of_line(&mut r)?;
-                ast.statements.push(StatementAst::Checkout { branch });
-            }
-            CHERRY_PICK => {
-                r.i += 1;
+            Token::Checkout | Token::Switch => StatementAst::Checkout {
+                branch: self.name()?,
+            },
+            _ => {
                 let (mut id, mut tags, mut parent) = (None, Vec::new(), None);
                 loop {
-                    if r.accept(ID) {
-                        id = Some(quoted(&mut r)?);
-                    } else if r.accept(TAG) {
-                        tags.push(quoted(&mut r)?);
-                    } else if r.accept(PARENT) {
-                        parent = Some(quoted(&mut r)?);
+                    if self.r.accept(Token::Id) {
+                        id = Some(self.quoted()?);
+                    } else if self.r.accept(Token::Tag) {
+                        tags.push(self.quoted()?);
+                    } else if self.r.accept(Token::Parent) {
+                        parent = Some(self.quoted()?);
                     } else {
                         break;
                     }
                 }
-                end_of_line(&mut r)?;
-                ast.statements
-                    .push(StatementAst::CherryPicking { id, tags, parent });
+                StatementAst::CherryPicking { id, tags, parent }
             }
-            _ => return Err(r.fail("a statement, a title, or a line break")),
+        };
+        self.r.end_of_line(Token::Newline)?;
+        Ok(statement)
+    }
+}
+
+pub fn parse_git(src: &str) -> Result<GitGraphAst, Error> {
+    let mut p = Parser {
+        r: Reader::new(src, Kind::GitGraph)?,
+    };
+    let mut ast = GitGraphAst::default();
+
+    p.r.skip(Token::Newline);
+    if !p.r.accept(Token::GitGraphColon) {
+        p.r.expect(Token::GitGraph)?;
+        match p.r.kind().and_then(Token::direction) {
+            Some(dir) if p.r.peek(1) == Some(Token::Colon) => {
+                ast.dir = Some(dir);
+                p.r.bump();
+                p.r.bump();
+            }
+            _ => {
+                p.r.accept(Token::Colon);
+            }
+        }
+    }
+
+    while let Some(kind) = p.r.kind() {
+        if p.r.heading(&mut ast.header) {
+            p.r.end_of_line(Token::Newline)?;
+            continue;
+        }
+        match kind {
+            Token::Newline => p.r.bump(),
+            Token::Commit
+            | Token::Branch
+            | Token::Merge
+            | Token::Checkout
+            | Token::Switch
+            | Token::CherryPick => ast.statements.push(p.statement(kind)?),
+            _ => return Err(p.r.fail("a statement, a title, or a line break")),
         }
     }
     Ok(ast)

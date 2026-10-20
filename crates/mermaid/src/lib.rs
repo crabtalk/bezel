@@ -16,6 +16,7 @@ pub mod config;
 pub mod detect;
 pub mod diagrams;
 pub mod error;
+pub mod geom;
 pub mod js;
 pub mod layout;
 pub mod preprocess;
@@ -264,7 +265,7 @@ pub fn render_parsed(
         host,
         responsive: options.responsive.unwrap_or(!fixed),
     };
-    let rendered = diagrams::render(kind, &parsed.model, &parsed.config, &ctx)?;
+    let rendered = parsed.model.render(&parsed.config, &ctx)?;
     let output_limit = options.output_limit;
     if js::len_over(&rendered.svg, output_limit) {
         return Err(Error::limit(format!(

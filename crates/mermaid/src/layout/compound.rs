@@ -3,39 +3,22 @@
 
 use std::collections::HashMap;
 
-use crate::js;
+use crate::{
+    geom::{Axis, Direction, Point, RoutePoint, Side, Size},
+    js,
+    text::Label,
+};
 
-use super::layered::{Kind, LEdge, LNode, LayeredOptions, layered, ledge, lnode, orient, rank};
+use super::layered::{Kind, LEdge, LNode, LayeredOptions, Pin, layered, orient, rank};
 
 const MAX_PORTS: usize = 40000;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-#[allow(clippy::upper_case_acronyms)]
-pub enum Dir {
-    #[default]
-    TB,
-    BT,
-    LR,
-    RL,
-}
-
-/// The direction a diagram names, or top to bottom for anything else.
-pub fn direction(dir: Option<&str>) -> Dir {
-    match dir {
-        Some("BT") => Dir::BT,
-        Some("LR") => Dir::LR,
-        Some("RL") => Dir::RL,
-        _ => Dir::TB,
-    }
-}
-
 #[derive(Clone, Debug, PartialEq)]
 pub struct CNode {
-    pub w: f64,
-    pub h: f64,
-    pub parent: i32,
+    pub size: Size,
+    pub parent: Option<usize>,
     pub is_group: bool,
-    pub dir: Option<Dir>,
+    pub dir: Option<Direction>,
     pub pad_x: f64,
     pub pad_top: f64,
     pub pad_bottom: f64,
@@ -45,8 +28,7 @@ pub struct CNode {
     /// How much of a side its edges may spread along, measured across the
     /// flow; 0 keeps them at its middle.
     pub span: f64,
-    pub x: f64,
-    pub y: f64,
+    pub center: Point,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -54,28 +36,104 @@ pub struct CEdge {
     pub src: usize,
     pub dst: usize,
     pub minlen: i32,
-    pub label_w: f64,
-    pub label_h: f64,
-    /// x, y, axis triples; axis is 0 where the edge runs vertically into the
-    /// point, 1 horizontally.
-    pub route: Vec<f64>,
-    pub label_x: f64,
-    pub label_y: f64,
+    pub label: Size,
+    pub route: Vec<RoutePoint>,
+    pub label_at: Point,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct CompoundResult {
-    pub width: f64,
-    pub height: f64,
+impl CEdge {
+    /// Whether the end the edge leaves by (`out`) or arrives at is below
+    /// group `item` rather than `item` itself.
+    fn end_below(&self, item: usize, out: bool) -> bool {
+        (if out { self.src } else { self.dst }) != item
+    }
+
+    /// The room `label` takes on an edge: its size and a margin, or none for
+    /// an empty label.
+    pub fn label_room(label: &Label) -> Size {
+        Size::new(
+            if label.width > 0.0 {
+                label.width + 12.0
+            } else {
+                0.0
+            },
+            if label.height > 0.0 {
+                label.height + 4.0
+            } else {
+                0.0
+            },
+        )
+    }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u8)]
-enum Side {
-    Top = 0,
-    Right = 1,
-    Bottom = 2,
-    Left = 3,
+impl CNode {
+    pub fn new(size: Size, parent: Option<usize>) -> Self {
+        CNode {
+            size,
+            parent,
+            is_group: false,
+            dir: None,
+            pad_x: 0.0,
+            pad_top: 0.0,
+            pad_bottom: 0.0,
+            min_w: 0.0,
+            seq: 0.0,
+            span: 0.0,
+            center: Point::default(),
+        }
+    }
+
+    /// The side of the layout box `p` lies on, within half a pixel.
+    pub fn side_of(&self, p: Point) -> Option<Side> {
+        let dx = p.x - self.center.x;
+        let dy = p.y - self.center.y;
+        if (dy.abs() - self.size.h / 2.0).abs() < 0.5 {
+            return Some(if dy < 0.0 { Side::Top } else { Side::Bottom });
+        }
+        if (dx.abs() - self.size.w / 2.0).abs() < 0.5 {
+            return Some(if dx < 0.0 { Side::Left } else { Side::Right });
+        }
+        None
+    }
+
+    /// The top left corner of the layout box.
+    pub fn corner(&self) -> Point {
+        Point::new(
+            self.center.x - self.size.w / 2.0,
+            self.center.y - self.size.h / 2.0,
+        )
+    }
+
+    /// The point where the line from the center of this box to the center of
+    /// `to` leaves this box. When that center is inside the box, the point is
+    /// on the nearest side instead.
+    pub fn border_toward(&self, to: &CNode) -> Point {
+        let from = self;
+        let dx = to.center.x - from.center.x;
+        let dy = to.center.y - from.center.y;
+        let hw = (from.size.w / 2.0).max(0.5);
+        let hh = (from.size.h / 2.0).max(0.5);
+        if dx.abs() < hw && dy.abs() < hh {
+            let to_side = hw - dx.abs();
+            let to_end = hh - dy.abs();
+            return if to_side < to_end {
+                Point::new(from.center.x + if dx < 0.0 { -hw } else { hw }, to.center.y)
+            } else {
+                Point::new(to.center.x, from.center.y + if dy < 0.0 { -hh } else { hh })
+            };
+        }
+        let scale = (if dx != 0.0 {
+            hw / dx.abs()
+        } else {
+            f64::INFINITY
+        })
+        .min(if dy != 0.0 {
+            hh / dy.abs()
+        } else {
+            f64::INFINITY
+        });
+        Point::new(from.center.x + dx * scale, from.center.y + dy * scale)
+    }
 }
 
 struct PortEdge {
@@ -83,9 +141,8 @@ struct PortEdge {
     inner: usize,
     out: bool,
     side: Side,
-    px: f64,
-    py: f64,
-    route: Vec<f64>,
+    at: Point,
+    route: Vec<RoutePoint>,
 }
 
 #[derive(Clone, Copy)]
@@ -96,28 +153,28 @@ struct LevelEdge {
 }
 
 struct Level {
-    id: i32,
-    dir: Dir,
+    /// The group laid out, or `None` for the root.
+    id: Option<usize>,
+    dir: Direction,
     items: Vec<usize>,
     edges: Vec<LevelEdge>,
     ports: Vec<PortEdge>,
     /// The ports of `ports` by `edge * 2`, plus 1 for the end an edge arrives
     /// at.
     port_of: HashMap<usize, usize>,
-    routes: HashMap<usize, Vec<f64>>,
-    x: f64,
-    y: f64,
+    routes: HashMap<usize, Vec<RoutePoint>>,
+    origin: Point,
 }
 
-/// The levels of a layout, in the order they were made, and each by the id
-/// of the group it lays out (-1 for the root).
+/// The levels of a layout, in the order they were made, and each by the
+/// group it lays out.
 struct Levels {
     list: Vec<Level>,
-    of: HashMap<i32, usize>,
+    of: HashMap<Option<usize>, usize>,
 }
 
 impl Levels {
-    fn make(&mut self, id: i32, dir: Dir) -> usize {
+    fn make(&mut self, id: Option<usize>, dir: Direction) -> usize {
         let at = self.list.len();
         self.list.push(Level {
             id,
@@ -127,15 +184,14 @@ impl Levels {
             ports: Vec::new(),
             port_of: HashMap::new(),
             routes: HashMap::new(),
-            x: 0.0,
-            y: 0.0,
+            origin: Point::default(),
         });
         self.of.insert(id, at);
         at
     }
 
     fn of(&self, id: usize) -> usize {
-        self.of[&(id as i32)]
+        self.of[&Some(id)]
     }
 
     /// The port in group `group` of the end of edge `e` that leaves (`out`)
@@ -151,201 +207,173 @@ impl Levels {
         let index = level.port_of[&(e * 2 + if out { 0 } else { 1 })];
         &mut level.ports[index]
     }
-}
 
-pub fn shift_layout(nodes: &mut [CNode], edges: &mut [CEdge], ox: f64, oy: f64) {
-    for c in nodes.iter_mut() {
-        c.x += ox;
-        c.y += oy;
-    }
-    for e in edges.iter_mut() {
-        for k in (0..e.route.len()).step_by(3) {
-            e.route[k] += ox;
-            e.route[k + 1] += oy;
-        }
-        e.label_x += ox;
-        e.label_y += oy;
-    }
-}
-
-pub fn cnode(w: f64, h: f64, parent: i32) -> CNode {
-    CNode {
-        w,
-        h,
-        parent,
-        is_group: false,
-        dir: None,
-        pad_x: 0.0,
-        pad_top: 0.0,
-        pad_bottom: 0.0,
-        min_w: 0.0,
-        seq: 0.0,
-        span: 0.0,
-        x: 0.0,
-        y: 0.0,
-    }
-}
-
-fn start_side(dir: Dir) -> Side {
-    match dir {
-        Dir::TB => Side::Top,
-        Dir::BT => Side::Bottom,
-        Dir::LR => Side::Left,
-        Dir::RL => Side::Right,
-    }
-}
-
-fn opposite(side: Side) -> Side {
-    match side {
-        Side::Top => Side::Bottom,
-        Side::Right => Side::Left,
-        Side::Bottom => Side::Top,
-        Side::Left => Side::Right,
-    }
-}
-
-fn parent(nodes: &[CNode], i: usize) -> usize {
-    nodes[i].parent as usize
-}
-
-fn endpoint_below(item: usize, e: &CEdge, out: bool) -> bool {
-    (if out { e.src } else { e.dst }) != item
-}
-
-/// The flat graph of one level: its items, then a port node for every edge
-/// that crosses its border on the side the flow starts or ends at. `sized`
-/// gives the nodes their sizes and the edges their labels and offsets.
-fn build(
-    nodes: &[CNode],
-    edges: &[CEdge],
-    levels: &Levels,
-    local: &mut [usize],
-    q: usize,
-    sized: bool,
-) -> (Vec<LNode>, Vec<LEdge>, Vec<i32>) {
-    let level = &levels.list[q];
-    let vertical = level.dir == Dir::TB || level.dir == Dir::BT;
-    let start = start_side(level.dir);
-    let mut lnodes: Vec<LNode> = Vec::new();
-    let mut ledges: Vec<LEdge> = Vec::new();
-    for (i, &item) in level.items.iter().enumerate() {
-        local[item] = i;
-        let node = &nodes[item];
-        let mut ln = if sized {
-            lnode(
-                if vertical { node.w } else { node.h },
-                if vertical { node.h } else { node.w },
-                Kind::Node,
-            )
-        } else {
-            lnode(0.0, 0.0, Kind::Node)
-        };
-        ln.span = if node.is_group {
-            node.span.min(ln.w - 2.0 * node.pad_x)
-        } else {
-            node.span
-        };
-        lnodes.push(ln);
-    }
-    let held = |item: usize, ei: usize, out: bool| {
-        nodes[item].is_group && endpoint_below(item, &edges[ei], out)
-    };
-    let offset = |item: usize, ei: usize, out: bool| -> f64 {
-        if !sized || !nodes[item].is_group || !endpoint_below(item, &edges[ei], out) {
-            return 0.0;
-        }
-        let port = levels.port(item, ei, out);
-        if vertical {
-            port.px - nodes[item].w / 2.0
-        } else {
-            port.py - nodes[item].h / 2.0
-        }
-    };
-    for le in &level.edges {
-        let e = &edges[le.e];
-        let mut edge = ledge(local[le.a], local[le.b], e.minlen, 0.0, 0.0);
-        if sized {
-            edge.label_w = if vertical { e.label_w } else { e.label_h };
-            edge.label_h = if vertical { e.label_h } else { e.label_w };
-            edge.tail_dx = offset(le.a, le.e, true);
-            edge.head_dx = offset(le.b, le.e, false);
-            edge.tail_fixed = held(le.a, le.e, true);
-            edge.head_fixed = held(le.b, le.e, false);
-        }
-        ledges.push(edge);
-    }
-    let mut dummies = vec![-1i32; level.ports.len()];
-    for (i, port) in level.ports.iter().enumerate() {
-        if port.side == start || port.side == opposite(start) {
-            let d = lnodes.len();
-            let kind = if port.side == start {
-                Kind::StartPort
+    /// The flat graph of one level: its items, then a port node for every edge
+    /// that crosses its border on the side the flow starts or ends at. `sized`
+    /// gives the nodes their sizes and the edges their labels and offsets.
+    fn flat_graph(
+        &self,
+        q: usize,
+        nodes: &[CNode],
+        edges: &[CEdge],
+        local: &mut [usize],
+        sized: bool,
+    ) -> (Vec<LNode>, Vec<LEdge>, Vec<Option<usize>>) {
+        let level = &self.list[q];
+        let vertical = level.dir.is_vertical();
+        let start = level.dir.start_side();
+        let mut lnodes: Vec<LNode> = Vec::new();
+        let mut ledges: Vec<LEdge> = Vec::new();
+        for (i, &item) in level.items.iter().enumerate() {
+            local[item] = i;
+            let node = &nodes[item];
+            let mut ln = if sized {
+                LNode::new(
+                    if vertical {
+                        node.size
+                    } else {
+                        node.size.turned()
+                    },
+                    Kind::Node,
+                )
             } else {
-                Kind::EndPort
+                LNode::new(Size::default(), Kind::Node)
             };
-            lnodes.push(lnode(0.0, 0.0, kind));
-            dummies[i] = d as i32;
-            let mut edge = if port.out {
-                ledge(local[port.inner], d, 1, 0.0, 0.0)
+            ln.span = if node.is_group {
+                node.span.min(ln.size.w - 2.0 * node.pad_x)
             } else {
-                ledge(d, local[port.inner], 1, 0.0, 0.0)
+                node.span
             };
-            if port.out {
-                edge.tail_dx = offset(port.inner, port.e, true);
-                edge.tail_fixed = held(port.inner, port.e, true);
+            lnodes.push(ln);
+        }
+        let held = |item: usize, ei: usize, out: bool| {
+            nodes[item].is_group && edges[ei].end_below(item, out)
+        };
+        let offset = |item: usize, ei: usize, out: bool| -> f64 {
+            if !sized || !nodes[item].is_group || !edges[ei].end_below(item, out) {
+                return 0.0;
+            }
+            let port = self.port(item, ei, out);
+            if vertical {
+                port.at.x - nodes[item].size.w / 2.0
             } else {
-                edge.head_dx = offset(port.inner, port.e, false);
-                edge.head_fixed = held(port.inner, port.e, false);
+                port.at.y - nodes[item].size.h / 2.0
+            }
+        };
+        for le in &level.edges {
+            let e = &edges[le.e];
+            let mut edge = LEdge::new(local[le.a], local[le.b], e.minlen, Size::default());
+            if sized {
+                edge.label = if vertical { e.label } else { e.label.turned() };
+                edge.tail_dx = offset(le.a, le.e, true);
+                edge.head_dx = offset(le.b, le.e, false);
+                edge.tail_fixed = held(le.a, le.e, true);
+                edge.head_fixed = held(le.b, le.e, false);
             }
             ledges.push(edge);
-        } else {
-            lnodes[local[port.inner]].pin = if port.side == Side::Top || port.side == Side::Left {
-                -1.0
-            } else {
-                1.0
-            };
         }
-    }
-    (lnodes, ledges, dummies)
-}
-
-/// Places the levels made from `from` on, and every level they hold, going
-/// down the tree breadth first.
-fn descend(
-    nodes: &[CNode],
-    children: &[Vec<usize>],
-    levels: &mut Levels,
-    depth: &mut [i32],
-    placed: &mut [bool],
-    from: usize,
-) {
-    let mut q = from;
-    while q < levels.list.len() {
-        let items = levels.list[q].items.clone();
-        let id = levels.list[q].id;
-        let dir = levels.list[q].dir;
-        for item in items {
-            placed[item] = true;
-            depth[item] = if id < 0 { 0 } else { depth[id as usize] + 1 };
-            if nodes[item].is_group {
-                let child = levels.make(item as i32, nodes[item].dir.unwrap_or(dir));
-                levels.list[child].items = children[item].clone();
+        let mut dummies = vec![None; level.ports.len()];
+        for (i, port) in level.ports.iter().enumerate() {
+            if port.side == start || port.side == start.opposite() {
+                let d = lnodes.len();
+                let kind = if port.side == start {
+                    Kind::StartPort
+                } else {
+                    Kind::EndPort
+                };
+                lnodes.push(LNode::new(Size::default(), kind));
+                dummies[i] = Some(d);
+                let mut edge = if port.out {
+                    LEdge::new(local[port.inner], d, 1, Size::default())
+                } else {
+                    LEdge::new(d, local[port.inner], 1, Size::default())
+                };
+                if port.out {
+                    edge.tail_dx = offset(port.inner, port.e, true);
+                    edge.tail_fixed = held(port.inner, port.e, true);
+                } else {
+                    edge.head_dx = offset(port.inner, port.e, false);
+                    edge.head_fixed = held(port.inner, port.e, false);
+                }
+                ledges.push(edge);
+            } else {
+                lnodes[local[port.inner]].pin =
+                    Some(if matches!(port.side, Side::Top | Side::Left) {
+                        Pin::First
+                    } else {
+                        Pin::Last
+                    });
             }
         }
-        q += 1;
+        (lnodes, ledges, dummies)
+    }
+
+    /// Places the self made from `from` on, and every level they hold, going
+    /// down the tree breadth first.
+    fn descend(
+        &mut self,
+        from: usize,
+        nodes: &[CNode],
+        children: &[Vec<usize>],
+        depth: &mut [i32],
+        placed: &mut [bool],
+    ) {
+        let mut q = from;
+        while q < self.list.len() {
+            let items = self.list[q].items.clone();
+            let id = self.list[q].id;
+            let dir = self.list[q].dir;
+            for item in items {
+                placed[item] = true;
+                depth[item] = id.map_or(0, |id| depth[id] + 1);
+                if nodes[item].is_group {
+                    let child = self.make(Some(item), nodes[item].dir.unwrap_or(dir));
+                    self.list[child].items = children[item].clone();
+                }
+            }
+            q += 1;
+        }
     }
 }
 
-fn append(route: &mut Vec<f64>, part: &[f64], ox: f64, oy: f64) {
-    for i in (0..part.len()).step_by(3) {
-        let x = part[i] + ox;
-        let y = part[i + 1] + oy;
-        let len = route.len();
-        if len >= 3 && (route[len - 3] - x).abs() < 0.01 && (route[len - 2] - y).abs() < 0.01 {
+pub fn shift_layout(nodes: &mut [CNode], edges: &mut [CEdge], by: Point) {
+    for c in nodes.iter_mut() {
+        c.center += by;
+    }
+    for e in edges.iter_mut() {
+        for point in &mut e.route {
+            point.at += by;
+        }
+        e.label_at += by;
+    }
+}
+
+/// The group holding node `i`, which is below the root.
+fn parent(nodes: &[CNode], i: usize) -> usize {
+    nodes[i]
+        .parent
+        .expect("a node below the root is in a group")
+}
+
+fn append(route: &mut Vec<RoutePoint>, part: &[RoutePoint], origin: Point) {
+    for point in part {
+        let at = point.at + origin;
+        if route.last().is_some_and(|last| last.at.near(at)) {
             continue;
         }
-        route.extend([x, y, part[i + 2]]);
+        route.push(RoutePoint::new(at, point.axis));
     }
+}
+
+/// `at` moved onto the border of a box of `size` on `side`.
+fn onto(mut at: Point, side: Side, size: Size) -> Point {
+    match side {
+        Side::Top => at.y = 0.0,
+        Side::Bottom => at.y = size.h,
+        Side::Left => at.x = 0.0,
+        Side::Right => at.x = size.w,
+    }
+    at
 }
 
 /// Lays out a graph whose nodes may be nested in groups. Each group is laid
@@ -355,31 +383,31 @@ fn append(route: &mut Vec<f64>, part: &[f64], ox: f64, oy: f64) {
 pub fn compound_layout(
     nodes: &mut [CNode],
     edges: &mut [CEdge],
-    root_dir: Dir,
+    root_dir: Direction,
     opt: &LayeredOptions,
-) -> CompoundResult {
+) -> Size {
     let n = nodes.len();
     let mut levels = Levels {
         list: Vec::new(),
         of: HashMap::new(),
     };
-    let root = levels.make(-1, root_dir);
+    let root = levels.make(None, root_dir);
 
     let mut children: Vec<Vec<usize>> = vec![Vec::new(); n];
     let mut root_items: Vec<usize> = Vec::new();
     for i in 0..n {
-        let p = nodes[i].parent;
-        if p >= 0 && (p as usize) < n && p as usize != i && nodes[p as usize].is_group {
-            children[p as usize].push(i);
-        } else {
-            nodes[i].parent = -1;
-            root_items.push(i);
+        match nodes[i].parent {
+            Some(p) if p < n && p != i && nodes[p].is_group => children[p].push(i),
+            _ => {
+                nodes[i].parent = None;
+                root_items.push(i);
+            }
         }
     }
     levels.list[root].items = root_items;
     let mut depth = vec![0i32; n];
     let mut placed = vec![false; n];
-    descend(nodes, &children, &mut levels, &mut depth, &mut placed, 0);
+    levels.descend(0, nodes, &children, &mut depth, &mut placed);
     // Groups that contain each other are unreachable from the root; lift them
     // out.
     for i in 0..n {
@@ -388,15 +416,15 @@ pub fn compound_layout(
         }
         let former = parent(nodes, i);
         children[former].retain(|&c| c != i);
-        nodes[i].parent = -1;
+        nodes[i].parent = None;
         levels.list[root].items.push(i);
         placed[i] = true;
         depth[i] = 0;
         if nodes[i].is_group {
             let from = levels.list.len();
-            let child = levels.make(i as i32, nodes[i].dir.unwrap_or(root_dir));
+            let child = levels.make(Some(i), nodes[i].dir.unwrap_or(root_dir));
             levels.list[child].items = children[i].clone();
-            descend(nodes, &children, &mut levels, &mut depth, &mut placed, from);
+            levels.descend(from, nodes, &children, &mut depth, &mut placed);
         }
     }
 
@@ -408,8 +436,10 @@ pub fn compound_layout(
                 seq = nodes[item].seq;
             }
         }
-        if seq != f64::INFINITY {
-            nodes[level.id as usize].seq = seq;
+        if seq != f64::INFINITY
+            && let Some(id) = level.id
+        {
+            nodes[id].seq = seq;
         }
     }
     for level in &mut levels.list {
@@ -491,8 +521,7 @@ pub fn compound_layout(
                     inner,
                     out,
                     side: Side::Top,
-                    px: 0.0,
-                    py: 0.0,
+                    at: Point::default(),
                     route: Vec::new(),
                 });
                 level
@@ -510,7 +539,7 @@ pub fn compound_layout(
         for p in 0..levels.list[q].ports.len() {
             let port = &levels.list[q].ports[p];
             let (inner, e, out, side) = (port.inner, port.e, port.out, port.side);
-            if nodes[inner].is_group && endpoint_below(inner, &edges[e], out) {
+            if nodes[inner].is_group && edges[e].end_below(inner, out) {
                 levels.port_mut(inner, e, out).side = side;
             }
         }
@@ -528,89 +557,80 @@ pub fn compound_layout(
         if !needed {
             continue;
         }
-        let (mut lnodes, mut ledges, _) = build(nodes, edges, &levels, &mut local, q, false);
+        let (mut lnodes, mut ledges, _) = levels.flat_graph(q, nodes, edges, &mut local, false);
         orient(&lnodes, &mut ledges);
         rank(&mut lnodes, &ledges, 1);
-        let start = start_side(levels.list[q].dir);
+        let start = levels.list[q].dir.start_side();
         for (i, le) in level_edges.iter().enumerate() {
             let e = &edges[le.e];
             let a_above = !ledges[i].reversed;
             if nodes[le.a].is_group && e.src != le.a {
                 levels.port_mut(le.a, le.e, true).side =
-                    if a_above { opposite(start) } else { start };
+                    if a_above { start.opposite() } else { start };
             }
             if nodes[le.b].is_group && e.dst != le.b {
                 levels.port_mut(le.b, le.e, false).side =
-                    if a_above { start } else { opposite(start) };
+                    if a_above { start } else { start.opposite() };
             }
         }
     }
 
     // Bottom-up: lay out each level now that the sizes of its groups are
     // known.
-    let mut total = CompoundResult {
-        width: 0.0,
-        height: 0.0,
-    };
+    let mut total = Size::default();
     for q in (0..levels.list.len()).rev() {
-        let id = levels.list[q].id;
-        let group = (id >= 0).then_some(id as usize);
+        let group = levels.list[q].id;
         let dir = levels.list[q].dir;
-        let vertical = dir == Dir::TB || dir == Dir::BT;
-        let flip = dir == Dir::BT || dir == Dir::RL;
-        let (mut lnodes, mut ledges, dummies) = build(nodes, edges, &levels, &mut local, q, true);
+        let vertical = dir.is_vertical();
+        let flip = dir.is_reversed();
+        let (mut lnodes, mut ledges, dummies) =
+            levels.flat_graph(q, nodes, edges, &mut local, true);
         let size = layered(&mut lnodes, &mut ledges, opt);
-        let content_w = if vertical { size.width } else { size.height };
-        let content_h = if vertical { size.height } else { size.width };
+        let content = if vertical { size } else { size.turned() };
         let pad_x = group.map_or(0.0, |g| nodes[g].pad_x);
         let pad_top = group.map_or(0.0, |g| nodes[g].pad_top);
-        let box_w = (content_w + 2.0 * pad_x).max(group.map_or(0.0, |g| nodes[g].min_w));
-        let box_h = content_h + pad_top + group.map_or(0.0, |g| nodes[g].pad_bottom);
-        let off_x = (box_w - content_w) / 2.0;
+        let boxed = Size::new(
+            (content.w + 2.0 * pad_x).max(group.map_or(0.0, |g| nodes[g].min_w)),
+            content.h + pad_top + group.map_or(0.0, |g| nodes[g].pad_bottom),
+        );
+        let off_x = (boxed.w - content.w) / 2.0;
         let off_y = pad_top;
-        let tx = |lx: f64, ly: f64| -> f64 {
-            off_x
-                + if vertical {
-                    lx
-                } else if flip {
-                    size.height - ly
-                } else {
-                    ly
-                }
+        let to_box = |p: Point| {
+            Point::new(
+                off_x
+                    + if vertical {
+                        p.x
+                    } else if flip {
+                        size.h - p.y
+                    } else {
+                        p.y
+                    },
+                off_y
+                    + if vertical {
+                        if flip { size.h - p.y } else { p.y }
+                    } else {
+                        p.x
+                    },
+            )
         };
-        let ty = |lx: f64, ly: f64| -> f64 {
-            off_y
-                + if vertical {
-                    if flip { size.height - ly } else { ly }
-                } else {
-                    lx
-                }
-        };
-        let axis = if vertical { 0.0 } else { 1.0 };
-        let convert = |points: &[f64]| -> Vec<f64> {
-            let mut out = Vec::new();
-            for i in (0..points.len()).step_by(2) {
-                out.extend([
-                    tx(points[i], points[i + 1]),
-                    ty(points[i], points[i + 1]),
-                    axis,
-                ]);
-            }
-            out
+        let axis = dir.axis();
+        let convert = |points: &[Point]| -> Vec<RoutePoint> {
+            points
+                .iter()
+                .map(|&p| RoutePoint::new(to_box(p), axis))
+                .collect()
         };
 
         for (i, &item) in levels.list[q].items.iter().enumerate() {
-            nodes[item].x = tx(lnodes[i].x, lnodes[i].y);
-            nodes[item].y = ty(lnodes[i].x, lnodes[i].y);
+            nodes[item].center = to_box(lnodes[i].center);
         }
         let level_edges = levels.list[q].edges.clone();
         for (i, le) in level_edges.iter().enumerate() {
             let edge = &ledges[i];
             levels.list[q].routes.insert(le.e, convert(&edge.points));
             let e = &mut edges[le.e];
-            if e.label_w > 0.0 {
-                e.label_x = tx(edge.label_x, edge.label_y);
-                e.label_y = ty(edge.label_x, edge.label_y);
+            if e.label.w > 0.0 {
+                e.label_at = to_box(edge.label_at);
             }
         }
         let mut k = level_edges.len();
@@ -619,93 +639,73 @@ pub fn compound_layout(
                 let port = &levels.list[q].ports[i];
                 (port.inner, port.e, port.out, port.side)
             };
-            if dummy >= 0 {
+            if dummy.is_some() {
                 let mut route = convert(&ledges[k].points);
                 k += 1;
-                let at = if out { route.len() - 3 } else { 0 };
-                let mut bx = route[at];
-                let mut by = route[at + 1];
-                match side {
-                    Side::Top => by = 0.0,
-                    Side::Bottom => by = box_h,
-                    Side::Left => bx = 0.0,
-                    Side::Right => bx = box_w,
-                }
-                if out {
-                    route.extend([bx, by, axis]);
+                let end = if out {
+                    route[route.len() - 1]
                 } else {
-                    route.splice(0..0, [bx, by, axis]);
+                    route[0]
+                };
+                let border = RoutePoint::new(onto(end.at, side, boxed), axis);
+                if out {
+                    route.push(border);
+                } else {
+                    route.insert(0, border);
                 }
                 let port = &mut levels.list[q].ports[i];
-                port.px = bx;
-                port.py = by;
+                port.at = border.at;
                 port.route = route;
                 continue;
             }
             let item = &nodes[inner];
-            let mut ix = item.x;
-            let mut iy = item.y;
-            if item.is_group && endpoint_below(inner, &edges[e], out) {
+            let mut inside = item.center;
+            if item.is_group && edges[e].end_below(inner, out) {
                 let below = levels.port(inner, e, out);
-                ix += below.px - item.w / 2.0;
-                iy += below.py - item.h / 2.0;
+                inside.x += below.at.x - item.size.w / 2.0;
+                inside.y += below.at.y - item.size.h / 2.0;
             } else {
                 match side {
-                    Side::Top => iy -= item.h / 2.0,
-                    Side::Bottom => iy += item.h / 2.0,
-                    Side::Left => ix -= item.w / 2.0,
-                    Side::Right => ix += item.w / 2.0,
+                    Side::Top => inside.y -= item.size.h / 2.0,
+                    Side::Bottom => inside.y += item.size.h / 2.0,
+                    Side::Left => inside.x -= item.size.w / 2.0,
+                    Side::Right => inside.x += item.size.w / 2.0,
                 }
             }
-            let mut bx = ix;
-            let mut by = iy;
-            match side {
-                Side::Top => by = 0.0,
-                Side::Bottom => by = box_h,
-                Side::Left => bx = 0.0,
-                Side::Right => bx = box_w,
-            }
-            let a = if side == Side::Top || side == Side::Bottom {
-                0.0
+            let border = onto(inside, side, boxed);
+            let a = if side.is_horizontal() {
+                Axis::Y
             } else {
-                1.0
+                Axis::X
             };
             let port = &mut levels.list[q].ports[i];
-            port.px = bx;
-            port.py = by;
+            port.at = border;
             port.route = if out {
-                vec![ix, iy, a, bx, by, a]
+                vec![RoutePoint::new(inside, a), RoutePoint::new(border, a)]
             } else {
-                vec![bx, by, a, ix, iy, a]
+                vec![RoutePoint::new(border, a), RoutePoint::new(inside, a)]
             };
         }
 
         if let Some(g) = group {
-            nodes[g].w = box_w;
-            nodes[g].h = box_h;
+            nodes[g].size = boxed;
         } else {
-            total = CompoundResult {
-                width: box_w,
-                height: box_h,
-            };
+            total = boxed;
         }
     }
 
     // Top-down again: turn positions inside each box into diagram
     // coordinates.
     for q in 0..levels.list.len() {
-        let ox = levels.list[q].x;
-        let oy = levels.list[q].y;
+        let origin = levels.list[q].origin;
         for i in 0..levels.list[q].items.len() {
             let item = levels.list[q].items[i];
             let node = &mut nodes[item];
-            node.x += ox;
-            node.y += oy;
+            node.center += origin;
             if node.is_group {
-                let (x, y) = (node.x - node.w / 2.0, node.y - node.h / 2.0);
+                let corner = node.corner();
                 let child = levels.of(item);
-                levels.list[child].x = x;
-                levels.list[child].y = y;
+                levels.list[child].origin = corner;
             }
         }
     }
@@ -713,7 +713,7 @@ pub fn compound_layout(
     for level in &levels.list {
         for le in &level.edges {
             let e = &edges[le.e];
-            let mut route: Vec<f64> = Vec::new();
+            let mut route: Vec<RoutePoint> = Vec::new();
             let mut outward: Vec<usize> = Vec::new();
             let mut item = e.src;
             while nodes[item].parent != level.id {
@@ -725,11 +725,10 @@ pub fn compound_layout(
                 append(
                     &mut route,
                     &lv.ports[lv.port_of[&(le.e * 2)]].route,
-                    lv.x,
-                    lv.y,
+                    lv.origin,
                 );
             }
-            append(&mut route, &level.routes[&le.e], level.x, level.y);
+            append(&mut route, &level.routes[&le.e], level.origin);
             let mut inward: Vec<usize> = Vec::new();
             let mut item = e.dst;
             while nodes[item].parent != level.id {
@@ -741,33 +740,29 @@ pub fn compound_layout(
                 append(
                     &mut route,
                     &lv.ports[lv.port_of[&(le.e * 2 + 1)]].route,
-                    lv.x,
-                    lv.y,
+                    lv.origin,
                 );
             }
             let e = &mut edges[le.e];
             e.route = route;
-            if e.label_w > 0.0 {
-                e.label_x += level.x;
-                e.label_y += level.y;
+            if e.label.w > 0.0 {
+                e.label_at += level.origin;
             }
         }
     }
 
     for ei in stray {
-        let (ax, ay) = (nodes[edges[ei].src].x, nodes[edges[ei].src].y);
-        let (bx, by) = (nodes[edges[ei].dst].x, nodes[edges[ei].dst].y);
+        let a = nodes[edges[ei].src].center;
+        let b = nodes[edges[ei].dst].center;
         let e = &mut edges[ei];
-        e.route = vec![ax, ay, 0.0, bx, by, 0.0];
-        e.label_x = (ax + bx) / 2.0;
-        e.label_y = (ay + by) / 2.0;
+        e.route = vec![RoutePoint::new(a, Axis::Y), RoutePoint::new(b, Axis::Y)];
+        e.label_at = a.midpoint(b);
     }
     for ei in loops {
         let node = &nodes[edges[ei].src];
-        let (x, y, w) = (node.x, node.y, node.w);
+        let (center, w) = (node.center, node.size.w);
         let e = &mut edges[ei];
-        e.label_x = x + w / 2.0 + 28.0 + e.label_w / 2.0;
-        e.label_y = y;
+        e.label_at = Point::new(center.x + w / 2.0 + 28.0 + e.label.w / 2.0, center.y);
     }
 
     total

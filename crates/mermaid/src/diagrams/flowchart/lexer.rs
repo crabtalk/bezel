@@ -1,17 +1,18 @@
-//! Pele's `diagrams/flowchart/lexer.ts`. Positions are byte offsets.
+//! Pele's `diagrams/flowchart/lexer.ts`, and the rules the agentflow lexer
+//! shares with it. Positions are byte offsets.
+
+use std::borrow::Cow;
 
 use super::tokens::T;
 use crate::{
+    diagrams::common::directions::Directions,
     js::Lazy,
-    token::Token,
+    token::{Cursor, Token},
     util::{
-        chars::{code_at, is_space, is_word, width_at},
+        chars::{char_at, digits_end, is_space, is_word, width_at},
         unicode::is_unicode_letter,
     },
 };
-
-const NODE_CHARS: &[u8] =
-    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!\"#$%&'*+.`?\\_/";
 
 static RE_ACC_TITLE: Lazy = Lazy::new(r"accTitle\s*:\s*", "y");
 static RE_ACC_DESCR: Lazy = Lazy::new(r"accDescr\s*:\s*", "y");
@@ -22,14 +23,16 @@ static RE_NODIR: Lazy = Lazy::new(r"(?:\r?\n)*\s*\n", "y");
 static RE_DIR: Lazy = Lazy::new(r"\s*(?:LR|RL|TB|BT|TD|BR)\b", "y");
 static RE_DIR_SYM: Lazy = Lazy::new(r"\s*[<>^]", "y");
 static RE_DIR_V: Lazy = Lazy::new(r"\s*v\b", "y");
-static RE_DIRECTION: [(T, Lazy); 5] = [
+static DIRECTIONS: [(T, Lazy); 5] = [
     (T::DirectionTb, Lazy::new(r".*direction\s+TB[^\n]*", "y")),
     (T::DirectionBt, Lazy::new(r".*direction\s+BT[^\n]*", "y")),
     (T::DirectionRl, Lazy::new(r".*direction\s+RL[^\n]*", "y")),
     (T::DirectionLr, Lazy::new(r".*direction\s+LR[^\n]*", "y")),
     (T::DirectionTd, Lazy::new(r".*direction\s+TD[^\n]*", "y")),
 ];
-static RE_LINE_END: Lazy = Lazy::new(r"[\n\r  ]", "g");
+static RE_EMPTY_CALL: Lazy = Lazy::new(r"\(\s*\)", "y");
+static RE_BR: Lazy = Lazy::new(r"\n\s*", "g");
+
 static RE_LINK: Lazy = Lazy::new(r"\s*[xo<]?--+[-xo>]\s*", "y");
 static RE_START_LINK: Lazy = Lazy::new(r"\s*[xo<]?--\s*", "y");
 static RE_THICK_LINK: Lazy = Lazy::new(r"\s*[xo<]?==+[=xo>]\s*", "y");
@@ -39,11 +42,10 @@ static RE_DOTTED_START: Lazy = Lazy::new(r"\s*[xo<]?-\.\s*", "y");
 static RE_INVIS_LINK: Lazy = Lazy::new(r"\s*~~~+\s*", "y");
 static RE_NEWLINE: Lazy = Lazy::new(r"(?:\r?\n)+", "y");
 static RE_SPACE: Lazy = Lazy::new(r"[^\S\n\r]+", "y");
-static RE_EMPTY_CALL: Lazy = Lazy::new(r"\(\s*\)", "y");
-static RE_BR: Lazy = Lazy::new(r"\n\s*", "g");
 
+/// Jison's start conditions of the flowchart and agentflow lexers.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum S {
+pub(crate) enum S {
     Initial,
     String,
     MdString,
@@ -64,961 +66,895 @@ enum S {
     ShapeDataStr,
 }
 
-struct Lexer<'s> {
-    src: &'s str,
-    n: usize,
-    out: Vec<Token<'s, T>>,
-    stack: Vec<S>,
-    state: S,
-    p: usize,
-    first_graph: bool,
-    dir_next: Option<usize>,
-    at_next: Option<usize>,
-    line_end: Option<usize>,
-    dir_failed: usize,
+impl S {
+    /// The token the condition gives at the end of the input.
+    fn end_token(self) -> Option<T> {
+        match self {
+            Self::Initial => Some(T::Eof),
+            Self::AccTitle => Some(T::AccTitleValue),
+            Self::AccDescr => Some(T::AccDescrValue),
+            Self::AccDescrMultiline => Some(T::AccDescrMultilineValue),
+            Self::Click => Some(T::Click),
+            Self::Callbackname => Some(T::Callbackname),
+            Self::Callbackargs => Some(T::Callbackargs),
+            _ => None,
+        }
+    }
+}
+
+fn is_node_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || "!\"#$%&'*+.`?\\_/".contains(c)
+}
+
+/// The end of the node string at `p`: node characters, and each `-` with a
+/// character after it other than `>`, `-` or `.`.
+fn node_string_end(src: &str, mut p: usize) -> usize {
+    loop {
+        match char_at(src, p) {
+            Some(c) if is_node_char(c) => p += 1,
+            Some('-') if !matches!(char_at(src, p + 1), None | Some('>' | '-' | '.')) => p += 1,
+            _ => return p,
+        }
+    }
+}
+
+/// Where link ids end, found ahead of the cursor.
+struct LinkIds {
+    /// The next `@` at or after the last run measured.
+    next: Option<usize>,
+    /// The end of the last run measured.
     run_end: usize,
+    /// The `@` that ends the last run's link id.
     run_at: Option<usize>,
-    /// The last run of whitespace stepped over, from and to.
+}
+
+impl LinkIds {
+    /// The end of the link id at `p`: the run of characters up to a quote or
+    /// whitespace, through its last `@` with neither `{` nor `"` after it.
+    fn end(&mut self, src: &str, p: usize) -> Option<usize> {
+        let c = char_at(src, p)?;
+        if self.next.is_none() || c == '"' || is_space(c) {
+            return None;
+        }
+        if p >= self.run_end {
+            if self.next.is_some_and(|at| at < p) {
+                self.next = src[p..].find('@').map(|at| p + at);
+            }
+            let end = src[p..]
+                .find(|c: char| c == '"' || is_space(c))
+                .map_or(src.len(), |at| p + at);
+            self.run_end = end;
+            self.run_at = None;
+            if let Some(next) = self.next
+                && next < end
+            {
+                // The last character of the source is never the `@`.
+                let last = end.min(src.len() - 1);
+                let bytes = src.as_bytes();
+                self.run_at = (next..last).rev().find(|&at| {
+                    bytes[at] == b'@' && !matches!(char_at(src, at + 1), Some('{' | '"'))
+                });
+            }
+        }
+        self.run_at.filter(|&at| at > p).map(|at| at + 1)
+    }
+}
+
+/// What both lexers keep: the cursor, and what `INITIAL` looks ahead for.
+pub(crate) struct Core<'s> {
+    pub cur: Cursor<'s, T, S>,
+    /// Whether the diagram keyword has been read.
+    graph_read: bool,
+    directions: Directions<T>,
+    link_ids: LinkIds,
+    /// The last run of whitespace measured, from and to.
     ws: Option<(usize, usize)>,
 }
 
-fn is_node_char(ch: u32) -> bool {
-    ch < 128 && NODE_CHARS.contains(&(ch as u8))
+impl<'s> Core<'s> {
+    pub fn new(src: &'s str) -> Self {
+        Self {
+            cur: Cursor::new(src, S::Initial),
+            graph_read: false,
+            directions: Directions::new(src, &DIRECTIONS),
+            link_ids: LinkIds {
+                next: src.find('@'),
+                run_end: 0,
+                run_at: None,
+            },
+            ws: None,
+        }
+    }
+
+    /// The end of the run of whitespace at `q`.
+    pub fn space_end(&mut self, q: usize) -> usize {
+        if let Some((from, to)) = self.ws
+            && (from..=to).contains(&q)
+        {
+            return to;
+        }
+        let end = self.cur.space_end(q);
+        self.ws = Some((q, end));
+        end
+    }
 }
 
-impl<'s> Lexer<'s> {
-    fn code(&self, at: usize) -> u32 {
-        code_at(self.src, at)
+/// A lexer of the flowchart family: how it places its tokens, and the
+/// rules where the grammars differ. The rest is read alike.
+pub(crate) trait Lex<'s> {
+    /// Whether `%%` starts a comment, and `%` ends a run of text.
+    const COMMENTS: bool;
+
+    fn core(&self) -> &Core<'s>;
+    fn core_mut(&mut self) -> &mut Core<'s>;
+    /// A token from the cursor to `end`.
+    fn emit(&mut self, kind: T, end: usize);
+    /// [`Lex::emit`], for a token with no line break.
+    fn emit_flat(&mut self, kind: T, end: usize) {
+        self.emit(kind, end);
+    }
+    /// [`Lex::emit`], for a run Jison matches a character at a time.
+    fn emit_chars(&mut self, kind: T, end: usize) {
+        self.emit(kind, end);
+    }
+    /// A token at the cursor whose text is `text`; reading goes on from
+    /// `end`.
+    fn emit_text(&mut self, kind: T, text: Cow<'s, str>, end: usize);
+    /// Moves the cursor to `end` with no token.
+    fn skip(&mut self, end: usize);
+    /// The empty token of `kind` at `at` that ends the token list.
+    fn close(&mut self, kind: T, at: usize);
+    /// The end of an invisible link at `q`.
+    fn invis_link_end(&mut self, _q: usize) -> Option<usize> {
+        None
+    }
+    /// The end of a comment at `q`.
+    fn comment_end(&self, _q: usize) -> Option<usize> {
+        None
+    }
+    /// Reads one token in `INITIAL` or a condition only this lexer has.
+    fn own(&mut self) -> bool;
+
+    fn p(&self) -> usize {
+        self.core().cur.p
     }
 
-    fn emit(&mut self, kind: T, s: usize, e: usize) {
-        self.out.push(Token::new(kind, &self.src[s..e], s));
-        self.p = e;
+    fn src(&self) -> &'s str {
+        self.core().cur.src
     }
 
-    fn push(&mut self, s: S) {
-        self.stack.push(self.state);
-        self.state = s;
+    fn at(&self, q: usize) -> Option<char> {
+        self.core().cur.char_at(q)
+    }
+
+    fn word(&self, word: &str) -> bool {
+        self.core().cur.keyword(word)
+    }
+
+    fn push(&mut self, state: S) {
+        self.core_mut().cur.push(state);
     }
 
     fn pop(&mut self) {
-        if let Some(s) = self.stack.pop() {
-            self.state = s;
-        }
+        self.core_mut().cur.pop();
     }
 
-    fn at(&self, re: &Lazy, q: usize) -> Option<usize> {
-        re.match_end(self.src, q)
-    }
-
-    fn kw(&self, word: &str) -> bool {
-        self.src[self.p..].starts_with(word) && !is_word(self.code(self.p + word.len()))
-    }
-
-    /// The first character after any run of whitespace starting at `q`.
-    fn skip_ws(&mut self, q: usize) -> usize {
-        let mut j = q;
-        match self.ws {
-            Some((from, to)) if q >= from && q <= to => j = to,
-            _ => {
-                if is_space(self.code(q)) {
-                    while j < self.n && is_space(self.code(j)) {
-                        j += width_at(self.src, j);
-                    }
-                    self.ws = Some((q, j));
-                }
-            }
-        }
-        j
-    }
-
-    /// First character after any run of whitespace starting at `q`,
-    /// skipping one optional x, o or <.
-    fn link_char(&mut self, q: usize) -> u32 {
-        let j = self.skip_ws(q);
-        let d = self.code(j);
-        if d == 120 || d == 111 || d == 60 {
-            self.code(j + 1)
-        } else {
-            d
-        }
-    }
-
-    fn invis_ahead(&mut self, q: usize) -> bool {
-        let j = self.skip_ws(q);
-        self.code(j) == 126
-    }
-
+    /// A `"`, or `` "` `` opening a markdown string.
     fn quote(&mut self) {
-        if self.code(self.p + 1) == 96 {
+        let p = self.p();
+        if self.at(p + 1) == Some('`') {
             self.push(S::MdString);
-            self.p += 2;
+            self.skip(p + 2);
         } else {
             self.push(S::String);
-            self.p += 1;
+            self.skip(p + 1);
         }
     }
 
-    fn invis_link(&mut self) -> bool {
-        if !self.invis_ahead(self.p) {
-            return false;
-        }
-        let Some(e) = self.at(&RE_INVIS_LINK, self.p) else {
-            return false;
+    /// A shape's opening bracket.
+    fn opener(&mut self) -> bool {
+        let p = self.p();
+        let next = self.at(p + 1);
+        let (state, kind, len) = match self.at(p) {
+            Some('(') => match next {
+                Some('-') => (S::EllipseText, T::EllipseStart, 2),
+                Some('[') => (S::Text, T::Stadiumstart, 2),
+                Some('(') if self.at(p + 2) == Some('(') => (S::Text, T::Doublecirclestart, 3),
+                _ => (S::Text, T::Ps, 1),
+            },
+            Some('[') => match next {
+                Some('[') => (S::Text, T::Subroutinestart, 2),
+                Some('(') => (S::Text, T::Cylinderstart, 2),
+                Some('/') => (S::TrapText, T::Trapstart, 2),
+                Some('\\') => (S::TrapText, T::Invtrapstart, 2),
+                _ => (S::Text, T::Sqs, 1),
+            },
+            Some('|') => (S::Text, T::Pipe, 1),
+            Some('{') => (S::Text, T::DiamondStart, 1),
+            _ => return false,
         };
-        self.emit(T::Link, self.p, e);
+        self.push(state);
+        self.emit_flat(kind, p + len);
         true
-    }
-
-    fn opener(&mut self, c: u32) -> bool {
-        let p = self.p;
-        let d = self.code(p + 1);
-        if c == 40 {
-            if d == 45 {
-                self.push(S::EllipseText);
-                self.emit(T::EllipseStart, p, p + 2);
-            } else if d == 91 {
-                self.push(S::Text);
-                self.emit(T::Stadiumstart, p, p + 2);
-            } else if d == 40 && self.code(p + 2) == 40 {
-                self.push(S::Text);
-                self.emit(T::Doublecirclestart, p, p + 3);
-            } else {
-                self.push(S::Text);
-                self.emit(T::Ps, p, p + 1);
-            }
-            return true;
-        }
-        if c == 91 {
-            if d == 91 {
-                self.push(S::Text);
-                self.emit(T::Subroutinestart, p, p + 2);
-            } else if d == 40 {
-                self.push(S::Text);
-                self.emit(T::Cylinderstart, p, p + 2);
-            } else if d == 47 {
-                self.push(S::TrapText);
-                self.emit(T::Trapstart, p, p + 2);
-            } else if d == 92 {
-                self.push(S::TrapText);
-                self.emit(T::Invtrapstart, p, p + 2);
-            } else {
-                self.push(S::Text);
-                self.emit(T::Sqs, p, p + 1);
-            }
-            return true;
-        }
-        if c == 124 {
-            self.push(S::Text);
-            self.emit(T::Pipe, p, p + 1);
-            return true;
-        }
-        if c == 123 {
-            self.push(S::Text);
-            self.emit(T::DiamondStart, p, p + 1);
-            return true;
-        }
-        false
-    }
-
-    fn graph(&mut self, len: usize) {
-        if self.first_graph {
-            self.first_graph = false;
-            self.push(S::Dir);
-        }
-        self.emit(T::Graph, self.p, self.p + len);
     }
 
     fn node_string(&mut self) -> bool {
-        let p = self.p;
-        let mut q = p;
-        while q < self.n {
-            let ch = self.code(q);
-            if is_node_char(ch) {
-                q += 1;
-            } else if ch == 45 && q + 1 < self.n {
-                let d = self.code(q + 1);
-                if d == 62 || d == 45 || d == 46 {
-                    break;
-                }
-                q += 1;
-            } else {
-                break;
-            }
-        }
-        if q == p {
+        let p = self.p();
+        let end = node_string_end(self.src(), p);
+        if end == p {
             return false;
         }
-        self.emit(T::NodeString, p, q);
+        self.emit_flat(T::NodeString, end);
         true
     }
 
-    fn link(&mut self, c: u32) -> bool {
-        let p = self.p;
-        let d = self.link_char(p);
-        if d == 45 {
-            if let Some(e) = self.at(&RE_LINK, p) {
-                self.emit(T::Link, p, e);
-                return true;
-            }
-            if let Some(e) = self.at(&RE_START_LINK, p) {
-                self.push(S::EdgeText);
-                self.emit(T::StartLink, p, e);
-                return true;
-            }
-            if let Some(e) = self.at(&RE_DOTTED_LINK, p) {
-                self.emit(T::Link, p, e);
-                return true;
-            }
-            if let Some(e) = self.at(&RE_DOTTED_START, p) {
-                self.push(S::DottedEdgeText);
-                self.emit(T::StartLink, p, e);
-                return true;
-            }
-        } else if d == 61 {
-            if let Some(e) = self.at(&RE_THICK_LINK, p) {
-                self.emit(T::Link, p, e);
-                return true;
-            }
-            if let Some(e) = self.at(&RE_THICK_START, p) {
-                self.push(S::ThickEdgeText);
-                self.emit(T::StartLink, p, e);
-                return true;
-            }
-        } else if d == 46
-            && let Some(e) = self.at(&RE_DOTTED_LINK, p)
-        {
-            self.emit(T::Link, p, e);
-            return true;
-        }
-        c != 45 && c != 61 && c != 46 && self.invis_link()
+    fn invis_link(&mut self) -> bool {
+        let Some(end) = self.invis_link_end(self.p()) else {
+            return false;
+        };
+        self.emit(T::Link, end);
+        true
     }
 
-    fn initial(&mut self, c: u32) -> bool {
-        let p = self.p;
-        let src = self.src;
-        let n = self.n;
-        match c {
-            97 => {
-                if src[p..].starts_with("acc") {
-                    if let Some(e) = self.at(&RE_ACC_TITLE, p) {
-                        self.push(S::AccTitle);
-                        self.emit(T::AccTitle, p, e);
-                        return true;
-                    }
-                    if let Some(e) = self.at(&RE_ACC_DESCR, p) {
-                        self.push(S::AccDescr);
-                        self.emit(T::AccDescr, p, e);
-                        return true;
-                    }
-                    if let Some(e) = self.at(&RE_ACC_DESCR_ML, p) {
-                        self.push(S::AccDescrMultiline);
-                        self.p = e;
-                        return true;
-                    }
+    /// A comment, skipped.
+    fn comment(&mut self) -> bool {
+        let Some(end) = self.comment_end(self.p()) else {
+            return false;
+        };
+        self.skip(end);
+        true
+    }
+
+    /// The diagram keyword, through `end`. The first one opens `DIR`.
+    fn graph(&mut self, end: usize) {
+        if !self.core().graph_read {
+            self.core_mut().graph_read = true;
+            self.push(S::Dir);
+        }
+        self.emit_flat(T::Graph, end);
+    }
+
+    /// A keyword or statement start both grammars have.
+    fn keyword(&mut self) -> bool {
+        let p = self.p();
+        let src = self.src();
+        match self.at(p) {
+            Some('a') if src[p..].starts_with("acc") => {
+                if let Some(end) = RE_ACC_TITLE.match_end(src, p) {
+                    self.push(S::AccTitle);
+                    self.emit(T::AccTitle, end);
+                    return true;
                 }
-            }
-            64 => {
-                if self.code(p + 1) == 123 {
-                    self.push(S::ShapeData);
-                    self.out.push(Token::new(T::ShapeData, "", p));
-                    self.p += 2;
+                if let Some(end) = RE_ACC_DESCR.match_end(src, p) {
+                    self.push(S::AccDescr);
+                    self.emit(T::AccDescr, end);
+                    return true;
+                }
+                if let Some(end) = RE_ACC_DESCR_ML.match_end(src, p) {
+                    self.push(S::AccDescrMultiline);
+                    self.skip(end);
                     return true;
                 }
             }
-            99 => {
-                if let Some(e) = self.at(&RE_CALL, p) {
+            Some('@') if self.at(p + 1) == Some('{') => {
+                self.push(S::ShapeData);
+                self.emit_text(T::ShapeData, "".into(), p + 2);
+                return true;
+            }
+            Some('c') => {
+                if let Some(end) = RE_CALL.match_end(src, p) {
                     self.push(S::Callbackname);
-                    self.p = e;
+                    self.skip(end);
                     return true;
                 }
-                if self.kw("classDef") {
-                    self.emit(T::Classdef, p, p + 8);
+                if self.word("classDef") {
+                    self.emit_flat(T::Classdef, p + 8);
                     return true;
                 }
-                if self.kw("class") {
-                    self.emit(T::Class, p, p + 5);
+                if self.word("class") {
+                    self.emit_flat(T::Class, p + 5);
                     return true;
                 }
-                if let Some(e) = self.at(&RE_CLICK, p) {
+                if let Some(end) = RE_CLICK.match_end(src, p) {
                     self.push(S::Click);
-                    self.p = e;
+                    self.skip(end);
                     return true;
                 }
             }
-            34 => {
+            Some('"') => {
                 self.quote();
                 return true;
             }
-            115 => {
-                if self.kw("style") {
-                    self.emit(T::Style, p, p + 5);
-                    return true;
-                }
-                if self.kw("swimlane-beta") {
-                    self.graph(13);
-                    return true;
-                }
-                if self.kw("subgraph") {
-                    self.emit(T::Subgraph, p, p + 8);
-                    return true;
-                }
-            }
-            100 => {
-                if self.kw("default") {
-                    self.emit(T::Default, p, p + 7);
-                    return true;
-                }
-            }
-            108 => {
-                if self.kw("linkStyle") {
-                    self.emit(T::Linkstyle, p, p + 9);
-                    return true;
-                }
-            }
-            105 => {
-                if self.kw("interpolate") {
-                    self.emit(T::Interpolate, p, p + 11);
-                    return true;
-                }
-            }
-            104 => {
-                if src[p..].starts_with("href") && is_space(self.code(p + 4)) {
-                    self.emit(T::Href, p, p + 4 + width_at(src, p + 4));
-                    return true;
-                }
-            }
-            102 => {
-                if self.kw("flowchart-elk") {
-                    self.graph(13);
-                    return true;
-                }
-                if self.kw("flowchart") {
-                    self.graph(9);
-                    return true;
-                }
-            }
-            103 => {
-                if self.kw("graph") {
-                    self.graph(5);
-                    return true;
-                }
-            }
-            101 => {
-                if self.kw("end") {
-                    let mut e = p + 3;
-                    while e < n && is_space(self.code(e)) {
-                        e += width_at(src, e);
-                    }
-                    self.emit(T::EndKw, p, e);
-                    return true;
-                }
-            }
-            95 => {
-                for (word, len) in [("_self", 5), ("_blank", 6), ("_parent", 7), ("_top", 4)] {
-                    if self.kw(word) {
-                        self.emit(T::LinkTarget, p, p + len);
-                        return true;
-                    }
-                }
+            Some('h') if src[p..].starts_with("href") && self.at(p + 4).is_some_and(is_space) => {
+                self.emit(T::Href, p + 4 + width_at(src, p + 4));
+                return true;
             }
             _ => {}
         }
-
-        if let Some(mut dir_next) = self.dir_next
-            && p >= self.dir_failed
-        {
-            if dir_next < p {
-                self.dir_next = src[p..].find("direction").map(|at| at + p);
-            }
-            if let Some(next) = self.dir_next {
-                dir_next = next;
-                if self.line_end.is_none_or(|end| end < p) {
-                    self.line_end = Some(RE_LINE_END.exec_at(src, p).map_or(n, |m| m.start()));
-                }
-                let line_end = self.line_end.unwrap_or(n);
-                if dir_next < line_end {
-                    for (kind, re) in &RE_DIRECTION {
-                        if let Some(e) = self.at(re, p) {
-                            self.emit(*kind, p, e);
-                            return true;
-                        }
-                    }
-                    // No direction statement starts anywhere in the rest of
-                    // this line either.
-                    self.dir_failed = line_end;
-                }
-            }
-        }
-
-        // A link id is a run of non-space characters up to its last `@` that
-        // is not followed by `{` or `"`.
-        if self.at_next.is_some() && c != 34 && !is_space(c) {
-            if p >= self.run_end {
-                if self.at_next.is_some_and(|at| at < p) {
-                    self.at_next = src[p..].find('@').map(|at| at + p);
-                }
-                let mut q = p;
-                while q < n {
-                    let ch = self.code(q);
-                    if ch == 34 || is_space(ch) {
-                        break;
-                    }
-                    q += 1;
-                }
-                self.run_end = q;
-                self.run_at = None;
-                if let Some(at_next) = self.at_next
-                    && at_next < q
-                {
-                    let bytes = src.as_bytes();
-                    let mut k = q.min(n - 1) as isize - 1;
-                    while k >= at_next as isize {
-                        let at = k as usize;
-                        if bytes[at] == b'@' {
-                            let after = self.code(at + 1);
-                            if after != 123 && after != 34 {
-                                self.run_at = Some(at);
-                                break;
-                            }
-                        }
-                        k -= 1;
-                    }
-                }
-            }
-            if let Some(run_at) = self.run_at
-                && run_at > p
-            {
-                self.emit(T::LinkId, p, run_at + 1);
+        let words = [
+            ("style", T::Style),
+            ("default", T::Default),
+            ("linkStyle", T::Linkstyle),
+            ("interpolate", T::Interpolate),
+            ("_self", T::LinkTarget),
+            ("_blank", T::LinkTarget),
+            ("_parent", T::LinkTarget),
+            ("_top", T::LinkTarget),
+        ];
+        for (word, kind) in words {
+            if self.word(word) {
+                self.emit_flat(kind, p + word.len());
                 return true;
             }
-        }
-
-        if (48..=57).contains(&c) {
-            let mut q = p + 1;
-            while q < n {
-                let ch = self.code(q);
-                if !(48..=57).contains(&ch) {
-                    break;
-                }
-                q += 1;
-            }
-            self.emit(T::Num, p, q);
-            return true;
-        }
-
-        match c {
-            35 => {
-                self.emit(T::Brkt, p, p + 1);
-                return true;
-            }
-            58 => {
-                if self.code(p + 1) == 58 && self.code(p + 2) == 58 {
-                    self.emit(T::StyleSeparator, p, p + 3);
-                } else {
-                    self.emit(T::Colon, p, p + 1);
-                }
-                return true;
-            }
-            38 => {
-                self.emit(T::Amp, p, p + 1);
-                return true;
-            }
-            59 => {
-                self.emit(T::Semi, p, p + 1);
-                return true;
-            }
-            44 => {
-                self.emit(T::Comma, p, p + 1);
-                return true;
-            }
-            42 => {
-                self.emit(T::Mult, p, p + 1);
-                return true;
-            }
-            120 | 111 => return self.link(c) || self.node_string(),
-            60 => {
-                if self.link(c) {
-                    return true;
-                }
-                self.emit(T::Tagstart, p, p + 1);
-                return true;
-            }
-            45 => {
-                if self.link(c) || self.node_string() {
-                    return true;
-                }
-                self.emit(T::Minus, p, p + 1);
-                return true;
-            }
-            61 => return self.link(c),
-            46 => return self.link(c) || self.node_string(),
-            126 => return self.invis_link(),
-            40 => return self.opener(c),
-            91 => {
-                if self.code(p + 1) == 124 {
-                    self.emit(T::VertexWithPropsStart, p, p + 2);
-                    return true;
-                }
-                return self.opener(c);
-            }
-            124 | 123 => return self.opener(c),
-            62 => {
-                self.push(S::Text);
-                self.emit(T::Tagend, p, p + 1);
-                return true;
-            }
-            94 => {
-                self.emit(T::Up, p, p + 1);
-                return true;
-            }
-            92 => {
-                if self.code(p + 1) == 124 {
-                    self.emit(T::Sep, p, p + 2);
-                    return true;
-                }
-                return self.node_string();
-            }
-            118 => {
-                if !is_word(self.code(p + 1)) {
-                    self.emit(T::Down, p, p + 1);
-                    return true;
-                }
-                return self.node_string();
-            }
-            _ => {}
-        }
-
-        if is_space(c) {
-            if self.link(c) {
-                return true;
-            }
-            if let Some(e) = self.at(&RE_NEWLINE, p) {
-                self.emit(T::Newline, p, e);
-                return true;
-            }
-            if let Some(e) = self.at(&RE_SPACE, p) {
-                self.emit(T::Space, p, e);
-                return true;
-            }
-            return false;
-        }
-
-        if c < 128 {
-            return self.node_string();
-        }
-        if is_unicode_letter(c) {
-            self.emit(T::UnicodeText, p, p + width_at(src, p));
-            return true;
         }
         false
     }
 
-    /// `b` is a second character that may start the closing link.
-    fn edge_text(&mut self, c: u32, link_re: &Lazy, a: u32, b: Option<u32>) -> bool {
-        if c == 34 {
-            self.quote();
-            return true;
-        }
-        let p = self.p;
-        let d = self.link_char(p);
-        if (d == a || Some(d) == b)
-            && let Some(e) = self.at(link_re, p)
-        {
-            self.pop();
-            self.emit(T::Link, p, e);
-            return true;
-        }
-        if c == a && (a != 45 || self.code(p + 1) == 45) {
+    fn direction(&mut self) -> bool {
+        let (p, src) = (self.p(), self.src());
+        let Some((kind, end)) = self.core_mut().directions.at(src, p) else {
             return false;
-        }
-        let mut q = p + width_at(self.src, p);
-        while q < self.n {
-            let ch = self.code(q);
-            if ch == 34 {
-                break;
-            }
-            if ch == a {
-                if a != 45 || self.code(q + 1) == 45 {
-                    break;
-                }
-            } else if ch == 120 || ch == 111 || ch == 60 || Some(ch) == b || is_space(ch) {
-                let dd = self.link_char(q);
-                if (dd == a || Some(dd) == b) && self.at(link_re, q).is_some() {
-                    break;
-                }
-            }
-            q += 1;
-        }
-        self.emit(T::EdgeText, p, q);
+        };
+        self.emit(kind, end);
         true
     }
 
-    fn run(mut self) -> Vec<Token<'s, T>> {
-        loop {
-            let p = self.p;
-            let n = self.n;
-            if p >= n {
-                let kind = match self.state {
-                    S::Initial => Some(T::Eof),
-                    S::AccTitle => Some(T::AccTitleValue),
-                    S::AccDescr => Some(T::AccDescrValue),
-                    S::AccDescrMultiline => Some(T::AccDescrMultilineValue),
-                    S::Click => Some(T::Click),
-                    S::Callbackname => Some(T::Callbackname),
-                    S::Callbackargs => Some(T::Callbackargs),
-                    _ => None,
-                };
-                if let Some(kind) = kind {
-                    self.emit(kind, n, n);
+    fn link_id(&mut self) -> bool {
+        let (p, src) = (self.p(), self.src());
+        let Some(end) = self.core_mut().link_ids.end(src, p) else {
+            return false;
+        };
+        self.emit_flat(T::LinkId, end);
+        true
+    }
+
+    fn number(&mut self) -> bool {
+        let p = self.p();
+        if !self.at(p).is_some_and(|c| c.is_ascii_digit()) {
+            return false;
+        }
+        self.emit_flat(T::Num, digits_end(self.src(), p));
+        true
+    }
+
+    /// Punctuation, and the characters that open shapes; `None` at any
+    /// other character.
+    fn symbol(&mut self) -> Option<bool> {
+        let p = self.p();
+        let next = self.at(p + 1);
+        let (kind, len) = match self.at(p)? {
+            '#' => (T::Brkt, 1),
+            ':' if next == Some(':') && self.at(p + 2) == Some(':') => (T::StyleSeparator, 3),
+            ':' => (T::Colon, 1),
+            '&' => (T::Amp, 1),
+            ';' => (T::Semi, 1),
+            ',' => (T::Comma, 1),
+            '*' => (T::Mult, 1),
+            '[' if next == Some('|') => (T::VertexWithPropsStart, 2),
+            '(' | '[' | '|' | '{' => return Some(self.opener()),
+            '>' => {
+                self.push(S::Text);
+                (T::Tagend, 1)
+            }
+            '^' => (T::Up, 1),
+            '\\' if next == Some('|') => (T::Sep, 2),
+            'v' if !next.is_some_and(is_word) => (T::Down, 1),
+            '\\' | 'v' => return Some(self.node_string()),
+            _ => return None,
+        };
+        self.emit_flat(kind, p + len);
+        Some(true)
+    }
+
+    /// A node string, or a letter outside ASCII.
+    fn text_char(&mut self) -> bool {
+        let p = self.p();
+        match self.at(p) {
+            Some(c) if c.is_ascii() => self.node_string(),
+            Some(c) if is_unicode_letter(u32::from(c)) => {
+                self.emit_flat(T::UnicodeText, p + c.len_utf8());
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn dir(&mut self) -> bool {
+        let (p, src) = (self.p(), self.src());
+        if self.at(p) == Some('"') {
+            self.quote();
+            return true;
+        }
+        if let Some(end) = RE_NODIR.match_end(src, p) {
+            self.pop();
+            self.emit(T::Nodir, end);
+            return true;
+        }
+        if let Some(end) = RE_DIR
+            .match_end(src, p)
+            .or_else(|| RE_DIR_SYM.match_end(src, p))
+            .or_else(|| RE_DIR_V.match_end(src, p))
+        {
+            self.pop();
+            self.emit(T::Dir, end);
+            return true;
+        }
+        self.invis_link() || self.opener()
+    }
+
+    /// The label inside most shapes.
+    fn text(&mut self) -> bool {
+        let (p, src) = (self.p(), self.src());
+        let next = self.at(p + 1);
+        let (kind, len) = match self.at(p) {
+            Some('"') => {
+                self.quote();
+                return true;
+            }
+            Some('(' | '[' | '{') => return self.opener(),
+            Some(']') => match next {
+                Some(')') => (T::Stadiumend, 2),
+                Some(']') => (T::Subroutineend, 2),
+                _ => (T::Sqe, 1),
+            },
+            Some(')') => match next {
+                Some(']') => (T::Cylinderend, 2),
+                Some(')') if self.at(p + 2) == Some(')') => (T::Doublecircleend, 3),
+                _ => (T::Pe, 1),
+            },
+            Some('|') => (T::Pipe, 1),
+            Some('}') => (T::DiamondStop, 1),
+            // Jison drops the lone `%` from Mermaid's text pattern, so only
+            // a comment may start with one.
+            Some('%') if Self::COMMENTS => return self.comment(),
+            c => {
+                if c.is_some_and(|c| c == '~' || is_space(c)) && self.invis_link() {
+                    return true;
                 }
+                let end = self.core().cur.until(p + width_at(src, p), |c| {
+                    matches!(c, '[' | ']' | '(' | ')' | '{' | '}' | '|' | '"')
+                        || (Self::COMMENTS && c == '%')
+                });
+                self.emit(T::Text, end);
+                return true;
+            }
+        };
+        self.pop();
+        self.emit_flat(kind, p + len);
+        true
+    }
+
+    /// The label of an ellipse, `(-` to `-)`.
+    fn ellipse_text(&mut self) -> bool {
+        let (p, src) = (self.p(), self.src());
+        let c = self.at(p);
+        if c == Some('"') {
+            self.quote();
+            return true;
+        }
+        if c.is_some_and(|c| c == '~' || is_space(c)) && self.invis_link() {
+            return true;
+        }
+        if c == Some('%')
+            && let Some(end) = self.comment_end(p)
+        {
+            self.skip(end);
+            return true;
+        }
+        if matches!(c, Some('-' | '/' | ')')) && self.at(p + 1) == Some(')') {
+            self.pop();
+            self.emit_flat(T::EllipseEnd, p + 2);
+            return true;
+        }
+        match c {
+            Some('(' | '[' | '{') => return self.opener(),
+            Some(')' | ']' | '}') => return false,
+            _ => {}
+        }
+        let mut q = p + width_at(src, p);
+        while let Some(ch) = self.at(q) {
+            if matches!(ch, '"' | '(' | ')' | '[' | ']' | '{' | '}')
+                || (matches!(ch, '-' | '/') && self.at(q + 1) == Some(')'))
+                || (ch == '%' && self.comment_end(q).is_some())
+                || ((ch == '~' || is_space(ch)) && self.invis_link_end(q).is_some())
+            {
                 break;
             }
+            q += ch.len_utf8();
+        }
+        self.emit_chars(T::Text, q);
+        true
+    }
 
-            let src = self.src;
-            let c = self.code(p);
-            let mut ok = true;
+    /// The label of a trapezoid or a slanted shape.
+    fn trap_text(&mut self) -> bool {
+        let (p, src) = (self.p(), self.src());
+        let c = self.at(p);
+        let next = self.at(p + 1);
+        if c == Some('"') {
+            self.quote();
+            return true;
+        }
+        if c.is_some_and(|c| c == '~' || is_space(c)) && self.invis_link() {
+            return true;
+        }
+        let (kind, len) = match c {
+            Some('(') if next == Some(']') => (T::Trapend, 2),
+            Some('(' | '[' | '{') => return self.opener(),
+            Some('\\' | ']' | ')' | '?' | '=') if next == Some(']') => (T::Trapend, 2),
+            Some('/') if next == Some(']') => (T::Invtrapend, 2),
+            Some('\\' | '/') => {
+                self.emit_flat(T::Text, p + 1);
+                return true;
+            }
+            Some(']' | ')' | '}') => return false,
+            Some('%') if Self::COMMENTS => return self.comment(),
+            _ => {
+                let end = self.core().cur.until(p + width_at(src, p), |c| {
+                    matches!(c, '\\' | '[' | ']' | '(' | ')' | '{' | '}' | '/')
+                        || (Self::COMMENTS && c == '%')
+                });
+                self.emit(T::Text, end);
+                return true;
+            }
+        };
+        self.pop();
+        self.emit_flat(kind, p + len);
+        true
+    }
 
-            match self.state {
-                S::Initial => ok = self.initial(c),
-
-                S::String => {
-                    if c == 34 {
-                        if self.code(p + 1) == 96 {
-                            self.push(S::MdString);
-                            self.p += 2;
-                        } else {
-                            self.pop();
-                            self.p += 1;
-                        }
-                    } else {
-                        let e = src[p..].find('"').map_or(n, |at| at + p);
-                        self.emit(T::Str, p, e);
-                    }
+    /// Reads one token; false where none matches.
+    fn step(&mut self) -> bool {
+        let (p, src) = (self.p(), self.src());
+        let c = self.at(p);
+        let cur = &self.core().cur;
+        let rest_from = p + width_at(src, p);
+        match cur.state {
+            S::String => match c {
+                Some('"') if self.at(p + 1) == Some('`') => {
+                    self.push(S::MdString);
+                    self.skip(p + 2);
                 }
-
-                S::MdString => {
-                    if c == 96 {
-                        if self.code(p + 1) == 34 {
-                            self.pop();
-                            self.p += 2;
-                        } else {
-                            ok = false;
-                        }
-                    } else if c == 34 {
-                        self.quote();
-                    } else {
-                        let mut q = p + width_at(src, p);
-                        while q < n {
-                            let ch = self.code(q);
-                            if ch == 96 || ch == 34 {
-                                break;
-                            }
-                            q += 1;
-                        }
-                        self.emit(T::MdStr, p, q);
-                    }
-                }
-
-                S::AccTitle | S::AccDescr => {
-                    let e = src[p..].find('\n').map_or(n, |at| at + p);
-                    let kind = if self.state == S::AccTitle {
-                        T::AccTitleValue
-                    } else {
-                        T::AccDescrValue
-                    };
+                Some('"') => {
                     self.pop();
-                    self.emit(kind, p, e);
+                    self.skip(p + 1);
                 }
-
-                S::AccDescrMultiline => {
-                    if c == 125 {
-                        self.pop();
-                        self.p += 1;
-                    } else {
-                        let e = src[p..].find('}').map_or(n, |at| at + p);
-                        self.emit(T::AccDescrMultilineValue, p, e);
-                    }
+                _ => {
+                    let end = cur.until(p, |c| c == '"');
+                    self.emit(T::Str, end);
                 }
-
-                S::Dir => {
-                    if c == 34 {
-                        self.quote();
-                    } else if let Some(e) = self.at(&RE_NODIR, p) {
-                        self.pop();
-                        self.emit(T::Nodir, p, e);
-                    } else if let Some(e) = self
-                        .at(&RE_DIR, p)
-                        .or_else(|| self.at(&RE_DIR_SYM, p))
-                        .or_else(|| self.at(&RE_DIR_V, p))
-                    {
-                        self.pop();
-                        self.emit(T::Dir, p, e);
-                    } else {
-                        ok = self.invis_link() || self.opener(c);
-                    }
+            },
+            S::MdString => match c {
+                Some('`') if self.at(p + 1) == Some('"') => {
+                    self.pop();
+                    self.skip(p + 2);
                 }
-
-                S::Text => {
-                    let d = self.code(p + 1);
-                    match c {
-                        34 => self.quote(),
-                        40 | 91 | 123 => {
-                            self.opener(c);
-                        }
-                        93 => {
-                            self.pop();
-                            if d == 41 {
-                                self.emit(T::Stadiumend, p, p + 2);
-                            } else if d == 93 {
-                                self.emit(T::Subroutineend, p, p + 2);
-                            } else {
-                                self.emit(T::Sqe, p, p + 1);
-                            }
-                        }
-                        41 => {
-                            self.pop();
-                            if d == 93 {
-                                self.emit(T::Cylinderend, p, p + 2);
-                            } else if d == 41 && self.code(p + 2) == 41 {
-                                self.emit(T::Doublecircleend, p, p + 3);
-                            } else {
-                                self.emit(T::Pe, p, p + 1);
-                            }
-                        }
-                        124 => {
-                            self.pop();
-                            self.emit(T::Pipe, p, p + 1);
-                        }
-                        125 => {
-                            self.pop();
-                            self.emit(T::DiamondStop, p, p + 1);
-                        }
-                        _ => {
-                            if !((c == 126 || is_space(c)) && self.invis_link()) {
-                                let mut q = p + width_at(src, p);
-                                while q < n {
-                                    let ch = self.code(q);
-                                    if matches!(ch, 91 | 93 | 40 | 41 | 123 | 125 | 124 | 34) {
-                                        break;
-                                    }
-                                    q += 1;
-                                }
-                                self.emit(T::Text, p, q);
-                            }
-                        }
-                    }
+                Some('`') => return false,
+                Some('"') => self.quote(),
+                _ => {
+                    let end = cur.until(rest_from, |c| c == '`' || c == '"');
+                    self.emit(T::MdStr, end);
                 }
-
-                S::EllipseText => {
-                    let d = self.code(p + 1);
-                    if c == 34 {
-                        self.quote();
-                    } else if (c == 126 || is_space(c)) && self.invis_link() {
-                    } else if (c == 45 || c == 47 || c == 41) && d == 41 {
-                        self.pop();
-                        self.emit(T::EllipseEnd, p, p + 2);
-                    } else if c == 40 || c == 91 || c == 123 {
-                        self.opener(c);
-                    } else if c == 41 || c == 93 || c == 125 {
-                        ok = false;
-                    } else {
-                        let mut q = p + width_at(src, p);
-                        while q < n {
-                            let ch = self.code(q);
-                            if matches!(ch, 34 | 40 | 41 | 91 | 93 | 123 | 125) {
-                                break;
-                            }
-                            if (ch == 45 || ch == 47) && self.code(q + 1) == 41 {
-                                break;
-                            }
-                            if (ch == 126 || is_space(ch))
-                                && self.invis_ahead(q)
-                                && self.at(&RE_INVIS_LINK, q).is_some()
-                            {
-                                break;
-                            }
-                            q += 1;
-                        }
-                        self.emit(T::Text, p, q);
-                    }
-                }
-
-                S::TrapText => 'trap: {
-                    let d = self.code(p + 1);
-                    if c == 34 {
-                        self.quote();
-                        break 'trap;
-                    }
-                    if (c == 126 || is_space(c)) && self.invis_link() {
-                        break 'trap;
-                    }
-                    match c {
-                        40 => {
-                            if d == 45 || d == 91 || (d == 40 && self.code(p + 2) == 40) {
-                                self.opener(c);
-                            } else if d == 93 {
-                                self.pop();
-                                self.emit(T::Trapend, p, p + 2);
-                            } else {
-                                self.opener(c);
-                            }
-                        }
-                        91 | 123 => {
-                            self.opener(c);
-                        }
-                        92 => {
-                            if d == 93 {
-                                self.pop();
-                                self.emit(T::Trapend, p, p + 2);
-                            } else {
-                                self.emit(T::Text, p, p + 1);
-                            }
-                        }
-                        47 => {
-                            if d == 93 {
-                                self.pop();
-                                self.emit(T::Invtrapend, p, p + 2);
-                            } else {
-                                self.emit(T::Text, p, p + 1);
-                            }
-                        }
-                        93 | 41 => {
-                            if d == 93 {
-                                self.pop();
-                                self.emit(T::Trapend, p, p + 2);
-                            } else {
-                                ok = false;
-                            }
-                        }
-                        125 => ok = false,
-                        _ => {
-                            if (c == 63 || c == 61) && d == 93 {
-                                self.pop();
-                                self.emit(T::Trapend, p, p + 2);
-                                break 'trap;
-                            }
-                            let mut q = p + width_at(src, p);
-                            while q < n {
-                                let ch = self.code(q);
-                                if matches!(ch, 92 | 91 | 93 | 40 | 41 | 123 | 125 | 47) {
-                                    break;
-                                }
-                                q += 1;
-                            }
-                            self.emit(T::Text, p, q);
-                        }
-                    }
-                }
-
-                S::EdgeText => ok = self.edge_text(c, &RE_LINK, 45, None),
-                S::ThickEdgeText => ok = self.edge_text(c, &RE_THICK_LINK, 61, None),
-                S::DottedEdgeText => ok = self.edge_text(c, &RE_DOTTED_LINK, 46, Some(45)),
-
-                S::Click => {
-                    if c == 34 {
-                        self.quote();
-                    } else if is_space(c) {
-                        self.pop();
-                        self.p += width_at(src, p);
-                    } else {
-                        let mut q = p + width_at(src, p);
-                        while q < n && !is_space(self.code(q)) {
-                            q += 1;
-                        }
-                        self.emit(T::Click, p, q);
-                    }
-                }
-
-                S::Callbackname => {
-                    if c == 40 {
-                        let e = self.at(&RE_EMPTY_CALL, p);
-                        self.pop();
-                        match e {
-                            Some(e) => self.p = e,
-                            None => {
-                                self.push(S::Callbackargs);
-                                self.p += 1;
-                            }
-                        }
-                    } else {
-                        let e = src[p..].find('(').map_or(n, |at| at + p);
-                        self.emit(T::Callbackname, p, e);
-                    }
-                }
-
-                S::Callbackargs => {
-                    if c == 41 {
-                        self.pop();
-                        self.p += 1;
-                    } else {
-                        let e = src[p..].find(')').map_or(n, |at| at + p);
-                        self.emit(T::Callbackargs, p, e);
-                    }
-                }
-
-                S::ShapeData => {
-                    if c == 34 {
-                        self.push(S::ShapeDataStr);
-                        self.emit(T::ShapeData, p, p + 1);
-                    } else if c == 125 {
-                        self.pop();
-                        self.p += 1;
-                    } else if c == 94 {
-                        ok = false;
-                    } else {
-                        let mut q = p + width_at(src, p);
-                        while q < n {
-                            let ch = self.code(q);
-                            if ch == 125 || ch == 94 || ch == 34 {
-                                break;
-                            }
-                            q += 1;
-                        }
-                        self.emit(T::ShapeData, p, q);
-                    }
-                }
-
-                S::ShapeDataStr => {
-                    if c == 34 {
-                        self.pop();
-                        self.emit(T::ShapeData, p, p + 1);
-                    } else {
-                        let e = src[p..].find('"').map_or(n, |at| at + p);
-                        let text = RE_BR.replace(&src[p..e], |_| "<br/>".into());
-                        self.out.push(Token::new(T::ShapeData, text, p));
-                        self.p = e;
-                    }
+            },
+            S::AccTitle | S::AccDescr => {
+                let kind = if cur.state == S::AccTitle {
+                    T::AccTitleValue
+                } else {
+                    T::AccDescrValue
+                };
+                let end = cur.line_end(p);
+                self.pop();
+                self.emit(kind, end);
+            }
+            S::AccDescrMultiline => {
+                if c == Some('}') {
+                    self.pop();
+                    self.skip(p + 1);
+                } else {
+                    let end = cur.until(p, |c| c == '}');
+                    self.emit(T::AccDescrMultilineValue, end);
                 }
             }
+            S::Dir => return self.dir(),
+            S::Text => return self.text(),
+            S::EllipseText => return self.ellipse_text(),
+            S::TrapText => return self.trap_text(),
+            S::Click => match c {
+                Some('"') => self.quote(),
+                Some(c) if is_space(c) => {
+                    self.pop();
+                    self.skip(rest_from);
+                }
+                _ => {
+                    let end = cur.until(rest_from, is_space);
+                    self.emit_flat(T::Click, end);
+                }
+            },
+            S::Callbackname => {
+                if c == Some('(') {
+                    let empty = RE_EMPTY_CALL.match_end(src, p);
+                    self.pop();
+                    match empty {
+                        Some(end) => self.skip(end),
+                        None => {
+                            self.push(S::Callbackargs);
+                            self.skip(p + 1);
+                        }
+                    }
+                } else {
+                    let end = cur.until(p, |c| c == '(');
+                    self.emit(T::Callbackname, end);
+                }
+            }
+            S::Callbackargs => {
+                if c == Some(')') {
+                    self.pop();
+                    self.skip(p + 1);
+                } else {
+                    let end = cur.until(p, |c| c == ')');
+                    self.emit(T::Callbackargs, end);
+                }
+            }
+            S::ShapeData => match c {
+                Some('"') => {
+                    self.push(S::ShapeDataStr);
+                    self.emit_flat(T::ShapeData, p + 1);
+                }
+                Some('}') => {
+                    self.pop();
+                    self.skip(p + 1);
+                }
+                Some('^') => return false,
+                _ => {
+                    let end = cur.until(rest_from, |c| matches!(c, '}' | '^' | '"'));
+                    self.emit(T::ShapeData, end);
+                }
+            },
+            S::ShapeDataStr => {
+                if c == Some('"') {
+                    self.pop();
+                    self.emit_flat(T::ShapeData, p + 1);
+                } else {
+                    let end = cur.until(p, |c| c == '"');
+                    let text = RE_BR.replace(&src[p..end], |_| "<br/>".into());
+                    self.emit_text(T::ShapeData, text.into(), end);
+                }
+            }
+            S::Initial | S::EdgeText | S::ThickEdgeText | S::DottedEdgeText => return self.own(),
+        }
+        true
+    }
 
-            if !ok {
-                self.out.push(Token::new(T::Error, "", self.p));
-                return self.out;
+    /// Reads the whole source.
+    fn lex(&mut self) {
+        let len = self.src().len();
+        while self.p() < len {
+            if !self.step() {
+                let p = self.p();
+                self.close(T::Error, p);
+                return;
             }
         }
+        if let Some(kind) = self.core().cur.state.end_token() {
+            self.emit_flat(kind, len);
+        }
+        self.close(T::End, len);
+    }
+}
 
-        self.out.push(Token::new(T::End, "", self.n));
-        self.out
+struct Lexer<'s> {
+    core: Core<'s>,
+}
+
+impl<'s> Lex<'s> for Lexer<'s> {
+    const COMMENTS: bool = false;
+
+    fn core(&self) -> &Core<'s> {
+        &self.core
+    }
+
+    fn core_mut(&mut self) -> &mut Core<'s> {
+        &mut self.core
+    }
+
+    fn emit(&mut self, kind: T, end: usize) {
+        let cur = &mut self.core.cur;
+        cur.emit(kind, cur.p, end);
+    }
+
+    fn emit_text(&mut self, kind: T, text: Cow<'s, str>, end: usize) {
+        let cur = &mut self.core.cur;
+        cur.emit_text(kind, text, cur.p, end);
+    }
+
+    fn skip(&mut self, end: usize) {
+        self.core.cur.p = end;
+    }
+
+    fn close(&mut self, kind: T, at: usize) {
+        self.core.cur.tokens.push(Token::new(kind, "", at));
+    }
+
+    fn invis_link_end(&mut self, q: usize) -> Option<usize> {
+        let at = self.core.space_end(q);
+        if self.at(at) != Some('~') {
+            return None;
+        }
+        RE_INVIS_LINK.match_end(self.src(), q)
+    }
+
+    fn own(&mut self) -> bool {
+        match self.core.cur.state {
+            S::EdgeText => self.edge_text(&RE_LINK, '-', None),
+            S::ThickEdgeText => self.edge_text(&RE_THICK_LINK, '=', None),
+            S::DottedEdgeText => self.edge_text(&RE_DOTTED_LINK, '.', Some('-')),
+            _ => self.initial(),
+        }
+    }
+}
+
+impl Lexer<'_> {
+    /// The first character after any whitespace at `q`, past one `x`, `o`
+    /// or `<`.
+    fn link_char(&mut self, q: usize) -> Option<char> {
+        let at = self.core.space_end(q);
+        match self.at(at) {
+            Some('x' | 'o' | '<') => self.at(at + 1),
+            c => c,
+        }
+    }
+
+    /// The first of `rules` matching at the cursor, a link or the start of
+    /// one that opens the given condition.
+    fn link_rule(&mut self, rules: &[(&Lazy, Option<S>)]) -> bool {
+        let (p, src) = (self.p(), self.src());
+        for &(rule, opens) in rules {
+            if let Some(end) = rule.match_end(src, p) {
+                match opens {
+                    Some(state) => {
+                        self.push(state);
+                        self.emit(T::StartLink, end);
+                    }
+                    None => self.emit(T::Link, end),
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    fn link(&mut self) -> bool {
+        let p = self.p();
+        let found = match self.link_char(p) {
+            Some('-') => self.link_rule(&[
+                (&RE_LINK, None),
+                (&RE_START_LINK, Some(S::EdgeText)),
+                (&RE_DOTTED_LINK, None),
+                (&RE_DOTTED_START, Some(S::DottedEdgeText)),
+            ]),
+            Some('=') => self.link_rule(&[
+                (&RE_THICK_LINK, None),
+                (&RE_THICK_START, Some(S::ThickEdgeText)),
+            ]),
+            Some('.') => self.link_rule(&[(&RE_DOTTED_LINK, None)]),
+            _ => false,
+        };
+        found || (!matches!(self.at(p), Some('-' | '=' | '.')) && self.invis_link())
+    }
+
+    /// A token of what `rule` matches at the cursor.
+    fn rule(&mut self, rule: &Lazy, kind: T) -> bool {
+        let Some(end) = rule.match_end(self.src(), self.p()) else {
+            return false;
+        };
+        self.emit(kind, end);
+        true
+    }
+
+    fn flowchart_keyword(&mut self) -> bool {
+        let p = self.p();
+        if self.word("swimlane-beta") || self.word("flowchart-elk") {
+            self.graph(p + 13);
+        } else if self.word("flowchart") {
+            self.graph(p + 9);
+        } else if self.word("graph") {
+            self.graph(p + 5);
+        } else if self.word("subgraph") {
+            self.emit(T::Subgraph, p + 8);
+        } else if self.word("end") {
+            let end = self.core.cur.space_end(p + 3);
+            self.emit(T::EndKw, end);
+        } else {
+            return false;
+        }
+        true
+    }
+
+    fn initial(&mut self) -> bool {
+        if self.keyword()
+            || self.flowchart_keyword()
+            || self.direction()
+            || self.link_id()
+            || self.number()
+        {
+            return true;
+        }
+        let p = self.p();
+        match self.at(p) {
+            Some('x' | 'o' | '.') => return self.link() || self.node_string(),
+            Some('<') => {
+                if !self.link() {
+                    self.emit(T::Tagstart, p + 1);
+                }
+                return true;
+            }
+            Some('-') => {
+                if !(self.link() || self.node_string()) {
+                    self.emit(T::Minus, p + 1);
+                }
+                return true;
+            }
+            Some('=') => return self.link(),
+            Some('~') => return self.invis_link(),
+            Some(c) if is_space(c) => {
+                return self.link()
+                    || self.rule(&RE_NEWLINE, T::Newline)
+                    || self.rule(&RE_SPACE, T::Space);
+            }
+            _ => {}
+        }
+        if let Some(found) = self.symbol() {
+            return found;
+        }
+        self.text_char()
+    }
+
+    /// The label of a link, up to the `line` that closes it, or `also` where
+    /// a closing link may start with that.
+    fn edge_text(&mut self, link: &Lazy, line: char, also: Option<char>) -> bool {
+        let (p, src) = (self.p(), self.src());
+        let c = self.at(p);
+        if c == Some('"') {
+            self.quote();
+            return true;
+        }
+        let closes = |c: Option<char>| c.is_some() && (c == Some(line) || c == also);
+        if closes(self.link_char(p))
+            && let Some(end) = link.match_end(src, p)
+        {
+            self.pop();
+            self.emit(T::Link, end);
+            return true;
+        }
+        if c == Some(line) && (line != '-' || self.at(p + 1) == Some('-')) {
+            return false;
+        }
+        let mut q = p + width_at(src, p);
+        while let Some(ch) = self.at(q) {
+            if ch == '"' {
+                break;
+            }
+            if ch == line {
+                if line != '-' || self.at(q + 1) == Some('-') {
+                    break;
+                }
+            } else if (matches!(ch, 'x' | 'o' | '<') || Some(ch) == also || is_space(ch))
+                && closes(self.link_char(q))
+                && link.match_end(src, q).is_some()
+            {
+                break;
+            }
+            q += ch.len_utf8();
+        }
+        self.emit(T::EdgeText, q);
+        true
     }
 }
 
 pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
-    Lexer {
-        src,
-        n: src.len(),
-        out: Vec::new(),
-        stack: Vec::new(),
-        state: S::Initial,
-        p: 0,
-        first_graph: true,
-        dir_next: src.find("direction"),
-        at_next: src.find('@'),
-        line_end: None,
-        dir_failed: 0,
-        run_end: 0,
-        run_at: None,
-        ws: None,
-    }
-    .run()
+    let mut lexer = Lexer {
+        core: Core::new(src),
+    };
+    lexer.lex();
+    lexer.core.cur.tokens
 }

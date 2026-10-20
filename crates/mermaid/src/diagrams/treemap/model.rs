@@ -1,13 +1,12 @@
 //! Pele's `diagrams/treemap/model.ts`.
 
+use crate::diagrams::common::db::Titles;
 use indexmap::IndexMap;
 use serde::Serialize;
 
 use super::parser::{ItemKind, RowAst, TreemapAst};
 use crate::js::{self, Lazy};
 
-static RE_LEAD: Lazy = Lazy::new(r"^\s+", "g");
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
 static RE_ESCAPED_COMMA: Lazy = Lazy::new(r"\\,", "g");
 static RE_COMMA: Lazy = Lazy::new(r",", "g");
 static RE_MARK: Lazy = Lazy::new(r"§§§", "g");
@@ -44,12 +43,8 @@ pub struct TreemapItem {
 pub struct TreemapModel {
     #[serde(rename = "type")]
     pub kind: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_descr: Option<String>,
+    #[serde(flatten)]
+    pub titles: Titles,
     pub roots: Vec<TreemapNode>,
     pub classes: IndexMap<String, Vec<String>>,
 }
@@ -104,66 +99,58 @@ pub fn build_hierarchy(items: Vec<TreemapItem>) -> Vec<TreemapNode> {
     roots
 }
 
-pub fn build_treemap(ast: TreemapAst, title: Option<&str>) -> TreemapModel {
-    let mut classes: IndexMap<String, Vec<String>> = IndexMap::new();
-    for row in &ast.rows {
-        let RowAst::ClassDef {
-            class_name,
-            style_text,
-        } = row
-        else {
-            continue;
-        };
-        let styles = classes.entry(class_name.clone()).or_default();
-        // An escaped comma stays in the value; the others separate
-        // declarations.
-        let text = RE_ESCAPED_COMMA.replace(style_text.as_deref().unwrap_or(""), |_| "§§§".into());
-        let text = RE_COMMA.replace(&text, |_| ";".into());
-        let text = RE_MARK.replace(&text, |_| ",".into());
-        for style in text.split(';') {
-            styles.push(style.to_string());
+impl TreemapModel {
+    pub fn new(ast: TreemapAst, title: Option<&str>) -> Self {
+        let mut classes: IndexMap<String, Vec<String>> = IndexMap::new();
+        for row in &ast.rows {
+            let RowAst::ClassDef {
+                class_name,
+                style_text,
+            } = row
+            else {
+                continue;
+            };
+            let styles = classes.entry(class_name.clone()).or_default();
+            // An escaped comma stays in the value; the others separate
+            // declarations.
+            let text =
+                RE_ESCAPED_COMMA.replace(style_text.as_deref().unwrap_or(""), |_| "§§§".into());
+            let text = RE_COMMA.replace(&text, |_| ";".into());
+            let text = RE_MARK.replace(&text, |_| ",".into());
+            for style in text.split(';') {
+                styles.push(style.to_string());
+            }
         }
-    }
 
-    let mut items = Vec::new();
-    for row in ast.rows {
-        let RowAst::Row { indent, item } = row else {
-            continue;
-        };
-        let styles = item
-            .class_selector
-            .as_ref()
-            .filter(|selector| !selector.is_empty())
-            .and_then(|selector| classes.get(selector));
-        let (leaf, value) = match item.kind {
-            ItemKind::Leaf(value) => (true, Some(value)),
-            ItemKind::Section => (false, None),
-        };
-        items.push(TreemapItem {
-            level: indent.unwrap_or(0),
-            name: item.name,
-            leaf,
-            value,
-            class_selector: item.class_selector,
-            css_compiled_styles: styles.filter(|styles| !styles.is_empty()).cloned(),
-        });
-    }
+        let mut items = Vec::new();
+        for row in ast.rows {
+            let RowAst::Row { indent, item } = row else {
+                continue;
+            };
+            let styles = item
+                .class_selector
+                .as_ref()
+                .filter(|selector| !selector.is_empty())
+                .and_then(|selector| classes.get(selector));
+            let (leaf, value) = match item.kind {
+                ItemKind::Leaf(value) => (true, Some(value)),
+                ItemKind::Section => (false, None),
+            };
+            items.push(TreemapItem {
+                level: indent.unwrap_or(0),
+                name: item.name,
+                leaf,
+                value,
+                class_selector: item.class_selector,
+                css_compiled_styles: styles.filter(|styles| !styles.is_empty()).cloned(),
+            });
+        }
 
-    TreemapModel {
-        kind: "treemap",
-        title: ast
-            .title
-            .filter(|title| !title.is_empty())
-            .or_else(|| title.map(str::to_string)),
-        acc_title: ast
-            .acc_title
-            .filter(|text| !text.is_empty())
-            .map(|text| RE_LEAD.replace(&text, |_| String::new())),
-        acc_descr: ast
-            .acc_descr
-            .filter(|text| !text.is_empty())
-            .map(|text| RE_INDENT.replace(&text, |_| "\n".into())),
-        roots: build_hierarchy(items),
-        classes,
+        Self {
+            kind: "treemap",
+            titles: ast.header.titles(title),
+            roots: build_hierarchy(items),
+            classes,
+        }
     }
 }

@@ -6,7 +6,7 @@ use super::{
     Flowchart,
     shapes::is_valid_shape,
     store::{Element, FlowStore},
-    types::{LinkInfo, Vertex},
+    types::{ArrowType, LinkInfo, Stroke, Vertex},
 };
 use crate::{
     config::Value,
@@ -21,33 +21,28 @@ use crate::{
 pub type FlowDb = FlowStore<Flowchart>;
 
 fn destruct_start_link(raw: &str) -> LinkInfo {
-    let mut text = js::trim(raw);
-    let mut kind = "arrow_open";
-    match text.as_bytes().first() {
-        Some(b'<') => {
-            kind = "arrow_point";
-            text = &text[1..];
-        }
-        Some(b'x') => {
-            kind = "arrow_cross";
-            text = &text[1..];
-        }
-        Some(b'o') => {
-            kind = "arrow_circle";
-            text = &text[1..];
-        }
-        _ => {}
-    }
-    let mut stroke = "normal";
-    if text.contains('=') {
-        stroke = "thick";
-    }
-    if text.contains('.') {
-        stroke = "dotted";
-    }
+    let text = js::trim(raw);
+    let kind = match text.as_bytes().first() {
+        Some(b'<') => ArrowType::Point,
+        Some(b'x') => ArrowType::Cross,
+        Some(b'o') => ArrowType::Circle,
+        _ => ArrowType::Open,
+    };
+    let line = if kind == ArrowType::Open {
+        text
+    } else {
+        &text[1..]
+    };
+    let stroke = if line.contains('.') {
+        Stroke::Dotted
+    } else if line.contains('=') {
+        Stroke::Thick
+    } else {
+        Stroke::Normal
+    };
     LinkInfo {
-        kind: kind.into(),
-        stroke: stroke.into(),
+        kind,
+        stroke,
         ..LinkInfo::default()
     }
 }
@@ -55,46 +50,36 @@ fn destruct_start_link(raw: &str) -> LinkInfo {
 fn destruct_end_link(raw: &str) -> LinkInfo {
     let text = js::trim(raw);
     let mut line = text.get(..text.len().saturating_sub(1)).unwrap_or("");
-    let mut kind = String::from("arrow_open");
-    let last = text.as_bytes().last().copied();
-    let first = if text.starts_with('x') {
-        Some(b'x')
-    } else if text.starts_with('<') {
-        Some(b'<')
-    } else if text.starts_with('o') {
-        Some(b'o')
-    } else {
-        None
+    let mut kind = ArrowType::Open;
+    let head = match text.as_bytes().last() {
+        Some(b'x') => Some((ArrowType::Cross, b'x')),
+        Some(b'>') => Some((ArrowType::Point, b'<')),
+        Some(b'o') => Some((ArrowType::Circle, b'o')),
+        _ => None,
     };
-    let (single, opener) = match last {
-        Some(b'x') => ("arrow_cross", b'x'),
-        Some(b'>') => ("arrow_point", b'<'),
-        Some(b'o') => ("arrow_circle", b'o'),
-        _ => ("", 0),
-    };
-    if !single.is_empty() {
-        kind = single.into();
-        if first == Some(opener) {
-            kind = format!("double_{kind}");
+    if let Some((single, opener)) = head {
+        kind = single;
+        if text.as_bytes().first() == Some(&opener) {
+            kind = single.doubled();
             line = line.get(1..).unwrap_or("");
         }
     }
-    let mut stroke = "normal";
-    let mut length = js::len(line) as i32 - 1;
+    let mut stroke = Stroke::Normal;
+    let mut length = line.len() as i32 - 1;
     if line.starts_with('=') {
-        stroke = "thick";
+        stroke = Stroke::Thick;
     }
     if line.starts_with('~') {
-        stroke = "invisible";
+        stroke = Stroke::Invisible;
     }
     let dots = line.matches('.').count() as i32;
     if dots > 0 {
-        stroke = "dotted";
+        stroke = Stroke::Dotted;
         length = dots;
     }
     LinkInfo {
         kind,
-        stroke: stroke.into(),
+        stroke,
         length: Some(length),
         ..LinkInfo::default()
     }
@@ -106,25 +91,17 @@ pub fn destruct_link(end: &str, start: Option<&str>) -> LinkInfo {
     let Some(start) = start.filter(|start| !start.is_empty()) else {
         return info;
     };
-    let invalid = || LinkInfo {
-        kind: "INVALID".into(),
-        stroke: "INVALID".into(),
-        ..LinkInfo::default()
-    };
     let mut start_info = destruct_start_link(start);
     if start_info.stroke != info.stroke {
-        return invalid();
+        return LinkInfo::invalid();
     }
-    if start_info.kind == "arrow_open" {
+    if start_info.kind == ArrowType::Open {
         start_info.kind = info.kind;
     } else {
         if start_info.kind != info.kind {
-            return invalid();
+            return LinkInfo::invalid();
         }
-        start_info.kind = format!("double_{}", start_info.kind);
-    }
-    if start_info.kind == "double_arrow" {
-        start_info.kind = "double_arrow_point".into();
+        start_info.kind = start_info.kind.doubled();
     }
     start_info.length = info.length;
     start_info
@@ -233,13 +210,13 @@ impl Serialize for FlowDb {
         if let Some(interpolate) = &self.default_interpolate {
             map.serialize_entry("defaultInterpolate", interpolate)?;
         }
-        if let Some(title) = &self.title {
+        if let Some(title) = &self.titles.title {
             map.serialize_entry("title", title)?;
         }
-        if let Some(acc_title) = &self.acc_title {
+        if let Some(acc_title) = &self.titles.acc_title {
             map.serialize_entry("accTitle", acc_title)?;
         }
-        if let Some(acc_descr) = &self.acc_descr {
+        if let Some(acc_descr) = &self.titles.acc_descr {
             map.serialize_entry("accDescr", acc_descr)?;
         }
         map.serialize_entry("subgraphLookup", &self.subgraphs_by_id())?;

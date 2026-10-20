@@ -1,6 +1,8 @@
 //! Pele's `diagrams/eventmodeling/render.ts`.
 
-use crate::svg::builder::{Esc, EscText, LabelSvg, TITLE, fragment};
+use crate::geom::Point;
+use crate::svg::builder::{Esc, EscText, TITLE, fragment};
+use crate::svg::edges::Marker;
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Write as _},
@@ -17,11 +19,10 @@ use crate::{
     js,
     svg::{
         builder::num,
-        edges::{marker, marker_trim},
         root::{Accessible, svg_document},
         theme::{FONT_MONO, RADIUS, series_color},
     },
-    text::{Host, Label, Span, Style, decode_entities, layout_label},
+    text::{Host, Label, Span, Style, decode_entities},
 };
 
 const BOX_PAD_X: f64 = 12.0;
@@ -204,7 +205,7 @@ fn draw(
     let mut band_of: HashMap<usize, usize> = HashMap::new();
     let mut label_column = 0f64;
     for lane in &model.lanes {
-        let label = layout_label(
+        let label = Label::layout(
             Some(&lane.label),
             false,
             measure,
@@ -230,7 +231,7 @@ fn draw(
     let mut placed: Vec<Placed> = Vec::new();
     for (index, box_) in model.boxes.iter().enumerate() {
         let band_index = band_of[&box_.lane.key];
-        let name = layout_label(
+        let name = Label::layout(
             Some(&box_.name),
             false,
             measure,
@@ -281,8 +282,8 @@ fn draw(
     }
     let lane_width = label_column + content_right + LANE_PAD;
 
-    let title = layout_label(
-        model.title.as_deref(),
+    let title = Label::layout(
+        model.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -314,10 +315,8 @@ fn draw(
             num(y),
             num(lane_width),
             num(band.h),
-            LabelSvg(
-                &band.label,
-                left + LANE_PAD + band.label.width / 2.0,
-                y + band.h / 2.0,
+            band.label.svg(
+                Point::new(left + LANE_PAD + band.label.width / 2.0, y + band.h / 2.0),
                 &lane_attrs
             )
         );
@@ -362,7 +361,8 @@ fn draw(
         let _ = write!(
             nodes,
             "{}{}</g>",
-            LabelSvg(&item.name, item.x + item.w / 2.0, name_y, &name_attrs),
+            item.name
+                .svg(Point::new(item.x + item.w / 2.0, name_y), &name_attrs),
             lines(
                 &item.data,
                 item.x + BOX_PAD_X,
@@ -375,7 +375,7 @@ fn draw(
 
     let mut edges = String::new();
     let mut d = String::new();
-    let trim = marker_trim("arrow_point");
+    let trim = Marker::Arrow.trim();
     for relation in &model.relations {
         let (si, ti) = (relation.source_index, relation.target_index);
         if si == ti {
@@ -400,7 +400,7 @@ fn draw(
                 num(tx - dir * trim),
                 num(ty)
             );
-            marker("arrow_point", tx, ty, dir, 0.0, "var(--_l)")
+            Marker::Arrow.draw(Point::new(tx, ty), Point::new(dir, 0.0), "var(--_l)")
         } else {
             // Between lanes, straight down or up where the boxes overlap,
             // else in an S.
@@ -443,7 +443,7 @@ fn draw(
                     num(end)
                 )
             };
-            marker("arrow_point", tx, ty, 0.0, dir, "var(--_l)")
+            Marker::Arrow.draw(Point::new(tx, ty), Point::new(0.0, dir), "var(--_l)")
         };
         let _ = write!(
             edges,
@@ -460,7 +460,7 @@ fn draw(
     let head_attrs = format!(" font-size=\"{}\" font-weight=\"var(--_hw)\"", num(small));
     let row_attrs = format!(" font-size=\"{}\"", num(small));
     let mut card = |kind: &str, heading: &str, frame: &str, rows: Vec<String>| {
-        let head = layout_label(
+        let head = Label::layout(
             Some(&card_heading(&names, heading, frame)),
             false,
             measure,
@@ -484,10 +484,11 @@ fn draw(
             num(cy),
             num(w),
             num(h),
-            LabelSvg(
-                &head,
-                left + BOX_PAD_X + head.width / 2.0,
-                cy + BOX_PAD_Y + head.height / 2.0,
+            head.svg(
+                Point::new(
+                    left + BOX_PAD_X + head.width / 2.0,
+                    cy + BOX_PAD_Y + head.height / 2.0
+                ),
                 &head_attrs
             ),
             lines(
@@ -531,7 +532,10 @@ fn draw(
     let _ = write!(
         content,
         "{}{lanes}{edges}{nodes}{cards}",
-        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE)
+        title.svg(
+            Point::new(total_width / 2.0, pad + title.height / 2.0),
+            TITLE
+        )
     );
 
     document(model, ctx, size, total_width, total_height, &content)
@@ -590,8 +594,8 @@ fn document(
             size,
             ctx,
             Accessible {
-                acc_title: model.acc_title.as_deref(),
-                acc_descr: model.acc_descr.as_deref(),
+                acc_title: model.titles.acc_title.as_deref(),
+                acc_descr: model.titles.acc_descr.as_deref(),
             },
             content,
         ),
@@ -670,8 +674,8 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
     // drawing is wider.
     let card_width = CARD_MIN.max(room - gutter);
     let text_room = card_width - 2.0 * BOX_PAD_X;
-    let title = layout_label(
-        model.title.as_deref(),
+    let title = Label::layout(
+        model.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -712,7 +716,7 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
             text_room
         };
         let lane = break_label(
-            &layout_label(
+            &Label::layout(
                 Some(&box_.lane.label),
                 false,
                 measure,
@@ -723,7 +727,7 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
             measure,
             lane_room,
         );
-        let name = layout_label(
+        let name = Label::layout(
             Some(&box_.name),
             false,
             measure,
@@ -771,11 +775,12 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
         let _ = write!(
             nodes,
             "{}",
-            LabelSvg(
-                &name,
-                pad + BOX_PAD_X + name.width / 2.0,
-                cy + BOX_PAD_Y + name.height / 2.0,
-                &name_attrs,
+            name.svg(
+                Point::new(
+                    pad + BOX_PAD_X + name.width / 2.0,
+                    cy + BOX_PAD_Y + name.height / 2.0
+                ),
+                &name_attrs
             )
         );
         let _ = write!(
@@ -833,9 +838,9 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
                 "M{},{}V{}",
                 num(cx),
                 num(sy),
-                num(ty - dir * marker_trim("arrow_point"))
+                num(ty - dir * Marker::Arrow.trim())
             );
-            marker("arrow_point", cx, ty, 0.0, dir, "var(--_l)")
+            Marker::Arrow.draw(Point::new(cx, ty), Point::new(0.0, dir), "var(--_l)")
         } else {
             let rail = pad + width - gutter
                 + 12.0
@@ -851,9 +856,13 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
                 num(from),
                 num(rail),
                 num(to),
-                num(pad + t.w + marker_trim("arrow_point"))
+                num(pad + t.w + Marker::Arrow.trim())
             );
-            marker("arrow_point", pad + t.w, to, -1.0, 0.0, "var(--_l)")
+            Marker::Arrow.draw(
+                Point::new(pad + t.w, to),
+                Point::new(-1.0, 0.0),
+                "var(--_l)",
+            )
         };
         let _ = write!(
             edges,
@@ -865,7 +874,7 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
     let head_attrs = format!(" font-size=\"{}\" font-weight=\"var(--_hw)\"", num(small));
     let row_attrs = format!(" font-size=\"{}\"", num(small));
     let mut card = |kind: &str, heading: &str, frame: &str, raw: &str| {
-        let head = layout_label(
+        let head = Label::layout(
             Some(&card_heading(&names, heading, frame)),
             false,
             measure,
@@ -886,10 +895,11 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
             num(y),
             num(w),
             num(h),
-            LabelSvg(
-                &head,
-                pad + BOX_PAD_X + head.width / 2.0,
-                y + BOX_PAD_Y + head.height / 2.0,
+            head.svg(
+                Point::new(
+                    pad + BOX_PAD_X + head.width / 2.0,
+                    y + BOX_PAD_Y + head.height / 2.0
+                ),
                 &head_attrs
             ),
             lines(
@@ -921,7 +931,10 @@ fn vertical_event_model(model: &EventModelingModel, ctx: &Ctx<'_, impl Host>) ->
     let _ = write!(
         content,
         "{}{edges}{nodes}{cards}",
-        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE)
+        title.svg(
+            Point::new(total_width / 2.0, pad + title.height / 2.0),
+            TITLE
+        )
     );
     document(model, ctx, size, total_width, height, &content)
 }

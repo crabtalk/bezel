@@ -12,7 +12,7 @@ pub mod types;
 
 pub use db::C4Model;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
@@ -29,16 +29,15 @@ impl Diagram for C4 {
     ) -> Result<Model, Error> {
         let mut db = C4Model::default();
         if let Some(title) = title.filter(|title| !title.is_empty()) {
-            db.title = Some(title.to_string());
+            db.titles.set_title(title);
         }
         parser::parse_c4(source, &mut db)?;
         Ok(Model::C4(db))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::C4(model) = model else {
-        unreachable!("c4 renders a c4 model")
-    };
-    render::render_c4(model, config, ctx)
+impl Render for C4Model {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        render::render_c4(self, config, ctx)
+    }
 }

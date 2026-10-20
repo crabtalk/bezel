@@ -3,16 +3,21 @@
 use super::tokens::{KEYWORDS, T};
 use crate::{
     js::{self, Lazy},
-    token::Token,
-    util::chars::{code_at, is_line_end, is_space, is_word, width_at},
+    token::{Cursor, Token},
+    util::chars::{is_line_end, is_space, is_word, starts_with_caseless},
 };
 
-const INITIAL: u8 = 0;
-const STRING: u8 = 1;
-const STYLE_STATE: u8 = 2;
-const ACC_TITLE_STATE: u8 = 3;
-const ACC_DESCR_STATE: u8 = 4;
-const ACC_DESCR_MULTILINE: u8 = 5;
+/// Jison's start conditions.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum S {
+    Initial,
+    String,
+    Style,
+    AccTitle,
+    AccDescr,
+    AccDescrMultiline,
+}
+
 const LONGEST_KEYWORD: usize = 22;
 
 static RE_ACC_TITLE: Lazy = Lazy::new(r"accTitle\s*:\s*", "iy");
@@ -28,246 +33,211 @@ const DIRECTIONS: [T; 4] = [
 ];
 
 /// Whether `c` ends an unquoted string: `:,{<>-=` and line breaks.
-fn is_stop(c: u32) -> bool {
-    matches!(c, 58 | 44 | 13 | 10 | 123 | 60 | 62 | 45 | 61)
+fn is_stop(c: char) -> bool {
+    matches!(c, ':' | ',' | '\r' | '\n' | '{' | '<' | '>' | '-' | '=')
 }
 
 struct Lexer<'s> {
-    src: &'s str,
-    n: usize,
-    tokens: Vec<Token<'s, T>>,
-    stack: Vec<u8>,
-    state: u8,
-    p: usize,
+    cur: Cursor<'s, T, S>,
     /// Where each kind of direction statement starts and where its keyword
     /// ends, found in one pass.
-    dir_starts: [Vec<usize>; 4],
-    dir_ends: [Vec<usize>; 4],
+    dirs: [Vec<(usize, usize)>; 4],
+    /// How many of each kind start before the end of the current line.
     dir_seen: [usize; 4],
-    any_dir: bool,
     line_end: Option<usize>,
 }
 
 impl<'s> Lexer<'s> {
-    fn c(&self, q: usize) -> u32 {
-        code_at(self.src, q)
-    }
-
-    fn emit(&mut self, kind: T, s: usize, e: usize) {
-        self.tokens.push(Token::new(kind, &self.src[s..e], s));
-        self.p = e;
-    }
-
-    fn push(&mut self, state: u8) {
-        self.stack.push(self.state);
-        self.state = state;
-    }
-
-    fn pop(&mut self) {
-        if let Some(state) = self.stack.pop() {
-            self.state = state;
-        }
-    }
-
-    fn line_break(&self, q: usize) -> usize {
-        self.src[q..].find('\n').map_or(self.n, |at| q + at)
+    fn emit(&mut self, kind: T, end: usize) -> bool {
+        self.cur.emit_to(kind, end);
+        true
     }
 
     /// `.*direction\s+XX[^\n]*`: the last such statement that starts on this
     /// line decides the token.
     fn direction(&mut self) -> bool {
-        let p = self.p;
+        let p = self.cur.p;
         if self.line_end.is_none_or(|end| end < p) {
-            let line_end = self.src[p..]
-                .find(['\n', '\r', '\u{2028}', '\u{2029}'])
-                .map_or(self.n, |at| p + at);
+            let line_end = self.cur.terminator_end(p);
             self.line_end = Some(line_end);
-            for k in 0..4 {
-                let list = &self.dir_starts[k];
-                let mut j = self.dir_seen[k];
-                while j < list.len() && list[j] <= line_end {
-                    j += 1;
+            for (list, seen) in self.dirs.iter().zip(&mut self.dir_seen) {
+                while list.get(*seen).is_some_and(|&(start, _)| start <= line_end) {
+                    *seen += 1;
                 }
-                self.dir_seen[k] = j;
             }
         }
         for (k, kind) in DIRECTIONS.into_iter().enumerate() {
             let Some(j) = self.dir_seen[k].checked_sub(1) else {
                 continue;
             };
-            if self.dir_starts[k][j] >= p {
-                let e = self.line_break(self.dir_ends[k][j]);
-                self.emit(kind, p, e);
-                return true;
+            let (start, end) = self.dirs[k][j];
+            if start >= p {
+                let e = self.cur.line_end(end);
+                return self.emit(kind, e);
             }
         }
         false
     }
 
-    fn initial(&mut self, c: u32) -> bool {
-        let p = self.p;
-        let n = self.n;
-        let lower = c | 32;
-        if lower == 116
-            && self
-                .src
+    fn initial(&mut self, c: char) -> bool {
+        let src = self.cur.src;
+        let p = self.cur.p;
+        let n = src.len();
+        let lower = c.to_ascii_lowercase();
+        if lower == 't'
+            && src
                 .get(p + 1..p + 5)
                 .is_some_and(|rest| rest.eq_ignore_ascii_case("itle"))
-            && is_space(self.c(p + 5))
+            && self.cur.char_at(p + 5).is_some_and(is_space)
         {
-            let mut q = p + 5 + width_at(self.src, p + 5);
-            let from = q;
-            while q < n {
-                let d = self.c(q);
-                if d == 35 || d == 10 || d == 59 {
-                    break;
-                }
-                q += width_at(self.src, q);
-            }
+            let from = self.cur.after(p + 5);
+            let q = src[from..].find(['#', '\n', ';']).map_or(n, |at| from + at);
             if q > from {
-                self.emit(T::Title, p, q);
+                return self.emit(T::Title, q);
+            }
+        }
+        if lower == 'a' && starts_with_caseless(src, p, "acc") {
+            if let Some(e) = RE_ACC_TITLE.match_end(src, p) {
+                self.cur.push(S::AccTitle);
+                return self.emit(T::AccTitle, e);
+            }
+            if let Some(e) = RE_ACC_DESCR.match_end(src, p) {
+                self.cur.push(S::AccDescr);
+                return self.emit(T::AccDescr, e);
+            }
+            if let Some(e) = RE_ACC_DESCR_ML.match_end(src, p) {
+                self.cur.push(S::AccDescrMultiline);
+                self.cur.p = e;
                 return true;
             }
         }
-        if lower == 97 && (self.c(p + 1) | 32) == 99 && (self.c(p + 2) | 32) == 99 {
-            if let Some(e) = RE_ACC_TITLE.match_end(self.src, p) {
-                self.push(ACC_TITLE_STATE);
-                self.emit(T::AccTitle, p, e);
-                return true;
-            }
-            if let Some(e) = RE_ACC_DESCR.match_end(self.src, p) {
-                self.push(ACC_DESCR_STATE);
-                self.emit(T::AccDescr, p, e);
-                return true;
-            }
-            if let Some(e) = RE_ACC_DESCR_ML.match_end(self.src, p) {
-                self.push(ACC_DESCR_MULTILINE);
-                self.p = e;
-                return true;
-            }
-        }
-        if self.any_dir && !is_line_end(c) && self.direction() {
+        if self.dirs.iter().any(|list| !list.is_empty()) && !is_line_end(c) && self.direction() {
             return true;
         }
 
-        if c == 10 || (c == 13 && self.c(p + 1) == 10) {
+        if c == '\n' || (c == '\r' && self.cur.char_at(p + 1) == Some('\n')) {
             let mut q = p;
-            while q < n {
-                let d = self.c(q);
-                if d == 10 {
+            loop {
+                if src[q..].starts_with('\n') {
                     q += 1;
-                } else if d == 13 && self.c(q + 1) == 10 {
+                } else if src[q..].starts_with("\r\n") {
                     q += 2;
                 } else {
                     break;
                 }
             }
-            self.emit(T::Newline, p, q);
-            return true;
+            return self.emit(T::Newline, q);
         }
         if is_space(c) {
-            let mut q = p + width_at(self.src, p);
-            while q < n && is_space(self.c(q)) {
-                q += width_at(self.src, q);
-            }
-            self.p = q;
+            self.cur.p = self.cur.space_end(p);
             return true;
         }
-        if c == 35 || c == 37 {
-            self.p = self.line_break(p);
+        if matches!(c, '#' | '%') {
+            self.cur.p = self.cur.line_end(p);
             return true;
         }
 
         if is_word(c) {
-            let mut q = p + 1;
-            while q < n && is_word(self.c(q)) {
-                q += 1;
-            }
+            let mut q = self.cur.word_end(p);
             if q - p <= LONGEST_KEYWORD {
-                let word = self.src[p..q].to_ascii_lowercase();
+                let word = src[p..q].to_ascii_lowercase();
                 if let Some(&(_, keyword)) = KEYWORDS.iter().find(|(name, _)| *name == word) {
-                    if keyword == T::Style || keyword == T::Classdef || keyword == T::Class {
-                        self.push(STYLE_STATE);
+                    if matches!(keyword, T::Style | T::Classdef | T::Class) {
+                        self.cur.push(S::Style);
                     }
-                    self.emit(keyword, p, q);
-                    return true;
+                    return self.emit(keyword, q);
                 }
             }
-            while q < n {
-                let d = self.c(q);
-                if d < 128 && is_stop(d) {
-                    break;
-                }
-                q += width_at(self.src, q);
-            }
-            self.tokens
-                .push(Token::new(T::Unqstring, js::trim(&self.src[p..q]), p));
-            self.p = q;
+            q = src[q..].find(is_stop).map_or(n, |at| q + at);
+            self.cur.emit_text(T::Unqstring, js::trim(&src[p..q]), p, q);
             return true;
         }
 
         match c {
-            123 => self.emit(T::StructStart, p, p + 1),
-            125 => self.emit(T::StructStop, p, p + 1),
-            58 => {
-                if self.c(p + 1) == 58 && self.c(p + 2) == 58 {
-                    self.emit(T::StyleSeparator, p, p + 3);
-                } else {
-                    self.emit(T::Colonsep, p, p + 1);
-                }
+            '{' => self.emit(T::StructStart, p + 1),
+            '}' => self.emit(T::StructStop, p + 1),
+            ':' if self.cur.starts_with("::", p + 1) => self.emit(T::StyleSeparator, p + 3),
+            ':' => self.emit(T::Colonsep, p + 1),
+            '<' if self.cur.char_at(p + 1) == Some('-') => self.emit(T::EndArrowL, p + 2),
+            '-' if self.cur.char_at(p + 1) == Some('>') => self.emit(T::EndArrowR, p + 2),
+            '-' => self.emit(T::Line, p + 1),
+            '"' => {
+                self.cur.push(S::String);
+                self.cur.p += 1;
+                true
             }
-            60 => {
-                if self.c(p + 1) != 45 {
-                    return false;
-                }
-                self.emit(T::EndArrowL, p, p + 2);
-            }
-            45 => {
-                if self.c(p + 1) == 62 {
-                    self.emit(T::EndArrowR, p, p + 2);
-                } else {
-                    self.emit(T::Line, p, p + 1);
-                }
-            }
-            34 => {
-                self.push(STRING);
-                self.p += 1;
-            }
-            44 => self.emit(T::Comma, p, p + 1),
-            _ => return false,
+            ',' => self.emit(T::Comma, p + 1),
+            _ => false,
         }
-        true
     }
 
-    fn style(&mut self, c: u32) -> bool {
-        let p = self.p;
-        if is_word(c) {
-            let mut q = p + 1;
-            while q < self.n && is_word(self.c(q)) {
-                q += 1;
-            }
-            self.emit(T::Alpha, p, q);
-            return true;
-        }
+    fn style(&mut self, c: char) -> bool {
+        let p = self.cur.p;
         match c {
-            58 => self.emit(T::Colon, p, p + 1),
-            59 => self.emit(T::Semicolon, p, p + 1),
-            37 => self.emit(T::Percent, p, p + 1),
-            45 => self.emit(T::Minus, p, p + 1),
-            35 => self.emit(T::Brkt, p, p + 1),
-            32 => self.p += 1,
-            34 => {
-                self.push(STRING);
-                self.p += 1;
+            _ if is_word(c) => {
+                let q = self.cur.word_end(p);
+                self.emit(T::Alpha, q)
             }
-            10 => {
-                self.pop();
-                self.p += 1;
+            ':' => self.emit(T::Colon, p + 1),
+            ';' => self.emit(T::Semicolon, p + 1),
+            '%' => self.emit(T::Percent, p + 1),
+            '-' => self.emit(T::Minus, p + 1),
+            '#' => self.emit(T::Brkt, p + 1),
+            ' ' => {
+                self.cur.p += 1;
+                true
             }
-            44 => self.emit(T::Comma, p, p + 1),
-            _ => return false,
+            '"' => {
+                self.cur.push(S::String);
+                self.cur.p += 1;
+                true
+            }
+            '\n' => {
+                self.cur.pop();
+                self.cur.p += 1;
+                true
+            }
+            ',' => self.emit(T::Comma, p + 1),
+            _ => false,
         }
-        true
+    }
+
+    fn step(&mut self, c: char) -> bool {
+        let p = self.cur.p;
+        match self.cur.state {
+            S::Initial => self.initial(c),
+            S::Style => self.style(c),
+            S::String => {
+                if c == '"' {
+                    self.cur.pop();
+                    self.cur.p += 1;
+                    true
+                } else {
+                    let e = self.cur.find('"', p);
+                    self.emit(T::Qstring, e)
+                }
+            }
+            S::AccTitle | S::AccDescr => {
+                let kind = if self.cur.state == S::AccTitle {
+                    T::AccTitleValue
+                } else {
+                    T::AccDescrValue
+                };
+                self.cur.pop();
+                let e = self.cur.line_end(p);
+                self.emit(kind, e)
+            }
+            S::AccDescrMultiline => {
+                if c == '}' {
+                    self.cur.pop();
+                    self.cur.p += 1;
+                    true
+                } else {
+                    let e = self.cur.find('}', p);
+                    self.emit(T::AccDescrMultilineValue, e)
+                }
+            }
+        }
     }
 }
 
@@ -277,91 +247,39 @@ impl<'s> Lexer<'s> {
 pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
     let n = src.len();
     let mut lx = Lexer {
-        src,
-        n,
-        tokens: Vec::new(),
-        stack: Vec::new(),
-        state: INITIAL,
-        p: 0,
-        dir_starts: Default::default(),
-        dir_ends: Default::default(),
+        cur: Cursor::new(src, S::Initial),
+        dirs: Default::default(),
         dir_seen: [0; 4],
-        any_dir: false,
         line_end: None,
     };
     for m in RE_DIRECTION.captures_iter(src) {
-        let kind = if m.get(1).is_some() {
-            0
-        } else if m.get(2).is_some() {
-            1
-        } else if m.get(3).is_some() {
-            2
-        } else {
-            3
-        };
-        lx.dir_starts[kind].push(m.start());
-        lx.dir_ends[kind].push(m.end());
-        lx.any_dir = true;
+        let kind = (1..4)
+            .find(|&group| m.get(group).is_some())
+            .map_or(3, |group| group - 1);
+        lx.dirs[kind].push((m.start(), m.end()));
     }
 
-    while lx.p < n {
-        let p = lx.p;
-        let c = code_at(src, p);
-        let ok = match lx.state {
-            INITIAL => lx.initial(c),
-            STYLE_STATE => lx.style(c),
-            STRING => {
-                if c == 34 {
-                    lx.pop();
-                    lx.p += 1;
-                } else {
-                    let e = src[p..].find('"').map_or(n, |at| p + at);
-                    lx.emit(T::Qstring, p, e);
-                }
-                true
-            }
-            ACC_TITLE_STATE | ACC_DESCR_STATE => {
-                let kind = if lx.state == ACC_TITLE_STATE {
-                    T::AccTitleValue
-                } else {
-                    T::AccDescrValue
-                };
-                lx.pop();
-                let e = lx.line_break(p);
-                lx.emit(kind, p, e);
-                true
-            }
-            _ => {
-                if c == 125 {
-                    lx.pop();
-                    lx.p += 1;
-                } else {
-                    let e = src[p..].find('}').map_or(n, |at| p + at);
-                    lx.emit(T::AccDescrMultilineValue, p, e);
-                }
-                true
-            }
-        };
-        if !ok {
-            let mut tokens = lx.tokens;
-            tokens.push(Token::new(T::Error, "", p));
+    while let Some(c) = lx.cur.char_at(lx.cur.p) {
+        if !lx.step(c) {
+            let mut tokens = lx.cur.tokens;
+            tokens.push(Token::new(T::Error, "", lx.cur.p));
             return tokens;
         }
     }
 
     // At the end of input Jison still tries the rules that can match
     // nothing, once.
-    let last = match lx.state {
-        INITIAL => Some(T::Eof),
-        STRING => Some(T::Qstring),
-        ACC_TITLE_STATE => Some(T::AccTitleValue),
-        ACC_DESCR_STATE => Some(T::AccDescrValue),
-        ACC_DESCR_MULTILINE => Some(T::AccDescrMultilineValue),
-        _ => None,
+    let last = match lx.cur.state {
+        S::Initial => Some(T::Eof),
+        S::String => Some(T::Qstring),
+        S::AccTitle => Some(T::AccTitleValue),
+        S::AccDescr => Some(T::AccDescrValue),
+        S::AccDescrMultiline => Some(T::AccDescrMultilineValue),
+        S::Style => None,
     };
     if let Some(last) = last {
-        lx.emit(last, n, n);
+        lx.cur.emit(last, n, n);
     }
-    lx.emit(T::End, n, n);
-    lx.tokens
+    lx.cur.emit(T::End, n, n);
+    lx.cur.tokens
 }

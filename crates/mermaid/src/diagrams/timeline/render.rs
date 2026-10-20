@@ -1,6 +1,8 @@
 //! Pele's `diagrams/timeline/render.ts`.
 
 use super::db::TimelineModel;
+use crate::geom::Point;
+use crate::svg::edges::Marker;
 use crate::{Ctx, Host};
 use crate::{
     Rendered,
@@ -10,8 +12,8 @@ use crate::{
     },
     js,
     svg::{
-        builder::{EscText, LabelSvg, Point, fragment, num},
-        edges::{ARROW, marker},
+        builder::{EscText, fragment, num},
+        edges::ARROW,
         root::{Accessible, svg_document},
         theme::{RADIUS, SeriesColor, series_color},
     },
@@ -120,10 +122,7 @@ fn draw(
         periods: Vec::new(),
     };
     for (i, period) in periods.iter().enumerate() {
-        match usize::try_from(period.section_index)
-            .ok()
-            .and_then(|index| groups.get_mut(index))
-        {
+        match period.section_index.and_then(|index| groups.get_mut(index)) {
             Some(group) => group.periods.push(i),
             None => leading.periods.push(i),
         }
@@ -237,7 +236,7 @@ fn draw(
         0.0
     };
     let title = fit_label(
-        model.title.as_deref(),
+        model.titles.title.as_deref(),
         measure,
         size,
         body_w.max(320.0),
@@ -274,7 +273,7 @@ fn draw(
                     h,
                     format_args!(" fill=\"{}\"", series_color(group.section))
                 ),
-                LabelSvg(label, x + w / 2.0, y + h / 2.0, &header_attrs)
+                label.svg(Point::new(x + w / 2.0, y + h / 2.0), &header_attrs)
             );
         };
     let period = |out: &mut String, i: usize, color: Hue, x: f64, y: f64, h: f64| {
@@ -282,7 +281,7 @@ fn draw(
             out,
             "{}{}",
             rect(x, y, col_w, h, format_args!(" fill=\"{color}\"")),
-            LabelSvg(&period_labels[i], x + col_w / 2.0, y + h / 2.0, ON_COLOR)
+            period_labels[i].svg(Point::new(x + col_w / 2.0, y + h / 2.0), ON_COLOR)
         );
     };
     let event_attrs = format!(" font-size=\"{}\"", js::Number(small));
@@ -297,7 +296,7 @@ fn draw(
                 h,
                 format_args!(" fill=\"{color}\" fill-opacity=\"0.16\"")
             ),
-            LabelSvg(label, x + event_w / 2.0, y + h / 2.0, &event_attrs)
+            label.svg(Point::new(x + event_w / 2.0, y + h / 2.0), &event_attrs)
         );
     };
     let dot = |out: &mut String, x: f64, y: f64, color: Hue| {
@@ -349,7 +348,7 @@ fn draw(
                 let _ = write!(
                     body,
                     "<path class=\"{p}-edge\" d=\"M{}H{}",
-                    Point(left + col_w, cy),
+                    Point::new(left + col_w, cy),
                     num(axis_x)
                 );
                 let mut ey = y;
@@ -357,14 +356,14 @@ fn draw(
                 for label in &event_labels[i] {
                     let eh = event_height(label);
                     last = ey + eh / 2.0;
-                    let _ = write!(body, "M{}H{}", Point(spine_x, last), num(events_x));
+                    let _ = write!(body, "M{}H{}", Point::new(spine_x, last), num(events_x));
                     ey += eh + EVENT_GAP;
                 }
                 if !event_labels[i].is_empty() {
                     let _ = write!(
                         body,
                         "M{}H{}V{}",
-                        Point(axis_x, cy),
+                        Point::new(axis_x, cy),
                         num(spine_x),
                         num(last)
                     );
@@ -395,9 +394,9 @@ fn draw(
             let _ = write!(
                 axis,
                 "<path class=\"{p}-axis\" d=\"M{}V{}\" fill=\"none\" stroke=\"var(--_l)\"/>{}",
-                Point(axis_x, top),
+                Point::new(axis_x, top),
                 num(tip - ARROW + 1.0),
-                marker("arrow_point", axis_x, tip, 0.0, 1.0, "var(--_l)")
+                Marker::Arrow.draw(Point::new(axis_x, tip), Point::new(0.0, 1.0), "var(--_l)")
             );
             y = tip;
         }
@@ -453,7 +452,7 @@ fn draw(
                 let _ = write!(
                     body,
                     "<path class=\"{p}-edge\" d=\"M{}V{}",
-                    Point(cx, periods_y + chip_h),
+                    Point::new(cx, periods_y + chip_h),
                     num(if !event_labels[i].is_empty() {
                         events_y
                     } else {
@@ -464,7 +463,7 @@ fn draw(
                 for event_label in &event_labels[i] {
                     let eh = event_height(event_label);
                     if ey > events_y {
-                        let _ = write!(body, "M{}V{}", Point(cx, ey - EVENT_GAP), num(ey));
+                        let _ = write!(body, "M{}V{}", Point::new(cx, ey - EVENT_GAP), num(ey));
                     }
                     ey += eh + EVENT_GAP;
                 }
@@ -489,9 +488,9 @@ fn draw(
             let _ = write!(
                 axis,
                 "<path class=\"{p}-axis\" d=\"M{}H{}\" fill=\"none\" stroke=\"var(--_l)\"/>{}",
-                Point(left, axis_y),
+                Point::new(left, axis_y),
                 num(tip - ARROW + 1.0),
-                marker("arrow_point", tip, axis_y, 1.0, 0.0, "var(--_l)")
+                Marker::Arrow.draw(Point::new(tip, axis_y), Point::new(1.0, 0.0), "var(--_l)")
             );
         }
         bottom + pad
@@ -504,10 +503,8 @@ fn draw(
     let _ = write!(
         content,
         "{}{axis}{body}",
-        LabelSvg(
-            &title,
-            total_width / 2.0,
-            pad + title.height / 2.0,
+        title.svg(
+            Point::new(total_width / 2.0, pad + title.height / 2.0),
             title_attrs
         )
     );
@@ -519,8 +516,8 @@ fn draw(
             size,
             ctx,
             Accessible {
-                acc_title: model.acc_title.as_deref(),
-                acc_descr: model.acc_descr.as_deref(),
+                acc_title: model.titles.acc_title.as_deref(),
+                acc_descr: model.titles.acc_descr.as_deref(),
             },
             &content,
         ),

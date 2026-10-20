@@ -1,7 +1,9 @@
 //! Pele's `diagrams/er/render.ts`.
 
+use crate::geom::{Axis, Direction, Point, RoutePoint, Side, Size};
 use crate::svg::builder::rewrite;
-use crate::svg::builder::{Esc, EscText, LabelSvg, Point, fragment, icon_element};
+use crate::svg::builder::{Esc, EscText, fragment, icon_element};
+use crate::svg::edges::Curve;
 use crate::{Config, config::positive};
 use std::{
     collections::HashMap,
@@ -24,17 +26,17 @@ use crate::{
     },
     js::{self, Lazy},
     layout::{
-        compound::{CEdge, CNode, compound_layout, direction, shift_layout},
+        compound::{CEdge, CNode, compound_layout, shift_layout},
         layered::LayeredOptions,
     },
     svg::{
-        builder::{num, shared_style, span_style, text_style},
-        cluster::{Crossings, cluster_title_x, mark_crossings},
+        builder::{num, span_style, text_style},
+        cluster::Crossings,
         edges::{edge_label_svg, route_path},
         root::{Accessible, svg_document},
         theme::{RADIUS, ResolvedStyle, class_names, resolve_style},
     },
-    text::{Label, Style, decode_entities, layout_label},
+    text::{Label, Style, decode_entities},
     util::url::NoteLink,
 };
 
@@ -117,7 +119,7 @@ impl<A: fmt::Display> fmt::Display for TextLeft<'_, A> {
                 Esc(&lines[0][0].text)
             );
         }
-        let shared = shared_style(label);
+        let shared = label.shared_style();
         let attrs = attrs.to_string();
         write!(
             f,
@@ -159,8 +161,7 @@ impl<A: fmt::Display> fmt::Display for TextLeft<'_, A> {
                         "{}",
                         icon_element(
                             &icon.name,
-                            sx,
-                            y - label.size * 0.35 - side / 2.0,
+                            Point::new(sx, y - label.size * 0.35 - side / 2.0),
                             side,
                             &icon.markup
                         )
@@ -218,7 +219,7 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
         let (Some(&src), Some(&dst)) = (index.get(edge.start), index.get(edge.end)) else {
             continue;
         };
-        let label = layout_label(Some(edge.label), true, measure, small_size, 200.0, 0);
+        let label = Label::layout(Some(edge.label), true, measure, small_size, 200.0, 0);
         let mut at = None;
         if src == dst {
             loop_list.push(Loop {
@@ -235,19 +236,8 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
             src,
             dst,
             minlen: 1,
-            label_w: if label.width > 0.0 {
-                label.width + 12.0
-            } else {
-                0.0
-            },
-            label_h: if label.height > 0.0 {
-                label.height + 4.0
-            } else {
-                0.0
-            },
-            route: Vec::new(),
-            label_x: 0.0,
-            label_y: 0.0,
+            label: CEdge::label_room(&label),
+            ..CEdge::default()
         });
         edge_labels.push(label);
     }
@@ -287,14 +277,14 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
         let row_size = style.font_size.unwrap_or(small_size);
         let key_size = style.font_size.unwrap_or(js::round(size * 0.75));
         let label = if node.is_group {
-            layout_label(Some(node.label), true, measure, name_size, 4000.0, base)
+            Label::layout(Some(node.label), true, measure, name_size, 4000.0, base)
         } else {
             let text = if node.alias.is_empty() {
                 node.label
             } else {
                 node.alias
             };
-            layout_label(Some(text), true, measure, name_size, 240.0, base)
+            Label::layout(Some(text), true, measure, name_size, 240.0, base)
         };
         let own: &[usize] = loops.get(&i).map_or(&[], Vec::as_slice);
         // Loops leave by a side the layout keeps free of other edges: the
@@ -337,7 +327,7 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
                 dir: node
                     .dir
                     .filter(|dir| !dir.is_empty())
-                    .map(|dir| direction(Some(dir))),
+                    .map(Direction::from_name),
                 pad_x: GROUP_PAD,
                 pad_top: if view.label.height > 0.0 {
                     view.label.height + 16.0
@@ -346,7 +336,7 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
                 },
                 pad_bottom: GROUP_PAD,
                 min_w: (view.label.width + 2.0 * GROUP_PAD - 12.0).max(MIN_WIDTH),
-                ..crate::layout::compound::cnode(0.0, 0.0, -1)
+                ..CNode::new(Size::default(), None)
             };
         } else {
             let label = &view.label;
@@ -359,7 +349,7 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
                 let mut widths = [0.0f64; 4];
                 for attribute in node.attributes {
                     let cells: Cells = [
-                        layout_label(
+                        Label::layout(
                             Some(&cell_text(&attribute.kind)),
                             true,
                             measure,
@@ -367,7 +357,7 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
                             NO_WRAP,
                             base,
                         ),
-                        layout_label(
+                        Label::layout(
                             Some(&cell_text(&attribute.name)),
                             true,
                             measure,
@@ -375,7 +365,7 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
                             NO_WRAP,
                             base,
                         ),
-                        layout_label(
+                        Label::layout(
                             Some(&attribute.keys.join(", ")),
                             false,
                             measure,
@@ -383,7 +373,7 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
                             NO_WRAP,
                             base,
                         ),
-                        layout_label(
+                        Label::layout(
                             Some(&cell_text(&attribute.comment)),
                             true,
                             measure,
@@ -444,9 +434,9 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
                 2.0 * (MARKER_LENGTH + LOOP * 0.75 + 10.0 + reach)
             };
             c = if below {
-                crate::layout::compound::cnode(view.w, view.h + room, -1)
+                CNode::new(Size::new(view.w, view.h + room), None)
             } else {
-                crate::layout::compound::cnode(view.w + room, view.h, -1)
+                CNode::new(Size::new(view.w + room, view.h), None)
             };
         }
         c.seq = views.len() as f64;
@@ -454,15 +444,13 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
         cnodes.push(c);
     }
     for (i, node) in graph.nodes.iter().enumerate() {
-        cnodes[i].parent = node
-            .parent_id
-            .map_or(-1, |parent| index.get(parent).map_or(-1, |&at| at as i32));
+        cnodes[i].parent = node.parent_id.and_then(|parent| index.get(parent).copied());
     }
 
     let root_dir = if turned {
-        direction(Some("TB"))
+        Direction::TopToBottom
     } else {
-        direction(Some(&db.direction))
+        Direction::from_name(&db.direction)
     };
     let layout = compound_layout(
         &mut cnodes,
@@ -481,7 +469,7 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
 
     // A subgraph gets its size from the layout, so its loops hang outside it
     // and may widen the diagram.
-    let mut layout_width = layout.width;
+    let mut layout_width = layout.w;
     for (&i, own) in &loops {
         let c = &cnodes[i];
         if !c.is_group {
@@ -491,12 +479,12 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
         for &k in own {
             reach = reach.max(loop_list[k].label.width);
         }
-        layout_width =
-            layout_width.max(c.x + c.w / 2.0 + MARKER_LENGTH + LOOP * 0.75 + 10.0 + reach);
+        layout_width = layout_width
+            .max(c.center.x + c.size.w / 2.0 + MARKER_LENGTH + LOOP * 0.75 + 10.0 + reach);
     }
 
-    let title = layout_label(
-        db.title.as_deref(),
+    let title = Label::layout(
+        db.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -511,16 +499,16 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
     let inner = layout_width.max(title.width);
     let ox = pad + (inner - layout_width) / 2.0;
     let oy = pad + title_height;
-    shift_layout(&mut cnodes, &mut cedges, ox, oy);
+    shift_layout(&mut cnodes, &mut cedges, Point::new(ox, oy));
     let width = (inner + 2.0 * pad).ceil();
-    let height = (layout.height + title_height + 2.0 * pad).ceil();
+    let height = (layout.h + title_height + 2.0 * pad).ceil();
     let mut links: Vec<Link> = Vec::new();
 
     let mut crossings: Crossings = Crossings::new();
     let any_group = cnodes.iter().any(|c| c.is_group);
     if any_group {
         for e in &cedges {
-            mark_crossings(&mut crossings, &e.route);
+            crossings.mark(&e.route);
         }
     }
 
@@ -534,24 +522,22 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
         let node = view.node;
         let classes = class_names(&RE_DEFAULT.replace(&node.css_classes, |_| String::new()));
         if c.is_group {
-            view.w = c.w;
-            view.h = c.h;
-            let x = c.x - c.w / 2.0;
-            let y = c.y - c.h / 2.0;
-            let title_x = cluster_title_x(c, view.label.width, &crossings, GROUP_PAD);
+            view.w = c.size.w;
+            view.h = c.size.h;
+            let x = c.center.x - c.size.w / 2.0;
+            let y = c.center.y - c.size.h / 2.0;
+            let title_x = crossings.title_x(c, view.label.width, GROUP_PAD);
             let _ = write!(
                 clusters,
                 "<g class=\"{p}-cluster{classes}\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_a)\" fill-opacity=\"0.5\" stroke=\"var(--_b)\"{}/>{}</g>",
                 EscText(node.id),
                 num(x),
                 num(y),
-                num(c.w),
-                num(c.h),
+                num(c.size.w),
+                num(c.size.h),
                 view.style.shape,
-                LabelSvg(
-                    &view.label,
-                    title_x,
-                    y + 8.0 + view.label.height / 2.0,
+                view.label.svg(
+                    Point::new(title_x, y + 8.0 + view.label.height / 2.0),
                     rewrite(
                         &mut attrs_buf,
                         format_args!(
@@ -588,7 +574,7 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
         } else {
             y0 + view.head_h / 2.0
         };
-        let name = LabelSvg(&view.label, 0.0, name_y, name_attrs);
+        let name = view.label.svg(Point::new(0.0, name_y), name_attrs);
         let note = (!view.label.lines.is_empty()
             && ctx.options.links
             && NoteLink::marked(&classes))
@@ -609,8 +595,8 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
             nodes_out,
             "<g class=\"{p}-node {p}-entity{classes}\" data-id=\"{}\" transform=\"translate({},{})\"><rect {shape}{BOX_ATTRS}{}/>",
             EscText(node.label),
-            num(c.x),
-            num(c.y),
+            num(c.center.x),
+            num(c.center.y),
             view.style.shape
         );
         if view.rows.is_empty() {
@@ -746,8 +732,8 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
             let far = MARKER_LENGTH + LOOP * 0.75 + 6.0;
             let (label_x, label_y);
             if view.below {
-                let x = c.x + lp.at;
-                let y = c.y + view.h / 2.0;
+                let x = c.center.x + lp.at;
+                let y = c.center.y + view.h / 2.0;
                 let turn = num(y + MARKER_LENGTH);
                 let out = num(y + MARKER_LENGTH + LOOP);
                 let _ = write!(
@@ -765,8 +751,8 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
                 label_x = x;
                 label_y = y + far + label.height / 2.0;
             } else {
-                let x = c.x + view.w / 2.0;
-                let y = c.y + lp.at;
+                let x = c.center.x + view.w / 2.0;
+                let y = c.center.y + lp.at;
                 let turn = num(x + MARKER_LENGTH);
                 let out = num(x + MARKER_LENGTH + LOOP);
                 let _ = write!(
@@ -784,38 +770,43 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
                 label_x = x + far + label.width / 2.0;
                 label_y = y;
             }
-            cedges[i].label_x = label_x;
-            cedges[i].label_y = label_y;
+            cedges[i].label_at = Point::new(label_x, label_y);
         } else {
             let ce = &cedges[i];
             let mut route = straighten(&ce.route);
-            if route.len() < 6 {
+            if route.len() < 2 {
                 continue;
             }
-            inset(&mut route, 0, &views[ce.src], &cnodes[ce.src]);
-            let last = route.len() - 3;
-            inset(&mut route, last, &views[ce.dst], &cnodes[ce.dst]);
+            inset(&mut route[0].at, &views[ce.src], &cnodes[ce.src]);
+            let last = route.len() - 1;
+            inset(&mut route[last].at, &views[ce.dst], &cnodes[ce.dst]);
             // A curve stops short of each box so that the marker sits on a
             // straight run of line.
-            let dx = (route[route.len() - 3] - route[0]).abs();
-            let dy = (route[route.len() - 2] - route[1]).abs();
-            let direct = route.len() == 6
+            let dx = (route[last].at.x - route[0].at.x).abs();
+            let dy = (route[last].at.y - route[0].at.y).abs();
+            let direct = route.len() == 2
                 && (dx < 0.01 || dy < 0.01 || js::hypot(dx, dy) <= 3.0 * MARKER_LENGTH);
             let stub = if direct { 0.0 } else { MARKER_LENGTH };
-            let path = route_path(&route, None, stub, stub, None, None);
+            let path = route_path(&route, Curve::Smooth, stub, stub, None, None);
             let _ = if stub > 0.0 {
-                write!(
-                    d,
-                    "M{}L{}L{}",
-                    Point(path.sx, path.sy),
-                    &path.d[1..],
-                    Point(path.ex, path.ey)
-                )
+                write!(d, "M{}L{}L{}", path.start, &path.d[1..], path.end)
             } else {
                 write!(d, "{}", path.d)
             };
-            start = er_marker(edge.arrow_type_start, path.sx, path.sy, path.sdx, path.sdy);
-            end = er_marker(edge.arrow_type_end, path.ex, path.ey, path.edx, path.edy);
+            start = er_marker(
+                edge.arrow_type_start,
+                path.start.x,
+                path.start.y,
+                path.start_dir.x,
+                path.start_dir.y,
+            );
+            end = er_marker(
+                edge.arrow_type_end,
+                path.end.x,
+                path.end.y,
+                path.end_dir.x,
+                path.end_dir.y,
+            );
         }
         let dashed = edge.dashed;
         let _ = write!(
@@ -837,7 +828,7 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
             let _ = write!(
                 labels_out,
                 "{}",
-                edge_label_svg(&edge.id, label, cedges[i].label_x, cedges[i].label_y, "",)
+                edge_label_svg(&edge.id, label, cedges[i].label_at, "")
             );
         }
     }
@@ -849,7 +840,10 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
     let _ = write!(
         content,
         "{}",
-        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
+        title.svg(
+            Point::new(width / 2.0, pad + title.height / 2.0),
+            title_attrs
+        )
     );
     if !clusters.is_empty() {
         let _ = write!(content, "<g class=\"{p}-clusters\">{clusters}</g>");
@@ -876,8 +870,8 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
         size,
         ctx,
         Accessible {
-            acc_title: db.acc_title.as_deref(),
-            acc_descr: db.acc_descr.as_deref(),
+            acc_title: db.titles.acc_title.as_deref(),
+            acc_descr: db.titles.acc_descr.as_deref(),
         },
         &content,
     );
@@ -890,21 +884,20 @@ fn draw(db: &ErModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool) -
     }
 }
 
-fn straighten(route: &[f64]) -> Vec<f64> {
-    let mut out = route[..3.min(route.len())].to_vec();
-    let mut k = 3;
-    while k < route.len() {
-        let prev = out.len() - 3;
-        let flat = |axis: usize| {
-            (out[prev + axis] - route[k + axis]).abs() < 0.01
-                && (route[k + axis] - route[k + 3 + axis]).abs() < 0.01
-        };
-        if k + 3 < route.len() && (flat(0) || flat(1)) {
-            k += 3;
-            continue;
+fn straighten(route: &[RoutePoint]) -> Vec<RoutePoint> {
+    let mut out = route[..1.min(route.len())].to_vec();
+    for (k, point) in route.iter().enumerate().skip(1) {
+        let prev = out[out.len() - 1].at;
+        if let Some(next) = route.get(k + 1) {
+            let flat = |axis: Axis| {
+                (prev.along(axis) - point.at.along(axis)).abs() < 0.01
+                    && (point.at.along(axis) - next.at.along(axis)).abs() < 0.01
+            };
+            if flat(Axis::X) || flat(Axis::Y) {
+                continue;
+            }
         }
-        out.extend_from_slice(&route[k..k + 3]);
-        k += 3;
+        out.push(*point);
     }
     out
 }
@@ -919,44 +912,37 @@ struct End {
 /// of that side, where their markers would cover each other. This spaces
 /// them along the side, in the order they fan out.
 fn spread_ends(cedges: &mut [CEdge], cnodes: &[CNode], views: &[NodeView]) {
-    let mut sides: IndexMap<usize, Vec<End>> = IndexMap::new();
-    let mut add = |node: usize, edge: usize, route: &[f64], at: usize, next: usize| {
-        let c = &cnodes[node];
-        let dx = route[at] - c.x;
-        let dy = route[at + 1] - c.y;
-        let side = if (dy.abs() - c.h / 2.0).abs() < 0.5 {
-            if dy < 0.0 { 0 } else { 2 }
-        } else if (dx.abs() - c.w / 2.0).abs() < 0.5 {
-            if dx < 0.0 { 3 } else { 1 }
-        } else {
+    let mut sides: IndexMap<(usize, Side), Vec<End>> = IndexMap::new();
+    let mut add = |node: usize, edge: usize, route: &[RoutePoint], at: usize, next: usize| {
+        let Some(side) = cnodes[node].side_of(route[at].at) else {
             return;
         };
         let end = End {
             edge,
             at,
-            toward: route[next + if side & 1 == 1 { 1 } else { 0 }],
+            toward: if side.is_horizontal() {
+                route[next].at.x
+            } else {
+                route[next].at.y
+            },
         };
-        sides.entry(node * 4 + side).or_default().push(end);
+        sides.entry((node, side)).or_default().push(end);
     };
     for (i, e) in cedges.iter().enumerate() {
-        if e.route.len() < 3 {
+        if e.src == e.dst || e.route.len() < 2 {
             continue;
         }
-        let last = e.route.len() - 3;
-        if e.src == e.dst || last < 3 {
-            continue;
-        }
-        add(e.src, i, &e.route, 0, 3);
-        add(e.dst, i, &e.route, last, last - 3);
+        let last = e.route.len() - 1;
+        add(e.src, i, &e.route, 0, 1);
+        add(e.dst, i, &e.route, last, last - 1);
     }
-    for (&key, ends) in sides.iter_mut() {
+    for (&(node, side), ends) in sides.iter_mut() {
         if ends.len() < 2 {
             continue;
         }
-        let node = key >> 2;
-        let vertical = key & 1 == 1;
+        let vertical = !side.is_horizontal();
         let (bw, bh) = if cnodes[node].is_group {
-            (cnodes[node].w, cnodes[node].h)
+            (cnodes[node].size.w, cnodes[node].size.h)
         } else {
             (views[node].w, views[node].h)
         };
@@ -965,14 +951,15 @@ fn spread_ends(cedges: &mut [CEdge], cnodes: &[CNode], views: &[NodeView]) {
             .min((length - 2.0 * PORT_MARGIN) / (ends.len() - 1) as f64)
             .max(0.0);
         let center = if vertical {
-            cnodes[node].y
+            cnodes[node].center.y
         } else {
-            cnodes[node].x
+            cnodes[node].center.x
         };
         ends.sort_by(|a, b| js::compare(a.toward - b.toward));
         let count = ends.len() as f64;
         for (i, end) in ends.iter().enumerate() {
-            cedges[end.edge].route[end.at + if vertical { 1 } else { 0 }] =
+            let point = &mut cedges[end.edge].route[end.at].at;
+            *point.along_mut(if vertical { Axis::Y } else { Axis::X }) =
                 center + (i as f64 - (count - 1.0) / 2.0) * step;
         }
     }
@@ -981,16 +968,16 @@ fn spread_ends(cedges: &mut [CEdge], cnodes: &[CNode], views: &[NodeView]) {
 /// An entity with a self-relationship is laid out larger than it is drawn;
 /// this moves a route end from the side of that larger box onto the
 /// entity's own side.
-fn inset(route: &mut [f64], at: usize, view: &NodeView, c: &CNode) {
+fn inset(end: &mut Point, view: &NodeView, c: &CNode) {
     if c.is_group {
         return;
     }
-    let dx = route[at] - c.x;
-    let dy = route[at + 1] - c.y;
-    if c.w != view.w && (dx.abs() - c.w / 2.0).abs() < 0.5 {
-        route[at] -= (js::sign(dx) * (c.w - view.w)) / 2.0;
+    let dx = end.x - c.center.x;
+    let dy = end.y - c.center.y;
+    if c.size.w != view.w && (dx.abs() - c.size.w / 2.0).abs() < 0.5 {
+        end.x -= (js::sign(dx) * (c.size.w - view.w)) / 2.0;
     }
-    if c.h != view.h && (dy.abs() - c.h / 2.0).abs() < 0.5 {
-        route[at + 1] -= (js::sign(dy) * (c.h - view.h)) / 2.0;
+    if c.size.h != view.h && (dy.abs() - c.size.h / 2.0).abs() < 0.5 {
+        end.y -= (js::sign(dy) * (c.size.h - view.h)) / 2.0;
     }
 }

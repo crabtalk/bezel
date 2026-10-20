@@ -1,10 +1,11 @@
 //! Pele's `diagrams/er/markers.ts`.
 
+use crate::geom::Point;
 use std::fmt;
 
 use crate::{
     js,
-    svg::builder::{Point, fragment, num},
+    svg::builder::{fragment, num},
 };
 
 /// How far a marker reaches back along its line from the box it touches.
@@ -20,7 +21,8 @@ const RING: f64 = 3.5;
 pub fn er_marker(kind: &str, x: f64, y: f64, dx: f64, dy: f64) -> impl fmt::Display + '_ {
     fragment(move |f| {
         let p = crate::PREFIX;
-        let at = |back: f64, side: f64| Point(x - dx * back - dy * side, y - dy * back + dx * side);
+        let at =
+            |back: f64, side: f64| Point::new(x - dx * back - dy * side, y - dy * back + dx * side);
         let bar = |f: &mut fmt::Formatter<'_>, back: f64| {
             write!(f, "M{}L{}", at(back, -BAR), at(back, BAR))
         };

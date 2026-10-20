@@ -8,42 +8,65 @@ use super::{
     db::SequenceModel,
     lexer::tokenize,
     tokens::T,
-    types::{NoteActor, Participant, SeqStatement, SeqText, line, placement},
+    types::{NoteActor, Participant, Placement, SeqBoxData, SeqStatement, SeqText, line},
 };
-use crate::{detect::Kind, error::Error, js, token::Stream, util::chars::width_at};
+use crate::{
+    detect::Kind,
+    error::Error,
+    js,
+    token::{Stream, after_keyword},
+};
 
 const SIGNAL_TOKENS: &str = "'SOLID_OPEN_ARROW', 'DOTTED_OPEN_ARROW', 'SOLID_ARROW', 'DOTTED_ARROW', 'SOLID_CROSS', 'DOTTED_CROSS', 'SOLID_POINT', 'DOTTED_POINT'";
 
-fn signal_of(token: T) -> Option<i32> {
-    Some(match token {
-        T::SolidOpenArrow => line::SOLID_OPEN,
-        T::DottedOpenArrow => line::DOTTED_OPEN,
-        T::SolidArrow => line::SOLID,
-        T::DottedArrow => line::DOTTED,
-        T::BidirectionalSolidArrow => line::BIDIRECTIONAL_SOLID,
-        T::BidirectionalDottedArrow => line::BIDIRECTIONAL_DOTTED,
-        T::SolidCross => line::SOLID_CROSS,
-        T::DottedCross => line::DOTTED_CROSS,
-        T::SolidPoint => line::SOLID_POINT,
-        T::DottedPoint => line::DOTTED_POINT,
-        T::SolidArrowTop => line::SOLID_TOP,
-        T::SolidArrowBottom => line::SOLID_BOTTOM,
-        T::StickArrowTop => line::STICK_TOP,
-        T::StickArrowBottom => line::STICK_BOTTOM,
-        T::SolidArrowTopDotted => line::SOLID_TOP_DOTTED,
-        T::SolidArrowBottomDotted => line::SOLID_BOTTOM_DOTTED,
-        T::StickArrowTopDotted => line::STICK_TOP_DOTTED,
-        T::StickArrowBottomDotted => line::STICK_BOTTOM_DOTTED,
-        T::SolidArrowTopReverse => line::SOLID_ARROW_TOP_REVERSE,
-        T::SolidArrowBottomReverse => line::SOLID_ARROW_BOTTOM_REVERSE,
-        T::StickArrowTopReverse => line::STICK_ARROW_TOP_REVERSE,
-        T::StickArrowBottomReverse => line::STICK_ARROW_BOTTOM_REVERSE,
-        T::SolidArrowTopReverseDotted => line::SOLID_ARROW_TOP_REVERSE_DOTTED,
-        T::SolidArrowBottomReverseDotted => line::SOLID_ARROW_BOTTOM_REVERSE_DOTTED,
-        T::StickArrowTopReverseDotted => line::STICK_ARROW_TOP_REVERSE_DOTTED,
-        T::StickArrowBottomReverseDotted => line::STICK_ARROW_BOTTOM_REVERSE_DOTTED,
-        _ => return None,
-    })
+impl T {
+    /// The message kind of an arrow.
+    fn signal(self) -> Option<i32> {
+        Some(match self {
+            T::SolidOpenArrow => line::SOLID_OPEN,
+            T::DottedOpenArrow => line::DOTTED_OPEN,
+            T::SolidArrow => line::SOLID,
+            T::DottedArrow => line::DOTTED,
+            T::BidirectionalSolidArrow => line::BIDIRECTIONAL_SOLID,
+            T::BidirectionalDottedArrow => line::BIDIRECTIONAL_DOTTED,
+            T::SolidCross => line::SOLID_CROSS,
+            T::DottedCross => line::DOTTED_CROSS,
+            T::SolidPoint => line::SOLID_POINT,
+            T::DottedPoint => line::DOTTED_POINT,
+            T::SolidArrowTop => line::SOLID_TOP,
+            T::SolidArrowBottom => line::SOLID_BOTTOM,
+            T::StickArrowTop => line::STICK_TOP,
+            T::StickArrowBottom => line::STICK_BOTTOM,
+            T::SolidArrowTopDotted => line::SOLID_TOP_DOTTED,
+            T::SolidArrowBottomDotted => line::SOLID_BOTTOM_DOTTED,
+            T::StickArrowTopDotted => line::STICK_TOP_DOTTED,
+            T::StickArrowBottomDotted => line::STICK_BOTTOM_DOTTED,
+            T::SolidArrowTopReverse => line::SOLID_ARROW_TOP_REVERSE,
+            T::SolidArrowBottomReverse => line::SOLID_ARROW_BOTTOM_REVERSE,
+            T::StickArrowTopReverse => line::STICK_ARROW_TOP_REVERSE,
+            T::StickArrowBottomReverse => line::STICK_ARROW_BOTTOM_REVERSE,
+            T::SolidArrowTopReverseDotted => line::SOLID_ARROW_TOP_REVERSE_DOTTED,
+            T::SolidArrowBottomReverseDotted => line::SOLID_ARROW_BOTTOM_REVERSE_DOTTED,
+            T::StickArrowTopReverseDotted => line::STICK_ARROW_TOP_REVERSE_DOTTED,
+            T::StickArrowBottomReverseDotted => line::STICK_ARROW_BOTTOM_REVERSE_DOTTED,
+            _ => return None,
+        })
+    }
+
+    /// The block a keyword opens.
+    fn block(self) -> Option<K> {
+        Some(match self {
+            T::Loop => K::Loop,
+            T::Rect => K::Rect,
+            T::Opt => K::Opt,
+            T::Break => K::Break,
+            T::Alt => K::Alt,
+            T::Par | T::ParOver => K::Par,
+            T::Critical => K::Critical,
+            T::Box => K::Box,
+            _ => return None,
+        })
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -57,20 +80,6 @@ enum K {
     Alt,
     Par,
     Critical,
-}
-
-fn block_of(token: T) -> Option<K> {
-    Some(match token {
-        T::Loop => K::Loop,
-        T::Rect => K::Rect,
-        T::Opt => K::Opt,
-        T::Break => K::Break,
-        T::Alt => K::Alt,
-        T::Par | T::ParOver => K::Par,
-        T::Critical => K::Critical,
-        T::Box => K::Box,
-        _ => return None,
-    })
 }
 
 struct Frame {
@@ -105,9 +114,8 @@ impl Parser<'_, '_, '_> {
     }
 
     fn text2(&mut self) -> Result<SeqText, Error> {
-        let text = self.s.expect(T::Txt, "")?;
-        let text = js::trim(text);
-        Ok(self.db.parse_message(&text[1.min(text.len())..]))
+        let text = js::trim(self.s.expect(T::Txt, "")?);
+        Ok(SeqText::parse(&text[1.min(text.len())..]))
     }
 
     /// A `participant`, `actor` or `destroy` statement: the participant, and
@@ -149,7 +157,7 @@ impl Parser<'_, '_, '_> {
         if self.s.eat(T::As) {
             let alias = self.s.expect(T::RestOfLine, "")?;
             self.s.expect(T::Newline, "")?;
-            node.description = Some(self.db.parse_message(alias));
+            node.description = Some(SeqText::parse(alias));
         } else if self.s.eat(T::Newline) {
         } else {
             return Err(self.s.fail("'AS', 'NEWLINE'"));
@@ -169,7 +177,7 @@ impl Parser<'_, '_, '_> {
 
     fn signal(&mut self, from: String) -> Result<(), Error> {
         let central_from = self.s.eat(T::Central);
-        let Some(signal_type) = signal_of(self.s.kind()) else {
+        let Some(signal_type) = self.s.kind().signal() else {
             return Err(self.s.fail(SIGNAL_TOKENS));
         };
         self.s.bump();
@@ -248,7 +256,7 @@ impl Parser<'_, '_, '_> {
             let second = second.unwrap_or_else(|| first.clone());
             self.list.push(Some(SeqStatement::AddNote {
                 actor: NoteActor::Two([first, second]),
-                placement: placement::OVER,
+                placement: Placement::Over,
                 text,
             }));
             return Ok(());
@@ -263,9 +271,9 @@ impl Parser<'_, '_, '_> {
         self.list.push(Some(SeqStatement::AddNote {
             actor: NoteActor::One(who),
             placement: if t == T::LeftOf {
-                placement::LEFTOF
+                Placement::LeftOf
             } else {
-                placement::RIGHTOF
+                Placement::RightOf
             },
             text,
         }));
@@ -302,35 +310,35 @@ impl Parser<'_, '_, '_> {
         let text = frame.text;
         let (start, end) = match frame.kind {
             K::Box => (
-                SeqStatement::BoxStart(self.db.parse_box_data(&text)),
+                SeqStatement::BoxStart(SeqBoxData::parse(&text)),
                 SeqStatement::BoxEnd,
             ),
             K::Loop => (
-                section(self.db.parse_message(&text), line::LOOP_START),
+                section(SeqText::parse(&text), line::LOOP_START),
                 ending(line::LOOP_END),
             ),
             K::Rect => (
-                section(self.db.parse_message(&text), line::RECT_START),
+                section(SeqText::parse(&text), line::RECT_START),
                 ending(line::RECT_END),
             ),
             K::Opt => (
-                section(self.db.parse_message(&text), line::OPT_START),
+                section(SeqText::parse(&text), line::OPT_START),
                 ending(line::OPT_END),
             ),
             K::Break => (
-                section(self.db.parse_message(&text), line::BREAK_START),
+                section(SeqText::parse(&text), line::BREAK_START),
                 ending(line::BREAK_END),
             ),
             K::Alt => (
-                section(self.db.parse_message(&text), line::ALT_START),
+                section(SeqText::parse(&text), line::ALT_START),
                 ending(line::ALT_END),
             ),
             K::Par => (
-                section(self.db.parse_message(&text), frame.start_type),
+                section(SeqText::parse(&text), frame.start_type),
                 ending(line::PAR_END),
             ),
             K::Critical | K::Top => (
-                section(self.db.parse_message(&text), line::CRITICAL_START),
+                section(SeqText::parse(&text), line::CRITICAL_START),
                 ending(line::CRITICAL_END),
             ),
         };
@@ -428,22 +436,21 @@ impl Parser<'_, '_, '_> {
                 T::Title | T::LegacyTitle => {
                     let text = self.s.take();
                     let head = if t == T::Title { 5 } else { 6 };
-                    let title = text[head + width_at(text, head)..].to_string();
-                    self.db.set_diagram_title(&title);
+                    self.db.titles.set_title(after_keyword(text, head));
                 }
                 T::AccTitle => {
                     self.s.bump();
                     let value = self.s.expect(T::AccTitleValue, "")?;
-                    self.db.set_acc_title(js::trim(value));
+                    self.db.titles.set_acc_title(js::trim(value));
                 }
                 T::AccDescr => {
                     self.s.bump();
                     let value = self.s.expect(T::AccDescrValue, "")?;
-                    self.db.set_acc_description(js::trim(value));
+                    self.db.titles.set_acc_descr(js::trim(value));
                 }
                 T::AccDescrMultilineValue => {
-                    let value = js::trim(self.s.take()).to_string();
-                    self.db.set_acc_description(&value);
+                    let value = js::trim(self.s.take());
+                    self.db.titles.set_acc_descr(value);
                 }
                 T::Loop
                 | T::Rect
@@ -459,7 +466,7 @@ impl Parser<'_, '_, '_> {
                     let slot = self.list.len();
                     self.list.push(None);
                     let inner = Frame {
-                        kind: block_of(t).unwrap_or(K::Top),
+                        kind: t.block().unwrap_or(K::Top),
                         text: text.to_string(),
                         start_type: if t == T::ParOver {
                             line::PAR_OVER_START
@@ -481,7 +488,7 @@ impl Parser<'_, '_, '_> {
                     }
                     self.s.bump();
                     let text = self.s.expect(T::RestOfLine, "")?;
-                    let text = self.db.parse_message(text);
+                    let text = SeqText::parse(text);
                     self.list.push(Some(section(text, signal_type)));
                 }
                 T::EndKw => {

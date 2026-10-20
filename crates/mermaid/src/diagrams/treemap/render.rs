@@ -1,5 +1,7 @@
 //! Pele's `diagrams/treemap/render.ts`.
 
+use crate::geom::Point;
+use crate::text::Label;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
@@ -19,11 +21,11 @@ use crate::{
     },
     js::{self, Lazy},
     svg::{
-        builder::{LabelSvg, TITLE, fragment, num},
+        builder::{TITLE, fragment, num},
         root::{Accessible, svg_document},
         theme::{RADIUS, class_names, resolve_style, series_color},
     },
-    text::{Style, decode_entities, layout_label},
+    text::{Style, decode_entities},
 };
 use std::fmt::Write as _;
 
@@ -92,8 +94,8 @@ pub fn render_treemap(
         },
     );
 
-    let title = layout_label(
-        model.title.as_deref(),
+    let title = Label::layout(
+        model.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -254,7 +256,10 @@ pub fn render_treemap(
     let _ = write!(
         content,
         "{}",
-        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE)
+        title.svg(
+            Point::new(total_width / 2.0, pad + title.height / 2.0),
+            TITLE
+        )
     );
     if !sections.is_empty() {
         let _ = write!(
@@ -278,8 +283,8 @@ pub fn render_treemap(
             size,
             ctx,
             Accessible {
-                acc_title: model.acc_title.as_deref(),
-                acc_descr: model.acc_descr.as_deref(),
+                acc_title: model.titles.acc_title.as_deref(),
+                acc_descr: model.titles.acc_descr.as_deref(),
             },
             &content,
         ),

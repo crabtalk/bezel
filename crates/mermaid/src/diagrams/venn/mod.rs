@@ -8,7 +8,7 @@ pub mod parser;
 pub mod render;
 pub mod types;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
@@ -32,9 +32,8 @@ impl Diagram for Venn {
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    match model {
-        Model::Venn(model) => Ok(render::render_venn(model, config, ctx)),
-        _ => unreachable!("venn renders a venn model"),
+impl Render for db::VennDb {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_venn(self, config, ctx))
     }
 }

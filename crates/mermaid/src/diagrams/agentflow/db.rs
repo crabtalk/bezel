@@ -8,9 +8,10 @@ use super::{
     graph::AgentGraph,
     shapes::{ShapeSink, is_valid_shape, resolve_shape_alias},
     types::{
-        AgentNode, Diagnostic, DiagnosticId, DocItem, ElementMapping, ElementPosition, FlowText,
-        LinkInfo, Loc, Metadata, Node, NodeExt, SemanticConnector, SemanticEdge, SemanticModel,
-        SemanticSubgraph, SemanticVertex, Severity, StatementType, Vertex, VertexKind,
+        AgentNode, ArrowType, Diagnostic, DiagnosticId, DocItem, ElementMapping, ElementPosition,
+        FlowText, LinkInfo, Loc, Metadata, Node, NodeExt, SemanticConnector, SemanticEdge,
+        SemanticModel, SemanticSubgraph, SemanticVertex, Severity, StatementType, Stroke, Vertex,
+        VertexKind,
     },
 };
 use crate::{
@@ -60,11 +61,25 @@ pub struct AgentflowDbOptions {
     pub line_offset: usize,
 }
 
-pub fn is_tool_definition(vertex: &AgentNode) -> bool {
-    vertex
-        .kind
-        .as_deref()
-        .is_some_and(|kind| TOOL_SHAPES.contains(&kind))
+impl AgentNode {
+    pub fn is_tool_definition(&self) -> bool {
+        self.kind
+            .as_deref()
+            .is_some_and(|kind| TOOL_SHAPES.contains(&kind))
+    }
+
+    pub fn vertex_kind(&self) -> VertexKind {
+        if self.is_tool_definition() {
+            return VertexKind::Tool;
+        }
+        match resolve_shape_alias(self.kind.as_deref()) {
+            Some("hexagon" | "hex") => VertexKind::Action,
+            Some("lean-right" | "lean_right") => VertexKind::Input,
+            Some("lin-doc" | "lined-document") => VertexKind::Refdoc,
+            Some("diamond") => VertexKind::Decision,
+            _ => VertexKind::Task,
+        }
+    }
 }
 
 /// Drops `__proto__`, `constructor` and `prototype` keys at every level, so
@@ -214,23 +229,23 @@ fn strip_line_trailing_commas(body: &str) -> String {
 fn destruct_end_link(raw: &str) -> LinkInfo {
     let text = js::trim(raw);
     let mut line = text.get(..text.len().saturating_sub(1)).unwrap_or("");
-    let mut kind = "arrow_open";
+    let mut kind = ArrowType::Open;
     match text.as_bytes().last() {
-        Some(b'x') => kind = "arrow_cross",
-        Some(b'>') => kind = "arrow_point",
+        Some(b'x') => kind = ArrowType::Cross,
+        Some(b'>') => kind = ArrowType::Point,
         Some(b'-' | b'.') => line = text,
         _ => {}
     }
-    let mut stroke = "normal";
-    let mut length = js::len(line) as i32 - 1;
+    let mut stroke = Stroke::Normal;
+    let mut length = line.len() as i32 - 1;
     let dots = line.matches('.').count() as i32;
     if dots > 0 {
-        stroke = "dotted";
+        stroke = Stroke::Dotted;
         length = dots;
     }
     LinkInfo {
-        kind: kind.into(),
-        stroke: stroke.into(),
+        kind,
+        stroke,
         length: Some(length),
         ..LinkInfo::default()
     }
@@ -255,16 +270,12 @@ pub fn destruct_link(end: &str, start: Option<&str>) -> LinkInfo {
         // The first half of a split arrow only says whether the line is
         // dotted.
         let stroke = if start.contains('.') {
-            "dotted"
+            Stroke::Dotted
         } else {
-            "normal"
+            Stroke::Normal
         };
         if stroke != info.stroke {
-            return LinkInfo {
-                kind: "INVALID".into(),
-                stroke: "INVALID".into(),
-                ..LinkInfo::default()
-            };
+            return LinkInfo::invalid();
         }
     }
     info
@@ -319,17 +330,15 @@ impl AgentflowDb {
         }
     }
 
-    fn place(&self, loc: Option<Loc>) -> (usize, usize) {
-        match loc {
-            Some(loc) => (
-                loc.first_line + self.options.line_offset,
-                loc.first_column + 1,
-            ),
-            None => (0, 0),
-        }
+    /// The line and column of `loc`'s start, as errors report them.
+    fn place(&self, loc: Loc) -> (usize, usize) {
+        (
+            loc.first_line + self.options.line_offset,
+            loc.first_column + 1,
+        )
     }
 
-    fn metadata(&self, id: &str, source: &str, loc: Option<Loc>) -> Result<Value, Error> {
+    fn metadata(&self, id: &str, source: &str, loc: Loc) -> Result<Value, Error> {
         let multiline = source.contains('\n');
         let first = if multiline {
             parse_yaml(&format!("{source}\n"))
@@ -355,12 +364,8 @@ impl AgentflowDb {
                     Some(retried) => retried,
                     None => {
                         let (line, column) = self.place(loc);
-                        let at = match loc {
-                            Some(_) => format!(" ({line}:{column})"),
-                            None => String::new(),
-                        };
                         let error = Error::syntax(format!(
-                            "Metadata of \"{id}\" is not valid YAML. {}{at}",
+                            "Metadata of \"{id}\" is not valid YAML. {} ({line}:{column})",
                             error.0
                         ))
                         .of(Kind::Agentflow);
@@ -380,7 +385,7 @@ impl AgentflowDb {
     /// Applies a `@{ … }` block, written at `loc`, to what `id` names: a
     /// flow's, connector's, edge's or node's metadata, and a node's shape and
     /// label or an edge's animation and curve.
-    pub fn add_metadata(&mut self, id: &str, source: &str, loc: Option<Loc>) -> Result<(), Error> {
+    pub fn add_metadata(&mut self, id: &str, source: &str, loc: Loc) -> Result<(), Error> {
         if js::trim(id).is_empty() {
             return Ok(());
         }
@@ -543,19 +548,6 @@ impl AgentflowDb {
         id
     }
 
-    pub fn vertex_kind(&self, vertex: &AgentNode) -> VertexKind {
-        if is_tool_definition(vertex) {
-            return VertexKind::Tool;
-        }
-        match resolve_shape_alias(vertex.kind.as_deref()) {
-            Some("hexagon" | "hex") => VertexKind::Action,
-            Some("lean-right" | "lean_right") => VertexKind::Input,
-            Some("lin-doc" | "lined-document") => VertexKind::Refdoc,
-            Some("diamond") => VertexKind::Decision,
-            _ => VertexKind::Task,
-        }
-    }
-
     pub fn semantic_model(&self) -> SemanticModel {
         let mut vertices = Vec::new();
         let mut connectors = Vec::new();
@@ -576,7 +568,7 @@ impl AgentflowDb {
                 id: id.clone(),
                 label: v.text.clone(),
                 shape: resolve_shape_alias(v.kind.as_deref()).map(str::to_string),
-                vertex_kind: Some(self.vertex_kind(v)),
+                vertex_kind: Some(v.vertex_kind()),
                 metadata,
             });
         }
@@ -622,14 +614,12 @@ impl AgentflowDb {
         }
     }
 
-    fn position(&self, loc: Option<Loc>) -> ElementPosition {
-        let start_line = loc.map_or(0, |l| l.first_line);
-        let start_column = loc.map_or(0, |l| l.first_column);
+    fn position(&self, loc: Loc) -> ElementPosition {
         ElementPosition {
-            start_line: start_line + self.options.line_offset,
-            start_column,
-            end_line: loc.map_or(start_line, |l| l.last_line) + self.options.line_offset,
-            end_column: loc.map_or(start_column, |l| l.last_column),
+            start_line: loc.first_line + self.options.line_offset,
+            start_column: loc.first_column,
+            end_line: loc.last_line + self.options.line_offset,
+            end_column: loc.last_column,
             // Mermaid builds its parser without ranges, so these are always
             // zero.
             start_index: 0,
@@ -651,7 +641,7 @@ impl AgentflowDb {
     }
 
     /// `bare` when the vertex names no shape.
-    pub fn add_vertex_mapping(&mut self, id: &str, bare: bool, loc: Option<Loc>) {
+    pub fn add_vertex_mapping(&mut self, id: &str, bare: bool, loc: Loc) {
         if id.is_empty() {
             return;
         }
@@ -665,8 +655,8 @@ impl AgentflowDb {
     }
 
     /// Widens a node's span over the metadata block that follows it.
-    pub fn extend_vertex_mapping(&mut self, id: &str, loc: Option<Loc>) {
-        if id.is_empty() || loc.is_none() {
+    pub fn extend_vertex_mapping(&mut self, id: &str, loc: Loc) {
+        if id.is_empty() {
             return;
         }
         let end = self.position(loc);
@@ -690,7 +680,7 @@ impl AgentflowDb {
         self.push_mapping(id, StatementType::Attachment, end);
     }
 
-    pub fn add_edge_mapping(&mut self, to_nodes: &[String], loc: Option<Loc>) {
+    pub fn add_edge_mapping(&mut self, to_nodes: &[String], loc: Loc) {
         let ids: Vec<&str> = to_nodes
             .iter()
             .map(String::as_str)
@@ -705,22 +695,12 @@ impl AgentflowDb {
         self.push_mapping(&id, StatementType::Edge, position);
     }
 
-    fn block_mapping(
-        &mut self,
-        id: &str,
-        kind: StatementType,
-        start_loc: Option<Loc>,
-        end_loc: Option<Loc>,
-    ) {
+    fn block_mapping(&mut self, id: &str, kind: StatementType, start_loc: Loc, end_loc: Loc) {
         if id.is_empty() {
             return;
         }
         let start = self.position(start_loc);
-        let end = if end_loc.is_some() {
-            self.position(end_loc)
-        } else {
-            start
-        };
+        let end = self.position(end_loc);
         self.push_mapping(
             id,
             kind,
@@ -735,12 +715,7 @@ impl AgentflowDb {
         );
     }
 
-    pub fn add_subgraph_mapping(
-        &mut self,
-        id: Option<&FlowText>,
-        start_loc: Option<Loc>,
-        end_loc: Option<Loc>,
-    ) {
+    pub fn add_subgraph_mapping(&mut self, id: Option<&FlowText>, start_loc: Loc, end_loc: Loc) {
         let text = id.map_or("", |t| t.text.as_str()).to_string();
         self.block_mapping(&text, StatementType::Subgraph, start_loc, end_loc);
     }
@@ -748,8 +723,8 @@ impl AgentflowDb {
     pub fn add_connector_mapping(
         &mut self,
         text_obj: Option<&FlowText>,
-        start_loc: Option<Loc>,
-        end_loc: Option<Loc>,
+        start_loc: Loc,
+        end_loc: Loc,
     ) {
         let id = text_obj.map_or("", |t| js::trim(&t.text)).to_string();
         self.block_mapping(&id, StatementType::Connector, start_loc, end_loc);
@@ -849,13 +824,13 @@ impl Serialize for AgentflowDb {
         }
         map.serialize_entry("mappings", &self.mappings)?;
         map.serialize_entry("diagnostics", &self.diagnostics)?;
-        if let Some(title) = &store.title {
+        if let Some(title) = &store.titles.title {
             map.serialize_entry("title", title)?;
         }
-        if let Some(acc_title) = &store.acc_title {
+        if let Some(acc_title) = &store.titles.acc_title {
             map.serialize_entry("accTitle", acc_title)?;
         }
-        if let Some(acc_descr) = &store.acc_descr {
+        if let Some(acc_descr) = &store.titles.acc_descr {
             map.serialize_entry("accDescr", acc_descr)?;
         }
         map.serialize_entry("lineOffset", &self.options.line_offset)?;

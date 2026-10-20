@@ -11,7 +11,7 @@ pub mod render;
 pub mod shapes;
 pub mod types;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 pub use render::AgentflowConfig;
@@ -45,7 +45,7 @@ impl Diagram for Agentflow {
             max_edges: Some(limits.max_edges),
         });
         if let Some(title) = title.filter(|title| !title.is_empty()) {
-            db.store.title = Some(title.to_string());
+            db.store.titles.set_title(title);
         }
         parser::parse_agentflow(source, &mut db, false)?;
         db.graph = render::agent_graph(&mut db, flow);
@@ -53,9 +53,8 @@ impl Diagram for Agentflow {
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Agentflow(db) = model else {
-        unreachable!("agentflow renders an agentflow model")
-    };
-    Ok(render::render_agentflow(db, &config.agentflow, ctx))
+impl Render for AgentflowDb {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_agentflow(self, &config.agentflow, ctx))
+    }
 }

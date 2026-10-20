@@ -1,22 +1,19 @@
 //! Pele's `diagrams/architecture/db.ts`.
 
+use crate::diagrams::common::db::Titles;
 use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 
 use super::parser::{ArchitectureAst, Side};
-use crate::{detect::Kind, error::Error, js::Lazy};
-
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
-static RE_LEAD: Lazy = Lazy::new(r"^\s+", "g");
+use crate::{detect::Kind, error::Error};
 
 /// A service or a junction. A junction has no icon, icon text or title.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ArchNode {
     pub id: String,
-    /// `service` or `junction`.
     #[serde(rename = "type")]
-    pub kind: &'static str,
+    pub kind: ArchNodeKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -29,7 +26,31 @@ pub struct ArchNode {
 
 impl ArchNode {
     pub fn is_junction(&self) -> bool {
-        self.kind == "junction"
+        self.kind == ArchNodeKind::Junction
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ArchNodeKind {
+    Service,
+    Junction,
+}
+
+/// What an id names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Registered {
+    Node,
+    Group,
+}
+
+impl Registered {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Node => "node",
+            Self::Group => "group",
+        }
     }
 }
 
@@ -73,31 +94,20 @@ pub struct ArchLayoutHint {
 pub struct ArchitectureModel {
     #[serde(rename = "type")]
     pub kind: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_descr: Option<String>,
+    #[serde(flatten)]
+    pub titles: Titles,
     pub nodes: IndexMap<String, ArchNode>,
     pub groups: IndexMap<String, ArchGroup>,
     pub edges: Vec<ArchEdge>,
     pub layout_hints: Vec<ArchLayoutHint>,
-    /// What each id names: `node` or `group`.
-    registered: IndexMap<String, &'static str>,
-}
-
-fn fail(message: String) -> Error {
-    Error::semantic(message).of(Kind::Architecture)
+    registered: IndexMap<String, Registered>,
 }
 
 impl ArchitectureModel {
     pub fn new() -> Self {
         Self {
             kind: "architecture",
-            title: None,
-            acc_title: None,
-            acc_descr: None,
+            titles: Titles::default(),
             nodes: IndexMap::new(),
             groups: IndexMap::new(),
             edges: Vec::new(),
@@ -106,50 +116,65 @@ impl ArchitectureModel {
         }
     }
 
-    fn register(&mut self, kind: &str, id: &str, parent: Option<&str>) -> Result<(), Error> {
+    /// Registers `id` as `what`; `kind` names it in messages.
+    fn register(
+        &mut self,
+        kind: &str,
+        what: Registered,
+        id: &str,
+        parent: Option<&str>,
+    ) -> Result<(), Error> {
         if let Some(other) = self.registered.get(id) {
-            return Err(fail(format!(
-                "The {kind} id [{id}] is already in use by another {other}"
-            )));
+            return Err(Error::semantic(format!(
+                "The {kind} id [{id}] is already in use by another {}",
+                other.name()
+            ))
+            .of(Kind::Architecture));
         }
         if let Some(parent) = parent {
             if id == parent {
-                return Err(fail(format!(
+                return Err(Error::semantic(format!(
                     "The {kind} [{id}] cannot be placed within itself"
-                )));
+                ))
+                .of(Kind::Architecture));
             }
             match self.registered.get(parent) {
                 None => {
-                    return Err(fail(format!(
+                    return Err(Error::semantic(format!(
                         "The {kind} [{id}]'s parent does not exist. Please make sure the parent is created before this {kind}"
-                    )));
+                    )).of(Kind::Architecture));
                 }
-                Some(&"node") => {
-                    return Err(fail(format!("The {kind} [{id}]'s parent is not a group")));
+                Some(Registered::Node) => {
+                    return Err(Error::semantic(format!(
+                        "The {kind} [{id}]'s parent is not a group"
+                    ))
+                    .of(Kind::Architecture));
                 }
                 Some(_) => {}
             }
         }
-        self.registered.insert(
-            id.to_string(),
-            if kind == "group" { "group" } else { "node" },
-        );
+        self.registered.insert(id.to_string(), what);
         Ok(())
     }
 
     pub fn add_service(&mut self, node: ArchNode) -> Result<(), Error> {
-        self.register("service", &node.id, node.parent.as_deref())?;
+        self.register(
+            "service",
+            Registered::Node,
+            &node.id,
+            node.parent.as_deref(),
+        )?;
         self.nodes.insert(node.id.clone(), node);
         Ok(())
     }
 
     pub fn add_junction(&mut self, id: String, parent: Option<String>) -> Result<(), Error> {
-        self.register("junction", &id, parent.as_deref())?;
+        self.register("junction", Registered::Node, &id, parent.as_deref())?;
         self.nodes.insert(
             id.clone(),
             ArchNode {
                 id,
-                kind: "junction",
+                kind: ArchNodeKind::Junction,
                 icon: None,
                 icon_text: None,
                 title: None,
@@ -160,7 +185,12 @@ impl ArchitectureModel {
     }
 
     pub fn add_group(&mut self, group: ArchGroup) -> Result<(), Error> {
-        self.register("group", &group.id, group.parent.as_deref())?;
+        self.register(
+            "group",
+            Registered::Group,
+            &group.id,
+            group.parent.as_deref(),
+        )?;
         self.groups.insert(group.id.clone(), group);
         Ok(())
     }
@@ -172,27 +202,27 @@ impl ArchitectureModel {
         ];
         for (side, id, _) in ends {
             if !self.registered.contains_key(id.as_str()) {
-                return Err(fail(format!(
+                return Err(Error::semantic(format!(
                     "The {side}-hand id [{id}] does not yet exist. Please create the service/group before declaring an edge to it."
-                )));
+                )).of(Kind::Architecture));
             }
         }
         // Mermaid lets a group id through the check above and then fails
         // with a TypeError.
         for (side, id, _) in ends {
             if !self.nodes.contains_key(id.as_str()) {
-                return Err(fail(format!(
+                return Err(Error::semantic(format!(
                     "The {side}-hand id [{id}] is a group. Add {{group}} to a service inside it instead."
-                )));
+                )).of(Kind::Architecture));
             }
         }
         let parent = &self.nodes[edge.lhs_id.as_str()].parent;
         if parent.is_some() && *parent == self.nodes[edge.rhs_id.as_str()].parent {
             for (side, id, crosses) in ends {
                 if crosses {
-                    return Err(fail(format!(
+                    return Err(Error::semantic(format!(
                         "The {side}-hand id [{id}] is modified to traverse the group boundary, but the edge does not pass through two groups."
-                    )));
+                    )).of(Kind::Architecture));
                 }
             }
         }
@@ -202,27 +232,77 @@ impl ArchitectureModel {
 
     pub fn add_layout_hint(&mut self, hint: ArchLayoutHint) -> Result<(), Error> {
         if hint.members.len() < 2 {
-            return Err(fail(format!(
+            return Err(Error::semantic(format!(
                 "An align directive requires at least two members; got {}",
                 hint.members.len()
-            )));
+            ))
+            .of(Kind::Architecture));
         }
         let mut seen = IndexSet::new();
         for id in &hint.members {
-            if self.registered.get(id.as_str()) != Some(&"node") {
-                return Err(fail(format!(
+            if self.registered.get(id.as_str()) != Some(&Registered::Node) {
+                return Err(Error::semantic(format!(
                     "align {} references [{id}], which is not a service or junction",
                     hint.direction
-                )));
+                ))
+                .of(Kind::Architecture));
             }
             if !seen.insert(id.as_str()) {
-                return Err(fail(format!(
+                return Err(Error::semantic(format!(
                     "align {} lists [{id}] more than once",
                     hint.direction
-                )));
+                ))
+                .of(Kind::Architecture));
             }
         }
         self.layout_hints.push(hint);
+        Ok(())
+    }
+
+    /// Mermaid's populateDb, with the front matter `title`: every group,
+    /// then services, junctions, edges, and alignments.
+    pub fn populate(&mut self, ast: ArchitectureAst, title: Option<&str>) -> Result<(), Error> {
+        self.titles = ast.header.titles(title.filter(|title| !title.is_empty()));
+        for group in ast.groups {
+            self.add_group(ArchGroup {
+                id: group.id,
+                icon: group.icon,
+                title: group.title,
+                parent: group.r#in,
+            })?;
+        }
+        for service in ast.services {
+            self.add_service(ArchNode {
+                id: service.id,
+                kind: ArchNodeKind::Service,
+                icon: service.icon,
+                icon_text: service.icon_text,
+                title: service.title,
+                parent: service.r#in,
+            })?;
+        }
+        for junction in ast.junctions {
+            self.add_junction(junction.id, junction.r#in)?;
+        }
+        for edge in ast.edges {
+            self.add_edge(ArchEdge {
+                lhs_id: edge.lhs_id,
+                lhs_dir: edge.lhs_dir,
+                lhs_into: edge.lhs_into,
+                lhs_group: edge.lhs_group,
+                rhs_id: edge.rhs_id,
+                rhs_dir: edge.rhs_dir,
+                rhs_into: edge.rhs_into,
+                rhs_group: edge.rhs_group,
+                title: edge.title,
+            })?;
+        }
+        for alignment in ast.alignments {
+            self.add_layout_hint(ArchLayoutHint {
+                direction: alignment.direction,
+                members: alignment.members,
+            })?;
+        }
         Ok(())
     }
 }
@@ -231,59 +311,4 @@ impl Default for ArchitectureModel {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Mermaid's populateDb: every group, then services, junctions, edges, and
-/// alignments.
-pub fn populate(ast: ArchitectureAst, db: &mut ArchitectureModel) -> Result<(), Error> {
-    if let Some(text) = ast.acc_descr.filter(|text| !text.is_empty()) {
-        db.acc_descr = Some(RE_INDENT.replace(&text, |_| "\n".into()));
-    }
-    if let Some(text) = ast.acc_title.filter(|text| !text.is_empty()) {
-        db.acc_title = Some(RE_LEAD.replace(&text, |_| String::new()));
-    }
-    if let Some(title) = ast.title.filter(|text| !text.is_empty()) {
-        db.title = Some(title);
-    }
-    for group in ast.groups {
-        db.add_group(ArchGroup {
-            id: group.id,
-            icon: group.icon,
-            title: group.title,
-            parent: group.r#in,
-        })?;
-    }
-    for service in ast.services {
-        db.add_service(ArchNode {
-            id: service.id,
-            kind: "service",
-            icon: service.icon,
-            icon_text: service.icon_text,
-            title: service.title,
-            parent: service.r#in,
-        })?;
-    }
-    for junction in ast.junctions {
-        db.add_junction(junction.id, junction.r#in)?;
-    }
-    for edge in ast.edges {
-        db.add_edge(ArchEdge {
-            lhs_id: edge.lhs_id,
-            lhs_dir: edge.lhs_dir,
-            lhs_into: edge.lhs_into,
-            lhs_group: edge.lhs_group,
-            rhs_id: edge.rhs_id,
-            rhs_dir: edge.rhs_dir,
-            rhs_into: edge.rhs_into,
-            rhs_group: edge.rhs_group,
-            title: edge.title,
-        })?;
-    }
-    for alignment in ast.alignments {
-        db.add_layout_hint(ArchLayoutHint {
-            direction: alignment.direction,
-            members: alignment.members,
-        })?;
-    }
-    Ok(())
 }

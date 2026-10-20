@@ -9,7 +9,7 @@ pub mod render;
 
 pub use db::SankeyModel;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 pub use render::SankeyConfig;
@@ -34,9 +34,8 @@ impl Diagram for Sankey {
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Sankey(model) = model else {
-        unreachable!("sankey renders a sankey model")
-    };
-    render::render_sankey(model, &config.sankey, ctx)
+impl Render for SankeyModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        render::render_sankey(self, &config.sankey, ctx)
+    }
 }

@@ -1,6 +1,8 @@
 //! Pele's `diagrams/wardley/render.ts`.
 
 use crate::config::within;
+use crate::geom::Point;
+use crate::svg::edges::Marker;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{
@@ -19,14 +21,11 @@ use crate::{
     diagrams::common::fit_width::fit_width,
     js,
     svg::{
-        builder::{
-            Esc, EscText, LabelSvg, Point, fragment, num, shared_style, span_style, text_style,
-        },
-        edges::{marker, marker_trim},
+        builder::{Esc, EscText, fragment, num, span_style, text_style},
         root::{Accessible, svg_document},
         theme::RADIUS,
     },
-    text::{Label, Style, layout_label},
+    text::{Label, Style},
 };
 
 const DEFAULT_STAGES: [&str; 4] = ["Genesis", "Custom Built", "Product", "Commodity"];
@@ -68,7 +67,7 @@ impl fmt::Display for StartLabel<'_> {
         if !label.lines.iter().flatten().any(|span| span.icon.is_none()) {
             return Ok(());
         }
-        let shared = shared_style(label);
+        let shared = label.shared_style();
         write!(
             f,
             "<text{} xml:space=\"preserve\">",
@@ -195,7 +194,7 @@ fn draw(
             cx + label.width / 2.0,
             cy + label.height / 2.0,
         );
-        let _ = write!(out, "{}", LabelSvg(label, cx, cy, attrs));
+        let _ = write!(out, "{}", label.svg(Point::new(cx, cy), attrs));
     };
     let starting = |out: &mut String, label: &Label, x: f64, y: f64, attrs: &str| {
         grow(
@@ -212,7 +211,7 @@ fn draw(
         4000.0
     };
     let text = |raw: &str, font_size: f64, max_width: Option<f64>, style: u8| -> Label {
-        layout_label(
+        Label::layout(
             Some(raw),
             false,
             measure,
@@ -324,7 +323,7 @@ fn draw(
     let _ = write!(
         axis_labels,
         "{}",
-        LabelSvg(&y_title, -16.0, plot_h / 2.0, &turned)
+        y_title.svg(Point::new(-16.0, plot_h / 2.0), &turned)
     );
     grow(-16.0 - y_title.height / 2.0, 0.0, 0.0, 0.0);
     let legend_top = stage_bottom + 6.0 + x_title.height + 10.0;
@@ -386,7 +385,7 @@ fn draw(
                 write!(
                     f,
                     "<path d=\"M{}H{}\" stroke=\"{LINE}\" stroke-dasharray=\"4 4\"/>",
-                    Point(left, y),
+                    Point::new(left, y),
                     num(right)
                 )
             } else {
@@ -490,12 +489,12 @@ fn draw(
         let backward = flow == "backward" || flow == "bidirectional";
         let (head_x, head_y, tail_x, tail_y) = (x2, y2, x1, y1);
         if forward {
-            x2 -= ux * marker_trim("arrow_point");
-            y2 -= uy * marker_trim("arrow_point");
+            x2 -= ux * Marker::Arrow.trim();
+            y2 -= uy * Marker::Arrow.trim();
         }
         if backward {
-            x1 += ux * marker_trim("arrow_point");
-            y1 += uy * marker_trim("arrow_point");
+            x1 += ux * Marker::Arrow.trim();
+            y1 += uy * Marker::Arrow.trim();
         }
         let _ = write!(
             links,
@@ -507,8 +506,8 @@ fn draw(
             }),
             EscText(&link.source),
             EscText(&link.target),
-            Point(x1, y1),
-            Point(x2, y2),
+            Point::new(x1, y1),
+            Point::new(x2, y2),
             if link.dashed {
                 " stroke-dasharray=\"6 6\""
             } else {
@@ -519,14 +518,14 @@ fn draw(
             let _ = write!(
                 links,
                 "{}",
-                marker("arrow_point", head_x, head_y, ux, uy, LINE)
+                Marker::Arrow.draw(Point::new(head_x, head_y), Point::new(ux, uy), LINE)
             );
         }
         if backward {
             let _ = write!(
                 links,
                 "{}",
-                marker("arrow_point", tail_x, tail_y, -ux, -uy, LINE)
+                Marker::Arrow.draw(Point::new(tail_x, tail_y), Point::new(-ux, -uy), LINE)
             );
         }
         if let Some(raw) = link.label.as_deref().filter(|l| !l.is_empty()) {
@@ -578,12 +577,12 @@ fn draw(
             let _ = write!(
                 trends,
                 "<path d=\"M{}L{}\" stroke=\"{ACCENT}\" stroke-dasharray=\"4 4\"/>{}",
-                Point(origin.x + ux * start, origin.y + uy * start),
-                Point(
-                    ex - ux * marker_trim("arrow_point"),
-                    ey - uy * marker_trim("arrow_point")
+                Point::new(origin.x + ux * start, origin.y + uy * start),
+                Point::new(
+                    ex - ux * Marker::Arrow.trim(),
+                    ey - uy * Marker::Arrow.trim()
                 ),
-                marker("arrow_point", ex, ey, ux, uy, ACCENT)
+                Marker::Arrow.draw(Point::new(ex, ey), Point::new(ux, uy), ACCENT)
             );
         }
         let _ = write!(
@@ -788,7 +787,7 @@ fn draw(
                 num(x),
                 num(y),
                 num(r),
-                LabelSvg(&label, x, y, &mark_attrs)
+                label.svg(Point::new(x, y), &mark_attrs)
             );
         }
         annotations.push_str("</g>");
@@ -911,11 +910,11 @@ fn draw(
                 "deaccelerator"
             },
             EscText(name),
-            Point(tail, y - half),
+            Point::new(tail, y - half),
             num(neck),
             num(y - half - 8.0),
-            Point(tip, y),
-            Point(neck, y + half + 8.0),
+            Point::new(tip, y),
+            Point::new(neck, y + half + 8.0),
             num(y + half),
             num(tail)
         );
@@ -935,8 +934,8 @@ fn draw(
         force(&d.name, d.x, d.y, false);
     }
 
-    let title = layout_label(
-        model.title.as_deref(),
+    let title = Label::layout(
+        model.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -973,10 +972,8 @@ fn draw(
     let _ = write!(
         content,
         "{}",
-        LabelSvg(
-            &title,
-            tx + plot_w / 2.0,
-            pad + title.height / 2.0,
+        title.svg(
+            Point::new(tx + plot_w / 2.0, pad + title.height / 2.0),
             title_attrs
         )
     );
@@ -1012,8 +1009,8 @@ fn draw(
             size,
             ctx,
             Accessible {
-                acc_title: model.acc_title.as_deref(),
-                acc_descr: model.acc_descr.as_deref(),
+                acc_title: model.titles.acc_title.as_deref(),
+                acc_descr: model.titles.acc_descr.as_deref(),
             },
             &content,
         ),

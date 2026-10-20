@@ -162,14 +162,6 @@ impl<P: Payload> Edge<P> {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ClassDef {
-    pub id: String,
-    pub styles: Vec<String>,
-    pub text_styles: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Subgraph<P: Payload> {
     pub id: String,
     pub nodes: Vec<String>,
@@ -220,13 +212,86 @@ pub struct NodeAssets {
     pub asset_height: Option<f64>,
 }
 
+/// The heads a link draws.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ArrowType {
+    #[default]
+    Open,
+    Point,
+    Cross,
+    Circle,
+    DoublePoint,
+    DoubleCross,
+    DoubleCircle,
+    Invalid,
+}
+
+impl ArrowType {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Open => "arrow_open",
+            Self::Point => "arrow_point",
+            Self::Cross => "arrow_cross",
+            Self::Circle => "arrow_circle",
+            Self::DoublePoint => "double_arrow_point",
+            Self::DoubleCross => "double_arrow_cross",
+            Self::DoubleCircle => "double_arrow_circle",
+            Self::Invalid => "INVALID",
+        }
+    }
+
+    /// This head at both ends. Only a single head has a double.
+    pub fn doubled(self) -> Self {
+        match self {
+            Self::Point => Self::DoublePoint,
+            Self::Cross => Self::DoubleCross,
+            Self::Circle => Self::DoubleCircle,
+            other => other,
+        }
+    }
+}
+
+/// The line of a link.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Stroke {
+    #[default]
+    Normal,
+    Thick,
+    Dotted,
+    Invisible,
+    Invalid,
+}
+
+impl Stroke {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Thick => "thick",
+            Self::Dotted => "dotted",
+            Self::Invisible => "invisible",
+            Self::Invalid => "INVALID",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct LinkInfo {
-    pub kind: String,
-    pub stroke: String,
+    pub kind: ArrowType,
+    pub stroke: Stroke,
     pub length: Option<i32>,
     pub text: Option<FlowText>,
     pub id: Option<String>,
+}
+
+impl LinkInfo {
+    /// What the halves of a link that disagree draw.
+    pub fn invalid() -> Self {
+        Self {
+            kind: ArrowType::Invalid,
+            stroke: Stroke::Invalid,
+            ..Self::default()
+        }
+    }
 }
 
 /// What a statement adds to the subgraph around it.

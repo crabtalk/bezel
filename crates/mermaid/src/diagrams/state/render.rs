@@ -1,7 +1,11 @@
 //! Pele's `diagrams/state/render.ts`.
 
+use crate::geom::{Axis, Direction, Point, RoutePoint, Size};
 use crate::svg::builder::styled;
-use crate::svg::builder::{Esc, EscText, LabelSvg, Point, fragment};
+use crate::svg::builder::{Esc, EscText, fragment};
+use crate::svg::cluster::Crossings;
+use crate::svg::edges::Curve;
+use crate::svg::edges::Marker;
 use crate::{Config, config::positive};
 use std::{
     collections::HashMap,
@@ -18,18 +22,17 @@ use crate::{
     diagrams::common::fit_width::{runs_across, turn_to_fit},
     js::{self, Lazy},
     layout::{
-        compound::{CEdge, CNode, Dir, cnode, compound_layout, direction},
+        compound::{CEdge, CNode, compound_layout},
         layered::LayeredOptions,
     },
     svg::{
         builder::num,
-        edges::{EdgePath, SideReach, edge_label_svg, marker, marker_trim, route_path},
+        edges::{EdgePath, SideReach, edge_label_svg, route_path},
         root::{Accessible, svg_document},
-        shapes::end_side,
         theme::{ResolvedStyle, class_names, resolve_style},
         title::with_title,
     },
-    text::{Host, Label, Style, decode_entities, layout_label},
+    text::{Host, Label, Style, decode_entities},
     util::url::{linked, safe_url},
 };
 
@@ -104,8 +107,8 @@ struct View<'a> {
     title_h: f64,
 }
 
-fn vertical(dir: Option<Dir>) -> bool {
-    matches!(dir, Some(Dir::TB | Dir::BT))
+fn vertical(dir: Option<Direction>) -> bool {
+    matches!(dir, Some(Direction::TopToBottom | Direction::BottomToTop))
 }
 
 /// Mermaid keeps the quotes of a click statement's strings and strips them
@@ -164,8 +167,8 @@ fn classes(kind: K) -> impl fmt::Display {
     })
 }
 
-fn group(dir: Dir, pad_x: f64, pad_top: f64, pad_bottom: f64) -> CNode {
-    let mut c = cnode(0.0, 0.0, -1);
+fn group(dir: Direction, pad_x: f64, pad_top: f64, pad_bottom: f64) -> CNode {
+    let mut c = CNode::new(Size::default(), None);
     c.is_group = true;
     c.dir = Some(dir);
     c.pad_x = pad_x;
@@ -205,16 +208,16 @@ fn divide(
     }
     let lo = |i: usize, x: bool| {
         if x {
-            cnodes[i].x - cnodes[i].w / 2.0
+            cnodes[i].center.x - cnodes[i].size.w / 2.0
         } else {
-            cnodes[i].y - cnodes[i].h / 2.0
+            cnodes[i].center.y - cnodes[i].size.h / 2.0
         }
     };
     let hi = |i: usize, x: bool| {
         if x {
-            cnodes[i].x + cnodes[i].w / 2.0
+            cnodes[i].center.x + cnodes[i].size.w / 2.0
         } else {
-            cnodes[i].y + cnodes[i].h / 2.0
+            cnodes[i].center.y + cnodes[i].size.h / 2.0
         }
     };
     for x in [true, false] {
@@ -252,10 +255,10 @@ fn divide(
             out,
             "{}",
             rect(
-                c.x - c.w / 2.0 + pad,
-                c.y - c.h / 2.0 + pad,
-                c.w,
-                c.h,
+                c.center.x - c.size.w / 2.0 + pad,
+                c.center.y - c.size.h / 2.0 + pad,
+                c.size.w,
+                c.size.h,
                 format_args!(" class=\"{p}-divider\" rx=\"{}\"", num(CORNER)),
             )
         );
@@ -264,31 +267,38 @@ fn divide(
 
 /// Moves a route end from the layout box onto the drawn shape, and spreads
 /// the ends along a bar.
-fn attach(route: &mut [f64], at: usize, i: usize, cnodes: &[CNode], views: &[View], pad: f64) {
+fn attach(
+    route: &mut [RoutePoint],
+    at: usize,
+    i: usize,
+    cnodes: &[CNode],
+    views: &[View],
+    pad: f64,
+) {
     let c = &cnodes[i];
     if c.is_group {
         return;
     }
     let view = &views[i];
     let bar = view.kind == K::Fork || view.kind == K::Join;
-    let other = if at == 0 { 3 } else { at - 3 };
-    // 0 is the x axis and 1 the y axis; the end sits on a side that faces
-    // along `axis`.
-    for axis in [1usize, 0] {
-        let y = axis == 1;
-        let extent = if y { c.h } else { c.w };
+    let other = route[if at == 0 { 1 } else { at - 1 }].at;
+    let end = &mut route[at].at;
+    // The end sits on a side that faces along `axis`.
+    for axis in [Axis::Y, Axis::X] {
+        let y = axis == Axis::Y;
+        let extent = if y { c.size.h } else { c.size.w };
         let drawn_extent = if y { view.h } else { view.w };
         let breadth = if y { view.w } else { view.h };
-        let center = (if y { c.y } else { c.x }) + pad;
-        let cross = (if y { c.x } else { c.y }) + pad;
-        let delta = route[at + axis] - center;
+        let center = c.center.along(axis) + pad;
+        let cross = c.center.along(axis.other()) + pad;
+        let delta = end.along(axis) - center;
         if (delta.abs() - extent / 2.0).abs() >= 0.5 {
             continue;
         }
-        route[at + axis] -= (js::sign(delta) * (extent - drawn_extent)) / 2.0;
+        *end.along_mut(axis) -= (js::sign(delta) * (extent - drawn_extent)) / 2.0;
         if bar && breadth > drawn_extent {
-            route[at + 1 - axis] = clamp(
-                route[other + 1 - axis],
+            *end.along_mut(axis.other()) = clamp(
+                other.along(axis.other()),
                 cross - breadth / 2.0 + 6.0,
                 cross + breadth / 2.0 - 6.0,
             );
@@ -308,13 +318,13 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
     let wrap_width = positive(config.wrapping_width, 200.0);
     let pad = ctx.options.padding.unwrap_or(8.0);
     let root_dir = if turned {
-        Dir::TB
+        Direction::TopToBottom
     } else {
-        direction(Some(db.direction()))
+        Direction::from_name(db.direction())
     };
-    let no_label = layout_label(None, false, measure, size, 0.0, 0);
+    let no_label = Label::layout(None, false, measure, size, 0.0, 0);
     let text = |raw: Option<&str>, font_size: f64, wrap: f64, style: u8| {
-        layout_label(raw, true, measure, font_size, wrap, style)
+        Label::layout(raw, true, measure, font_size, wrap, style)
     };
 
     let mut index: HashMap<&str, usize> = HashMap::new();
@@ -432,8 +442,13 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
 
     // As in Mermaid, a composite that sets no direction runs top to bottom
     // whatever surrounds it.
-    let inner_dir =
-        |views: &[View], composite: usize| direction(node_of(views, composite).dir.as_deref());
+    let inner_dir = |views: &[View], composite: usize| {
+        node_of(views, composite)
+            .dir
+            .as_deref()
+            .map(Direction::from_name)
+            .unwrap_or_default()
+    };
     // Whether the flow around a state runs top to bottom or bottom to top.
     let across = |views: &[View], logical: &[i64], i: usize| {
         vertical(Some(if logical[i] == -1 {
@@ -568,7 +583,7 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
                 view.h = height;
             }
         }
-        let mut c = c.unwrap_or_else(|| cnode(view.w, view.h, -1));
+        let mut c = c.unwrap_or_else(|| CNode::new(Size::new(view.w, view.h), None));
         // The transitions on one side of a state's box spread along it, clear
         // of its corners.
         if view.kind == K::State || view.kind == K::Described {
@@ -627,7 +642,7 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
                 &mut cnodes,
                 None,
                 K::Hidden,
-                Some(cnode(0.0, 0.0, src as i32)),
+                Some(CNode::new(Size::default(), Some(src))),
                 &no_label,
             );
         } else if encloses(&cnodes, dst, src) {
@@ -638,7 +653,7 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
                 &mut cnodes,
                 None,
                 K::Hidden,
-                Some(cnode(0.0, 0.0, dst as i32)),
+                Some(CNode::new(Size::default(), Some(dst))),
                 &no_label,
             );
         }
@@ -647,15 +662,15 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
             src,
             dst,
             minlen: 1,
-            label_w,
-            label_h: if label.height > 0.0 {
-                label.height + 4.0
-            } else {
-                0.0
-            },
-            route: Vec::new(),
-            label_x: 0.0,
-            label_y: 0.0,
+            label: Size::new(
+                label_w,
+                if label.height > 0.0 {
+                    label.height + 4.0
+                } else {
+                    0.0
+                },
+            ),
+            ..CEdge::default()
         });
         edge_labels.push(label);
     }
@@ -681,27 +696,34 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
             let item = &mut cnodes[i];
             if !item.is_group {
                 if is_across {
-                    item.w += 2.0 * room;
-                    item.h = item.h.max(loop_height[i]);
+                    item.size.w += 2.0 * room;
+                    item.size.h = item.size.h.max(loop_height[i]);
                 } else {
-                    item.h += 2.0 * room;
-                    item.w = item.w.max(loop_width[i]);
+                    item.size.h += 2.0 * room;
+                    item.size.w = item.size.w.max(loop_width[i]);
                 }
                 room = 0.0;
             }
         }
         if !noted[i] && room == 0.0 {
-            cnodes[i].parent = logical[i] as i32;
+            cnodes[i].parent = usize::try_from(logical[i]).ok();
             continue;
         }
         let mut c = if is_across {
-            group(Dir::LR, room, 0.0, 0.0)
+            group(Direction::LeftToRight, room, 0.0, 0.0)
         } else {
-            group(Dir::TB, 0.0, room, room)
+            group(Direction::TopToBottom, 0.0, room, room)
         };
-        c.parent = logical[i] as i32;
+        c.parent = usize::try_from(logical[i]).ok();
         appear.push(appear[i]);
-        cnodes[i].parent = add(&mut views, &mut cnodes, None, K::Hidden, Some(c), &no_label) as i32;
+        cnodes[i].parent = Some(add(
+            &mut views,
+            &mut cnodes,
+            None,
+            K::Hidden,
+            Some(c),
+            &no_label,
+        ));
     }
     for i in 0..states {
         if owners[i] != -1 {
@@ -715,11 +737,9 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
         let mut members: Vec<Vec<usize>> = vec![Vec::new(); cnodes.len()];
         let mut top: Vec<usize> = Vec::new();
         for (i, c) in cnodes.iter().enumerate() {
-            let p = c.parent;
-            if p >= 0 {
-                members[p as usize].push(i);
-            } else {
-                top.push(i);
+            match c.parent {
+                Some(p) => members[p].push(i),
+                None => top.push(i),
             }
         }
         let initial = |i: usize| if views[i].kind == K::Start { 0 } else { 1 };
@@ -760,36 +780,28 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
             edge_sep: EDGE_SEP,
             rank_sep: positive(config.rank_spacing, RANK_SEP),
             port_sep: 20.0,
-            head_room: Some(marker_trim("arrow_point")),
+            head_room: Some(Marker::Arrow.trim()),
             ..LayeredOptions::default()
         },
     );
 
-    let width = (layout.width + 2.0 * pad).ceil();
-    let height = (layout.height + 2.0 * pad).ceil();
+    let width = (layout.w + 2.0 * pad).ceil();
+    let height = (layout.h + 2.0 * pad).ceil();
     let mut links: Vec<Link> = Vec::new();
 
     // Route points by rounded y, to find the edges that cross a composite's
     // title bar.
-    let mut crossings: HashMap<i64, Vec<f64>> = HashMap::new();
+    let mut crossings = Crossings::new();
     for e in &cedges {
-        let route = &e.route;
-        let mut k = 3;
-        while k + 3 < route.len() {
-            let key = js::round(route[k + 1]) as i64;
-            crossings.entry(key).or_default().push(route[k]);
-            k += 3;
-        }
+        crossings.mark_bends(&e.route);
     }
 
     let mut children: Vec<Vec<usize>> = vec![Vec::new(); cnodes.len()];
     let mut order: Vec<usize> = Vec::new();
     for (i, c) in cnodes.iter().enumerate() {
-        let p = c.parent;
-        if p >= 0 {
-            children[p as usize].push(i);
-        } else {
-            order.push(i);
+        match c.parent {
+            Some(p) => children[p].push(i),
+            None => order.push(i),
         }
     }
     let roots = order.clone();
@@ -833,8 +845,8 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
                     let _ = write!(
                         out,
                         " transform=\"translate({},{})\"",
-                        num(c.x + pad),
-                        num(c.y + pad)
+                        num(c.center.x + pad),
+                        num(c.center.y + pad)
                     );
                 }
                 out.push('>');
@@ -888,14 +900,14 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
                     continue;
                 }
                 let c = &cnodes[i];
-                let left = c.x + pad - c.w / 2.0;
-                let top = c.y + pad - c.h / 2.0;
+                let left = c.center.x + pad - c.size.w / 2.0;
+                let top = c.center.y + pad - c.size.h / 2.0;
                 divide(
                     &children[i],
                     left,
                     top + view.title_h,
-                    left + c.w,
-                    top + c.h,
+                    left + c.size.w,
+                    top + c.size.h,
                     &cnodes,
                     &views,
                     pad,
@@ -907,13 +919,13 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
 
     let mut reach = SideReach::new();
     for (i, ce) in cedges.iter().enumerate() {
-        if ce.src == ce.dst || ce.route.len() < 6 || drawn[i].pattern == Some("dashed") {
+        if ce.src == ce.dst || ce.route.len() < 2 || drawn[i].pattern == Some("dashed") {
             continue;
         }
         reach.add(
-            ce.dst as i64,
-            end_side(&ce.route, ce.route.len() - 3, &cnodes[ce.dst]),
-            "arrow_point",
+            ce.dst,
+            cnodes[ce.dst].side_of(ce.route[ce.route.len() - 1].at),
+            Some(Marker::Arrow),
         );
     }
 
@@ -929,7 +941,7 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
                 let edge = drawn[i];
                 let label = &edge_labels[i];
                 let note = edge.pattern == Some("dashed");
-                let end_type = if note { "none" } else { "arrow_point" };
+                let end_marker = if note { None } else { Some(Marker::Arrow) };
                 let path: EdgePath;
                 let (src, dst) = (cedges[i].src, cedges[i].dst);
                 if src == dst {
@@ -940,20 +952,20 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
                     // The loop hangs off a side the flow does not use: the right, or
                     // below when the flow is horizontal.
                     let side = across(&views, &logical, src);
-                    let w = if a.is_group { a.w } else { view.w };
-                    let h = if a.is_group { a.h } else { view.h };
+                    let w = if a.is_group { a.size.w } else { view.w };
+                    let h = if a.is_group { a.size.h } else { view.h };
                     let out = (if side { w } else { h }) / 2.0;
                     let spread = ((if side { h } else { w }) / 2.0 - 4.0)
                         .min(8.0 + k * 6.0)
                         .max(2.0);
                     let reach = LOOP + k * 8.0;
-                    let trim = marker_trim(end_type) / or_one(js::hypot(reach, spread));
+                    let trim = Marker::trim_of(end_marker) / js::or_one(js::hypot(reach, spread));
                     // Offsets are given for a loop on the right and turned a quarter
                     // for one below.
-                    let (ax, ay) = (a.x, a.y);
+                    let (ax, ay) = (a.center.x, a.center.y);
                     let px = |dx: f64, dy: f64| ax + pad + if side { out + dx } else { -dy };
                     let py = |dx: f64, dy: f64| ay + pad + if side { dy } else { out + dx };
-                    let at = |dx: f64, dy: f64| Point(px(dx, dy), py(dx, dy));
+                    let at = |dx: f64, dy: f64| Point::new(px(dx, dy), py(dx, dy));
                     let mut lp = EdgePath {
                         d: format!(
                             "M{}C{} {} {}",
@@ -962,18 +974,17 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
                             at(reach, 2.0 * spread),
                             at(reach * trim, spread + spread * trim)
                         ),
-                        sx: 0.0,
-                        sy: 0.0,
-                        sdx: 0.0,
-                        sdy: 0.0,
-                        ex: px(0.0, spread),
-                        ey: py(0.0, spread),
-                        edx: px(-reach, -spread) - px(0.0, 0.0),
-                        edy: py(-reach, -spread) - py(0.0, 0.0),
+                        start: Point::default(),
+                        start_dir: Point::default(),
+                        end: at(0.0, spread),
+                        end_dir: Point::new(
+                            px(-reach, -spread) - px(0.0, 0.0),
+                            py(-reach, -spread) - py(0.0, 0.0),
+                        ),
                     };
-                    let len = or_one(js::hypot(lp.edx, lp.edy));
-                    lp.edx /= len;
-                    lp.edy /= len;
+                    let len = js::or_one(js::hypot(lp.end_dir.x, lp.end_dir.y));
+                    lp.end_dir.x /= len;
+                    lp.end_dir.y /= len;
                     path = lp;
                     // Labels stack beyond the outermost loop, in the order of their
                     // transitions.
@@ -981,64 +992,73 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
                     let below = loop_text[src] + label.height / 2.0;
                     loop_text[src] += label.height;
                     let ce = &mut cedges[i];
-                    ce.label_x = if side {
-                        ax + out + furthest + 4.0 + ce.label_w / 2.0
+                    ce.label_at = if side {
+                        Point::new(
+                            ax + out + furthest + 4.0 + ce.label.w / 2.0,
+                            ay - loop_height[src] / 2.0 + below,
+                        )
                     } else {
-                        ax
-                    };
-                    ce.label_y = if side {
-                        ay - loop_height[src] / 2.0 + below
-                    } else {
-                        ay + out + furthest * 0.75 + 4.0 + below
+                        Point::new(ax, ay + out + furthest * 0.75 + 4.0 + below)
                     };
                 } else {
                     let mut route = cedges[i].route.clone();
-                    let leaves = reach.of(src as i64, end_side(&route, 0, &cnodes[src]));
-                    let arrives =
-                        reach.of(dst as i64, end_side(&route, route.len() - 3, &cnodes[dst]));
-                    for k in (0..route.len()).step_by(3) {
-                        route[k] += pad;
-                        route[k + 1] += pad;
+                    let leaves = reach.of(src, cnodes[src].side_of(route[0].at));
+                    let arrives = reach.of(dst, cnodes[dst].side_of(route[route.len() - 1].at));
+                    for point in &mut route {
+                        point.at += Point::new(pad, pad);
                     }
                     attach(&mut route, 0, src, &cnodes, &views, pad);
-                    let last = route.len() - 3;
+                    let last = route.len() - 1;
                     attach(&mut route, last, dst, &cnodes, &views, pad);
                     if let Some(&composite) = anchors.get(&i)
-                        && route.len() >= 6
+                        && route.len() >= 2
                     {
                         let g = &cnodes[composite];
                         let inward = views[src].kind == K::Hidden;
-                        let at = if inward { 0 } else { route.len() - 3 };
-                        let near = matches!(g.dir, Some(Dir::TB | Dir::LR)) == inward;
+                        let at = route[if inward { 0 } else { route.len() - 1 }].at;
+                        let near =
+                            matches!(g.dir, Some(Direction::TopToBottom | Direction::LeftToRight))
+                                == inward;
                         let point = if vertical(g.dir) {
-                            [
-                                route[at],
-                                g.y + pad
-                                    + if near {
-                                        views[composite].title_h - g.h / 2.0
-                                    } else {
-                                        g.h / 2.0
-                                    },
-                                0.0,
-                            ]
+                            RoutePoint::new(
+                                Point::new(
+                                    at.x,
+                                    g.center.y
+                                        + pad
+                                        + if near {
+                                            views[composite].title_h - g.size.h / 2.0
+                                        } else {
+                                            g.size.h / 2.0
+                                        },
+                                ),
+                                Axis::Y,
+                            )
                         } else {
-                            [
-                                g.x + pad + if near { -g.w / 2.0 } else { g.w / 2.0 },
-                                route[at + 1],
-                                1.0,
-                            ]
+                            RoutePoint::new(
+                                Point::new(
+                                    g.center.x
+                                        + pad
+                                        + if near {
+                                            -g.size.w / 2.0
+                                        } else {
+                                            g.size.w / 2.0
+                                        },
+                                    at.y,
+                                ),
+                                Axis::X,
+                            )
                         };
                         if inward {
-                            route.splice(0..0, point);
+                            route.insert(0, point);
                         } else {
-                            route.extend(point);
+                            route.push(point);
                         }
                     }
                     path = route_path(
                         &route,
-                        None,
+                        Curve::Smooth,
                         0.0,
-                        marker_trim(end_type),
+                        Marker::trim_of(end_marker),
                         Some(leaves),
                         Some(arrives),
                     );
@@ -1053,7 +1073,7 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
                     },
                     EscText(&edge.id),
                     path.d,
-                    marker(end_type, path.ex, path.ey, path.edx, path.edy, "var(--_l)")
+                    Marker::draw_of(end_marker, path.end, path.end_dir, "var(--_l)")
                 );
             }
         },
@@ -1068,7 +1088,12 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
                     let _ = write!(
                         out,
                         "{}",
-                        edge_label_svg(&drawn[i].id, label, ce.label_x + pad, ce.label_y + pad, "")
+                        edge_label_svg(
+                            &drawn[i].id,
+                            label,
+                            Point::new(ce.label_at.x + pad, ce.label_at.y + pad),
+                            "",
+                        )
                     );
                 }
             }
@@ -1076,7 +1101,7 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
     );
     let _ = write!(content, "<g class=\"{p}-nodes\">{nodes_out}{notes_out}</g>");
     let titled = with_title(
-        db.title.as_deref(),
+        db.titles.title.as_deref(),
         measure,
         size,
         pad,
@@ -1091,8 +1116,8 @@ fn draw(db: &StateModel, config: &Config, ctx: &Ctx<'_, impl Host>, turned: bool
         size,
         ctx,
         Accessible {
-            acc_title: db.acc_title.as_deref(),
-            acc_descr: db.acc_descr.as_deref(),
+            acc_title: db.titles.acc_title.as_deref(),
+            acc_descr: db.titles.acc_descr.as_deref(),
         },
         &titled.content,
     );
@@ -1111,7 +1136,7 @@ fn node_body<'a>(
     view: &'a View,
     c: &'a CNode,
     style: &'a ResolvedStyle,
-    crossings: &'a HashMap<i64, Vec<f64>>,
+    crossings: &'a Crossings,
     pad: f64,
     small: f64,
 ) -> impl fmt::Display + 'a {
@@ -1119,16 +1144,16 @@ fn node_body<'a>(
     let (w, h) = (view.w, view.h);
     fragment(move |f| match view.kind {
         K::Composite => {
-            let left = c.x + pad - c.w / 2.0;
-            let top = c.y + pad - c.h / 2.0;
+            let left = c.center.x + pad - c.size.w / 2.0;
+            let top = c.center.y + pad - c.size.h / 2.0;
             write!(
                 f,
                 "{}",
                 rect(
                     left,
                     top,
-                    c.w,
-                    c.h,
+                    c.size.w,
+                    c.size.h,
                     format_args!(
                         " rx=\"{}\" fill=\"var(--_a)\" fill-opacity=\"0.5\" stroke=\"var(--_b)\"{}",
                         num(CORNER),
@@ -1142,13 +1167,14 @@ fn node_body<'a>(
                     "<path d=\"M{},{}H{}\"{RULE}{}/>{}",
                     num(left),
                     num(top + view.title_h),
-                    num(left + c.w),
+                    num(left + c.size.w),
                     style.line,
-                    LabelSvg(
-                        &view.label,
-                        title_x(c, view.label.width, crossings) + pad,
-                        top + view.title_h / 2.0,
-                        &styled(crate::class!("cluster-label"), &style.text),
+                    view.label.svg(
+                        Point::new(
+                            title_x(c, view.label.width, crossings) + pad,
+                            top + view.title_h / 2.0
+                        ),
+                        &styled(crate::class!("cluster-label"), &style.text)
                     )
                 )?;
             }
@@ -1188,14 +1214,12 @@ fn node_body<'a>(
             write!(
                 f,
                 "<path d=\"M-{r},-{b}H{fold}L{r},{corner}V{b}H-{r}Z\" fill=\"var(--_bg)\" stroke=\"var(--_b)\"/><path d=\"M{fold},-{b}V{corner}H{r}\"{RULE}/>{}",
-                LabelSvg(
-                    &view.label,
-                    0.0,
-                    0.0,
+                view.label.svg(
+                    Point::new(0.0, 0.0),
                     &format!(
                         " class=\"{p}-label\" font-size=\"{}\" fill=\"var(--_m)\"",
                         num(small)
-                    ),
+                    )
                 )
             )
         }
@@ -1217,7 +1241,7 @@ fn node_body<'a>(
             )?;
             let label_attrs = styled(crate::class!("label"), &style.text);
             if view.kind == K::State {
-                return write!(f, "{}", LabelSvg(&view.label, 0.0, 0.0, &label_attrs));
+                return write!(f, "{}", view.label.svg(Point::new(0.0, 0.0), &label_attrs));
             }
             let mut at = PAD_Y - h / 2.0 + view.label.height;
             write!(
@@ -1227,7 +1251,8 @@ fn node_body<'a>(
                 num(at + 6.0),
                 num(w / 2.0),
                 style.line,
-                LabelSvg(&view.label, 0.0, at - view.label.height / 2.0, &label_attrs)
+                view.label
+                    .svg(Point::new(0.0, at - view.label.height / 2.0), &label_attrs)
             )?;
             at += 14.0;
             let line_attrs = format!(
@@ -1239,7 +1264,7 @@ fn node_body<'a>(
                 write!(
                     f,
                     "{}",
-                    LabelSvg(line, 0.0, at + line.height / 2.0, &line_attrs)
+                    line.svg(Point::new(0.0, at + line.height / 2.0), &line_attrs)
                 )?;
                 at += line.height;
             }
@@ -1252,28 +1277,27 @@ fn node_of<'a>(views: &[View<'a>], i: usize) -> &'a StateNode {
     views[i].node.expect("a state's node")
 }
 
-/// `x || 1`: a zero (or NaN) as one.
-fn or_one(x: f64) -> f64 {
-    if x == 0.0 || x.is_nan() { 1.0 } else { x }
-}
-
 /// Picks where a composite's title sits in its title bar so that edges
 /// entering from above do not cross it.
-fn title_x(c: &CNode, width: f64, crossings: &HashMap<i64, Vec<f64>>) -> f64 {
-    let Some(xs) = crossings.get(&(js::round(c.y - c.h / 2.0) as i64)) else {
-        return c.x;
+fn title_x(c: &CNode, width: f64, crossings: &Crossings) -> f64 {
+    let Some(xs) = crossings.at_top(c) else {
+        return c.center.x;
     };
     if width == 0.0 {
-        return c.x;
+        return c.center.x;
     }
-    let left = c.x - c.w / 2.0;
+    let left = c.center.x - c.size.w / 2.0;
     let half = width / 2.0;
-    let mut best = c.x;
+    let mut best = c.center.x;
     let mut best_gap = -1.0;
-    for x in [c.x, left + GROUP_PAD + half, left + c.w - GROUP_PAD - half] {
+    for x in [
+        c.center.x,
+        left + GROUP_PAD + half,
+        left + c.size.w - GROUP_PAD - half,
+    ] {
         let mut gap = f64::INFINITY;
         for &cx in xs {
-            if cx > left && cx < left + c.w {
+            if cx > left && cx < left + c.size.w {
                 gap = gap.min((cx - x).abs() - half);
             }
         }

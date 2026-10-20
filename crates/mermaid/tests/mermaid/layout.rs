@@ -3,12 +3,12 @@
 use std::collections::HashSet;
 
 use mermaid::{
+    geom::{Axis, Direction, Point, RoutePoint, Side, Size},
     layout::{
-        compound::{CEdge, CNode, Dir, cnode, compound_layout},
+        compound::{CEdge, CNode, compound_layout},
         lanes::lane_layout,
         layered::LayeredOptions,
     },
-    svg::shapes::end_side,
 };
 
 const OPTIONS: LayeredOptions = LayeredOptions {
@@ -21,7 +21,12 @@ const OPTIONS: LayeredOptions = LayeredOptions {
     apart: false,
     head_room: None,
 };
-const DIRS: [Dir; 4] = [Dir::TB, Dir::BT, Dir::LR, Dir::RL];
+const DIRS: [Direction; 4] = [
+    Direction::TopToBottom,
+    Direction::BottomToTop,
+    Direction::LeftToRight,
+    Direction::RightToLeft,
+];
 
 /// Pele's test generator: a linear congruential sequence in [0, 1).
 struct Random(u32);
@@ -53,8 +58,7 @@ fn edge(src: usize, dst: usize, label_w: f64, label_h: f64) -> CEdge {
         src,
         dst,
         minlen: 1,
-        label_w,
-        label_h,
+        label: Size::new(label_w, label_h),
         ..CEdge::default()
     }
 }
@@ -63,22 +67,27 @@ fn link(src: usize, dst: usize) -> CEdge {
     edge(src, dst, 0.0, 0.0)
 }
 
-fn on_border(node: &CNode, x: f64, y: f64) -> bool {
-    let dx = (x - node.x).abs();
-    let dy = (y - node.y).abs();
-    let inside = dx <= node.w / 2.0 + 0.5 && dy <= node.h / 2.0 + 0.5;
-    let edge_x = (dx - node.w / 2.0).abs() <= 0.5;
-    let edge_y = (dy - node.h / 2.0).abs() <= 0.5;
+fn on_border(node: &CNode, p: Point) -> bool {
+    let dx = (p.x - node.center.x).abs();
+    let dy = (p.y - node.center.y).abs();
+    let inside = dx <= node.size.w / 2.0 + 0.5 && dy <= node.size.h / 2.0 + 0.5;
+    let edge_x = (dx - node.size.w / 2.0).abs() <= 0.5;
+    let edge_y = (dy - node.size.h / 2.0).abs() <= 0.5;
     inside && (edge_x || edge_y)
+}
+
+/// The side of `node` that point `at` of `route` lies on.
+fn end_side(route: &[RoutePoint], at: usize, node: &CNode) -> Option<Side> {
+    node.side_of(route[at].at)
 }
 
 fn is_ancestor(nodes: &[CNode], a: usize, b: usize) -> bool {
     let mut p = nodes[b].parent;
-    while p >= 0 {
-        if p as usize == a {
+    while let Some(at) = p {
+        if at == a {
             return true;
         }
-        p = nodes[p as usize].parent;
+        p = nodes[at].parent;
     }
     false
 }
@@ -97,26 +106,26 @@ fn spans(nodes: &mut [CNode], span: f64) {
 
 fn boxed(c: &CNode) -> [f64; 4] {
     [
-        c.x - c.w / 2.0,
-        c.y - c.h / 2.0,
-        c.x + c.w / 2.0,
-        c.y + c.h / 2.0,
+        c.center.x - c.size.w / 2.0,
+        c.center.y - c.size.h / 2.0,
+        c.center.x + c.size.w / 2.0,
+        c.center.y + c.size.h / 2.0,
     ]
 }
 
 /// Every other graph lets edges spread along the sides of its nodes.
-fn compound_graph(seed: u32) -> (Vec<CNode>, Vec<CEdge>, Dir) {
+fn compound_graph(seed: u32) -> (Vec<CNode>, Vec<CEdge>, Direction) {
     let mut draws = Random(seed);
     let mut nodes: Vec<CNode> = Vec::new();
     let mut groups: Vec<usize> = Vec::new();
     let group_count = draws.int(5);
     for g in 0..group_count {
         let parent = if !groups.is_empty() && draws.next() < 0.4 {
-            groups[draws.int(groups.len())] as i32
+            Some(groups[draws.int(groups.len())])
         } else {
-            -1
+            None
         };
-        let mut node = cnode(0.0, 0.0, parent);
+        let mut node = CNode::new(Size::default(), parent);
         node.is_group = true;
         node.pad_x = 20.0;
         node.pad_top = 40.0;
@@ -137,16 +146,16 @@ fn compound_graph(seed: u32) -> (Vec<CNode>, Vec<CEdge>, Dir) {
     let leaves = 3 + draws.int(30);
     for i in 0..leaves {
         let parent = if !groups.is_empty() && draws.next() < 0.5 {
-            groups[draws.int(groups.len())] as i32
+            Some(groups[draws.int(groups.len())])
         } else {
-            -1
+            None
         };
         let w = (30 + draws.int(120)) as f64;
         let h = (30 + draws.int(50)) as f64;
-        let mut node = cnode(w, h, parent);
+        let mut node = CNode::new(Size::new(w, h), parent);
         node.seq = i as f64;
         if seed.is_multiple_of(2) {
-            node.span = node.w.min(node.h) - 24.0;
+            node.span = node.size.w.min(node.size.h) - 24.0;
         }
         nodes.push(node);
     }
@@ -174,27 +183,38 @@ fn compound_keeps_random_graphs_well_formed() {
         let size = compound_layout(&mut nodes, &mut edges, dir, &OPTIONS);
         let at = format!("seed {seed}");
 
-        assert!(size.width.is_finite() && size.height.is_finite(), "{at}");
+        assert!(size.w.is_finite() && size.h.is_finite(), "{at}");
         for (i, node) in nodes.iter().enumerate() {
-            assert!(node.x.is_finite() && node.y.is_finite(), "{at} node {i}");
-            assert!(node.x - node.w / 2.0 >= -0.5, "{at} node {i} left");
-            assert!(node.y - node.h / 2.0 >= -0.5, "{at} node {i} top");
             assert!(
-                node.x + node.w / 2.0 <= size.width + 0.5,
+                node.center.x.is_finite() && node.center.y.is_finite(),
+                "{at} node {i}"
+            );
+            assert!(
+                node.center.x - node.size.w / 2.0 >= -0.5,
+                "{at} node {i} left"
+            );
+            assert!(
+                node.center.y - node.size.h / 2.0 >= -0.5,
+                "{at} node {i} top"
+            );
+            assert!(
+                node.center.x + node.size.w / 2.0 <= size.w + 0.5,
                 "{at} node {i} right"
             );
             assert!(
-                node.y + node.h / 2.0 <= size.height + 0.5,
+                node.center.y + node.size.h / 2.0 <= size.h + 0.5,
                 "{at} node {i} bottom"
             );
-            if node.parent >= 0 {
-                let parent = &nodes[node.parent as usize];
+            if let Some(parent) = node.parent {
+                let parent = &nodes[parent];
                 assert!(
-                    (node.x - parent.x).abs() + node.w / 2.0 <= parent.w / 2.0 + 0.5,
+                    (node.center.x - parent.center.x).abs() + node.size.w / 2.0
+                        <= parent.size.w / 2.0 + 0.5,
                     "{at} node {i} in parent"
                 );
                 assert!(
-                    (node.y - parent.y).abs() + node.h / 2.0 <= parent.h / 2.0 + 0.5,
+                    (node.center.y - parent.center.y).abs() + node.size.h / 2.0
+                        <= parent.size.h / 2.0 + 0.5,
                     "{at} node {i} in parent"
                 );
             }
@@ -205,8 +225,10 @@ fn compound_keeps_random_graphs_well_formed() {
                 if nodes[a].parent != nodes[b].parent {
                     continue;
                 }
-                let overlap_x = (nodes[a].w + nodes[b].w) / 2.0 - (nodes[a].x - nodes[b].x).abs();
-                let overlap_y = (nodes[a].h + nodes[b].h) / 2.0 - (nodes[a].y - nodes[b].y).abs();
+                let overlap_x = (nodes[a].size.w + nodes[b].size.w) / 2.0
+                    - (nodes[a].center.x - nodes[b].center.x).abs();
+                let overlap_y = (nodes[a].size.h + nodes[b].size.h) / 2.0
+                    - (nodes[a].center.y - nodes[b].center.y).abs();
                 assert!(
                     !(overlap_x > 0.5 && overlap_y > 0.5),
                     "{at} nodes {a} and {b} overlap"
@@ -218,21 +240,23 @@ fn compound_keeps_random_graphs_well_formed() {
             if e.src == e.dst {
                 continue;
             }
-            assert_eq!(e.route.len() % 3, 0, "{at} edge {i}");
-            assert!(e.route.len() >= 6, "{at} edge {i} has a route");
-            for value in &e.route {
-                assert!(value.is_finite(), "{at} edge {i}");
+            assert!(e.route.len() >= 2, "{at} edge {i} has a route");
+            for point in &e.route {
+                assert!(
+                    point.at.x.is_finite() && point.at.y.is_finite(),
+                    "{at} edge {i}"
+                );
             }
             if is_ancestor(&nodes, e.src, e.dst) || is_ancestor(&nodes, e.dst, e.src) {
                 continue;
             }
-            let last = e.route.len() - 3;
+            let last = e.route.len() - 1;
             assert!(
-                on_border(&nodes[e.src], e.route[0], e.route[1]),
+                on_border(&nodes[e.src], e.route[0].at),
                 "{at} edge {i} starts on its source"
             );
             assert!(
-                on_border(&nodes[e.dst], e.route[last], e.route[last + 1]),
+                on_border(&nodes[e.dst], e.route[last].at),
                 "{at} edge {i} ends on its target"
             );
         }
@@ -249,7 +273,7 @@ fn compound_is_deterministic() {
         let shape = |nodes: &[CNode]| {
             nodes
                 .iter()
-                .map(|n| [n.x, n.y, n.w, n.h])
+                .map(|n| [n.center.x, n.center.y, n.size.w, n.size.h])
                 .collect::<Vec<_>>()
         };
         assert_eq!(shape(&second_nodes), shape(&first_nodes));
@@ -262,15 +286,15 @@ fn compound_is_deterministic() {
 fn compound_runs_ranks_along_the_requested_direction() {
     for dir in DIRS {
         let mut nodes = vec![
-            cnode(60.0, 40.0, -1),
-            cnode(60.0, 40.0, -1),
-            cnode(60.0, 40.0, -1),
+            CNode::new(Size::new(60.0, 40.0), None),
+            CNode::new(Size::new(60.0, 40.0), None),
+            CNode::new(Size::new(60.0, 40.0), None),
         ];
         seq(&mut nodes);
         compound_layout(&mut nodes, &mut [link(0, 1), link(1, 2)], dir, &OPTIONS);
-        let vertical = dir == Dir::TB || dir == Dir::BT;
-        let axis = |n: &CNode| if vertical { n.y } else { n.x };
-        let sign = if dir == Dir::TB || dir == Dir::LR {
+        let vertical = dir.is_vertical();
+        let axis = |n: &CNode| if vertical { n.center.y } else { n.center.x };
+        let sign = if dir == Direction::TopToBottom || dir == Direction::LeftToRight {
             1.0
         } else {
             -1.0
@@ -283,19 +307,17 @@ fn compound_runs_ranks_along_the_requested_direction() {
 #[test]
 fn compound_keeps_a_long_edge_straight_through_the_ranks_it_skips() {
     let mut nodes = vec![
-        cnode(60.0, 40.0, -1),
-        cnode(60.0, 40.0, -1),
-        cnode(60.0, 40.0, -1),
+        CNode::new(Size::new(60.0, 40.0), None),
+        CNode::new(Size::new(60.0, 40.0), None),
+        CNode::new(Size::new(60.0, 40.0), None),
     ];
     seq(&mut nodes);
     let mut edges = vec![link(0, 1), link(1, 2), link(0, 2)];
-    compound_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS);
+    compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &OPTIONS);
     let route = &edges[2].route;
     let mut xs = HashSet::new();
-    let mut i = 3;
-    while i < route.len() - 3 {
-        xs.insert(round(route[i]));
-        i += 3;
+    for point in &route[1..route.len() - 1] {
+        xs.insert(round(point.at.x));
     }
     assert_eq!(xs.len(), 1);
 }
@@ -304,7 +326,9 @@ fn compound_keeps_a_long_edge_straight_through_the_ranks_it_skips() {
 fn compound_runs_an_edge_that_skips_ranks_in_line_with_one_of_its_ends_so_that_it_turns_once_at_the_other()
  {
     // A chain of eight, with edges that skip ranks down it and back up.
-    let mut nodes: Vec<CNode> = (0..8).map(|_| cnode(80.0, 40.0, -1)).collect();
+    let mut nodes: Vec<CNode> = (0..8)
+        .map(|_| CNode::new(Size::new(80.0, 40.0), None))
+        .collect();
     seq(&mut nodes);
     spans(&mut nodes, 56.0);
     let mut edges: Vec<CEdge> = [
@@ -325,12 +349,12 @@ fn compound_runs_an_edge_that_skips_ranks_in_line_with_one_of_its_ends_so_that_i
     .into_iter()
     .map(|(a, b)| link(a, b))
     .collect();
-    compound_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS);
+    compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &OPTIONS);
     // How many times the route changes its place across the flow.
-    let turns = |route: &[f64]| {
-        (3..route.len())
-            .step_by(3)
-            .filter(|&i| (route[i] - route[i - 3]).abs() > 0.01)
+    let turns = |route: &[RoutePoint]| {
+        route
+            .windows(2)
+            .filter(|pair| (pair[1].at.x - pair[0].at.x).abs() > 0.01)
             .count()
     };
     for e in &edges[7..] {
@@ -340,23 +364,23 @@ fn compound_runs_an_edge_that_skips_ranks_in_line_with_one_of_its_ends_so_that_i
     // it in line.
     let down = &edges[9].route;
     let up = &edges[11].route;
-    assert!(close(down[3], down[0], 5));
-    assert!(close(up[up.len() - 6], up[up.len() - 3], 5));
+    assert!(close(down[1].at.x, down[0].at.x, 5));
+    assert!(close(up[up.len() - 2].at.x, up[up.len() - 1].at.x, 5));
 }
 
 #[test]
 fn compound_keeps_the_edges_on_one_side_of_a_node_at_its_middle_unless_the_node_has_a_span() {
     let mut nodes = vec![
-        cnode(120.0, 40.0, -1),
-        cnode(60.0, 40.0, -1),
-        cnode(60.0, 40.0, -1),
-        cnode(60.0, 40.0, -1),
+        CNode::new(Size::new(120.0, 40.0), None),
+        CNode::new(Size::new(60.0, 40.0), None),
+        CNode::new(Size::new(60.0, 40.0), None),
+        CNode::new(Size::new(60.0, 40.0), None),
     ];
     seq(&mut nodes);
     let mut edges = vec![link(0, 1), link(0, 2), link(0, 3)];
-    compound_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS);
+    compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &OPTIONS);
     for e in &edges {
-        assert!(close(e.route[0], nodes[0].x, 5));
+        assert!(close(e.route[0].at.x, nodes[0].center.x, 5));
     }
 }
 
@@ -364,33 +388,23 @@ fn compound_keeps_the_edges_on_one_side_of_a_node_at_its_middle_unless_the_node_
 fn compound_spreads_the_edges_on_one_side_of_a_node_in_the_order_of_the_nodes_they_lead_to() {
     for dir in DIRS {
         let mut nodes = vec![
-            cnode(120.0, 120.0, -1),
-            cnode(60.0, 60.0, -1),
-            cnode(60.0, 60.0, -1),
-            cnode(60.0, 60.0, -1),
+            CNode::new(Size::new(120.0, 120.0), None),
+            CNode::new(Size::new(60.0, 60.0), None),
+            CNode::new(Size::new(60.0, 60.0), None),
+            CNode::new(Size::new(60.0, 60.0), None),
         ];
         seq(&mut nodes);
         nodes[0].span = 96.0;
         let mut edges = vec![link(0, 1), link(0, 2), link(0, 3)];
         compound_layout(&mut nodes, &mut edges, dir, &OPTIONS);
-        let across = if dir == Dir::TB || dir == Dir::BT {
-            0
-        } else {
-            1
-        };
+        let across = if dir.is_vertical() { Axis::X } else { Axis::Y };
         let starts: Vec<f64> = edges
             .iter()
-            .map(|e| e.route[across] - if across == 0 { nodes[0].x } else { nodes[0].y })
+            .map(|e| e.route[0].at.along(across) - nodes[0].center.along(across))
             .collect();
         let targets: Vec<f64> = edges
             .iter()
-            .map(|e| {
-                if across == 0 {
-                    nodes[e.dst].x
-                } else {
-                    nodes[e.dst].y
-                }
-            })
+            .map(|e| nodes[e.dst].center.along(across))
             .collect();
         let mut by_start = vec![0, 1, 2];
         by_start.sort_by(|&a, &b| starts[a].total_cmp(&starts[b]));
@@ -403,43 +417,52 @@ fn compound_spreads_the_edges_on_one_side_of_a_node_in_the_order_of_the_nodes_th
         assert!(close(starts[by_start[1]], 0.0, 5), "{dir:?}");
         assert!(close(starts[by_start[2]], 16.0, 5), "{dir:?}");
         for e in &edges {
-            assert!(on_border(&nodes[0], e.route[0], e.route[1]), "{dir:?}");
+            assert!(on_border(&nodes[0], e.route[0].at), "{dir:?}");
         }
     }
 }
 
 #[test]
 fn compound_keeps_an_edge_that_arrives_apart_from_one_that_leaves_on_the_same_side() {
-    let mut nodes = vec![cnode(60.0, 40.0, -1), cnode(60.0, 40.0, -1)];
+    let mut nodes = vec![
+        CNode::new(Size::new(60.0, 40.0), None),
+        CNode::new(Size::new(60.0, 40.0), None),
+    ];
     seq(&mut nodes);
     spans(&mut nodes, 36.0);
     let mut edges = vec![link(0, 1), link(1, 0)];
-    compound_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS);
+    compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &OPTIONS);
     let (down, up) = (&edges[0].route, &edges[1].route);
-    assert!(close((down[down.len() - 3] - up[0]).abs(), 16.0, 5));
-    assert!(close((down[0] - up[up.len() - 3]).abs(), 16.0, 5));
+    assert!(close(
+        (down[down.len() - 1].at.x - up[0].at.x).abs(),
+        16.0,
+        5
+    ));
+    assert!(close((down[0].at.x - up[up.len() - 1].at.x).abs(), 16.0, 5));
 }
 
 #[test]
 fn compound_shares_a_place_among_edges_that_run_the_same_way_when_there_is_no_room_for_one_each() {
-    let mut nodes: Vec<CNode> = (0..=12).map(|_| cnode(60.0, 40.0, -1)).collect();
+    let mut nodes: Vec<CNode> = (0..=12)
+        .map(|_| CNode::new(Size::new(60.0, 40.0), None))
+        .collect();
     seq(&mut nodes);
     spans(&mut nodes, 36.0);
     let mut edges: Vec<CEdge> = (0..12).map(|i| link(i, 12)).collect();
     // One edge the other way on the same side, which keeps a place of its
     // own.
     edges.push(link(12, 0));
-    compound_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS);
+    compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &OPTIONS);
     let into: Vec<f64> = edges[..12]
         .iter()
-        .map(|e| e.route[e.route.len() - 3])
+        .map(|e| e.route[e.route.len() - 1].at.x)
         .collect();
     let places: HashSet<i64> = into.iter().map(|&x| round(x * 100.0)).collect();
     assert!(places.len() <= 2);
     let back = &edges[12].route;
-    assert!(close(back[1], nodes[12].y - 20.0, 5));
+    assert!(close(back[0].at.y, nodes[12].center.y - 20.0, 5));
     for &x in &into {
-        assert!((x - back[0]).abs() >= 8.0);
+        assert!((x - back[0].at.x).abs() >= 8.0);
     }
 }
 
@@ -448,44 +471,52 @@ fn compound_stands_a_rank_that_only_sends_edges_on_one_line_and_hangs_a_rank_tha
  {
     let lay = |span: f64| -> Vec<CNode> {
         let mut nodes = vec![
-            cnode(60.0, 40.0, -1),
-            cnode(60.0, 120.0, -1),
-            cnode(60.0, 30.0, -1),
-            cnode(60.0, 90.0, -1),
+            CNode::new(Size::new(60.0, 40.0), None),
+            CNode::new(Size::new(60.0, 120.0), None),
+            CNode::new(Size::new(60.0, 30.0), None),
+            CNode::new(Size::new(60.0, 90.0), None),
         ];
         seq(&mut nodes);
         spans(&mut nodes, span);
         compound_layout(
             &mut nodes,
             &mut [link(0, 2), link(1, 2), link(0, 3), link(1, 3)],
-            Dir::TB,
+            Direction::TopToBottom,
             &OPTIONS,
         );
         nodes
     };
     let spread = lay(36.0);
-    assert!(close(spread[0].y + 20.0, spread[1].y + 60.0, 5));
-    assert!(close(spread[2].y - 15.0, spread[3].y - 45.0, 5));
+    assert!(close(
+        spread[0].center.y + 20.0,
+        spread[1].center.y + 60.0,
+        5
+    ));
+    assert!(close(
+        spread[2].center.y - 15.0,
+        spread[3].center.y - 45.0,
+        5
+    ));
     // Without spreading, as in the diagram types that do not use it yet, each
     // rank is centered.
     let plain = lay(0.0);
-    assert!(close(plain[0].y, plain[1].y, 5));
-    assert!(close(plain[2].y, plain[3].y, 5));
+    assert!(close(plain[0].center.y, plain[1].center.y, 5));
+    assert!(close(plain[2].center.y, plain[3].center.y, 5));
 }
 
 /// A node above a row of `children`, with an edge to each. With a `span`, the
 /// edges spread along the nodes' sides.
 fn fan(children: usize, span: f64) -> (Vec<CNode>, Vec<CEdge>, f64) {
-    let mut nodes = vec![cnode(100.0, 40.0, -1)];
+    let mut nodes = vec![CNode::new(Size::new(100.0, 40.0), None)];
     let mut edges: Vec<CEdge> = Vec::new();
     for i in 1..=children {
-        nodes.push(cnode(100.0, 40.0, -1));
+        nodes.push(CNode::new(Size::new(100.0, 40.0), None));
         edges.push(link(0, i));
     }
     seq(&mut nodes);
     spans(&mut nodes, span);
-    compound_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS);
-    let gap = nodes[1].y - nodes[0].y - 40.0;
+    compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &OPTIONS);
+    let gap = nodes[1].center.y - nodes[0].center.y - 40.0;
     (nodes, edges, gap)
 }
 
@@ -507,16 +538,16 @@ fn compound_turns_edges_that_run_far_across_side_by_side_at_levels_of_their_own_
     let (_, few_edges, few_gap) = fan(3, 76.0);
     assert!(close(few_gap, OPTIONS.rank_sep, 5));
     for e in &few_edges {
-        assert_eq!(e.route.len(), 6);
+        assert_eq!(e.route.len(), 2);
     }
     // With seven, the three on each side run down, across and down again.
     let (nodes, edges, gap) = fan(7, 76.0);
     let level = |e: &CEdge| -> f64 {
-        assert_eq!(e.route.len(), 12);
-        assert!(close(e.route[3], e.route[0], 5));
-        assert!(close(e.route[7], e.route[4], 5));
-        assert!(close(e.route[9], e.route[6], 5));
-        e.route[4]
+        assert_eq!(e.route.len(), 4);
+        assert!(close(e.route[1].at.x, e.route[0].at.x, 5));
+        assert!(close(e.route[2].at.y, e.route[1].at.y, 5));
+        assert!(close(e.route[3].at.x, e.route[2].at.x, 5));
+        e.route[1].at.y
     };
     // The edge that runs furthest turns first, and each of the others 12
     // further down.
@@ -526,10 +557,10 @@ fn compound_turns_edges_that_run_far_across_side_by_side_at_levels_of_their_own_
         assert!(close(level(&edges[6 - i]), level(&edges[i]), 5));
     }
     // The one in the middle runs straight down.
-    assert_eq!(edges[3].route.len(), 6);
-    assert!(close(edges[3].route[3], edges[3].route[0], 5));
+    assert_eq!(edges[3].route.len(), 2);
+    assert!(close(edges[3].route[1].at.x, edges[3].route[0].at.x, 5));
     // The levels keep 28 from the ranks above and below.
-    assert!(close(level(&edges[0]) - nodes[0].y - 20.0, 28.0, 5));
+    assert!(close(level(&edges[0]) - nodes[0].center.y - 20.0, 28.0, 5));
     assert!(close(gap, 2.0 * 28.0 + 2.0 * 12.0, 5));
 }
 
@@ -537,7 +568,9 @@ fn compound_turns_edges_that_run_far_across_side_by_side_at_levels_of_their_own_
 fn compound_draws_the_edges_of_a_gap_as_plain_curves_in_a_taller_gap_where_they_cross_each_other_more_than_they_run_alongside()
  {
     // Four nodes above four, each with an edge to every one below.
-    let mut nodes: Vec<CNode> = (0..8).map(|_| cnode(80.0, 40.0, -1)).collect();
+    let mut nodes: Vec<CNode> = (0..8)
+        .map(|_| CNode::new(Size::new(80.0, 40.0), None))
+        .collect();
     seq(&mut nodes);
     spans(&mut nodes, 56.0);
     let mut edges: Vec<CEdge> = Vec::new();
@@ -546,20 +579,20 @@ fn compound_draws_the_edges_of_a_gap_as_plain_curves_in_a_taller_gap_where_they_
             edges.push(link(i, j));
         }
     }
-    compound_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS);
+    compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &OPTIONS);
     // No edge turns onto a level: each runs from one point to the other.
     for e in &edges {
-        assert_eq!(e.route.len(), 6);
+        assert_eq!(e.route.len(), 2);
     }
     // The gap is half as tall as the widest edge runs across, and no more
     // than three times the usual.
     let widest = edges
         .iter()
-        .map(|e| (e.route[0] - e.route[3]).abs())
+        .map(|e| (e.route[0].at.x - e.route[1].at.x).abs())
         .fold(f64::NEG_INFINITY, f64::max);
     assert!(widest > 6.0 * OPTIONS.rank_sep);
     assert!(close(
-        nodes[4].y - nodes[0].y - 40.0,
+        nodes[4].center.y - nodes[0].center.y - 40.0,
         3.0 * OPTIONS.rank_sep,
         5
     ));
@@ -569,7 +602,10 @@ fn compound_draws_the_edges_of_a_gap_as_plain_curves_in_a_taller_gap_where_they_
 fn compound_sets_a_rank_of_labels_half_an_arrowhead_nearer_the_tails_of_its_edges_and_holds_a_bend_beside_them_for_half_their_height()
  {
     let lay = |head_room: f64| -> Vec<CEdge> {
-        let mut nodes = vec![cnode(60.0, 40.0, -1), cnode(60.0, 40.0, -1)];
+        let mut nodes = vec![
+            CNode::new(Size::new(60.0, 40.0), None),
+            CNode::new(Size::new(60.0, 40.0), None),
+        ];
         seq(&mut nodes);
         spans(&mut nodes, 36.0);
         let mut edges = vec![edge(0, 1, 40.0, 20.0), edge(0, 1, 50.0, 20.0), link(0, 1)];
@@ -577,25 +613,25 @@ fn compound_sets_a_rank_of_labels_half_an_arrowhead_nearer_the_tails_of_its_edge
             head_room: Some(head_room),
             ..OPTIONS
         };
-        compound_layout(&mut nodes, &mut edges, Dir::TB, &options);
+        compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &options);
         edges
     };
     // Without arrowheads the labels are midway between the two nodes.
     let plain = lay(0.0);
-    assert!(close(plain[0].label_y, (40.0 + 108.0) / 2.0, 5));
+    assert!(close(plain[0].label_at.y, (40.0 + 108.0) / 2.0, 5));
     // With them, the labels are midway between the node above and the backs
     // of the arrowheads.
     let edges = lay(8.0);
     let (first, second, bare) = (&edges[0], &edges[1], &edges[2]);
-    assert!(close(first.label_y, (40.0 + 108.0 - 8.0) / 2.0, 5));
-    assert!(close(second.label_y, first.label_y, 5));
+    assert!(close(first.label_at.y, (40.0 + 108.0 - 8.0) / 2.0, 5));
+    assert!(close(second.label_at.y, first.label_at.y, 5));
     // A labelled edge runs straight for the height of its label, and the bare
     // one for half of that.
-    assert!(close(first.route[7] - first.route[4], 20.0, 5));
-    assert!(close(bare.route[7] - bare.route[4], 10.0, 5));
+    assert!(close(first.route[2].at.y - first.route[1].at.y, 20.0, 5));
+    assert!(close(bare.route[2].at.y - bare.route[1].at.y, 10.0, 5));
     assert!(close(
-        (bare.route[4] + bare.route[7]) / 2.0,
-        first.label_y,
+        (bare.route[1].at.y + bare.route[2].at.y) / 2.0,
+        first.label_at.y,
         5
     ));
 }
@@ -605,7 +641,9 @@ fn compound_turns_an_edge_that_runs_far_across_at_a_level_of_its_own_where_a_sho
  {
     // A node above a row of three, and an edge back up to it from below the
     // row.
-    let mut nodes: Vec<CNode> = (0..5).map(|_| cnode(80.0, 40.0, -1)).collect();
+    let mut nodes: Vec<CNode> = (0..5)
+        .map(|_| CNode::new(Size::new(80.0, 40.0), None))
+        .collect();
     seq(&mut nodes);
     spans(&mut nodes, 56.0);
     let mut edges = vec![
@@ -617,22 +655,22 @@ fn compound_turns_an_edge_that_runs_far_across_at_a_level_of_its_own_where_a_sho
         link(3, 4),
         link(4, 0),
     ];
-    compound_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS);
+    compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &OPTIONS);
     // The edge back up passes the row on one side, then runs across to the
     // top node and up into it.
     let back = &edges[6].route;
     let n = back.len();
-    let level = back[n - 5];
-    assert!(close(back[n - 8], level, 5));
-    assert!(close(back[n - 6], back[n - 3], 5));
-    assert!((back[n - 9] - back[n - 6]).abs() > 2.0 * OPTIONS.rank_sep);
+    let level = back[n - 2].at.y;
+    assert!(close(back[n - 3].at.y, level, 5));
+    assert!(close(back[n - 2].at.x, back[n - 1].at.x, 5));
+    assert!((back[n - 3].at.x - back[n - 2].at.x).abs() > 2.0 * OPTIONS.rank_sep);
     // The edge down to the node on that side leaves next to where it arrives.
     // It runs straight down as far as that level and curves below it.
     let down = &edges[2].route;
-    assert!((down[0] - back[n - 3]).abs() < 20.0);
-    assert_eq!(down.len(), 9);
-    assert!(close(down[3], down[0], 5));
-    assert!(down[4] > level - 0.01);
+    assert!((down[0].at.x - back[n - 1].at.x).abs() < 20.0);
+    assert_eq!(down.len(), 3);
+    assert!(close(down[1].at.x, down[0].at.x, 5));
+    assert!(down[1].at.y > level - 0.01);
 }
 
 #[test]
@@ -640,32 +678,35 @@ fn compound_moves_an_end_along_its_side_to_let_its_edge_run_straight_and_no_clos
  {
     // A wide node above four narrow ones.
     let mut nodes = vec![
-        cnode(400.0, 40.0, -1),
-        cnode(40.0, 40.0, -1),
-        cnode(40.0, 40.0, -1),
-        cnode(40.0, 40.0, -1),
-        cnode(40.0, 40.0, -1),
+        CNode::new(Size::new(400.0, 40.0), None),
+        CNode::new(Size::new(40.0, 40.0), None),
+        CNode::new(Size::new(40.0, 40.0), None),
+        CNode::new(Size::new(40.0, 40.0), None),
+        CNode::new(Size::new(40.0, 40.0), None),
     ];
     seq(&mut nodes);
     for node in nodes.iter_mut() {
-        node.span = node.w - 24.0;
+        node.span = node.size.w - 24.0;
     }
     let mut edges = vec![link(0, 1), link(0, 2), link(0, 3), link(0, 4)];
-    compound_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS);
+    compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &OPTIONS);
     // Each child is under the wide node, so each edge runs straight down to
     // it.
     for e in &edges {
-        assert!(close(e.route[0], e.route[e.route.len() - 3], 5));
+        assert!(close(e.route[0].at.x, e.route[e.route.len() - 1].at.x, 5));
     }
-    let mut two_way = vec![cnode(200.0, 40.0, -1), cnode(40.0, 40.0, -1)];
+    let mut two_way = vec![
+        CNode::new(Size::new(200.0, 40.0), None),
+        CNode::new(Size::new(40.0, 40.0), None),
+    ];
     seq(&mut two_way);
     for node in two_way.iter_mut() {
-        node.span = node.w - 24.0;
+        node.span = node.size.w - 24.0;
     }
     let mut pair = vec![link(0, 1), link(1, 0)];
-    compound_layout(&mut two_way, &mut pair, Dir::TB, &OPTIONS);
+    compound_layout(&mut two_way, &mut pair, Direction::TopToBottom, &OPTIONS);
     assert!(close(
-        (pair[0].route[0] - pair[1].route[pair[1].route.len() - 3]).abs(),
+        (pair[0].route[0].at.x - pair[1].route[pair[1].route.len() - 1].at.x).abs(),
         16.0,
         5
     ));
@@ -674,16 +715,16 @@ fn compound_moves_an_end_along_its_side_to_let_its_edge_run_straight_and_no_clos
 #[test]
 fn compound_moves_the_edges_that_leave_side_by_side_closer_together_before_it_lets_them_share_a_place()
  {
-    let mut nodes = vec![cnode(60.0, 40.0, -1)];
+    let mut nodes = vec![CNode::new(Size::new(60.0, 40.0), None)];
     let mut edges: Vec<CEdge> = Vec::new();
     for i in 1..=7 {
-        nodes.push(cnode(60.0, 40.0, -1));
+        nodes.push(CNode::new(Size::new(60.0, 40.0), None));
         edges.push(link(0, i));
     }
     seq(&mut nodes);
     nodes[0].span = 36.0;
-    compound_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS);
-    let mut starts: Vec<f64> = edges.iter().map(|e| e.route[0]).collect();
+    compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &OPTIONS);
+    let mut starts: Vec<f64> = edges.iter().map(|e| e.route[0].at.x).collect();
     starts.sort_by(f64::total_cmp);
     // Six gaps of half a pitch each across the 36 there is.
     for i in 1..starts.len() {
@@ -694,14 +735,16 @@ fn compound_moves_the_edges_that_leave_side_by_side_closer_together_before_it_le
 #[test]
 fn compound_draws_an_edge_as_one_curve_across_a_rank_that_only_a_twin_of_another_edge_put_there() {
     let lay = |twin: bool| -> Vec<CEdge> {
-        let mut nodes: Vec<CNode> = (0..4).map(|_| cnode(60.0, 40.0, -1)).collect();
+        let mut nodes: Vec<CNode> = (0..4)
+            .map(|_| CNode::new(Size::new(60.0, 40.0), None))
+            .collect();
         seq(&mut nodes);
         spans(&mut nodes, 36.0);
         let mut edges = vec![link(0, 1), link(0, 2), link(0, 3)];
         if twin {
             edges.push(link(0, 3));
         }
-        compound_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS);
+        compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &OPTIONS);
         edges
     };
     let plain = lay(false);
@@ -709,27 +752,27 @@ fn compound_draws_an_edge_as_one_curve_across_a_rank_that_only_a_twin_of_another
     // The twins make every edge take a rank in the middle, but none of them
     // needs a bend there.
     for e in &twinned[..2] {
-        assert_eq!(e.route.len(), 6);
+        assert_eq!(e.route.len(), 2);
     }
-    assert!(close(twinned[0].route[1], plain[0].route[1], 5));
+    assert!(close(twinned[0].route[0].at.y, plain[0].route[0].at.y, 5));
     // The gap is tall enough for the twins to turn at two levels, 12 apart
     // and 28 from the ranks.
     assert!(close(
-        twinned[0].route[4],
-        plain[0].route[4] + 2.0 * 28.0 + 12.0 - OPTIONS.rank_sep,
+        twinned[0].route[1].at.y,
+        plain[0].route[1].at.y + 2.0 * 28.0 + 12.0 - OPTIONS.rank_sep,
         5
     ));
     // The twins leave and arrive at places of their own.
     let (one, other) = (&twinned[2].route, &twinned[3].route);
-    assert!((one[0] - other[0]).abs() >= 8.0);
-    assert!((one[one.len() - 3] - other[other.len() - 3]).abs() >= 8.0);
+    assert!((one[0].at.x - other[0].at.x).abs() >= 8.0);
+    assert!((one[one.len() - 1].at.x - other[other.len() - 1].at.x).abs() >= 8.0);
     // They would run close beside each other, so one turns straight away and
     // the other further down.
-    let turns_at = |route: &[f64]| {
-        if (route[3] - route[0]).abs() < 0.01 {
-            route[4]
+    let turns_at = |route: &[RoutePoint]| {
+        if (route[1].at.x - route[0].at.x).abs() < 0.01 {
+            route[1].at.y
         } else {
-            route[1]
+            route[0].at.y
         }
     };
     assert!((turns_at(one) - turns_at(other)).abs() >= 10.0);
@@ -737,15 +780,18 @@ fn compound_draws_an_edge_as_one_curve_across_a_rank_that_only_a_twin_of_another
 
 #[test]
 fn compound_keeps_twin_edges_apart_where_their_ends_cannot_be() {
-    let mut nodes = vec![cnode(60.0, 40.0, -1), cnode(60.0, 40.0, -1)];
+    let mut nodes = vec![
+        CNode::new(Size::new(60.0, 40.0), None),
+        CNode::new(Size::new(60.0, 40.0), None),
+    ];
     seq(&mut nodes);
     let mut edges = vec![link(0, 1), link(0, 1)];
-    compound_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS);
+    compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &OPTIONS);
     let (a, b) = (&edges[0].route, &edges[1].route);
-    assert_eq!(a.len(), 9);
-    assert_eq!(b.len(), 9);
-    assert!(close(a[0], b[0], 5));
-    assert!(close((a[3] - b[3]).abs(), OPTIONS.edge_sep, 5));
+    assert_eq!(a.len(), 3);
+    assert_eq!(b.len(), 3);
+    assert!(close(a[0].at.x, b[0].at.x, 5));
+    assert!(close((a[1].at.x - b[1].at.x).abs(), OPTIONS.edge_sep, 5));
 }
 
 /// A run across, with the x where the edge comes down to it and where it
@@ -767,9 +813,9 @@ fn compound_routes_edges_at_right_angles_on_tracks_where_no_two_can_be_taken_for
         for i in 0..count {
             let w = (40 + rnd.int(120)) as f64;
             let h = (30 + rnd.int(60)) as f64;
-            let mut node = cnode(w, h, -1);
+            let mut node = CNode::new(Size::new(w, h), None);
             node.seq = i as f64;
-            node.span = node.w - 24.0;
+            node.span = node.size.w - 24.0;
             nodes.push(node);
         }
         let mut edges: Vec<CEdge> = Vec::new();
@@ -790,39 +836,40 @@ fn compound_routes_edges_at_right_angles_on_tracks_where_no_two_can_be_taken_for
             tracks: true,
             ..OPTIONS
         };
-        compound_layout(&mut nodes, &mut edges, Dir::TB, &options);
+        compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &options);
         let at = format!("seed {seed}");
         let mut runs: Vec<Run> = Vec::new();
         for (ei, e) in edges.iter().enumerate() {
             let r = &e.route;
             assert!(
-                on_border(&nodes[e.src], r[0], r[1]),
+                on_border(&nodes[e.src], r[0].at),
                 "{at} edge {ei} starts on its source"
             );
             assert!(
-                on_border(&nodes[e.dst], r[r.len() - 3], r[r.len() - 2]),
+                on_border(&nodes[e.dst], r[r.len() - 1].at),
                 "{at} edge {ei} ends on its target"
             );
-            for k in (3..r.len()).step_by(3) {
+            for k in 1..r.len() {
+                let (p, q) = (r[k - 1].at, r[k].at);
                 // Two ends less than half a unit out of line are joined
                 // directly.
-                let across = (r[k + 1] - r[k - 2]).abs() < 0.01;
-                let down = (r[k] - r[k - 3]).abs() < 0.5;
+                let across = (q.y - p.y).abs() < 0.01;
+                let down = (q.x - p.x).abs() < 0.5;
                 assert!(across || down, "{at} edge {ei} turns at right angles");
                 if !across || down {
                     continue;
                 }
                 // The route runs upwards when the edge does, so the higher
                 // end is the one it comes down to.
-                let before = if k >= 6 { r[k - 5] } else { r[k - 2] };
+                let before = if k >= 2 { r[k - 2].at.y } else { p.y };
                 let from_first =
-                    before < r[k - 2] - 0.01 || (k + 4 < r.len() && r[k + 4] > r[k + 1] + 0.01);
+                    before < p.y - 0.01 || (k + 1 < r.len() && r[k + 1].at.y > q.y + 0.01);
                 runs.push(Run {
-                    y: r[k + 1],
-                    lo: r[k].min(r[k - 3]),
-                    hi: r[k].max(r[k - 3]),
-                    from: if from_first { r[k - 3] } else { r[k] },
-                    to: if from_first { r[k] } else { r[k - 3] },
+                    y: q.y,
+                    lo: q.x.min(p.x),
+                    hi: q.x.max(p.x),
+                    from: if from_first { p.x } else { q.x },
+                    to: if from_first { q.x } else { p.x },
                 });
             }
         }
@@ -843,9 +890,9 @@ fn compound_routes_edges_at_right_angles_on_tracks_where_no_two_can_be_taken_for
         // No run across passes through a node.
         for run in &runs {
             for node in &nodes {
-                let inside = (run.y - node.y).abs() < node.h / 2.0 - 0.5
-                    && run.lo < node.x + node.w / 2.0 - 0.5
-                    && run.hi > node.x - node.w / 2.0 + 0.5;
+                let inside = (run.y - node.center.y).abs() < node.size.h / 2.0 - 0.5
+                    && run.lo < node.center.x + node.size.w / 2.0 - 0.5
+                    && run.hi > node.center.x - node.size.w / 2.0 + 0.5;
                 assert!(!inside, "{at} a run crosses a node");
             }
         }
@@ -855,11 +902,11 @@ fn compound_routes_edges_at_right_angles_on_tracks_where_no_two_can_be_taken_for
 #[test]
 fn compound_nests_the_tracks_of_a_fan_so_that_its_edges_do_not_cross() {
     let mut nodes = vec![
-        cnode(120.0, 40.0, -1),
-        cnode(60.0, 40.0, -1),
-        cnode(60.0, 40.0, -1),
-        cnode(60.0, 40.0, -1),
-        cnode(60.0, 40.0, -1),
+        CNode::new(Size::new(120.0, 40.0), None),
+        CNode::new(Size::new(60.0, 40.0), None),
+        CNode::new(Size::new(60.0, 40.0), None),
+        CNode::new(Size::new(60.0, 40.0), None),
+        CNode::new(Size::new(60.0, 40.0), None),
     ];
     seq(&mut nodes);
     nodes[0].span = 96.0;
@@ -868,18 +915,18 @@ fn compound_nests_the_tracks_of_a_fan_so_that_its_edges_do_not_cross() {
         tracks: true,
         ..OPTIONS
     };
-    compound_layout(&mut nodes, &mut edges, Dir::TB, &options);
-    let across_y = |e: &CEdge| e.route[4];
+    compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &options);
+    let across_y = |e: &CEdge| e.route[1].at.y;
     let mut left: Vec<&CEdge> = edges
         .iter()
-        .filter(|e| nodes[e.dst].x < nodes[0].x)
+        .filter(|e| nodes[e.dst].center.x < nodes[0].center.x)
         .collect();
-    left.sort_by(|a, b| nodes[a.dst].x.total_cmp(&nodes[b.dst].x));
+    left.sort_by(|a, b| nodes[a.dst].center.x.total_cmp(&nodes[b.dst].center.x));
     let mut right: Vec<&CEdge> = edges
         .iter()
-        .filter(|e| nodes[e.dst].x > nodes[0].x)
+        .filter(|e| nodes[e.dst].center.x > nodes[0].center.x)
         .collect();
-    right.sort_by(|a, b| nodes[b.dst].x.total_cmp(&nodes[a.dst].x));
+    right.sort_by(|a, b| nodes[b.dst].center.x.total_cmp(&nodes[a.dst].center.x));
     // The edge that reaches furthest turns first, so the nearer ones pass
     // under it.
     for side in [left, right] {
@@ -891,20 +938,20 @@ fn compound_nests_the_tracks_of_a_fan_so_that_its_edges_do_not_cross() {
 
 #[test]
 fn compound_survives_groups_that_contain_each_other() {
-    let mut a = cnode(0.0, 0.0, 1);
-    let mut b = cnode(0.0, 0.0, 0);
+    let mut a = CNode::new(Size::default(), Some(1));
+    let mut b = CNode::new(Size::default(), Some(0));
     a.is_group = true;
     b.is_group = true;
-    let leaf = cnode(40.0, 40.0, 0);
-    let mut nodes = vec![a, b, leaf, cnode(40.0, 40.0, -1)];
+    let leaf = CNode::new(Size::new(40.0, 40.0), Some(0));
+    let mut nodes = vec![a, b, leaf, CNode::new(Size::new(40.0, 40.0), None)];
     let mut edges = vec![link(2, 3)];
-    let size = compound_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS);
-    assert!(size.width.is_finite());
-    assert!(edges[0].route.len() >= 6);
+    let size = compound_layout(&mut nodes, &mut edges, Direction::TopToBottom, &OPTIONS);
+    assert!(size.w.is_finite());
+    assert!(edges[0].route.len() >= 2);
 }
 
-fn group(parent: i32) -> CNode {
-    let mut node = cnode(0.0, 0.0, parent);
+fn group(parent: Option<usize>) -> CNode {
+    let mut node = CNode::new(Size::default(), parent);
     node.is_group = true;
     node.pad_x = 20.0;
     node.pad_top = 36.0;
@@ -921,7 +968,7 @@ struct Sample {
     lane_of: Vec<usize>,
     inner: Vec<usize>,
     inner_lane: Vec<usize>,
-    dir: Dir,
+    dir: Direction,
 }
 
 fn lane_graph(seed: u32) -> Sample {
@@ -938,12 +985,12 @@ fn lane_graph(seed: u32) -> Sample {
     for i in 0..leaf_count {
         let w = (30 + rnd.int(120)) as f64;
         let h = (24 + rnd.int(60)) as f64;
-        nodes.push(cnode(w, h, -1));
+        nodes.push(CNode::new(Size::new(w, h), None));
         leaves.push(i);
     }
     for _ in 0..lane_count {
         lanes.push(nodes.len());
-        nodes.push(group(-1));
+        nodes.push(group(None));
     }
     // The bound is drawn again before every turn, as Pele's loop does.
     let mut k = 0;
@@ -951,17 +998,17 @@ fn lane_graph(seed: u32) -> Sample {
         let lane = lanes[rnd.int(lane_count)];
         inner.push(nodes.len());
         inner_lane.push(lane);
-        nodes.push(group(lane as i32));
+        nodes.push(group(Some(lane)));
         k += 1;
     }
     for &i in &leaves {
         if !inner.is_empty() && rnd.next() < 0.25 {
             let g = rnd.int(inner.len());
-            nodes[i].parent = inner[g] as i32;
+            nodes[i].parent = Some(inner[g]);
             lane_of[i] = inner_lane[g];
         } else {
             lane_of[i] = lanes[rnd.int(lane_count)];
-            nodes[i].parent = lane_of[i] as i32;
+            nodes[i].parent = Some(lane_of[i]);
         }
     }
     let mut edges: Vec<CEdge> = Vec::new();
@@ -995,75 +1042,85 @@ fn lane_graph(seed: u32) -> Sample {
 
 #[test]
 fn lanes_lay_out_nothing() {
-    let result = lane_layout(&mut [], &mut [], Dir::TB, &OPTIONS, None);
-    assert_eq!((result.width, result.height), (0.0, 0.0));
+    let result = lane_layout(&mut [], &mut [], Direction::TopToBottom, &OPTIONS, None);
+    assert_eq!((result.w, result.h), (0.0, 0.0));
 }
 
 #[test]
 fn lanes_sit_side_by_side_across_the_flow_in_the_order_written() {
     for dir in DIRS {
         let mut nodes = vec![
-            cnode(60.0, 30.0, -1),
-            cnode(60.0, 30.0, -1),
-            group(-1),
-            group(-1),
+            CNode::new(Size::new(60.0, 30.0), None),
+            CNode::new(Size::new(60.0, 30.0), None),
+            group(None),
+            group(None),
         ];
-        nodes[0].parent = 3;
-        nodes[1].parent = 2;
+        nodes[0].parent = Some(3);
+        nodes[1].parent = Some(2);
         let result = lane_layout(&mut nodes, &mut [link(0, 1)], dir, &OPTIONS, None);
         let (first, second) = (&nodes[3], &nodes[2]);
-        if dir == Dir::TB || dir == Dir::BT {
-            assert!(first.x < second.x, "{dir:?}");
-            assert_eq!(first.h, result.height, "{dir:?}");
-            assert!(close(first.w + second.w, result.width, 6), "{dir:?}");
+        if dir.is_vertical() {
+            assert!(first.center.x < second.center.x, "{dir:?}");
+            assert_eq!(first.size.h, result.h, "{dir:?}");
+            assert!(close(first.size.w + second.size.w, result.w, 6), "{dir:?}");
         } else {
-            assert!(first.y < second.y, "{dir:?}");
-            assert_eq!(first.w, result.width, "{dir:?}");
-            assert!(close(first.h + second.h, result.height, 6), "{dir:?}");
+            assert!(first.center.y < second.center.y, "{dir:?}");
+            assert_eq!(first.size.w, result.w, "{dir:?}");
+            assert!(close(first.size.h + second.size.h, result.h, 6), "{dir:?}");
         }
     }
 }
 
 #[test]
 fn lanes_run_the_flow_in_the_direction_asked_for() {
-    let at = |dir: Dir| -> Vec<CNode> {
-        let mut nodes = vec![cnode(60.0, 30.0, 2), cnode(60.0, 30.0, 2), group(-1)];
+    let at = |dir: Direction| -> Vec<CNode> {
+        let mut nodes = vec![
+            CNode::new(Size::new(60.0, 30.0), Some(2)),
+            CNode::new(Size::new(60.0, 30.0), Some(2)),
+            group(None),
+        ];
         lane_layout(&mut nodes, &mut [link(0, 1)], dir, &OPTIONS, None);
         nodes
     };
-    assert!(at(Dir::TB)[0].y < at(Dir::TB)[1].y);
-    assert!(at(Dir::BT)[0].y > at(Dir::BT)[1].y);
-    assert!(at(Dir::LR)[0].x < at(Dir::LR)[1].x);
-    assert!(at(Dir::RL)[0].x > at(Dir::RL)[1].x);
+    assert!(at(Direction::TopToBottom)[0].center.y < at(Direction::TopToBottom)[1].center.y);
+    assert!(at(Direction::BottomToTop)[0].center.y > at(Direction::BottomToTop)[1].center.y);
+    assert!(at(Direction::LeftToRight)[0].center.x < at(Direction::LeftToRight)[1].center.x);
+    assert!(at(Direction::RightToLeft)[0].center.x > at(Direction::RightToLeft)[1].center.x);
 }
 
 #[test]
 fn lanes_keep_a_chain_in_one_lane_on_a_straight_line() {
     let mut nodes = vec![
-        cnode(50.0, 30.0, 3),
-        cnode(120.0, 30.0, 3),
-        cnode(70.0, 30.0, 3),
-        group(-1),
+        CNode::new(Size::new(50.0, 30.0), Some(3)),
+        CNode::new(Size::new(120.0, 30.0), Some(3)),
+        CNode::new(Size::new(70.0, 30.0), Some(3)),
+        group(None),
     ];
     let mut edges = vec![link(0, 1), link(1, 2)];
-    lane_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS, None);
-    assert!(close(nodes[0].x, nodes[1].x, 6));
-    assert!(close(nodes[1].x, nodes[2].x, 6));
+    lane_layout(
+        &mut nodes,
+        &mut edges,
+        Direction::TopToBottom,
+        &OPTIONS,
+        None,
+    );
+    assert!(close(nodes[0].center.x, nodes[1].center.x, 6));
+    assert!(close(nodes[1].center.x, nodes[2].center.x, 6));
 }
 
 #[test]
 fn lanes_separate_an_approval_decisions_incoming_accepted_and_returned_paths() {
     for dir in DIRS {
         let mut nodes = vec![
-            cnode(60.0, 40.0, 8),
-            cnode(80.0, 40.0, 7),
-            cnode(70.0, 70.0, 7),
-            cnode(80.0, 40.0, 6),
-            cnode(80.0, 40.0, 6),
-            cnode(60.0, 40.0, 8),
-            group(-1),
-            group(-1),
-            group(-1),
+            CNode::new(Size::new(60.0, 40.0), Some(8)),
+            CNode::new(Size::new(80.0, 40.0), Some(7)),
+            CNode::new(Size::new(70.0, 70.0), Some(7)),
+            CNode::new(Size::new(80.0, 40.0), Some(6)),
+            CNode::new(Size::new(80.0, 40.0), Some(6)),
+            CNode::new(Size::new(60.0, 40.0), Some(8)),
+            group(None),
+            group(None),
+            group(None),
         ];
         let mut edges = vec![
             edge(0, 1, 70.0, 20.0),
@@ -1074,32 +1131,33 @@ fn lanes_separate_an_approval_decisions_incoming_accepted_and_returned_paths() {
             edge(2, 0, 70.0, 20.0),
         ];
         lane_layout(&mut nodes, &mut edges, dir, &OPTIONS, None);
-        let incoming = end_side(&edges[1].route, edges[1].route.len() - 3, &nodes[2]);
+        let incoming = end_side(&edges[1].route, edges[1].route.len() - 1, &nodes[2]);
         let accepted = end_side(&edges[2].route, 0, &nodes[2]);
         let returned = end_side(&edges[5].route, 0, &nodes[2]);
-        let sides: HashSet<i32> = [incoming, accepted, returned].into_iter().collect();
+        let sides: HashSet<Option<Side>> = [incoming, accepted, returned].into_iter().collect();
         assert_eq!(sides.len(), 3, "{dir:?}");
-        assert!(!sides.contains(&-1), "{dir:?}");
+        assert!(!sides.contains(&None), "{dir:?}");
         let back = &edges[5];
+        let r = &back.route;
         let mut corners = 0;
-        for p in (6..back.route.len()).step_by(3) {
-            if (back.route[p] == back.route[p - 3]) != (back.route[p - 3] == back.route[p - 6]) {
+        for p in 2..r.len() {
+            if (r[p].at.x == r[p - 1].at.x) != (r[p - 1].at.x == r[p - 2].at.x) {
                 corners += 1;
             }
         }
         assert_eq!(corners, 1, "{dir:?}");
-        for p in (3..back.route.len()).step_by(3) {
+        for p in 1..r.len() {
             assert!(
-                back.route[p] == back.route[p - 3] || back.route[p + 1] == back.route[p - 2],
+                r[p].at.x == r[p - 1].at.x || r[p].at.y == r[p - 1].at.y,
                 "{dir:?}"
             );
         }
         for node in &nodes[..6] {
             let [l, t, r, b] = boxed(node);
-            let clear = back.label_x + back.label_w / 2.0 <= l
-                || back.label_x - back.label_w / 2.0 >= r
-                || back.label_y + back.label_h / 2.0 <= t
-                || back.label_y - back.label_h / 2.0 >= b;
+            let clear = back.label_at.x + back.label.w / 2.0 <= l
+                || back.label_at.x - back.label.w / 2.0 >= r
+                || back.label_at.y + back.label.h / 2.0 <= t
+                || back.label_at.y - back.label.h / 2.0 >= b;
             assert!(clear, "{dir:?}");
         }
     }
@@ -1109,34 +1167,35 @@ fn lanes_separate_an_approval_decisions_incoming_accepted_and_returned_paths() {
 fn lanes_keep_a_handoff_into_a_step_apart_from_the_handoff_out_of_it() {
     for dir in DIRS {
         let mut nodes = vec![
-            cnode(110.0, 38.0, 5),
-            cnode(110.0, 38.0, 5),
-            cnode(100.0, 38.0, 4),
-            cnode(110.0, 38.0, 4),
-            group(-1),
-            group(-1),
+            CNode::new(Size::new(110.0, 38.0), Some(5)),
+            CNode::new(Size::new(110.0, 38.0), Some(5)),
+            CNode::new(Size::new(100.0, 38.0), Some(4)),
+            CNode::new(Size::new(110.0, 38.0), Some(4)),
+            group(None),
+            group(None),
         ];
         let mut edges = vec![link(2, 3), link(0, 3), link(3, 1)];
         lane_layout(&mut nodes, &mut edges, dir, &OPTIONS, None);
         let (into, out) = (&edges[1].route, &edges[2].route);
         assert_ne!(
-            end_side(into, into.len() - 3, &nodes[3]),
+            end_side(into, into.len() - 1, &nodes[3]),
             end_side(out, 0, &nodes[3]),
             "{dir:?}"
         );
-        for p in (3..into.len()).step_by(3) {
-            for q in (3..out.len()).step_by(3) {
-                let upright = into[p] == into[p - 3] && out[q] == out[q - 3] && into[p] == out[q];
-                let level = into[p + 1] == into[p - 2]
-                    && out[q + 1] == out[q - 2]
-                    && into[p + 1] == out[q + 1];
-                let k = if upright { 1 } else { 0 };
-                let shared = into[p + k]
-                    .max(into[p - 3 + k])
-                    .min(out[q + k].max(out[q - 3 + k]))
-                    - into[p + k]
-                        .min(into[p - 3 + k])
-                        .max(out[q + k].min(out[q - 3 + k]));
+        for p in 1..into.len() {
+            for q in 1..out.len() {
+                let (a0, a1) = (into[p - 1].at, into[p].at);
+                let (b0, b1) = (out[q - 1].at, out[q].at);
+                let upright = a1.x == a0.x && b1.x == b0.x && a1.x == b1.x;
+                let level = a1.y == a0.y && b1.y == b0.y && a1.y == b1.y;
+                let k = if upright { Axis::Y } else { Axis::X };
+                let shared = a1
+                    .along(k)
+                    .max(a0.along(k))
+                    .min(b1.along(k).max(b0.along(k)))
+                    - a1.along(k)
+                        .min(a0.along(k))
+                        .max(b1.along(k).min(b0.along(k)));
                 if upright || level {
                     assert!(shared <= 0.0, "{dir:?}");
                 }
@@ -1149,15 +1208,15 @@ fn lanes_keep_a_handoff_into_a_step_apart_from_the_handoff_out_of_it() {
 fn lanes_take_a_return_past_the_steps_between_around_the_margin_of_its_lane() {
     for dir in DIRS {
         let mut nodes = vec![
-            cnode(140.0, 44.0, 8),
-            cnode(140.0, 44.0, 8),
-            cnode(140.0, 44.0, 7),
-            cnode(120.0, 76.0, 7),
-            cnode(140.0, 44.0, 6),
-            cnode(140.0, 44.0, 6),
-            group(-1),
-            group(-1),
-            group(-1),
+            CNode::new(Size::new(140.0, 44.0), Some(8)),
+            CNode::new(Size::new(140.0, 44.0), Some(8)),
+            CNode::new(Size::new(140.0, 44.0), Some(7)),
+            CNode::new(Size::new(120.0, 76.0), Some(7)),
+            CNode::new(Size::new(140.0, 44.0), Some(6)),
+            CNode::new(Size::new(140.0, 44.0), Some(6)),
+            group(None),
+            group(None),
+            group(None),
         ];
         let mut edges = vec![
             link(0, 1),
@@ -1168,15 +1227,15 @@ fn lanes_take_a_return_past_the_steps_between_around_the_margin_of_its_lane() {
             edge(3, 0, 30.0, 20.0),
         ];
         lane_layout(&mut nodes, &mut edges, dir, &OPTIONS, None);
-        let sideways = dir == Dir::LR || dir == Dir::RL;
-        let across = |c: &CNode| if sideways { c.y } else { c.x };
-        let along = |c: &CNode| if sideways { c.x } else { c.y };
-        let depth = |c: &CNode| if sideways { c.w } else { c.h };
+        let sideways = !dir.is_vertical();
+        let across = |c: &CNode| if sideways { c.center.y } else { c.center.x };
+        let along = |c: &CNode| if sideways { c.center.x } else { c.center.y };
+        let depth = |c: &CNode| if sideways { c.size.w } else { c.size.h };
         assert!(close(across(&nodes[0]), across(&nodes[1]), 6), "{dir:?}");
         assert!(close(across(&nodes[4]), across(&nodes[5]), 6), "{dir:?}");
         let back = &edges[5].route;
-        let sides: HashSet<i32> = [
-            end_side(&edges[2].route, edges[2].route.len() - 3, &nodes[3]),
+        let sides: HashSet<Option<Side>> = [
+            end_side(&edges[2].route, edges[2].route.len() - 1, &nodes[3]),
             end_side(&edges[3].route, 0, &nodes[3]),
             end_side(back, 0, &nodes[3]),
         ]
@@ -1184,25 +1243,23 @@ fn lanes_take_a_return_past_the_steps_between_around_the_margin_of_its_lane() {
         .collect();
         assert_eq!(sides.len(), 3, "{dir:?}");
         assert_ne!(
-            end_side(back, back.len() - 3, &nodes[0]),
+            end_side(back, back.len() - 1, &nodes[0]),
             end_side(&edges[0].route, 0, &nodes[0]),
             "{dir:?}"
         );
-        for p in (3..back.len()).step_by(3) {
-            assert!(
-                back[p] == back[p - 3] || back[p + 1] == back[p - 2],
-                "{dir:?}"
-            );
+        for p in 1..back.len() {
+            let (from, to) = (back[p - 1].at, back[p].at);
+            assert!(from.x == to.x || from.y == to.y, "{dir:?}");
             for (i, node) in nodes[..6].iter().enumerate() {
                 if i == 0 || i == 3 {
                     continue;
                 }
                 let [l, t, r, b] = boxed(node);
                 assert!(
-                    back[p].max(back[p - 3]) <= l
-                        || back[p].min(back[p - 3]) >= r
-                        || back[p + 1].max(back[p - 2]) <= t
-                        || back[p + 1].min(back[p - 2]) >= b,
+                    to.x.max(from.x) <= l
+                        || to.x.min(from.x) >= r
+                        || to.y.max(from.y) <= t
+                        || to.y.min(from.y) >= b,
                     "{dir:?}"
                 );
             }
@@ -1220,12 +1277,12 @@ fn lanes_take_a_return_past_the_steps_between_around_the_margin_of_its_lane() {
 fn lanes_draw_a_link_asked_to_be_longer_at_its_length_beside_a_handoff() {
     for dir in DIRS {
         let mut nodes = vec![
-            cnode(80.0, 40.0, 5),
-            cnode(80.0, 40.0, 5),
-            cnode(80.0, 40.0, 5),
-            cnode(80.0, 40.0, 4),
-            group(-1),
-            group(-1),
+            CNode::new(Size::new(80.0, 40.0), Some(5)),
+            CNode::new(Size::new(80.0, 40.0), Some(5)),
+            CNode::new(Size::new(80.0, 40.0), Some(5)),
+            CNode::new(Size::new(80.0, 40.0), Some(4)),
+            group(None),
+            group(None),
         ];
         let mut edges = vec![
             CEdge {
@@ -1236,12 +1293,12 @@ fn lanes_draw_a_link_asked_to_be_longer_at_its_length_beside_a_handoff() {
             link(2, 3),
         ];
         lane_layout(&mut nodes, &mut edges, dir, &OPTIONS, None);
-        let sideways = dir == Dir::LR || dir == Dir::RL;
+        let sideways = !dir.is_vertical();
         let gap = |a: usize, b: usize| {
             (if sideways {
-                nodes[b].x - nodes[a].x
+                nodes[b].center.x - nodes[a].center.x
             } else {
-                nodes[b].y - nodes[a].y
+                nodes[b].center.y - nodes[a].center.y
             })
             .abs()
                 - if sideways { 80.0 } else { 40.0 }
@@ -1254,14 +1311,14 @@ fn lanes_draw_a_link_asked_to_be_longer_at_its_length_beside_a_handoff() {
 #[test]
 fn lanes_route_a_handoff_by_where_the_label_of_a_relation_to_a_lane_is() {
     let mut nodes = vec![
-        cnode(110.0, 38.0, 7),
-        cnode(110.0, 38.0, 6),
-        cnode(110.0, 38.0, 6),
-        cnode(110.0, 38.0, 6),
-        cnode(110.0, 38.0, 6),
-        cnode(110.0, 38.0, 6),
-        group(-1),
-        group(-1),
+        CNode::new(Size::new(110.0, 38.0), Some(7)),
+        CNode::new(Size::new(110.0, 38.0), Some(6)),
+        CNode::new(Size::new(110.0, 38.0), Some(6)),
+        CNode::new(Size::new(110.0, 38.0), Some(6)),
+        CNode::new(Size::new(110.0, 38.0), Some(6)),
+        CNode::new(Size::new(110.0, 38.0), Some(6)),
+        group(None),
+        group(None),
     ];
     let mut edges = vec![
         link(0, 1),
@@ -1271,14 +1328,21 @@ fn lanes_route_a_handoff_by_where_the_label_of_a_relation_to_a_lane_is() {
         link(4, 5),
         edge(6, 5, 400.0, 200.0),
     ];
-    lane_layout(&mut nodes, &mut edges, Dir::TB, &OPTIONS, None);
+    lane_layout(
+        &mut nodes,
+        &mut edges,
+        Direction::TopToBottom,
+        &OPTIONS,
+        None,
+    );
     let handoff = &edges[0].route;
-    assert!(handoff.len() > 6);
-    for p in (3..handoff.len()).step_by(3) {
-        assert!(handoff[p] == handoff[p - 3] || handoff[p + 1] == handoff[p - 2]);
+    assert!(handoff.len() > 2);
+    for p in 1..handoff.len() {
+        let (from, to) = (handoff[p - 1].at, handoff[p].at);
+        assert!(from.x == to.x || from.y == to.y);
     }
-    for p in (1..handoff.len()).step_by(3) {
-        assert!((handoff[p] - edges[5].label_y).abs() > 100.0);
+    for point in handoff {
+        assert!((point.at.y - edges[5].label_at.y).abs() > 100.0);
     }
 }
 
@@ -1296,13 +1360,13 @@ fn lanes_keep_random_graphs_well_formed(lane_pad: f64) {
         } = lane_graph(seed);
         let result = lane_layout(&mut nodes, &mut edges, dir, &OPTIONS, Some(lane_pad));
         let at = format!("seed {seed}");
-        assert!(
-            result.width.is_finite() && result.height.is_finite(),
-            "{at}"
-        );
+        assert!(result.w.is_finite() && result.h.is_finite(), "{at}");
         for c in &nodes {
             assert!(
-                c.x.is_finite() && c.y.is_finite() && c.w.is_finite() && c.h.is_finite(),
+                c.center.x.is_finite()
+                    && c.center.y.is_finite()
+                    && c.size.w.is_finite()
+                    && c.size.h.is_finite(),
                 "{at}"
             );
         }
@@ -1315,7 +1379,7 @@ fn lanes_keep_random_graphs_well_formed(lane_pad: f64) {
             );
         }
         for (k, &g) in inner.iter().enumerate() {
-            if !leaves.iter().any(|&i| nodes[i].parent == g as i32) {
+            if !leaves.iter().any(|&i| nodes[i].parent == Some(g)) {
                 continue;
             }
             let [l, t, r, b] = boxed(&nodes[g]);
@@ -1325,7 +1389,7 @@ fn lanes_keep_random_graphs_well_formed(lane_pad: f64) {
                 "{at}: group {g} in its lane"
             );
             for &i in &leaves {
-                if nodes[i].parent != g as i32 {
+                if nodes[i].parent != Some(g) {
                     continue;
                 }
                 let [nl, nt, nr, nb] = boxed(&nodes[i]);
@@ -1347,7 +1411,7 @@ fn lanes_keep_random_graphs_well_formed(lane_pad: f64) {
         for a in 0..lanes.len() {
             let [l, t, r, b] = boxed(&nodes[lanes[a]]);
             assert!(
-                l >= -0.01 && t >= -0.01 && r <= result.width + 0.01 && b <= result.height + 0.01,
+                l >= -0.01 && t >= -0.01 && r <= result.w + 0.01 && b <= result.h + 0.01,
                 "{at}: lane inside"
             );
             for &other in &lanes[a + 1..] {
@@ -1362,22 +1426,18 @@ fn lanes_keep_random_graphs_well_formed(lane_pad: f64) {
             if e.src == e.dst {
                 continue;
             }
-            assert!(
-                e.route.len() >= 6 && e.route.len().is_multiple_of(3),
-                "{at}: route"
-            );
-            for v in &e.route {
-                assert!(v.is_finite(), "{at}: route value");
-            }
-            for p in (0..e.route.len()).step_by(3) {
-                let inside = e.route[p] >= -0.01
-                    && e.route[p] <= result.width + 0.01
-                    && e.route[p + 1] >= -0.01
-                    && e.route[p + 1] <= result.height + 0.01;
+            assert!(e.route.len() >= 2, "{at}: route");
+            for point in &e.route {
+                let p = point.at;
+                assert!(p.x.is_finite() && p.y.is_finite(), "{at}: route value");
+                let inside = p.x >= -0.01
+                    && p.x <= result.w + 0.01
+                    && p.y >= -0.01
+                    && p.y <= result.h + 0.01;
                 assert!(inside, "{at}: route inside the lanes");
             }
             assert!(
-                e.label_x.is_finite() && e.label_y.is_finite(),
+                e.label_at.x.is_finite() && e.label_at.y.is_finite(),
                 "{at}: label"
             );
         }
@@ -1403,7 +1463,7 @@ fn lanes_give_the_same_result_every_time() {
     let shape = |nodes: &[CNode]| {
         nodes
             .iter()
-            .map(|c| [c.x, c.y, c.w, c.h])
+            .map(|c| [c.center.x, c.center.y, c.size.w, c.size.h])
             .collect::<Vec<_>>()
     };
     assert_eq!(shape(&a.nodes), shape(&b.nodes));

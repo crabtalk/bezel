@@ -5,36 +5,26 @@
 //! its errors. It builds the model directly, where Mermaid builds a syntax
 //! tree and then visits it. Pele's `diagrams/usecase/parser.ts`.
 
-use std::sync::LazyLock;
-
 use super::{
     db::{
         DraftBoundary, DraftClassDef, DraftClasses, DraftElement, DraftEndpoint, DraftJson,
         DraftLabel, DraftMetadata, DraftNote, DraftProperty, DraftRelationship, DraftStyle, Drafts,
-        ElementKind, Named, PropertyValue, resolve_usecase,
+        ElementKind, Named, PropertyValue,
     },
     json::parse_ordered_json,
-    lexer::{Source, Tokens},
-    tokens::{T, TOKEN_NAMES},
+    lexer::{Source, Token},
+    tokens::T,
     types::{
         Arrow, Direction, EdgeOccurrence, GraphStatement, LabelType, NodeOccurrence,
         RelationshipType, Span, StatementKind, UseCaseShape, UsecaseModel,
     },
 };
-use crate::{detect::Kind, error::Error, js};
+use crate::{
+    error::Error,
+    js,
+    util::chars::{is_blank, is_word},
+};
 
-const LINE: u8 = 1;
-const RELATION: u8 = 2;
-const STYLE_PART: u8 = 4;
-const FOLLOWS_NAME: u8 = 8;
-const BOUNDARY_LINE: u8 = 16;
-const CLOSES_LABEL: u8 = 32;
-const METADATA_FIRST: u8 = 64;
-const ARROWS: &str = "DEPENDENCY_ARROW|GENERALIZATION|FORWARD_SOLID|BACKWARD_SOLID|MARKERLESS_SOLID|FORWARD_CIRCLE|BACKWARD_CIRCLE|FORWARD_CROSS|BACKWARD_CROSS";
-const NAMES: &str = "IDENTIFIER|PLAIN_STRING|MARKDOWN_STRING";
-const LABELS: &str = "PLAIN_STRING|MARKDOWN_STRING|LABEL_TEXT";
-const STATEMENTS: &str = "ACC_TITLE_LINE|ACC_DESCR_LINE|ACC_DESCR_BLOCK|DIRECTION|ACTOR|SYSTEM_BOUNDARY|NOTE|JSON_DECLARATION_START|CLASS_DEF|CLASS|STYLE";
-const STYLE_PARTS: &str = "WORD|PLAIN_STRING|NUMBER|HASH_COLOR|CSS_IDENTIFIER|CSS_ESCAPED_COMMA|DASH|DOT|PERCENT|CSS_PUNCTUATION|COLON|LPAREN|RPAREN|LBRACKET|RBRACKET|LBRACE|RBRACE|AT|MARKERLESS_SOLID";
 const FORBIDDEN: [&str; 5] = [
     "allowmixing",
     "newpage",
@@ -43,37 +33,37 @@ const FORBIDDEN: [&str; 5] = [
     "skinparam",
 ];
 
-static FLAGS: LazyLock<[u8; TOKEN_NAMES.len()]> = LazyLock::new(|| {
-    let mut flags = [0u8; TOKEN_NAMES.len()];
-    let mut flag = |names: &str, bits: u8| {
-        for name in names.split('|') {
-            // WORD is a category: every keyword and IDENTIFIER.
-            if name == "WORD" {
-                for flag in &mut flags[T::Usecase as usize..=T::Identifier as usize] {
-                    *flag |= bits;
-                }
-            } else if let Some(t) = TOKEN_NAMES.iter().position(|&n| n == name) {
-                flags[t] |= bits;
-            }
-        }
-    };
-    flag(&format!("NEWLINE|COMMENT|{STATEMENTS}|{NAMES}"), LINE);
-    flag(&format!("IDENTIFIER|{ARROWS}"), RELATION);
-    flag(STYLE_PARTS, STYLE_PART);
-    flag(
-        &format!("STEREOTYPE_START|CLASS_SEPARATOR|IDENTIFIER|{ARROWS}|NEWLINE|EOF"),
-        FOLLOWS_NAME,
-    );
-    flag(&format!("NEWLINE|COMMENT|ACTOR|{NAMES}"), BOUNDARY_LINE);
-    flag(
-        "FORWARD_SOLID|MARKERLESS_SOLID|FORWARD_CIRCLE|FORWARD_CROSS",
-        CLOSES_LABEL,
-    );
-    flag("NEWLINE|IDENTIFIER|PLAIN_STRING|RBRACE", METADATA_FIRST);
-    flags
-});
+/// What may follow an element's name in a statement, in Mermaid's order.
+fn follows_name() -> impl Iterator<Item = T> {
+    [T::StereotypeStart, T::ClassSeparator, T::Identifier]
+        .into_iter()
+        .chain(T::ARROWS)
+        .chain([T::Newline, T::Eof])
+}
 
-#[derive(Clone)]
+impl T {
+    fn starts_line(self) -> bool {
+        matches!(self, T::Newline | T::Comment) || T::STATEMENTS.contains(&self) || self.is_name()
+    }
+
+    fn starts_relation(self) -> bool {
+        self == T::Identifier || self.is_arrow()
+    }
+
+    fn starts_boundary_line(self) -> bool {
+        matches!(self, T::Newline | T::Comment | T::Actor) || self.is_name()
+    }
+
+    /// The operators that can close a label opened by `--`.
+    fn closes_label(self) -> bool {
+        matches!(
+            self,
+            T::ForwardSolid | T::MarkerlessSolid | T::ForwardCircle | T::ForwardCross
+        )
+    }
+}
+
+#[derive(Clone, Default)]
 struct Item {
     id: String,
     label: DraftLabel,
@@ -92,6 +82,30 @@ struct Item {
 }
 
 impl Item {
+    fn endpoint(&self, declares: bool) -> DraftEndpoint {
+        DraftEndpoint {
+            named: self.named(),
+            declares,
+            classed: !self.classes.is_empty(),
+        }
+    }
+
+    fn occurrence(&self, defines: bool) -> NodeOccurrence {
+        NodeOccurrence {
+            id: self.id.clone(),
+            span: self.node_span,
+            id_span: self.span,
+            label_span: Some(self.label.span),
+            defines: defines.then_some(true),
+            stereotype_span: self.stereotype_span,
+            metadata: self
+                .metadata
+                .as_ref()
+                .map(|properties| properties.iter().map(DraftProperty::occurrence).collect()),
+            class_spans: (!self.class_spans.is_empty()).then(|| self.class_spans.clone()),
+        }
+    }
+
     fn named(&self) -> Named {
         Named {
             id: self.id.clone(),
@@ -113,22 +127,6 @@ struct Tail {
     span: Span,
 }
 
-fn is_word(kind: T) -> bool {
-    (T::Usecase..=T::Identifier).contains(&kind)
-}
-
-fn is_label_text(kind: T) -> bool {
-    (T::Usecase..=T::LabelSymbol).contains(&kind)
-}
-
-fn is_key(kind: T) -> bool {
-    kind == T::Identifier || kind == T::PlainString
-}
-
-fn flags(kind: T) -> u8 {
-    FLAGS[kind as usize]
-}
-
 /// An id made from a label: each character that is not a word character,
 /// counted in UTF-16 units, becomes `_`.
 fn generated_id(label: &str) -> String {
@@ -145,41 +143,40 @@ fn generated_id(label: &str) -> String {
     out
 }
 
-fn statement_sequences() -> String {
-    let names: Vec<&str> = NAMES.split('|').collect();
-    let metadata: Vec<String> = names
+/// Chevrotain's list of the token sequences that start a top-level
+/// statement.
+fn statement_sequences() -> Vec<String> {
+    let metadata: Vec<String> = T::NAMES
         .iter()
         .flat_map(|name| {
-            ["NEWLINE", "IDENTIFIER", "PLAIN_STRING", "RBRACE"]
+            T::METADATA_FIRST
                 .iter()
-                .map(move |next| format!("{name}, METADATA_START, {next}"))
+                .map(move |next| format!("{}, METADATA_START, {}", name.name(), next.name()))
         })
         .collect();
-    let follows_text = format!("STEREOTYPE_START|CLASS_SEPARATOR|IDENTIFIER|{ARROWS}|NEWLINE|EOF");
-    let follows: Vec<&str> = follows_text.split('|').collect();
-    let mut entities: Vec<String> = Vec::new();
-    for (i, name) in names.iter().enumerate() {
-        let mut nexts: Vec<&str> = Vec::new();
-        if i == 0 {
-            nexts.extend(["LPAREN", "LBRACKET"]);
-        }
-        nexts.extend(follows.iter());
-        for next in nexts {
-            entities.push(format!("{name}, {next}"));
-        }
-    }
-    let mut all: Vec<String> = vec![STATEMENTS.to_string()];
-    all.extend(metadata.iter().cloned());
-    all.extend(entities);
-    all.extend(metadata);
-    all.join("|")
+    let entities = T::NAMES.iter().flat_map(|&name| {
+        let open: &[T] = if name == T::Identifier {
+            &[T::Lparen, T::Lbracket]
+        } else {
+            &[]
+        };
+        open.iter()
+            .copied()
+            .chain(follows_name())
+            .map(move |next| format!("{}, {}", name.name(), next.name()))
+    });
+    T::STATEMENTS
+        .iter()
+        .map(|kind| kind.name().to_string())
+        .chain(metadata.iter().cloned())
+        .chain(entities)
+        .chain(metadata.iter().cloned())
+        .collect()
 }
 
 struct Parser<'a> {
     src: &'a Source,
-    types: Vec<T>,
-    starts: Vec<usize>,
-    ends: Vec<usize>,
+    tokens: Vec<Token>,
     p: usize,
     /// Where the last token before the most recent line end stops, which is
     /// where its statement stops.
@@ -196,28 +193,26 @@ struct Parser<'a> {
 
 impl Parser<'_> {
     fn t(&self, k: usize) -> T {
-        self.types.get(k).copied().unwrap_or(T::Eof)
+        self.tokens.get(k).map_or(T::Eof, |token| token.kind)
     }
 
     fn image(&self, k: usize) -> String {
-        self.src.slice(self.starts[k], self.ends[k])
+        self.src.slice(self.tokens[k].start, self.tokens[k].end)
     }
 
     fn span(&self, k: usize) -> Span {
-        [self.starts[k], self.ends[k]]
+        self.tokens[k].span()
     }
 
     fn fail(&self, detail: &str) -> Error {
-        let at = self.starts[self.p];
-        let (line, column) = self.src.line_column(at);
-        let mut error = Error::syntax(format!(
-            "Error parsing usecase diagram: {detail} at line {line}, column {column} [{at},{})",
-            self.ends[self.p]
-        ))
-        .of(Kind::Usecase);
-        error.line = line;
-        error.column = column;
-        error
+        let Token { start, end, .. } = self.tokens[self.p];
+        self.src.place(
+            Error::syntax(format!(
+                "Error parsing usecase diagram: {detail} at {}",
+                self.src.location_text(start, end)
+            )),
+            start,
+        )
     }
 
     fn mismatch(&self, name: &str) -> Error {
@@ -236,11 +231,11 @@ impl Parser<'_> {
     }
 
     /// Chevrotain lists every token sequence that would have been accepted.
-    fn no_alternative(&self, expected: &str) -> Error {
-        let list: Vec<String> = expected
-            .split('|')
+    fn no_alternative<S: AsRef<str>>(&self, sequences: impl IntoIterator<Item = S>) -> Error {
+        let list: Vec<String> = sequences
+            .into_iter()
             .enumerate()
-            .map(|(i, sequence)| format!("  {}. [{sequence}]", i + 1))
+            .map(|(i, sequence)| format!("  {}. [{}]", i + 1, sequence.as_ref()))
             .collect();
         self.fail(&format!(
             "Expecting: one of these possible Token sequences:\n{}\nbut found: '{}'",
@@ -250,11 +245,11 @@ impl Parser<'_> {
     }
 
     fn line_end(&mut self) -> Result<(), Error> {
-        self.last_end = self.ends[self.p - 1];
+        self.last_end = self.tokens[self.p - 1].end;
         if self.t(self.p) == T::Newline {
             self.p += 1;
         } else if self.t(self.p) != T::Eof {
-            return Err(self.no_alternative("NEWLINE|EOF"));
+            return Err(self.no_alternative([T::Newline, T::Eof].map(T::name)));
         }
         Ok(())
     }
@@ -266,7 +261,7 @@ impl Parser<'_> {
             T::PlainString => 1,
             _ => 0,
         };
-        [self.starts[k] + trim, self.ends[k] - trim]
+        [self.tokens[k].start + trim, self.tokens[k].end - trim]
     }
 
     fn token_label(&self, k: usize) -> DraftLabel {
@@ -290,14 +285,18 @@ impl Parser<'_> {
             self.p += 1;
             return Ok(self.token_label(self.p - 1));
         }
-        if !is_label_text(kind) {
-            return Err(self.no_alternative(LABELS));
+        if !kind.is_label_text() {
+            return Err(self.no_alternative([
+                T::PlainString.name(),
+                T::MarkdownString.name(),
+                T::LABEL_TEXT,
+            ]));
         }
         let first = self.p;
-        while is_label_text(self.t(self.p)) {
+        while self.t(self.p).is_label_text() {
             self.p += 1;
         }
-        let at: Span = [self.starts[first], self.ends[self.p - 1]];
+        let at: Span = [self.tokens[first].start, self.tokens[self.p - 1].end];
         Ok(DraftLabel {
             text: self.src.slice(at[0], at[1]),
             kind: LabelType::Text,
@@ -307,15 +306,16 @@ impl Parser<'_> {
 
     fn property(&mut self) -> Result<DraftProperty, Error> {
         let key = self.p;
-        if !is_key(self.t(self.p)) {
-            return Err(self.no_alternative("IDENTIFIER|PLAIN_STRING"));
+        if !self.t(self.p).is_key() {
+            return Err(self.no_alternative([T::Identifier, T::PlainString].map(T::name)));
         }
         self.p += 1;
         self.expect(T::Colon)?;
         let value = self.p;
         let kind = self.t(self.p);
-        if !is_key(kind) && kind != T::True && kind != T::False {
-            return Err(self.no_alternative("IDENTIFIER|PLAIN_STRING|TRUE|FALSE"));
+        if !kind.is_key() && kind != T::True && kind != T::False {
+            return Err(self
+                .no_alternative([T::Identifier, T::PlainString, T::True, T::False].map(T::name)));
         }
         self.p += 1;
         let key_span = self.content(key);
@@ -327,7 +327,7 @@ impl Parser<'_> {
                 T::False => PropertyValue::Bool(false),
                 _ => PropertyValue::Text(self.src.slice(value_span[0], value_span[1])),
             },
-            span: [self.starts[key], self.ends[value]],
+            span: [self.tokens[key].start, self.tokens[value].end],
             key_span,
             value_span,
         })
@@ -342,14 +342,14 @@ impl Parser<'_> {
         let b = self.t(self.p + 1);
         let c = self.t(self.p + 2);
         if a == T::Comma {
-            return is_key(b) || (b == T::Newline && (c == T::Newline || is_key(c)));
+            return b.is_key() || (b == T::Newline && (c == T::Newline || c.is_key()));
         }
         if a != T::Newline {
             return false;
         }
         b == T::Comma
-            || is_key(b)
-            || (b == T::Newline && (c == T::Newline || c == T::Comma || is_key(c)))
+            || b.is_key()
+            || (b == T::Newline && (c == T::Newline || c == T::Comma || c.is_key()))
     }
 
     fn metadata(&mut self) -> Result<Vec<DraftProperty>, Error> {
@@ -358,7 +358,7 @@ impl Parser<'_> {
         while self.t(self.p) == T::Newline {
             self.p += 1;
         }
-        if is_key(self.t(self.p)) {
+        if self.t(self.p).is_key() {
             properties.push(self.property()?);
             while self.separator_ahead() {
                 if self.t(self.p) == T::Comma {
@@ -409,22 +409,9 @@ impl Parser<'_> {
         let k = self.p;
         let kind = self.t(self.p);
         let mut item = Item {
-            id: String::new(),
-            label: DraftLabel {
-                text: String::new(),
-                kind: LabelType::Text,
-                span: [0, 0],
-            },
             span: self.content(k),
             generated: kind != T::Identifier,
-            shape: None,
-            metadata: None,
-            stereotype: None,
-            stereotype_span: None,
-            classes: Vec::new(),
-            class_spans: Vec::new(),
-            explicit: false,
-            node_span: [0, 0],
+            ..Item::default()
         };
         if kind == T::Identifier {
             self.p += 1;
@@ -451,7 +438,7 @@ impl Parser<'_> {
             item.label = self.token_label(k);
             item.id = generated_id(&item.label.text);
         } else {
-            return Err(self.no_alternative(NAMES));
+            return Err(self.no_alternative(T::NAMES.map(T::name)));
         }
         Ok(item)
     }
@@ -473,15 +460,12 @@ impl Parser<'_> {
             item.stereotype_span = Some(self.span(text));
         }
         if self.t(self.p) == T::ClassSeparator {
-            let (mut classes, mut spans) = (Vec::new(), Vec::new());
-            self.class_suffix(&mut classes, &mut spans)?;
-            item.classes.extend(classes);
-            item.class_spans.extend(spans);
+            self.class_suffix(&mut item.classes, &mut item.class_spans)?;
         }
         item.explicit = item.shape.is_some()
             || item.metadata.is_some()
             || item.stereotype.as_deref().is_some_and(|s| !s.is_empty());
-        item.node_span = [self.starts[first], self.ends[self.p - 1]];
+        item.node_span = [self.tokens[first].start, self.tokens[self.p - 1].end];
         Ok(item)
     }
 
@@ -497,44 +481,19 @@ impl Parser<'_> {
         }
     }
 
-    fn endpoint(item: &Item, declares: bool) -> DraftEndpoint {
-        DraftEndpoint {
-            named: item.named(),
-            declares,
-            classed: !item.classes.is_empty(),
-        }
-    }
-
-    fn occurrence(item: &Item, defines: bool) -> NodeOccurrence {
-        NodeOccurrence {
-            id: item.id.clone(),
-            span: item.node_span,
-            id_span: item.span,
-            label_span: Some(item.label.span),
-            defines: defines.then_some(true),
-            stereotype_span: item.stereotype_span,
-            metadata: item
-                .metadata
-                .as_ref()
-                .map(|properties| properties.iter().map(DraftProperty::occurrence).collect()),
-            class_spans: (!item.class_spans.is_empty()).then(|| item.class_spans.clone()),
-        }
-    }
-
     /// Whether a label and then one of the operators that can close it come
     /// next.
-    fn labeled_right(&self, closers: u8) -> bool {
-        let first = self.t(self.p);
-        if !(T::Usecase..=T::MarkdownString).contains(&first) {
+    fn labeled_right(&self, closes: impl Fn(T) -> bool) -> bool {
+        if !self.t(self.p).is_label_part() {
             return false;
         }
         let mut k = self.p + 1;
         loop {
             let kind = self.t(k);
-            if kind == T::MarkerlessSolid || (flags(kind) & closers) != 0 {
+            if kind == T::MarkerlessSolid || closes(kind) {
                 return true;
             }
-            if !(T::Usecase..=T::MarkdownString).contains(&kind) {
+            if !kind.is_label_part() {
                 return false;
             }
             k += 1;
@@ -544,7 +503,8 @@ impl Parser<'_> {
     /// Each dash beyond the second asks for one more rank between the two
     /// ends.
     fn minimum_length(&self, k: usize) -> usize {
-        let dashes = self.ends[k] - self.starts[k] - usize::from(self.t(k) != T::MarkerlessSolid);
+        let Token { kind, start, end } = self.tokens[k];
+        let dashes = end - start - usize::from(kind != T::MarkerlessSolid);
         dashes.saturating_sub(1).max(1)
     }
 
@@ -557,24 +517,7 @@ impl Parser<'_> {
             arrow_type: Arrow::SOLID_ARROW,
             label: None,
             minlen: 1,
-            target: Item {
-                id: String::new(),
-                label: DraftLabel {
-                    text: String::new(),
-                    kind: LabelType::Text,
-                    span: [0, 0],
-                },
-                span: [0, 0],
-                generated: false,
-                shape: None,
-                metadata: None,
-                stereotype: None,
-                stereotype_span: None,
-                classes: Vec::new(),
-                class_spans: Vec::new(),
-                explicit: false,
-                node_span: [0, 0],
-            },
+            target: Item::default(),
             span: [0, 0],
         };
         if self.t(self.p) == T::Identifier && self.t(self.p + 1) == T::At {
@@ -585,13 +528,13 @@ impl Parser<'_> {
         let k = self.p;
         let kind = self.t(self.p);
         self.p += 1;
-        let width = self.ends[k] - self.starts[k];
+        let width = self.tokens[k].end - self.tokens[k].start;
         match kind {
             T::DependencyArrow => {
                 self.expect(T::Colon)?;
                 let word = self.t(self.p);
                 if word != T::Include && word != T::Extend {
-                    return Err(self.no_alternative("INCLUDE|EXTEND"));
+                    return Err(self.no_alternative([T::Include, T::Extend].map(T::name)));
                 }
                 tail.kind = if word == T::Include {
                     RelationshipType::Include
@@ -611,7 +554,7 @@ impl Parser<'_> {
                 tail.arrow_type = Arrow::BACK_ARROW;
                 // Only the shortest operator can open a label:
                 // `A <-- label -- B`.
-                if width == 3 && self.labeled_right(0) {
+                if width == 3 && self.labeled_right(|_| false) {
                     tail.label = Some(self.label()?);
                     let close = self.expect(T::MarkerlessSolid)?;
                     tail.minlen = self.minimum_length(close);
@@ -621,7 +564,7 @@ impl Parser<'_> {
             }
             T::MarkerlessSolid => {
                 tail.arrow_type = Arrow::LINE_SOLID;
-                if width == 2 && self.labeled_right(CLOSES_LABEL) {
+                if width == 2 && self.labeled_right(T::closes_label) {
                     tail.label = Some(self.label()?);
                     let close = self.t(self.p);
                     if close == T::ForwardSolid {
@@ -632,7 +575,13 @@ impl Parser<'_> {
                         tail.arrow_type = Arrow::CROSS_ARROW;
                     } else if close != T::MarkerlessSolid {
                         return Err(self.no_alternative(
-                            "FORWARD_SOLID|MARKERLESS_SOLID|FORWARD_CIRCLE|FORWARD_CROSS",
+                            [
+                                T::ForwardSolid,
+                                T::MarkerlessSolid,
+                                T::ForwardCircle,
+                                T::ForwardCross,
+                            ]
+                            .map(T::name),
                         ));
                     }
                     if tail.arrow_type == Arrow::SOLID_ARROW || tail.arrow_type == Arrow::LINE_SOLID
@@ -652,18 +601,18 @@ impl Parser<'_> {
                 } else {
                     Arrow::CROSS_ARROW_REVERSED
                 };
-                if self.labeled_right(0) {
+                if self.labeled_right(|_| false) {
                     tail.label = Some(self.label()?);
                     self.expect(T::MarkerlessSolid)?;
                 }
             }
             _ => {
                 self.p -= 1;
-                return Err(self.no_alternative(ARROWS));
+                return Err(self.no_alternative(T::ARROWS.map(T::name)));
             }
         }
         tail.target = self.element(false)?;
-        tail.span = [self.starts[first], self.ends[self.p - 1]];
+        tail.span = [self.tokens[first].start, self.tokens[self.p - 1].end];
         Ok(tail)
     }
 
@@ -680,8 +629,8 @@ impl Parser<'_> {
             self.drafts.elements.push(draft);
         }
         self.drafts.relationships.push(DraftRelationship {
-            source: Self::endpoint(source, declaration),
-            target: Self::endpoint(target, target.explicit),
+            source: source.endpoint(declaration),
+            target: target.endpoint(target.explicit),
             span: tail.span,
             id: tail.explicit_id.clone(),
             id_span: tail.explicit_id_span,
@@ -690,9 +639,8 @@ impl Parser<'_> {
             label: tail.label.clone(),
             minlen: tail.minlen,
         });
-        nodes.push(Self::occurrence(target, target.explicit));
-        let mut out = GraphStatement::new(StatementKind::Edge);
-        out.nodes = Some(nodes);
+        nodes.push(target.occurrence(target.explicit));
+        let mut out = GraphStatement::with_nodes(StatementKind::Edge, nodes);
         let id = match &tail.explicit_id {
             Some(id) => id.clone(),
             None => {
@@ -710,12 +658,6 @@ impl Parser<'_> {
         out
     }
 
-    fn declaration(nodes: Vec<NodeOccurrence>) -> GraphStatement {
-        let mut out = GraphStatement::new(StatementKind::Node);
-        out.nodes = Some(nodes);
-        out
-    }
-
     /// `actor A, B` declares several actors; at the top level
     /// `actor A --> B` declares one and relates it.
     fn actors(&mut self, top: bool) -> Result<GraphStatement, Error> {
@@ -727,7 +669,7 @@ impl Parser<'_> {
                 self.p += 1;
                 items.push(self.element(true)?);
             }
-        } else if top && (flags(self.t(self.p)) & RELATION) != 0 {
+        } else if top && self.t(self.p).starts_relation() {
             tail = Some(self.relation_tail()?);
         }
         self.line_end()?;
@@ -735,19 +677,16 @@ impl Parser<'_> {
             let draft = self.draft(item, ElementKind::Actor);
             self.drafts.elements.push(draft);
         }
-        let nodes: Vec<NodeOccurrence> = items
-            .iter()
-            .map(|item| Self::occurrence(item, true))
-            .collect();
+        let nodes: Vec<NodeOccurrence> = items.iter().map(|item| item.occurrence(true)).collect();
         Ok(match tail {
             Some(tail) => self.relationship(&items[0], true, tail, nodes),
-            None => Self::declaration(nodes),
+            None => GraphStatement::with_nodes(StatementKind::Node, nodes),
         })
     }
 
     fn entity(&mut self, top: bool) -> Result<GraphStatement, Error> {
         let mut source = self.element(false)?;
-        let tail = if top && (flags(self.t(self.p)) & RELATION) != 0 {
+        let tail = if top && self.t(self.p).starts_relation() {
             Some(self.relation_tail()?)
         } else {
             None
@@ -763,13 +702,13 @@ impl Parser<'_> {
             let draft = self.draft(&source, ElementKind::Usecase);
             self.drafts.elements.push(draft);
         }
-        let nodes = vec![Self::occurrence(&source, source.explicit)];
+        let nodes = vec![source.occurrence(source.explicit)];
         Ok(match tail {
             Some(tail) => {
                 let explicit = source.explicit;
                 self.relationship(&source, explicit, tail, nodes)
             }
-            None => Self::declaration(nodes),
+            None => GraphStatement::with_nodes(StatementKind::Node, nodes),
         })
     }
 
@@ -782,10 +721,7 @@ impl Parser<'_> {
             None
         };
         if self.t(self.p) == T::ClassSeparator {
-            let (mut classes, mut spans) = (Vec::new(), Vec::new());
-            self.class_suffix(&mut classes, &mut spans)?;
-            named.classes.extend(classes);
-            named.class_spans.extend(spans);
+            self.class_suffix(&mut named.classes, &mut named.class_spans)?;
         }
         let group = DraftBoundary {
             named: named.named(),
@@ -795,7 +731,7 @@ impl Parser<'_> {
         self.drafts.boundaries.push(group.clone());
         self.parent = Some(group.clone());
         let mut children: Vec<GraphStatement> = Vec::new();
-        while (flags(self.t(self.p)) & BOUNDARY_LINE) != 0 {
+        while self.t(self.p).starts_boundary_line() {
             children.push(self.line(false)?);
         }
         self.parent = None;
@@ -825,33 +761,40 @@ impl Parser<'_> {
     fn style(&mut self) -> Result<String, Error> {
         let first = self.p;
         let kind = self.t(self.p);
-        if is_word(kind) || kind == T::CssIdentifier {
+        if kind.is_word() || kind == T::CssIdentifier {
             self.p += 1;
         } else if kind == T::MarkerlessSolid {
             self.p += 1;
-            if !is_word(self.t(self.p)) {
-                return Err(self.mismatch("WORD"));
+            if !self.t(self.p).is_word() {
+                return Err(self.mismatch(T::WORD));
             }
             self.p += 1;
         } else {
-            return Err(self.no_alternative("WORD|CSS_IDENTIFIER|MARKERLESS_SOLID"));
+            return Err(self.no_alternative([
+                T::WORD,
+                T::CssIdentifier.name(),
+                T::MarkerlessSolid.name(),
+            ]));
         }
         self.expect(T::Colon)?;
-        if (flags(self.t(self.p)) & STYLE_PART) == 0 {
+        if !self.t(self.p).is_style_part() {
+            let parts: Vec<&str> = std::iter::once(T::WORD)
+                .chain(T::STYLE_PARTS.map(T::name))
+                .collect();
             return Err(self.fail(&format!(
                 "Expecting: expecting at least one iteration which starts with one of these possible Token sequences::\n  <[{}]>\nbut found: '{}'",
-                STYLE_PARTS.replace('|', "] ,["),
+                parts.join("] ,["),
                 self.image(self.p)
             )));
         }
-        while (flags(self.t(self.p)) & STYLE_PART) != 0 {
+        while self.t(self.p).is_style_part() {
             self.p += 1;
         }
         // The value is taken from the source, so the spaces inside
         // `1px solid red` survive.
         Ok(self
             .src
-            .slice(self.starts[first], self.ends[self.p - 1])
+            .slice(self.tokens[first].start, self.tokens[self.p - 1].end)
             .replace("\\,", ","))
     }
 
@@ -914,7 +857,7 @@ impl Parser<'_> {
             self.p += 1;
             let value = self.t(self.p);
             if !(T::Td..=T::Rl).contains(&value) {
-                return Err(self.no_alternative("TD|TB|BT|LR|RL"));
+                return Err(self.no_alternative([T::Td, T::Tb, T::Bt, T::Lr, T::Rl].map(T::name)));
             }
             self.drafts.direction = Some(match value {
                 T::Tb | T::Td => Direction::TB,
@@ -951,12 +894,12 @@ impl Parser<'_> {
             if self.t(self.p) == T::ClassSeparator {
                 self.class_suffix(&mut classes, &mut class_spans)?;
             }
-            let mut from = self.starts[k] + 4;
-            while matches!(self.src.code(from), 32 | 9) {
+            let mut from = self.tokens[k].start + 4;
+            while self.src.matches(from, is_blank) {
                 from += 1;
             }
             let mut to = from;
-            while crate::util::chars::is_word(self.src.code(to)) {
+            while self.src.matches(to, is_word) {
                 to += 1;
             }
             let json = DraftJson {
@@ -1021,8 +964,8 @@ impl Parser<'_> {
         } else {
             let next = self.t(self.p + 1);
             if next == T::MetadataStart {
-                if (flags(self.t(self.p + 2)) & METADATA_FIRST) == 0 {
-                    return Err(self.no_alternative(&statement_sequences()));
+                if !T::METADATA_FIRST.contains(&self.t(self.p + 2)) {
+                    return Err(self.no_alternative(statement_sequences()));
                 }
                 self.p += 1;
                 let mut target = self.reference(k);
@@ -1040,7 +983,7 @@ impl Parser<'_> {
                 });
                 out.nodes = Some(vec![target]);
             } else {
-                let follows = (flags(next) & FOLLOWS_NAME) != 0
+                let follows = follows_name().any(|kind| kind == next)
                     || (kind == T::Identifier && (next == T::Lparen || next == T::Lbracket));
                 // Mermaid turns away the PlantUML statements people are most
                 // likely to try.
@@ -1048,7 +991,7 @@ impl Parser<'_> {
                     || (kind == T::Identifier
                         && FORBIDDEN.contains(&self.image(k).to_lowercase().as_str()))
                 {
-                    return Err(self.no_alternative(&statement_sequences()));
+                    return Err(self.no_alternative(statement_sequences()));
                 }
                 return self.entity(true);
             }
@@ -1080,7 +1023,7 @@ impl Parser<'_> {
         } else {
             self.entity(false)?
         };
-        out.span = [self.starts[k], self.last_end];
+        out.span = [self.tokens[k].start, self.last_end];
         if let Some(edges) = &mut out.edges {
             for edge in edges {
                 edge.span = out.span;
@@ -1092,16 +1035,9 @@ impl Parser<'_> {
 
 pub fn parse_usecase(source: &str, title: Option<&str>) -> Result<UsecaseModel, Error> {
     let src = Source::new(source);
-    let Tokens {
-        types,
-        starts,
-        ends,
-    } = src.tokenize()?;
     let mut p = Parser {
         src: &src,
-        types,
-        starts,
-        ends,
+        tokens: src.tokenize()?,
         p: 0,
         last_end: 0,
         drafts: Drafts::default(),
@@ -1114,7 +1050,7 @@ pub fn parse_usecase(source: &str, title: Option<&str>) -> Result<UsecaseModel, 
     let header = p.expect(T::Usecase)?;
     p.line_end()?;
     let mut statements: Vec<GraphStatement> = Vec::new();
-    while (flags(p.t(p.p)) & LINE) != 0 {
+    while p.t(p.p).starts_line() {
         p.top_index = statements.len();
         statements.push(p.line(true)?);
     }
@@ -1127,12 +1063,12 @@ pub fn parse_usecase(source: &str, title: Option<&str>) -> Result<UsecaseModel, 
     // The whole text has to be well formed before the JSON in it is looked
     // at, as in Mermaid.
     for &(json, literal) in &p.pending_json {
-        let start = p.starts[literal];
+        let start = p.tokens[literal].start;
         let parsed = parse_ordered_json(&p.image(literal), || src.line_column(start))?;
         p.drafts.jsons[json].value = parsed.value;
         p.drafts.jsons[json].property_order = parsed.property_order;
     }
     let header_span = p.span(header);
     let drafts = std::mem::take(&mut p.drafts);
-    resolve_usecase(&src, drafts, header_span, statements, title)
+    drafts.resolve(&src, header_span, statements, title)
 }

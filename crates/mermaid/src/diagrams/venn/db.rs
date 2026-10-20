@@ -1,5 +1,6 @@
 //! Pele's `diagrams/venn/db.ts`.
 
+use crate::util::chars::unquote;
 use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 
@@ -37,30 +38,16 @@ pub enum VennType {
 
 /// Mermaid takes one pair of quotes off an id, label or style value.
 pub fn normalize_text(text: &str) -> String {
-    let trimmed = js::trim(text);
-    if js::len(trimmed) >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"') {
-        trimmed[1..trimmed.len() - 1].to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
-/// `list.sort()`: strings in order of their UTF-16 code units.
-pub fn sort_strings(list: &mut [String]) {
-    list.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
+    unquote(js::trim(text)).to_string()
 }
 
 fn normalize_ids(ids: &[String]) -> Vec<String> {
     let mut sets: Vec<String> = ids.iter().map(|id| normalize_text(id)).collect();
-    sort_strings(&mut sets);
+    js::sort_strings(&mut sets);
     sets
 }
 
 impl VennDb {
-    pub fn set_diagram_title(&mut self, title: String) {
-        self.title = Some(title);
-    }
-
     /// A set without a size gets 10, and an overlap of n sets 10 / n².
     pub fn add_subset_data(&mut self, ids: &[String], label: Option<&str>, size: Option<f64>) {
         let sets = normalize_ids(ids);

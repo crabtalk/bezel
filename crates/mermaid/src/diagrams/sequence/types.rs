@@ -59,11 +59,18 @@ pub mod line {
     pub const CENTRAL_CONNECTION_DUAL: i32 = 61;
 }
 
-/// Where a note is put.
-pub mod placement {
-    pub const LEFTOF: i32 = 0;
-    pub const RIGHTOF: i32 = 1;
-    pub const OVER: i32 = 2;
+/// Where a note is put, numbered as in Mermaid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Placement {
+    LeftOf = 0,
+    RightOf = 1,
+    Over = 2,
+}
+
+impl Serialize for Placement {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u8(*self as u8)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -184,7 +191,7 @@ pub struct SeqMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub activate: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub placement: Option<i32>,
+    pub placement: Option<Placement>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub central_connection: Option<i32>,
 }
@@ -199,7 +206,7 @@ pub enum NoteActor {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SeqNote {
     pub actor: NoteActor,
-    pub placement: i32,
+    pub placement: Placement,
     pub message: String,
     pub wrap: bool,
 }
@@ -224,7 +231,7 @@ pub enum SeqStatement {
     },
     AddNote {
         actor: NoteActor,
-        placement: i32,
+        placement: Placement,
         text: SeqText,
     },
     AddLinks(String, SeqText),

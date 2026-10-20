@@ -1,11 +1,12 @@
 //! Pele's `diagrams/quadrant/render.ts`.
 
+use crate::geom::Point;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use super::db::{QuadrantModel, QuadrantText};
+use super::db::{QuadrantModel, QuadrantText, TextKind};
 use crate::config::capped;
-use crate::svg::builder::{EscText, LabelSvg};
+use crate::svg::builder::EscText;
 use crate::{Ctx, Host};
 use crate::{
     Rendered,
@@ -16,7 +17,7 @@ use crate::{
         root::{Accessible, svg_document},
         theme::{RADIUS, class_names, resolve_style, series_color},
     },
-    text::{Label, Style, layout_label},
+    text::{Label, Style},
 };
 use std::fmt::{self, Write as _};
 
@@ -95,9 +96,9 @@ pub fn render_quadrant(
     let has_points = !model.points.is_empty();
 
     let label = |text: Option<&QuadrantText>, font_size: f64, max: f64| -> Label {
-        layout_label(
+        Label::layout(
             text.map(|t| t.text.as_str()),
-            text.is_some_and(|t| t.kind == "markdown"),
+            text.is_some_and(|t| t.kind == TextKind::Markdown),
             &*measure,
             font_size,
             max.max(40.0),
@@ -105,8 +106,8 @@ pub fn render_quadrant(
         )
     };
 
-    let title = layout_label(
-        model.title.as_deref(),
+    let title = Label::layout(
+        model.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -215,10 +216,8 @@ pub fn render_quadrant(
             num(y),
             num(tile_w),
             num(tile_h),
-            LabelSvg(
-                &text,
-                cx,
-                cy,
+            text.svg(
+                Point::new(cx, cy),
                 crate::class!("label", "fill=\"var(--_fg)\" stroke=\"none\"")
             )
         );
@@ -234,21 +233,22 @@ pub fn render_quadrant(
         let _ = write!(
             axes,
             "{}",
-            LabelSvg(
-                &x_left,
-                if x_right.height > 0.0 {
-                    left + w / 4.0
-                } else {
-                    left + x_left.width / 2.0
-                },
-                y,
-                "",
+            x_left.svg(
+                Point::new(
+                    if x_right.height > 0.0 {
+                        left + w / 4.0
+                    } else {
+                        left + x_left.width / 2.0
+                    },
+                    y
+                ),
+                ""
             )
         );
         let _ = write!(
             axes,
             "{}",
-            LabelSvg(&x_right, left + (w * 3.0) / 4.0, y, "")
+            x_right.svg(Point::new(left + (w * 3.0) / 4.0, y), "")
         );
     }
     if has_y {
@@ -264,7 +264,7 @@ pub fn render_quadrant(
                     "<g transform=\"translate({},{}) rotate(-90)\">{}</g>",
                     num(x),
                     num(y),
-                    LabelSvg(text, 0.0, 0.0, "")
+                    text.svg(Point::new(0.0, 0.0), "")
                 );
             }
         };
@@ -423,7 +423,11 @@ pub fn render_quadrant(
         if careful {
             taken.extend([tx - half_w, ty - half_h, tx + half_w, ty + half_h]);
         }
-        let _ = write!(labels, "{}", LabelSvg(text, tx, ty, crate::class!("label")));
+        let _ = write!(
+            labels,
+            "{}",
+            text.svg(Point::new(tx, ty), crate::class!("label"))
+        );
     }
 
     // Mermaid puts each new point under the ones before it.
@@ -432,10 +436,8 @@ pub fn render_quadrant(
     let _ = write!(
         content,
         "{}",
-        LabelSvg(
-            &title,
-            width / 2.0,
-            title_pad / 2.0 + title.height / 2.0,
+        title.svg(
+            Point::new(width / 2.0, title_pad / 2.0 + title.height / 2.0),
             TITLE
         )
     );
@@ -471,8 +473,8 @@ pub fn render_quadrant(
             size,
             ctx,
             Accessible {
-                acc_title: model.acc_title.as_deref(),
-                acc_descr: model.acc_descr.as_deref(),
+                acc_title: model.titles.acc_title.as_deref(),
+                acc_descr: model.titles.acc_descr.as_deref(),
             },
             &content,
         ),

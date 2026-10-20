@@ -7,10 +7,13 @@ use std::{
 };
 
 use super::{
-    builder::{Point, fragment, num},
+    builder::{fragment, num},
     theme::RADIUS,
 };
-use crate::layout::compound::CNode;
+use crate::{
+    geom::{Point, Side, Size},
+    layout::compound::CNode,
+};
 
 pub const PAD_X: f64 = 18.0;
 pub const PAD_Y: f64 = 12.0;
@@ -18,20 +21,141 @@ pub const PAD_Y: f64 = 12.0;
 /// Kept clear at each end of a straight side, for the corner.
 const CORNER: f64 = 12.0;
 
+/// A node shape, by Mermaid's name for it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Shape {
+    #[default]
+    /// `rect`
+    Rect,
+    /// `rounded`
+    Rounded,
+    /// `stadium`
+    Stadium,
+    /// `fr-rect`
+    FramedRect,
+    /// `cyl`
+    Cylinder,
+    /// `circle`
+    Circle,
+    /// `dbl-circ`
+    DoubleCircle,
+    /// `ellipse`
+    Ellipse,
+    /// `diam`
+    Diamond,
+    /// `hex`
+    Hexagon,
+    /// `odd`
+    Odd,
+    /// `lean-r`
+    LeanRight,
+    /// `lean-l`
+    LeanLeft,
+    /// `trap-b`
+    TrapezoidBottom,
+    /// `trap-t`
+    TrapezoidTop,
+    /// `text`
+    Text,
+    /// `sm-circ`
+    SmallCircle,
+    /// `f-circ`
+    FilledCircle,
+    /// `fr-circ`
+    FramedCircle,
+    /// `fork`
+    Fork,
+    /// `notch-rect`
+    NotchedRect,
+    /// `lin-rect`
+    LinedRect,
+    /// `div-rect`
+    DividedRect,
+    /// `win-pane`
+    WindowPane,
+    /// `tri`
+    Triangle,
+    /// `flip-tri`
+    FlippedTriangle,
+    /// `sl-rect`
+    SlopedRect,
+    /// `notch-pent`
+    NotchedPentagon,
+    /// `hourglass`
+    Hourglass,
+    /// `delay`
+    Delay,
+    /// `h-cyl`
+    HorizontalCylinder,
+    /// `cross-circ`
+    CrossedCircle,
+    /// `st-rect`
+    StackedRect,
+    /// `doc`
+    Document,
+    /// `flag`
+    Flag,
+    /// `datastore`
+    Datastore,
+    /// `folder`
+    Folder,
+    /// `bucket`
+    Bucket,
+    /// `console`
+    Console,
+    /// `browser`
+    Browser,
+    /// `person`
+    Person,
+    /// `bang`
+    Bang,
+    /// `cloud`
+    Cloud,
+    /// `brace`
+    BraceLeft,
+    /// `brace-r`
+    BraceRight,
+    /// `braces`
+    Braces,
+    /// `bolt`
+    Bolt,
+    /// `lin-cyl`
+    LinedCylinder,
+    /// `curv-trap`
+    CurvedTrapezoid,
+    /// `docs`
+    Documents,
+    /// `bow-rect`
+    BowRect,
+    /// `tag-rect`
+    TaggedRect,
+    /// `tag-doc`
+    TaggedDocument,
+    /// `lin-doc`
+    LinedDocument,
+    /// `collapsedGroup`
+    CollapsedGroup,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShapeSize {
-    pub w: f64,
-    pub h: f64,
+    pub size: Size,
     /// Vertical shift of the label from the shape's centre.
     pub dy: f64,
 }
 
+fn sized(w: f64, h: f64, dy: f64) -> ShapeSize {
+    ShapeSize {
+        size: Size::new(w, h),
+        dy,
+    }
+}
+
 type Sizer = fn(f64, f64) -> ShapeSize;
 type Drawer = fn(&mut String, f64, f64, &str, &str);
-/// Distance from the bounding box to the outline on a side: 0 top, 1 right,
-/// 2 bottom, 3 left. `t` is how far along the side from its middle, to the
-/// right or down.
-type Inset = fn(f64, f64, i32, f64) -> f64;
+/// Distance from the bounding box to the outline on a side. `t` is how far
+/// along the side from its middle, to the right or down.
+type Inset = fn(f64, f64, Side, f64) -> f64;
 /// How much of a side edges may spread along, centred on its middle: the top
 /// and bottom, or the left and right when `sideways`.
 type Span = fn(f64, f64, bool) -> f64;
@@ -92,8 +216,8 @@ fn bulge(t: f64, half: f64, depth: f64) -> f64 {
     depth * (1.0 - (1.0 - k * k).sqrt())
 }
 
-fn round_inset(w: f64, h: f64, side: i32, t: f64) -> f64 {
-    if side & 1 != 0 {
+fn round_inset(w: f64, h: f64, side: Side, t: f64) -> f64 {
+    if !side.is_horizontal() {
         bulge(t, h / 2.0, w / 2.0)
     } else {
         bulge(t, w / 2.0, h / 2.0)
@@ -104,8 +228,8 @@ fn round_span(w: f64, h: f64, sideways: bool) -> f64 {
     (if sideways { h } else { w }) * 0.6
 }
 
-fn cap_inset(w: f64, _h: f64, side: i32, t: f64) -> f64 {
-    if side & 1 != 0 {
+fn cap_inset(w: f64, _h: f64, side: Side, t: f64) -> f64 {
+    if !side.is_horizontal() {
         0.0
     } else {
         bulge(t, w / 2.0, 12f64.min(6f64.max(w / 14.0)))
@@ -116,37 +240,33 @@ fn tri_size(tw: f64, th: f64, flip: bool) -> ShapeSize {
     let w = (1.6 * tw + 40.0).max(80.0);
     let h = (th + 10.0) / (1.0 - (tw + 8.0) / w);
     let dy = h / 2.0 - 10.0 - th / 2.0;
-    ShapeSize {
-        w,
-        h,
-        dy: if flip { -dy } else { dy },
-    }
+    sized(w, h, if flip { -dy } else { dy })
 }
 
 fn path(d: impl fmt::Display, a: impl fmt::Display) -> impl fmt::Display {
     fragment(move |f| write!(f, "<path d=\"{d}\"{a}/>"))
 }
 
-fn lean_inset(_w: f64, h: f64, side: i32, _t: f64) -> f64 {
-    if side & 1 != 0 { h / 8.0 } else { 0.0 }
+fn lean_inset(_w: f64, h: f64, side: Side, _t: f64) -> f64 {
+    if !side.is_horizontal() { h / 8.0 } else { 0.0 }
 }
 
 fn box_size(tw: f64, th: f64) -> ShapeSize {
-    ShapeSize {
-        w: (tw + 2.0 * PAD_X).max(2.0 * PAD_X + 12.0),
-        h: th + 2.0 * PAD_Y,
-        dy: 0.0,
-    }
+    sized(
+        (tw + 2.0 * PAD_X).max(2.0 * PAD_X + 12.0),
+        th + 2.0 * PAD_Y,
+        0.0,
+    )
 }
 
-fn poly<'a>(points: &'a [f64], a: impl fmt::Display + 'a) -> impl fmt::Display + 'a {
+fn poly<'a>(points: &'a [Point], a: impl fmt::Display + 'a) -> impl fmt::Display + 'a {
     fragment(move |f| {
         f.write_str("<polygon points=\"")?;
-        for (i, pair) in points.chunks(2).enumerate() {
+        for (i, point) in points.iter().enumerate() {
             if i > 0 {
                 f.write_str(" ")?;
             }
-            write!(f, "{}", Point(pair[0], pair[1]))?;
+            write!(f, "{point}")?;
         }
         write!(f, "\"{a}/>")
     })
@@ -213,37 +333,98 @@ fn wave(w: f64, h: f64, a: impl fmt::Display) -> impl fmt::Display {
     })
 }
 
-fn lookup(name: &str) -> Option<ShapeDef> {
-    Some(match name {
-        "rect" => def(box_size, |out, w, h, a, _| { let _ = write!(out, "{}", rect(w, h, a, rounded())); }).span(flat),
-        "rounded" => def(box_size, |out, w, h, a, _| {
+impl Shape {
+    /// The shape Mermaid's `name` names, or the rectangle for a name it does
+    /// not have.
+    pub fn named(name: &str) -> Self {
+        Self::from_name(name).unwrap_or_default()
+    }
+
+    /// The shape Mermaid's `name` names, if any.
+    pub fn from_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "rect" => Shape::Rect,
+            "rounded" => Shape::Rounded,
+            "stadium" => Shape::Stadium,
+            "fr-rect" => Shape::FramedRect,
+            "cyl" => Shape::Cylinder,
+            "circle" => Shape::Circle,
+            "dbl-circ" => Shape::DoubleCircle,
+            "ellipse" => Shape::Ellipse,
+            "diam" => Shape::Diamond,
+            "hex" => Shape::Hexagon,
+            "odd" => Shape::Odd,
+            "lean-r" => Shape::LeanRight,
+            "lean-l" => Shape::LeanLeft,
+            "trap-b" => Shape::TrapezoidBottom,
+            "trap-t" => Shape::TrapezoidTop,
+            "text" => Shape::Text,
+            "sm-circ" => Shape::SmallCircle,
+            "f-circ" => Shape::FilledCircle,
+            "fr-circ" => Shape::FramedCircle,
+            "fork" => Shape::Fork,
+            "notch-rect" => Shape::NotchedRect,
+            "lin-rect" => Shape::LinedRect,
+            "div-rect" => Shape::DividedRect,
+            "win-pane" => Shape::WindowPane,
+            "tri" => Shape::Triangle,
+            "flip-tri" => Shape::FlippedTriangle,
+            "sl-rect" => Shape::SlopedRect,
+            "notch-pent" => Shape::NotchedPentagon,
+            "hourglass" => Shape::Hourglass,
+            "delay" => Shape::Delay,
+            "h-cyl" => Shape::HorizontalCylinder,
+            "cross-circ" => Shape::CrossedCircle,
+            "st-rect" => Shape::StackedRect,
+            "doc" => Shape::Document,
+            "flag" => Shape::Flag,
+            "datastore" => Shape::Datastore,
+            "folder" => Shape::Folder,
+            "bucket" => Shape::Bucket,
+            "console" => Shape::Console,
+            "browser" => Shape::Browser,
+            "person" => Shape::Person,
+            "bang" => Shape::Bang,
+            "cloud" => Shape::Cloud,
+            "brace" => Shape::BraceLeft,
+            "brace-r" => Shape::BraceRight,
+            "braces" => Shape::Braces,
+            "bolt" => Shape::Bolt,
+            "lin-cyl" => Shape::LinedCylinder,
+            "curv-trap" => Shape::CurvedTrapezoid,
+            "docs" => Shape::Documents,
+            "bow-rect" => Shape::BowRect,
+            "tag-rect" => Shape::TaggedRect,
+            "tag-doc" => Shape::TaggedDocument,
+            "lin-doc" => Shape::LinedDocument,
+            "collapsedGroup" => Shape::CollapsedGroup,
+            _ => return None,
+        })
+    }
+
+    fn def(self) -> ShapeDef {
+        match self {
+            Shape::Rect => def(box_size, |out, w, h, a, _| { let _ = write!(out, "{}", rect(w, h, a, rounded())); }).span(flat),
+            Shape::Rounded => def(box_size, |out, w, h, a, _| {
 let _ = write!(out, "{}", rect(w, h, a, format_args!(" rx=\"{}\"", num(12f64.min(h / 2.0)))));
 })
         .span(flat),
-        "stadium" => def(
+            Shape::Stadium => def(
             |tw, th| {
                 let h = padded(th);
-                ShapeSize {
-                    w: tw + h * 0.5 + 2.0 * PAD_X - 8.0,
-                    h,
-                    dy: 0.0,
-                }
+                sized(tw + h * 0.5 + 2.0 * PAD_X - 8.0, h, 0.0)
             },
             |out, w, h, a, _| { let _ = write!(out, "{}", rect(w, h, a, format_args!(" rx=\"{}\"", num(h / 2.0)))); })
         .inset(|_w, h, side, t| {
-            if side & 1 != 0 {
+            if !side.is_horizontal() {
                 bulge(t, h / 2.0, h / 2.0)
             } else {
                 0.0
             }
         })
         .span(|w, h, sideways| if sideways { h * 0.6 } else { w - h }),
-        "fr-rect" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X + 16.0,
-                h: padded(th),
-                dy: 0.0,
-            },
+            Shape::FramedRect => def(
+            |tw, th| sized(tw + 2.0 * PAD_X + 16.0, padded(th), 0.0),
             |out, w, h, a, line| {
                 let x = w / 2.0 - 8.0;
 let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
@@ -257,15 +438,11 @@ let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                     ));
 })
         .span(flat),
-        "cyl" => def(
+            Shape::Cylinder => def(
             |tw, th| {
                 let w = (tw + 2.0 * PAD_X).max(56.0);
                 let ry = 12f64.min(6f64.max(w / 14.0));
-                ShapeSize {
-                    w,
-                    h: th + 2.0 * PAD_Y + 2.0 * ry,
-                    dy: ry / 2.0,
-                }
+                sized(w, th + 2.0 * PAD_Y + 2.0 * ry, ry / 2.0)
             },
             |out, w, h, a, line| {
                 let rx = w / 2.0;
@@ -301,18 +478,18 @@ let _ = write!(out, "{}", format_args!(
                 w * 0.6
             }
         }),
-        "circle" => def(
+            Shape::Circle => def(
             |tw, th| {
                 let d = ((tw * tw + th * th).sqrt() + 16.0).max(44.0);
-                ShapeSize { w: d, h: d, dy: 0.0 }
+                sized(d, d, 0.0)
             },
             |out, w, _h, a, _| { let _ = write!(out, "{}", format_args!("<circle r=\"{}\"{a}/>", num(w / 2.0))); })
         .inset(round_inset)
         .span(round_span),
-        "dbl-circ" => def(
+            Shape::DoubleCircle => def(
             |tw, th| {
                 let d = ((tw * tw + th * th).sqrt() + 26.0).max(54.0);
-                ShapeSize { w: d, h: d, dy: 0.0 }
+                sized(d, d, 0.0)
             },
             |out, w, _h, a, line| {
 let _ = write!(out, "{}", format_args!(
@@ -323,12 +500,8 @@ let _ = write!(out, "{}", format_args!(
 })
         .inset(round_inset)
         .span(round_span),
-        "ellipse" => def(
-            |tw, th| ShapeSize {
-                w: tw * 1.3 + 2.0 * PAD_X,
-                h: th * 1.2 + 2.0 * PAD_Y,
-                dy: 0.0,
-            },
+            Shape::Ellipse => def(
+            |tw, th| sized(tw * 1.3 + 2.0 * PAD_X, th * 1.2 + 2.0 * PAD_Y, 0.0),
             |out, w, h, a, _| {
 let _ = write!(out, "{}", format_args!(
                     "<ellipse rx=\"{}\" ry=\"{}\"{a}/>",
@@ -338,55 +511,31 @@ let _ = write!(out, "{}", format_args!(
 })
         .inset(round_inset)
         .span(round_span),
-        "diam" => def(
+            Shape::Diamond => def(
             |tw, th| {
                 let a = tw + 16.0;
                 let b = th + 8.0;
-                ShapeSize {
-                    w: a + 1.6 * b,
-                    h: a / 1.6 + b,
-                    dy: 0.0,
-                }
+                sized(a + 1.6 * b, a / 1.6 + b, 0.0)
             },
-            |out, w, h, a, _| { let _ = write!(out, "{}", poly(&[0.0, -h / 2.0, w / 2.0, 0.0, 0.0, h / 2.0, -w / 2.0, 0.0], a)); })
+            |out, w, h, a, _| { let _ = write!(out, "{}", poly(&[Point::new(0.0, -h / 2.0), Point::new(w / 2.0, 0.0), Point::new(0.0, h / 2.0), Point::new(-w / 2.0, 0.0)], a)); })
         .inset(|w, h, side, t| {
-            if side & 1 != 0 {
+            if !side.is_horizontal() {
                 t.abs() * w / h
             } else {
                 t.abs() * h / w
             }
         })
         .span(|w, h, sideways| (if sideways { h } else { w }) * 0.6),
-        "hex" => def(
+            Shape::Hexagon => def(
             |tw, th| {
                 let h = padded(th);
-                ShapeSize {
-                    w: tw + 2.0 * PAD_X + h / 2.0,
-                    h,
-                    dy: 0.0,
-                }
+                sized(tw + 2.0 * PAD_X + h / 2.0, h, 0.0)
             },
             |out, w, h, a, _| {
                 let m = h / 4.0;
-let _ = write!(out, "{}", poly(
-                    &[
-                        -w / 2.0 + m,
-                        -h / 2.0,
-                        w / 2.0 - m,
-                        -h / 2.0,
-                        w / 2.0,
-                        0.0,
-                        w / 2.0 - m,
-                        h / 2.0,
-                        -w / 2.0 + m,
-                        h / 2.0,
-                        -w / 2.0,
-                        0.0,
-                    ],
-                    a,
-                ));
+let _ = write!(out, "{}", poly(&[Point::new(-w / 2.0 + m, -h / 2.0), Point::new(w / 2.0 - m, -h / 2.0), Point::new(w / 2.0, 0.0), Point::new(w / 2.0 - m, h / 2.0), Point::new(-w / 2.0 + m, h / 2.0), Point::new(-w / 2.0, 0.0)], a));
 })
-        .inset(|_w, _h, side, t| if side & 1 != 0 { t.abs() / 2.0 } else { 0.0 })
+        .inset(|_w, _h, side, t| if !side.is_horizontal() { t.abs() / 2.0 } else { 0.0 })
         .span(|w, h, sideways| {
             if sideways {
                 h * 0.5
@@ -394,133 +543,59 @@ let _ = write!(out, "{}", poly(
                 w - h / 2.0 - CORNER
             }
         }),
-        "odd" => def(
+            Shape::Odd => def(
             |tw, th| {
                 let h = padded(th);
-                ShapeSize {
-                    w: tw + 2.0 * PAD_X + h / 4.0,
-                    h,
-                    dy: 0.0,
-                }
+                sized(tw + 2.0 * PAD_X + h / 4.0, h, 0.0)
             },
             |out, w, h, a, _| {
                 let notch = h / 4.0;
-let _ = write!(out, "{}", poly(
-                    &[
-                        -w / 2.0,
-                        -h / 2.0,
-                        w / 2.0,
-                        -h / 2.0,
-                        w / 2.0,
-                        h / 2.0,
-                        -w / 2.0,
-                        h / 2.0,
-                        -w / 2.0 + notch,
-                        0.0,
-                    ],
-                    a,
-                ));
+let _ = write!(out, "{}", poly(&[Point::new(-w / 2.0, -h / 2.0), Point::new(w / 2.0, -h / 2.0), Point::new(w / 2.0, h / 2.0), Point::new(-w / 2.0, h / 2.0), Point::new(-w / 2.0 + notch, 0.0)], a));
 })
-        .inset(|_w, h, side, _t| if side == 3 { h / 4.0 } else { 0.0 })
+        .inset(|_w, h, side, _t| if side == Side::Left { h / 4.0 } else { 0.0 })
         .span(|w, h, sideways| flat_across(w, h, sideways, 0.0)),
-        "lean-r" => def(lean_size, |out, w, h, a, _| {
+            Shape::LeanRight => def(lean_size, |out, w, h, a, _| {
             let s = h / 4.0;
-let _ = write!(out, "{}", poly(
-                &[
-                    -w / 2.0 + s,
-                    -h / 2.0,
-                    w / 2.0,
-                    -h / 2.0,
-                    w / 2.0 - s,
-                    h / 2.0,
-                    -w / 2.0,
-                    h / 2.0,
-                ],
-                a,
-            ));
+let _ = write!(out, "{}", poly(&[Point::new(-w / 2.0 + s, -h / 2.0), Point::new(w / 2.0, -h / 2.0), Point::new(w / 2.0 - s, h / 2.0), Point::new(-w / 2.0, h / 2.0)], a));
 })
         .inset(lean_inset)
         .span(quarter_across),
-        "lean-l" => def(lean_size, |out, w, h, a, _| {
+            Shape::LeanLeft => def(lean_size, |out, w, h, a, _| {
             let s = h / 4.0;
-let _ = write!(out, "{}", poly(
-                &[
-                    -w / 2.0,
-                    -h / 2.0,
-                    w / 2.0 - s,
-                    -h / 2.0,
-                    w / 2.0,
-                    h / 2.0,
-                    -w / 2.0 + s,
-                    h / 2.0,
-                ],
-                a,
-            ));
+let _ = write!(out, "{}", poly(&[Point::new(-w / 2.0, -h / 2.0), Point::new(w / 2.0 - s, -h / 2.0), Point::new(w / 2.0, h / 2.0), Point::new(-w / 2.0 + s, h / 2.0)], a));
 })
         .inset(lean_inset)
         .span(quarter_across),
-        "trap-b" => def(lean_size, |out, w, h, a, _| {
+            Shape::TrapezoidBottom => def(lean_size, |out, w, h, a, _| {
             let s = h / 4.0;
-let _ = write!(out, "{}", poly(
-                &[
-                    -w / 2.0 + s,
-                    -h / 2.0,
-                    w / 2.0 - s,
-                    -h / 2.0,
-                    w / 2.0,
-                    h / 2.0,
-                    -w / 2.0,
-                    h / 2.0,
-                ],
-                a,
-            ));
+let _ = write!(out, "{}", poly(&[Point::new(-w / 2.0 + s, -h / 2.0), Point::new(w / 2.0 - s, -h / 2.0), Point::new(w / 2.0, h / 2.0), Point::new(-w / 2.0, h / 2.0)], a));
 })
         .inset(lean_inset)
         .span(quarter_across),
-        "trap-t" => def(lean_size, |out, w, h, a, _| {
+            Shape::TrapezoidTop => def(lean_size, |out, w, h, a, _| {
             let s = h / 4.0;
-let _ = write!(out, "{}", poly(
-                &[
-                    -w / 2.0,
-                    -h / 2.0,
-                    w / 2.0,
-                    -h / 2.0,
-                    w / 2.0 - s,
-                    h / 2.0,
-                    -w / 2.0 + s,
-                    h / 2.0,
-                ],
-                a,
-            ));
+let _ = write!(out, "{}", poly(&[Point::new(-w / 2.0, -h / 2.0), Point::new(w / 2.0, -h / 2.0), Point::new(w / 2.0 - s, h / 2.0), Point::new(-w / 2.0 + s, h / 2.0)], a));
 })
         .inset(lean_inset)
         .span(quarter_across),
-        "text" => def(
-            |tw, th| ShapeSize {
-                w: tw + 8.0,
-                h: th + 8.0,
-                dy: 0.0,
-            },
+            Shape::Text => def(
+            |tw, th| sized(tw + 8.0, th + 8.0, 0.0),
             |out, w, h, _, _| { let _ = write!(out, "{}", rect(w, h, " fill=\"none\" stroke=\"none\"", "")); })
         .span(flat),
-        "sm-circ" => def(fixed14, |out, w, _h, a, _| {
+            Shape::SmallCircle => def(fixed14, |out, w, _h, a, _| {
 let _ = write!(out, "{}", format_args!("<circle r=\"{}\"{a}/>", num(w / 2.0)));
 })
         .no_label()
         .inset(round_inset)
         .span(round_span),
-        "f-circ" => def(fixed14, |out, w, _h, _a, line| {
+            Shape::FilledCircle => def(fixed14, |out, w, _h, _a, line| {
 let _ = write!(out, "{}", format_args!("<circle r=\"{}\" fill=\"var(--_l)\"{line}/>", num(w / 2.0)));
 })
         .no_label()
         .inset(round_inset)
         .span(round_span),
-        "fr-circ" => def(
-            |_, _| ShapeSize {
-                w: 18.0,
-                h: 18.0,
-                dy: 0.0,
-            },
+            Shape::FramedCircle => def(
+            |_, _| sized(18.0, 18.0, 0.0),
             |out, w, _h, a, line| {
 let _ = write!(out, "{}", format_args!(
                     "<circle r=\"{}\"{a}/><circle r=\"{}\" fill=\"var(--_l)\"{line}/>",
@@ -531,40 +606,18 @@ let _ = write!(out, "{}", format_args!(
         .no_label()
         .inset(round_inset)
         .span(round_span),
-        "fork" => def(
-            |_, _| ShapeSize {
-                w: 72.0,
-                h: 8.0,
-                dy: 0.0,
-            },
+            Shape::Fork => def(
+            |_, _| sized(72.0, 8.0, 0.0),
             |out, w, h, _a, line| { let _ = write!(out, "{}", rect(w, h, format_args!(" fill=\"var(--_l)\"{line}"), " rx=\"2\"")); })
         .no_label()
         .span(|w, h, sideways| (if sideways { h } else { w }) - 8.0),
-        "notch-rect" => def(box_size, |out, w, h, a, _| {
+            Shape::NotchedRect => def(box_size, |out, w, h, a, _| {
             let c = 10.0;
-let _ = write!(out, "{}", poly(
-                &[
-                    -w / 2.0 + c,
-                    -h / 2.0,
-                    w / 2.0,
-                    -h / 2.0,
-                    w / 2.0,
-                    h / 2.0,
-                    -w / 2.0,
-                    h / 2.0,
-                    -w / 2.0,
-                    -h / 2.0 + c,
-                ],
-                a,
-            ));
+let _ = write!(out, "{}", poly(&[Point::new(-w / 2.0 + c, -h / 2.0), Point::new(w / 2.0, -h / 2.0), Point::new(w / 2.0, h / 2.0), Point::new(-w / 2.0, h / 2.0), Point::new(-w / 2.0, -h / 2.0 + c)], a));
 })
         .span(flat),
-        "lin-rect" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X + 8.0,
-                h: padded(th),
-                dy: 0.0,
-            },
+            Shape::LinedRect => def(
+            |tw, th| sized(tw + 2.0 * PAD_X + 8.0, padded(th), 0.0),
             |out, w, h, a, line| {
 let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                         "<path d=\"M{},{}V{}\" fill=\"none\"{line}/>",
@@ -574,12 +627,8 @@ let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                     ));
 })
         .span(flat),
-        "div-rect" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X,
-                h: th + 2.0 * PAD_Y + 8.0,
-                dy: 4.0,
-            },
+            Shape::DividedRect => def(
+            |tw, th| sized(tw + 2.0 * PAD_X, th + 2.0 * PAD_Y + 8.0, 4.0),
             |out, w, h, a, line| {
 let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                         "<path d=\"M{},{}H{}\" fill=\"none\"{line}/>",
@@ -589,12 +638,8 @@ let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                     ));
 })
         .span(flat),
-        "win-pane" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X + 8.0,
-                h: th + 2.0 * PAD_Y + 8.0,
-                dy: 4.0,
-            },
+            Shape::WindowPane => def(
+            |tw, th| sized(tw + 2.0 * PAD_X + 8.0, th + 2.0 * PAD_Y + 8.0, 4.0),
             |out, w, h, a, line| {
 let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                         "<path d=\"M{},{}V{}M{},{}H{}\" fill=\"none\"{line}/>",
@@ -607,94 +652,38 @@ let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                     ));
 })
         .span(flat),
-        "tri" => def(
+            Shape::Triangle => def(
             |tw, th| tri_size(tw, th, false),
-            |out, w, h, a, _| { let _ = write!(out, "{}", poly(&[0.0, -h / 2.0, w / 2.0, h / 2.0, -w / 2.0, h / 2.0], a)); })
-        .inset(|w, _h, side, _t| if side & 1 != 0 { w / 4.0 } else { 0.0 }),
-        "flip-tri" => def(
+            |out, w, h, a, _| { let _ = write!(out, "{}", poly(&[Point::new(0.0, -h / 2.0), Point::new(w / 2.0, h / 2.0), Point::new(-w / 2.0, h / 2.0)], a)); })
+        .inset(|w, _h, side, _t| if !side.is_horizontal() { w / 4.0 } else { 0.0 }),
+            Shape::FlippedTriangle => def(
             |tw, th| tri_size(tw, th, true),
-            |out, w, h, a, _| { let _ = write!(out, "{}", poly(&[-w / 2.0, -h / 2.0, w / 2.0, -h / 2.0, 0.0, h / 2.0], a)); })
-        .inset(|w, _h, side, _t| if side & 1 != 0 { w / 4.0 } else { 0.0 }),
-        "sl-rect" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X,
-                h: th + 2.0 * PAD_Y + 10.0,
-                dy: 5.0,
-            },
+            |out, w, h, a, _| { let _ = write!(out, "{}", poly(&[Point::new(-w / 2.0, -h / 2.0), Point::new(w / 2.0, -h / 2.0), Point::new(0.0, h / 2.0)], a)); })
+        .inset(|w, _h, side, _t| if !side.is_horizontal() { w / 4.0 } else { 0.0 }),
+            Shape::SlopedRect => def(
+            |tw, th| sized(tw + 2.0 * PAD_X, th + 2.0 * PAD_Y + 10.0, 5.0),
             |out, w, h, a, _| {
-let _ = write!(out, "{}", poly(
-                    &[
-                        -w / 2.0,
-                        -h / 2.0 + 10.0,
-                        w / 2.0,
-                        -h / 2.0,
-                        w / 2.0,
-                        h / 2.0,
-                        -w / 2.0,
-                        h / 2.0,
-                    ],
-                    a,
-                ));
+let _ = write!(out, "{}", poly(&[Point::new(-w / 2.0, -h / 2.0 + 10.0), Point::new(w / 2.0, -h / 2.0), Point::new(w / 2.0, h / 2.0), Point::new(-w / 2.0, h / 2.0)], a));
 })
-        .inset(|_w, _h, side, _t| if side == 0 { 5.0 } else { 0.0 }),
-        "notch-pent" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X,
-                h: padded(th),
-                dy: 0.0,
-            },
+        .inset(|_w, _h, side, _t| if side == Side::Top { 5.0 } else { 0.0 }),
+            Shape::NotchedPentagon => def(
+            |tw, th| sized(tw + 2.0 * PAD_X, padded(th), 0.0),
             |out, w, h, a, _| {
                 let c = 10.0;
-let _ = write!(out, "{}", poly(
-                    &[
-                        -w / 2.0 + c,
-                        -h / 2.0,
-                        w / 2.0 - c,
-                        -h / 2.0,
-                        w / 2.0,
-                        -h / 2.0 + c,
-                        w / 2.0,
-                        h / 2.0,
-                        -w / 2.0,
-                        h / 2.0,
-                        -w / 2.0,
-                        -h / 2.0 + c,
-                    ],
-                    a,
-                ));
+let _ = write!(out, "{}", poly(&[Point::new(-w / 2.0 + c, -h / 2.0), Point::new(w / 2.0 - c, -h / 2.0), Point::new(w / 2.0, -h / 2.0 + c), Point::new(w / 2.0, h / 2.0), Point::new(-w / 2.0, h / 2.0), Point::new(-w / 2.0, -h / 2.0 + c)], a));
 })
         .span(flat),
-        "hourglass" => def(
-            |_, _| ShapeSize {
-                w: 32.0,
-                h: 40.0,
-                dy: 0.0,
-            },
+            Shape::Hourglass => def(
+            |_, _| sized(32.0, 40.0, 0.0),
             |out, w, h, a, _| {
-let _ = write!(out, "{}", poly(
-                    &[
-                        -w / 2.0,
-                        -h / 2.0,
-                        w / 2.0,
-                        -h / 2.0,
-                        -w / 2.0,
-                        h / 2.0,
-                        w / 2.0,
-                        h / 2.0,
-                    ],
-                    a,
-                ));
+let _ = write!(out, "{}", poly(&[Point::new(-w / 2.0, -h / 2.0), Point::new(w / 2.0, -h / 2.0), Point::new(-w / 2.0, h / 2.0), Point::new(w / 2.0, h / 2.0)], a));
 })
         .no_label()
-        .inset(|w, _h, side, _t| if side & 1 != 0 { w / 2.0 } else { 0.0 }),
-        "delay" => def(
+        .inset(|w, _h, side, _t| if !side.is_horizontal() { w / 2.0 } else { 0.0 }),
+            Shape::Delay => def(
             |tw, th| {
                 let h = padded(th);
-                ShapeSize {
-                    w: tw + 2.0 * PAD_X + h / 4.0,
-                    h,
-                    dy: 0.0,
-                }
+                sized(tw + 2.0 * PAD_X + h / 4.0, h, 0.0)
             },
             |out, w, h, a, _| {
                 let r = h / 2.0;
@@ -710,15 +699,11 @@ let _ = write!(out, "{}", format_args!(
                     num(-w / 2.0)
                 ));
 }),
-        "h-cyl" => def(
+            Shape::HorizontalCylinder => def(
             |tw, th| {
                 let h = padded(th);
                 let rx = 12f64.min(h / 4.0);
-                ShapeSize {
-                    w: tw + 2.0 * PAD_X + 2.0 * rx,
-                    h,
-                    dy: 0.0,
-                }
+                sized(tw + 2.0 * PAD_X + 2.0 * rx, h, 0.0)
             },
             |out, w, h, a, line| {
                 let ry = h / 2.0;
@@ -747,12 +732,8 @@ let _ = write!(out, "{}", format_args!(
                     num(ry)
                 ));
 }),
-        "cross-circ" => def(
-            |_, _| ShapeSize {
-                w: 44.0,
-                h: 44.0,
-                dy: 0.0,
-            },
+            Shape::CrossedCircle => def(
+            |_, _| sized(44.0, 44.0, 0.0),
             |out, w, _h, a, line| {
                 let r = w / 2.0;
                 let k = r * FRAC_1_SQRT_2;
@@ -772,12 +753,8 @@ let _ = write!(out, "{}", format_args!(
         .no_label()
         .inset(round_inset)
         .span(round_span),
-        "st-rect" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X + 8.0,
-                h: th + 2.0 * PAD_Y + 8.0,
-                dy: 4.0,
-            },
+            Shape::StackedRect => def(
+            |tw, th| sized(tw + 2.0 * PAD_X + 8.0, th + 2.0 * PAD_Y + 8.0, 4.0),
             |out, w, h, a, _| {
                 let bw = w - 8.0;
                 let bh = h - 8.0;
@@ -795,20 +772,12 @@ let _ = write!(out, "{}", format_args!(
                 }
             })
         .span(|w, h, sideways| (if sideways { h } else { w }) - 2.0 * CORNER - 8.0),
-        "doc" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X,
-                h: th + 2.0 * PAD_Y + 10.0,
-                dy: -5.0,
-            },
+            Shape::Document => def(
+            |tw, th| sized(tw + 2.0 * PAD_X, th + 2.0 * PAD_Y + 10.0, -5.0),
             |out, w, h, a, _| { let _ = write!(out, "{}", wave(w, h, a)); })
-        .inset(|_w, _h, side, _t| if side == 2 { 10.0 } else { 0.0 }),
-        "flag" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X,
-                h: th + 2.0 * PAD_Y + 16.0,
-                dy: 0.0,
-            },
+        .inset(|_w, _h, side, _t| if side == Side::Bottom { 10.0 } else { 0.0 }),
+            Shape::Flag => def(
+            |tw, th| sized(tw + 2.0 * PAD_X, th + 2.0 * PAD_Y + 16.0, 0.0),
             |out, w, h, a, _| {
                 let x = w / 2.0;
                 let y = h / 2.0 - 8.0;
@@ -826,8 +795,8 @@ let _ = write!(out, "{}", format_args!(
                     num(-2.0 * q)
                 ));
 })
-        .inset(|_w, _h, side, _t| if side & 1 != 0 { 0.0 } else { 8.0 }),
-        "datastore" => def(box_size, |out, w, h, a, line| {
+        .inset(|_w, _h, side, _t| if !side.is_horizontal() { 0.0 } else { 8.0 }),
+            Shape::Datastore => def(box_size, |out, w, h, a, line| {
 let _ = write!(out, "{}{}", rect(
                 w,
                 h,
@@ -844,12 +813,8 @@ let _ = write!(out, "{}{}", rect(
             ));
 })
         .span(flat),
-        "folder" => def(
-            |tw, th| ShapeSize {
-                w: (tw + 2.0 * PAD_X).max(64.0),
-                h: th + 2.0 * PAD_Y + 8.0,
-                dy: 4.0,
-            },
+            Shape::Folder => def(
+            |tw, th| sized((tw + 2.0 * PAD_X).max(64.0), th + 2.0 * PAD_Y + 8.0, 4.0),
             |out, w, h, a, _| {
                 let x = w / 2.0;
                 let y = h / 2.0;
@@ -869,12 +834,8 @@ let _ = write!(out, "{}", path(
                     a,
                 ));
 }),
-        "bucket" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X + 20.0,
-                h: th + 2.0 * PAD_Y + 10.0,
-                dy: 3.0,
-            },
+            Shape::Bucket => def(
+            |tw, th| sized(tw + 2.0 * PAD_X + 20.0, th + 2.0 * PAD_Y + 10.0, 3.0),
             |out, w, h, a, line| {
                 let x = w / 2.0;
                 let y = h / 2.0;
@@ -907,13 +868,9 @@ let _ = write!(out, "{}{}", path(
                     num(-y + ry)
                 ));
 })
-        .inset(|_w, h, side, _t| if side & 1 != 0 { h / 12.0 } else { 0.0 }),
-        "console" => def(
-            |tw, th| ShapeSize {
-                w: (tw + 2.0 * PAD_X).max(72.0),
-                h: th + 2.0 * PAD_Y + 12.0,
-                dy: 6.0,
-            },
+        .inset(|_w, h, side, _t| if !side.is_horizontal() { h / 12.0 } else { 0.0 }),
+            Shape::Console => def(
+            |tw, th| sized((tw + 2.0 * PAD_X).max(72.0), th + 2.0 * PAD_Y + 12.0, 6.0),
             |out, w, h, a, line| {
 let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                         "<path d=\"M{},{}H{}M{},{}l3,2.5l-3,2.5M{},{}h4\" fill=\"none\"{line}/>",
@@ -927,12 +884,8 @@ let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                     ));
 })
         .span(flat),
-        "browser" => def(
-            |tw, th| ShapeSize {
-                w: (tw + 2.0 * PAD_X).max(72.0),
-                h: th + 2.0 * PAD_Y + 12.0,
-                dy: 6.0,
-            },
+            Shape::Browser => def(
+            |tw, th| sized((tw + 2.0 * PAD_X).max(72.0), th + 2.0 * PAD_Y + 12.0, 6.0),
             |out, w, h, a, line| {
                 let _ = write!(
                     out,
@@ -951,12 +904,8 @@ let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                 }
             })
         .span(flat),
-        "person" => def(
-            |tw, th| ShapeSize {
-                w: (tw + 2.0 * PAD_X).max(56.0),
-                h: th + 2.0 * PAD_Y + 26.0,
-                dy: 13.0,
-            },
+            Shape::Person => def(
+            |tw, th| sized((tw + 2.0 * PAD_X).max(56.0), th + 2.0 * PAD_Y + 26.0, 13.0),
             |out, w, h, a, _| {
                 let top = -h / 2.0;
 let _ = write!(out, "{}", format_args!(
@@ -968,12 +917,8 @@ let _ = write!(out, "{}", format_args!(
                     num(top + 14.0)
                 ));
 }),
-        "bang" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X + 28.0,
-                h: th + 2.0 * PAD_Y + 24.0,
-                dy: 0.0,
-            },
+            Shape::Bang => def(
+            |tw, th| sized(tw + 2.0 * PAD_X + 28.0, th + 2.0 * PAD_Y + 24.0, 0.0),
             |out, w, h, a, _| {
                 let spikes = 14.0;
                 let mut pts = Vec::new();
@@ -981,18 +926,16 @@ let _ = write!(out, "{}", format_args!(
                     let i = f64::from(i);
                     let angle = PI * i / spikes - PI / 2.0;
                     let k = if i % 2.0 == 0.0 { 1.0 } else { 0.82 };
-                    pts.push(angle.cos() * (w / 2.0) * k);
-                    pts.push(angle.sin() * (h / 2.0) * k);
+                    pts.push(Point::new(
+                        angle.cos() * (w / 2.0) * k,
+                        angle.sin() * (h / 2.0) * k,
+                    ));
                 }
                 let _ = write!(out, "{}", poly(&pts, a));
             })
         .inset(|_, _, _, _| 3.0),
-        "cloud" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X + 32.0,
-                h: th + 2.0 * PAD_Y + 24.0,
-                dy: 0.0,
-            },
+            Shape::Cloud => def(
+            |tw, th| sized(tw + 2.0 * PAD_X + 32.0, th + 2.0 * PAD_Y + 24.0, 0.0),
             |out, w, h, a, _| {
                 let x = w / 2.0;
                 let y = h / 2.0;
@@ -1022,52 +965,28 @@ let _ = write!(out, "{}", path(
                     a,
                 ));
 })
-        .inset(|_w, _h, side, _t| if side & 1 != 0 { 2.0 } else { 1.0 }),
-        "brace" => def(one_brace, |out, w, h, _a, line| {
+        .inset(|_w, _h, side, _t| if !side.is_horizontal() { 2.0 } else { 1.0 }),
+            Shape::BraceLeft => def(one_brace, |out, w, h, _a, line| {
 let _ = write!(out, "{}{}", rect(w, h, " fill=\"none\" stroke=\"none\"", ""), brace(-w / 2.0 + 12.0, h, -1.0, line));
 }),
-        "brace-r" => def(one_brace, |out, w, h, _a, line| {
+            Shape::BraceRight => def(one_brace, |out, w, h, _a, line| {
 let _ = write!(out, "{}{}", rect(w, h, " fill=\"none\" stroke=\"none\"", ""), brace(w / 2.0 - 12.0, h, 1.0, line));
 }),
-        "braces" => def(two_braces, |out, w, h, _a, line| {
+            Shape::Braces => def(two_braces, |out, w, h, _a, line| {
 let _ = write!(out, "{}{}{}", rect(w, h, " fill=\"none\" stroke=\"none\"", ""), brace(-w / 2.0 + 12.0, h, -1.0, line), brace(w / 2.0 - 12.0, h, 1.0, line));
 }),
-        "bolt" => def(
-            |_, _| ShapeSize {
-                w: 36.0,
-                h: 56.0,
-                dy: 0.0,
-            },
+            Shape::Bolt => def(
+            |_, _| sized(36.0, 56.0, 0.0),
             |out, w, h, a, _| {
-let _ = write!(out, "{}", poly(
-                    &[
-                        w * 0.15,
-                        -h / 2.0,
-                        -w / 2.0,
-                        h * 0.08,
-                        -w * 0.05,
-                        h * 0.08,
-                        -w * 0.15,
-                        h / 2.0,
-                        w / 2.0,
-                        -h * 0.08,
-                        w * 0.05,
-                        -h * 0.08,
-                    ],
-                    a,
-                ));
+let _ = write!(out, "{}", poly(&[Point::new(w * 0.15, -h / 2.0), Point::new(-w / 2.0, h * 0.08), Point::new(-w * 0.05, h * 0.08), Point::new(-w * 0.15, h / 2.0), Point::new(w / 2.0, -h * 0.08), Point::new(w * 0.05, -h * 0.08)], a));
 })
         .no_label()
-        .inset(|w, _h, side, _t| if side & 1 != 0 { w / 4.0 } else { 0.0 }),
-        "lin-cyl" => def(
+        .inset(|w, _h, side, _t| if !side.is_horizontal() { w / 4.0 } else { 0.0 }),
+            Shape::LinedCylinder => def(
             |tw, th| {
                 let w = (tw + 2.0 * PAD_X).max(56.0);
                 let ry = 12f64.min(6f64.max(w / 14.0));
-                ShapeSize {
-                    w,
-                    h: th + 2.0 * PAD_Y + 2.0 * ry + 8.0,
-                    dy: ry / 2.0 + 4.0,
-                }
+                sized(w, th + 2.0 * PAD_Y + 2.0 * ry + 8.0, ry / 2.0 + 4.0)
             },
             |out, w, h, a, line| {
                 let rx = w / 2.0;
@@ -1115,14 +1034,10 @@ let _ = write!(out, "{}{}", path(
                 w * 0.6
             }
         }),
-        "curv-trap" => def(
+            Shape::CurvedTrapezoid => def(
             |tw, th| {
                 let h = padded(th);
-                ShapeSize {
-                    w: tw + 2.0 * PAD_X + h * 0.6,
-                    h,
-                    dy: 0.0,
-                }
+                sized(tw + 2.0 * PAD_X + h * 0.6, h, 0.0)
             },
             |out, w, h, a, _| {
                 let x = w / 2.0;
@@ -1144,12 +1059,8 @@ let _ = write!(out, "{}", path(
                     a,
                 ));
 }),
-        "docs" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X + 8.0,
-                h: th + 2.0 * PAD_Y + 18.0,
-                dy: -1.0,
-            },
+            Shape::Documents => def(
+            |tw, th| sized(tw + 2.0 * PAD_X + 8.0, th + 2.0 * PAD_Y + 18.0, -1.0),
             |out, w, h, a, _| {
                 for i in 0..3 {
                     let _ = write!(out,
@@ -1160,15 +1071,11 @@ let _ = write!(out, "{}", path(
                     );
                 }
             })
-        .inset(|_w, _h, side, _t| if side == 2 { 10.0 } else { 0.0 }),
-        "bow-rect" => def(
+        .inset(|_w, _h, side, _t| if side == Side::Bottom { 10.0 } else { 0.0 }),
+            Shape::BowRect => def(
             |tw, th| {
                 let h = padded(th);
-                ShapeSize {
-                    w: tw + 2.0 * PAD_X + h * 0.4,
-                    h,
-                    dy: 0.0,
-                }
+                sized(tw + 2.0 * PAD_X + h * 0.4, h, 0.0)
             },
             |out, w, h, a, _| {
                 let x = w / 2.0;
@@ -1193,8 +1100,8 @@ let _ = write!(out, "{}", path(
                     a,
                 ));
 })
-        .inset(|_w, h, side, _t| if side == 1 { h * 0.2 } else { 0.0 }),
-        "tag-rect" => def(box_size, |out, w, h, a, line| {
+        .inset(|_w, h, side, _t| if side == Side::Right { h * 0.2 } else { 0.0 }),
+            Shape::TaggedRect => def(box_size, |out, w, h, a, line| {
 let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                     "<path d=\"M{},{}L{},{}\" fill=\"none\"{line}/>",
                     num(w / 2.0 - 12.0),
@@ -1204,12 +1111,8 @@ let _ = write!(out, "{}{}", rect(w, h, a, rounded()), format_args!(
                 ));
 })
         .span(flat),
-        "tag-doc" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X,
-                h: th + 2.0 * PAD_Y + 10.0,
-                dy: -5.0,
-            },
+            Shape::TaggedDocument => def(
+            |tw, th| sized(tw + 2.0 * PAD_X, th + 2.0 * PAD_Y + 10.0, -5.0),
             |out, w, h, a, line| {
 let _ = write!(out, "{}{}", wave(w, h, a), format_args!(
                         "<path d=\"M{},{}L{},{}\" fill=\"none\"{line}/>",
@@ -1219,13 +1122,9 @@ let _ = write!(out, "{}{}", wave(w, h, a), format_args!(
                         num(h / 2.0 - 26.0)
                     ));
 })
-        .inset(|_w, _h, side, _t| if side == 2 { 10.0 } else { 0.0 }),
-        "lin-doc" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X + 8.0,
-                h: th + 2.0 * PAD_Y + 10.0,
-                dy: -5.0,
-            },
+        .inset(|_w, _h, side, _t| if side == Side::Bottom { 10.0 } else { 0.0 }),
+            Shape::LinedDocument => def(
+            |tw, th| sized(tw + 2.0 * PAD_X + 8.0, th + 2.0 * PAD_Y + 10.0, -5.0),
             |out, w, h, a, line| {
 let _ = write!(out, "{}{}", wave(w, h, a), format_args!(
                         "<path d=\"M{},{}V{}\" fill=\"none\"{line}/>",
@@ -1234,13 +1133,9 @@ let _ = write!(out, "{}{}", wave(w, h, a), format_args!(
                         num(h / 2.0 - 6.0)
                     ));
 })
-        .inset(|_w, _h, side, _t| if side == 2 { 10.0 } else { 0.0 }),
-        "collapsedGroup" => def(
-            |tw, th| ShapeSize {
-                w: tw + 2.0 * PAD_X + 8.0,
-                h: th + 2.0 * PAD_Y + 8.0,
-                dy: -2.0,
-            },
+        .inset(|_w, _h, side, _t| if side == Side::Bottom { 10.0 } else { 0.0 }),
+            Shape::CollapsedGroup => def(
+            |tw, th| sized(tw + 2.0 * PAD_X + 8.0, th + 2.0 * PAD_Y + 8.0, -2.0),
             |out, w, h, a, _| {
 let _ = write!(out, "{}", format_args!(
                     "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{}{a}/><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\"{}{a}/>",
@@ -1256,17 +1151,45 @@ let _ = write!(out, "{}", format_args!(
                     rounded()
                 ));
 }),
-        _ => return None,
-    })
+        }
+    }
+
+    /// The size of the shape around a label of `label`.
+    pub fn size(self, label: Size) -> ShapeSize {
+        (self.def().size)(label.w, label.h)
+    }
+
+    /// The shape at `size` around the origin, appended to `out`.
+    pub fn draw(self, out: &mut String, size: Size, a: &str, line: &str) {
+        (self.def().draw)(out, size.w, size.h, a, line)
+    }
+
+    /// How far inside its bounding box of `size` the outline is on `side`,
+    /// `t` along the side from its middle.
+    pub fn inset(self, size: Size, side: Side, t: f64) -> f64 {
+        self.def()
+            .inset
+            .map_or(0.0, |inset| inset(size.w, size.h, side, t))
+    }
+
+    /// How much of a side of the shape at `size` edges may spread along, when
+    /// the flow runs down or, if `sideways`, across.
+    pub fn span(self, size: Size, sideways: bool) -> f64 {
+        0f64.max(
+            self.def()
+                .span
+                .map_or(0.0, |span| span(size.w, size.h, sideways)),
+        )
+    }
+
+    pub fn has_label(self) -> bool {
+        !self.def().no_label
+    }
 }
 
 fn lean_size(tw: f64, th: f64) -> ShapeSize {
     let h = padded(th);
-    ShapeSize {
-        w: tw + 2.0 * PAD_X + h / 2.0,
-        h,
-        dy: 0.0,
-    }
+    sized(tw + 2.0 * PAD_X + h / 2.0, h, 0.0)
 }
 
 fn quarter_across(w: f64, h: f64, sideways: bool) -> f64 {
@@ -1274,100 +1197,41 @@ fn quarter_across(w: f64, h: f64, sideways: bool) -> f64 {
 }
 
 fn fixed14(_: f64, _: f64) -> ShapeSize {
-    ShapeSize {
-        w: 14.0,
-        h: 14.0,
-        dy: 0.0,
-    }
+    sized(14.0, 14.0, 0.0)
 }
 
 fn one_brace(tw: f64, th: f64) -> ShapeSize {
-    ShapeSize {
-        w: tw + 2.0 * PAD_X + 12.0,
-        h: th + 2.0 * PAD_Y,
-        dy: 0.0,
-    }
+    sized(tw + 2.0 * PAD_X + 12.0, th + 2.0 * PAD_Y, 0.0)
 }
 
 fn two_braces(tw: f64, th: f64) -> ShapeSize {
-    ShapeSize {
-        w: tw + 2.0 * PAD_X + 24.0,
-        h: th + 2.0 * PAD_Y,
-        dy: 0.0,
-    }
-}
-
-/// `name`'s definition, or the rectangle's for a name it does not have.
-fn of(name: &str) -> ShapeDef {
-    lookup(name)
-        .or_else(|| lookup("rect"))
-        .expect("rect is a shape")
-}
-
-pub fn shape_size(shape: &str, tw: f64, th: f64) -> ShapeSize {
-    (of(shape).size)(tw, th)
-}
-
-/// `shape`, `w` by `h` around the origin, appended to `out`.
-pub fn draw_shape(out: &mut String, shape: &str, w: f64, h: f64, a: &str, line: &str) {
-    (of(shape).draw)(out, w, h, a, line)
-}
-
-pub fn shape_inset(shape_name: &str, w: f64, h: f64, side: i32, t: f64) -> f64 {
-    lookup(shape_name)
-        .and_then(|def| def.inset)
-        .map_or(0.0, |inset| inset(w, h, side, t))
-}
-
-/// How much of a side of the shape edges may spread along, when the flow
-/// runs down or, if `sideways`, across.
-pub fn shape_span(shape_name: &str, w: f64, h: f64, sideways: bool) -> f64 {
-    0f64.max(
-        lookup(shape_name)
-            .and_then(|def| def.span)
-            .map_or(0.0, |span| span(w, h, sideways)),
-    )
-}
-
-pub fn shape_has_label(shape_name: &str) -> bool {
-    lookup(shape_name).is_none_or(|def| !def.no_label)
-}
-
-/// The side of a node's layout box a route end lies on: 0 top, 1 right, 2
-/// bottom, 3 left, or -1 for none.
-pub fn end_side(route: &[f64], at: usize, c: &CNode) -> i32 {
-    let dx = route[at] - c.x;
-    let dy = route[at + 1] - c.y;
-    if (dy.abs() - c.h / 2.0).abs() < 0.5 {
-        return if dy < 0.0 { 0 } else { 2 };
-    }
-    if (dx.abs() - c.w / 2.0).abs() < 0.5 {
-        return if dx < 0.0 { 3 } else { 1 };
-    }
-    -1
+    sized(tw + 2.0 * PAD_X + 24.0, th + 2.0 * PAD_Y, 0.0)
 }
 
 /// What a node is drawn as inside its layout box.
-pub struct ShapeView<'a> {
-    pub shape: &'a str,
-    pub w: f64,
-    pub h: f64,
+pub struct ShapeView {
+    pub shape: Shape,
+    pub size: Size,
 }
 
-/// Moves a route end from a node's layout box onto the outline of the shape
-/// drawn in it.
-pub fn inset_route(route: &mut [f64], at: usize, view: &ShapeView, c: &CNode) {
-    if c.is_group {
-        return;
-    }
-    let side = end_side(route, at, c);
-    if side == 0 || side == 2 {
-        let amount =
-            shape_inset(view.shape, view.w, view.h, side, route[at] - c.x) + (c.h - view.h) / 2.0;
-        route[at + 1] += if side == 0 { amount } else { -amount };
-    } else if side >= 0 {
-        let amount = shape_inset(view.shape, view.w, view.h, side, route[at + 1] - c.y)
-            + (c.w - view.w) / 2.0;
-        route[at] += if side == 3 { amount } else { -amount };
+impl ShapeView {
+    /// Moves `end`, a route end on the layout box of `c`, onto the outline
+    /// of the shape drawn in it.
+    pub fn inset_end(&self, c: &CNode, end: &mut Point) {
+        if c.is_group {
+            return;
+        }
+        let Some(side) = c.side_of(*end) else {
+            return;
+        };
+        if side.is_horizontal() {
+            let amount = self.shape.inset(self.size, side, end.x - c.center.x)
+                + (c.size.h - self.size.h) / 2.0;
+            end.y += if side == Side::Top { amount } else { -amount };
+        } else {
+            let amount = self.shape.inset(self.size, side, end.y - c.center.y)
+                + (c.size.w - self.size.w) / 2.0;
+            end.x += if side == Side::Left { amount } else { -amount };
+        }
     }
 }

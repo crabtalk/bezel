@@ -1,24 +1,24 @@
 //! Pele's `diagrams/er/lexer.ts`.
 
 use super::tokens::T;
+use crate::diagrams::common::directions::Directions;
 use crate::{
     js::Lazy,
-    token::Token,
-    util::chars::{NONE, code_at, is_digit, is_space, is_word, width_at},
+    token::{Cursor, Token},
+    util::chars::{digits_end, is_space, is_word, starts_with_caseless},
 };
 
-const INITIAL: u8 = 0;
-const BLOCK: u8 = 1;
-const BLOCK_BQ: u8 = 2;
-const ACC_TITLE_STATE: u8 = 3;
-const ACC_DESCR_STATE: u8 = 4;
-const ACC_DESCR_MULTILINE: u8 = 5;
-const STYLE_STATE: u8 = 6;
-const TEXT: u8 = 1;
-const STYLE_CLASS: u8 = 2;
-const ATTR_START: u8 = 4;
-const ATTR_REST: u8 = 8;
-const CLASS_TABLE: [u8; 128] = class_table();
+/// Jison's start conditions.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum S {
+    Initial,
+    Block,
+    BlockBacktick,
+    AccTitle,
+    AccDescr,
+    AccDescrMultiline,
+    Style,
+}
 
 static RE_ACC_TITLE: Lazy = Lazy::new(r"accTitle\s*:\s*", "iy");
 static RE_ACC_DESCR: Lazy = Lazy::new(r"accDescr\s*:\s*", "iy");
@@ -29,369 +29,215 @@ static RE_DIRECTION: [(T, Lazy); 4] = [
     (T::DirectionRl, Lazy::new(r".*direction\s+RL[^\n]*", "iy")),
     (T::DirectionLr, Lazy::new(r".*direction\s+LR[^\n]*", "iy")),
 ];
-static RE_DIR_WORD: Lazy = Lazy::new(r"direction", "gi");
 
-const fn class_table() -> [u8; 128] {
-    let mut table = [0u8; 128];
-    let mut c = 0;
-    while c < 128 {
-        let word = (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95;
-        let letter = word && (c < 48 || c > 57);
-        if word {
-            table[c] |= TEXT | STYLE_CLASS | ATTR_REST;
+/// The runs of characters the lexer's rules read as one token.
+#[derive(Clone, Copy)]
+enum Run {
+    /// A name outside a block.
+    Text,
+    StyleText,
+    /// The first character of an attribute word.
+    AttrStart,
+    AttrRest,
+}
+
+impl Run {
+    fn has_ascii(self, c: char) -> bool {
+        match self {
+            Self::Text => is_word(c) || matches!(c, '-' | '*' | '.'),
+            Self::StyleText => is_word(c) || matches!(c, '-' | '*'),
+            Self::AttrStart => c.is_ascii_alphabetic() || matches!(c, '_' | '*'),
+            Self::AttrRest => {
+                is_word(c) || matches!(c, '-' | '*' | '.' | '[' | ']' | '(' | ')' | ',')
+            }
         }
-        if letter {
-            table[c] |= ATTR_START;
-        }
-        c += 1;
     }
-    table[b'-' as usize] |= TEXT | STYLE_CLASS | ATTR_REST;
-    table[b'*' as usize] |= TEXT | STYLE_CLASS | ATTR_REST;
-    table[46] |= TEXT | ATTR_REST;
-    table[42] |= ATTR_START;
-    let rest = b"[](),";
-    let mut i = 0;
-    while i < rest.len() {
-        table[rest[i] as usize] |= ATTR_REST;
-        i += 1;
+
+    /// Outside a block every character past ASCII is in the run.
+    fn has(self, c: Option<char>) -> bool {
+        c.is_some_and(|c| !c.is_ascii() || self.has_ascii(c))
     }
-    table
-}
 
-fn class_has(c: u32, kind: u8) -> bool {
-    c < 128 && CLASS_TABLE[c as usize] & kind != 0
-}
-
-/// A character of a name or style run outside a block.
-fn is_run(c: u32, kind: u8) -> bool {
-    (c >= 128 && c != NONE) || class_has(c, kind)
-}
-
-/// Mermaid's attribute pattern is case-insensitive, which lets the micro
-/// sign into its À-￿ range.
-fn is_attr(c: u32, kind: u8) -> bool {
-    if c < 128 {
-        CLASS_TABLE[c as usize] & kind != 0
-    } else {
-        c != NONE && (c >= 0xc0 || c == 0xb5)
+    /// Mermaid's attribute pattern is case-insensitive, which lets the micro
+    /// sign into its À-￿ range.
+    fn has_in_attribute(self, c: Option<char>) -> bool {
+        c.is_some_and(|c| {
+            if c.is_ascii() {
+                self.has_ascii(c)
+            } else {
+                c >= '\u{c0}' || c == '\u{b5}'
+            }
+        })
     }
 }
 
 struct Lexer<'s> {
-    src: &'s str,
-    n: usize,
-    tokens: Vec<Token<'s, T>>,
-    state: u8,
-    p: usize,
-    dir_next: Option<usize>,
-    dir_known: bool,
-    dir_failed: usize,
-    line_end: Option<usize>,
-    tilde_next: Option<usize>,
-    tilde_known: bool,
+    cur: Cursor<'s, T, S>,
+    directions: Directions<T>,
+    /// Where the next `~` is, once searched for.
+    tilde_next: Option<Option<usize>>,
     tilde_line: Option<usize>,
     tilde_last: Option<usize>,
     ws_next: Option<usize>,
 }
 
 impl<'s> Lexer<'s> {
-    fn c(&self, q: usize) -> u32 {
-        code_at(self.src, q)
-    }
-
-    fn emit(&mut self, kind: T, s: usize, e: usize) {
-        self.tokens.push(Token::new(kind, &self.src[s..e], s));
-        self.p = e;
-    }
-
-    /// A one-character token at `p`.
+    /// A one-character token at the cursor.
     fn emit_char(&mut self, kind: T) {
-        let p = self.p;
-        self.emit(kind, p, p + width_at(self.src, p));
+        let end = self.cur.after(self.cur.p);
+        self.cur.emit_to(kind, end);
     }
 
-    fn at(&self, re: &Lazy, q: usize) -> Option<usize> {
-        re.match_end(self.src, q)
+    fn at(&self, c: char, q: usize) -> bool {
+        self.cur.char_at(q) == Some(c)
     }
 
-    /// Matches a lower-case keyword at `p`, ignoring case.
-    fn kw(&self, word: &str) -> bool {
-        let bytes = self.src.as_bytes();
-        for (i, k) in word.bytes().enumerate() {
-            let Some(&c) = bytes.get(self.p + i) else {
-                return false;
-            };
-            if c != k && (!k.is_ascii_lowercase() || (c | 32) != k) {
-                return false;
-            }
-        }
+    fn lower(&self, q: usize) -> Option<char> {
+        self.cur.char_at(q).map(|c| c.to_ascii_lowercase())
+    }
+
+    /// Whether the character at `q` is not a word character.
+    fn boundary(&self, q: usize) -> bool {
+        !self.cur.char_at(q).is_some_and(is_word)
+    }
+
+    /// The end of the run of characters that are not whitespace at `from`.
+    fn word_end(&self, from: usize) -> usize {
+        self.cur.src[from..]
+            .find(is_space)
+            .map_or(self.cur.src.len(), |at| from + at)
+    }
+
+    /// `.*direction\s+XX[^\n]*`, tried before the other rules.
+    fn direction(&mut self) -> bool {
+        let Some((kind, end)) = self.directions.at(self.cur.src, self.cur.p) else {
+            return false;
+        };
+        self.cur.emit_to(kind, end);
         true
     }
 
-    fn kwb(&self, word: &str) -> bool {
-        self.kw(word) && !is_word(self.c(self.p + word.len()))
-    }
-
-    fn lower(&self, q: usize) -> u32 {
-        let c = self.c(q);
-        if (65..=90).contains(&c) { c + 32 } else { c }
-    }
-
-    fn next_line_end(&self, q: usize) -> usize {
-        self.src[q..]
-            .find(['\n', '\r', '\u{2028}', '\u{2029}'])
-            .map_or(self.n, |at| q + at)
-    }
-
-    fn digits(&self, mut q: usize) -> usize {
-        while is_digit(self.c(q)) {
-            q += 1;
-        }
-        q
-    }
-
-    fn skip_spaces(&self, mut q: usize) -> usize {
-        while is_space(self.c(q)) {
-            q += width_at(self.src, q);
-        }
-        q
-    }
-
-    /// A direction statement swallows its whole line, from wherever the
-    /// lexer stands on it.
-    fn direction(&mut self) -> bool {
-        let p = self.p;
-        if self.dir_known && self.dir_next.is_none() {
-            return false;
-        }
-        if !self.dir_known || self.dir_next.is_some_and(|next| next < p) {
-            self.dir_known = true;
-            self.dir_next = RE_DIR_WORD.exec_at(self.src, p).map(|m| m.start());
-            if self.dir_next.is_none() {
-                return false;
-            }
-        }
-        if p < self.dir_failed {
-            return false;
-        }
-        if self.line_end.is_none_or(|end| end < p) {
-            self.line_end = Some(self.next_line_end(p));
-        }
-        let line_end = self.line_end.unwrap_or(self.n);
-        if self.dir_next.is_some_and(|next| next >= line_end) {
-            return false;
-        }
-        for (kind, re) in &RE_DIRECTION {
-            if let Some(e) = self.at(re, p) {
-                self.emit(*kind, p, e);
-                return true;
-            }
-        }
-        self.dir_failed = line_end;
-        false
-    }
-
     fn quoted(&mut self) {
-        let p = self.p;
-        let Some(e) = self.src[p + 1..].find('"').map(|at| p + 1 + at) else {
+        let p = self.cur.p;
+        let Some(e) = self.cur.src[p + 1..].find('"').map(|at| p + 1 + at) else {
             self.emit_char(T::Char);
             return;
         };
         let name = e > p + 1
-            && !self.src.as_bytes()[p + 1..e]
-                .iter()
-                .any(|&c| matches!(c, 37 | 92 | 13 | 10 | 11 | 8));
-        self.emit(if name { T::EntityName } else { T::Word }, p, e + 1);
+            && !self.cur.src[p + 1..e].contains(['%', '\\', '\r', '\n', '\u{b}', '\u{8}']);
+        self.cur
+            .emit_to(if name { T::EntityName } else { T::Word }, e + 1);
     }
 
-    fn number(&mut self, c: u32) {
-        let p = self.p;
-        let d = self.c(p + 1);
-        if d == 43 && (c == 49 || c == 48) {
-            self.emit(if c == 49 { T::OneOrMore } else { T::ZeroOrMore }, p, p + 2);
+    fn number(&mut self, c: char) {
+        let p = self.cur.p;
+        let d = self.cur.char_at(p + 1);
+        if d == Some('+') && matches!(c, '0' | '1') {
+            self.cur.emit_to(
+                if c == '1' {
+                    T::OneOrMore
+                } else {
+                    T::ZeroOrMore
+                },
+                p + 2,
+            );
             return;
         }
-        let q = self.digits(p + 1);
-        if self.c(q) == 46 && is_digit(self.c(q + 1)) {
-            let e = self.digits(q + 2);
-            self.emit(T::DecimalNum, p, e);
+        let q = digits_end(self.cur.src, p + 1);
+        if self.at('.', q) && self.cur.char_at(q + 1).is_some_and(|c| c.is_ascii_digit()) {
+            let e = digits_end(self.cur.src, q + 2);
+            self.cur.emit_to(T::DecimalNum, e);
             return;
         }
-        if c == 49 {
-            if is_space(d) {
-                let r = self.skip_spaces(p + 1 + width_at(self.src, p + 1));
-                let f = self.c(r);
-                if is_word(f) || f == 34 || f == 39 {
-                    self.emit(T::OnlyOne, p, p + 1);
-                    return;
+        if c == '1' {
+            match d {
+                Some(d) if is_space(d) => {
+                    let r = self.cur.space_end(self.cur.after(p + 1));
+                    let f = self.cur.char_at(r);
+                    if f.is_some_and(is_word) || matches!(f, Some('"' | '\'')) {
+                        self.cur.emit_to(T::OnlyOne, p + 1);
+                        return;
+                    }
                 }
-            } else if d == 45 || d == 46 {
-                let f = self.c(p + 2);
-                if f == 45 || f == 46 {
-                    self.emit(T::OnlyOne, p, p + 1);
-                    return;
+                Some('-' | '.') => {
+                    if matches!(self.cur.char_at(p + 2), Some('-' | '.')) {
+                        self.cur.emit_to(T::OnlyOne, p + 1);
+                        return;
+                    }
                 }
+                _ => {}
             }
-            if !is_word(d) {
-                self.emit(T::EntityOne, p, p + 1);
+            if self.boundary(p + 1) {
+                self.cur.emit_to(T::EntityOne, p + 1);
                 return;
             }
         }
-        self.emit(T::Num, p, q);
+        self.cur.emit_to(T::Num, q);
     }
 
-    fn keyword(&mut self, lc: u32) -> bool {
-        let p = self.p;
-        let d = self.c(p + 1);
-        match lc {
-            101 => {
-                if self.kwb("erdiagram") {
-                    self.emit(T::ErDiagram, p, p + 9);
-                } else if self.kwb("end") {
-                    let e = self.skip_spaces(p + 3);
-                    self.emit(T::EndKw, p, e);
-                } else {
-                    return false;
-                }
-                true
+    /// The keyword or relationship symbol at the cursor, whose first
+    /// character is `lc` in lower case.
+    fn keyword(&mut self, lc: char) -> bool {
+        let p = self.cur.p;
+        let d = self.cur.char_at(p + 1);
+        let kw = |word: &str| self.cur.keyword_caseless(word, self.cur.p);
+        let (kind, len) = match lc {
+            'e' if kw("erdiagram") => (T::ErDiagram, 9),
+            'e' if kw("end") => (T::EndKw, self.cur.space_end(p + 3) - p),
+            's' if kw("style") => {
+                self.cur.state = S::Style;
+                (T::Style, 5)
             }
-            115 => {
-                if self.kwb("style") {
-                    self.state = STYLE_STATE;
-                    self.emit(T::Style, p, p + 5);
-                } else if self.kwb("subgraph") {
-                    self.emit(T::Subgraph, p, p + 8);
-                } else {
-                    return false;
-                }
-                true
+            's' if kw("subgraph") => (T::Subgraph, 8),
+            'c' if kw("classdef") => {
+                self.cur.state = S::Style;
+                (T::Classdef, 8)
             }
-            99 => {
-                if self.kwb("classdef") {
-                    self.state = STYLE_STATE;
-                    self.emit(T::Classdef, p, p + 8);
-                } else if self.kwb("class") {
-                    self.emit(T::Class, p, p + 5);
-                } else {
-                    return false;
-                }
-                true
-            }
-            111 => {
-                if self.kwb("one or zero") {
-                    self.emit(T::ZeroOrOne, p, p + 11);
-                } else if self.kwb("one or more") || self.kwb("one or many") {
-                    self.emit(T::OneOrMore, p, p + 11);
-                } else if self.kwb("one") {
-                    self.emit(T::OnlyOne, p, p + 3);
-                } else if self.kwb("only one") {
-                    self.emit(T::OnlyOne, p, p + 8);
-                } else if d == 124 {
-                    self.emit(T::ZeroOrOne, p, p + 2);
-                } else if d == 123 {
-                    self.emit(T::ZeroOrMore, p, p + 2);
-                } else if self.kwb("optionally to") {
-                    self.emit(T::NonIdentifying, p, p + 13);
-                } else {
-                    return false;
-                }
-                true
-            }
-            122 => {
-                if self.kwb("zero or one") {
-                    self.emit(T::ZeroOrOne, p, p + 11);
-                } else if self.kwb("zero or more") || self.kwb("zero or many") {
-                    self.emit(T::ZeroOrMore, p, p + 12);
-                } else {
-                    return false;
-                }
-                true
-            }
-            109 => {
-                if self.kw("many(0)") {
-                    self.emit(T::ZeroOrMore, p, p + 7);
-                } else if self.kw("many(1)") {
-                    self.emit(T::OneOrMore, p, p + 7);
-                } else if self.kwb("many") {
-                    self.emit(T::ZeroOrMore, p, p + 4);
-                } else {
-                    return false;
-                }
-                true
-            }
-            116 => {
-                if !self.kwb("to") {
-                    return false;
-                }
-                self.emit(T::Identifying, p, p + 2);
-                true
-            }
-            117 => {
-                if d != 46 && d != 45 && d != 124 {
-                    return false;
-                }
-                self.emit(T::MdParent, p, p + 1);
-                true
-            }
-            124 => {
-                if self.lower(p + 1) == 111 && !is_word(self.c(p + 2)) {
-                    self.emit(T::ZeroOrOne, p, p + 2);
-                } else if d == 124 {
-                    self.emit(T::OnlyOne, p, p + 2);
-                } else if d == 123 {
-                    self.emit(T::OneOrMore, p, p + 2);
-                } else {
-                    return false;
-                }
-                true
-            }
-            125 => {
-                if self.lower(p + 1) == 111 && !is_word(self.c(p + 2)) {
-                    self.emit(T::ZeroOrMore, p, p + 2);
-                } else if d == 124 {
-                    self.emit(T::OneOrMore, p, p + 2);
-                } else {
-                    return false;
-                }
-                true
-            }
-            46 => {
-                if d != 46 && d != 45 {
-                    return false;
-                }
-                self.emit(T::NonIdentifying, p, p + 2);
-                true
-            }
-            45 => {
-                if d == 45 {
-                    self.emit(T::Identifying, p, p + 2);
-                } else if d == 46 {
-                    self.emit(T::NonIdentifying, p, p + 2);
-                } else {
-                    return false;
-                }
-                true
-            }
-            _ => false,
-        }
+            'c' if kw("class") => (T::Class, 5),
+            'o' if kw("one or zero") => (T::ZeroOrOne, 11),
+            'o' if kw("one or more") || kw("one or many") => (T::OneOrMore, 11),
+            'o' if kw("one") => (T::OnlyOne, 3),
+            'o' if kw("only one") => (T::OnlyOne, 8),
+            'o' if d == Some('|') => (T::ZeroOrOne, 2),
+            'o' if d == Some('{') => (T::ZeroOrMore, 2),
+            'o' if kw("optionally to") => (T::NonIdentifying, 13),
+            'z' if kw("zero or one") => (T::ZeroOrOne, 11),
+            'z' if kw("zero or more") || kw("zero or many") => (T::ZeroOrMore, 12),
+            'm' if starts_with_caseless(self.cur.src, p, "many(0)") => (T::ZeroOrMore, 7),
+            'm' if starts_with_caseless(self.cur.src, p, "many(1)") => (T::OneOrMore, 7),
+            'm' if kw("many") => (T::ZeroOrMore, 4),
+            't' if kw("to") => (T::Identifying, 2),
+            'u' if matches!(d, Some('.' | '-' | '|')) => (T::MdParent, 1),
+            '|' if self.lower(p + 1) == Some('o') && self.boundary(p + 2) => (T::ZeroOrOne, 2),
+            '|' if d == Some('|') => (T::OnlyOne, 2),
+            '|' if d == Some('{') => (T::OneOrMore, 2),
+            '}' if self.lower(p + 1) == Some('o') && self.boundary(p + 2) => (T::ZeroOrMore, 2),
+            '}' if d == Some('|') => (T::OneOrMore, 2),
+            '.' if matches!(d, Some('.' | '-')) => (T::NonIdentifying, 2),
+            '-' if d == Some('-') => (T::Identifying, 2),
+            '-' if d == Some('.') => (T::NonIdentifying, 2),
+            _ => return false,
+        };
+        self.cur.emit_to(kind, p + len);
+        true
     }
 
-    fn initial(&mut self, c: u32) {
-        let p = self.p;
-        if (c == 97 || c == 65) && self.kw("acc") {
-            if let Some(e) = self.at(&RE_ACC_TITLE, p) {
-                self.state = ACC_TITLE_STATE;
-                self.emit(T::AccTitle, p, e);
+    fn initial(&mut self, c: char) {
+        let p = self.cur.p;
+        if matches!(c, 'a' | 'A') && starts_with_caseless(self.cur.src, p, "acc") {
+            if let Some(e) = RE_ACC_TITLE.match_end(self.cur.src, p) {
+                self.cur.state = S::AccTitle;
+                self.cur.emit_to(T::AccTitle, e);
                 return;
             }
-            if let Some(e) = self.at(&RE_ACC_DESCR, p) {
-                self.state = ACC_DESCR_STATE;
-                self.emit(T::AccDescr, p, e);
+            if let Some(e) = RE_ACC_DESCR.match_end(self.cur.src, p) {
+                self.cur.state = S::AccDescr;
+                self.cur.emit_to(T::AccDescr, e);
                 return;
             }
-            if let Some(e) = self.at(&RE_ACC_DESCR_ML, p) {
-                self.state = ACC_DESCR_MULTILINE;
-                self.p = e;
+            if let Some(e) = RE_ACC_DESCR_ML.match_end(self.cur.src, p) {
+                self.cur.state = S::AccDescrMultiline;
+                self.cur.p = e;
                 return;
             }
         }
@@ -400,189 +246,153 @@ impl<'s> Lexer<'s> {
         }
 
         match c {
-            32 | 9 | 13 => {
+            ' ' | '\t' | '\r' => {
                 let mut e = p + 1;
-                while matches!(self.c(e), 32 | 9 | 13) {
+                while matches!(self.cur.char_at(e), Some(' ' | '\t' | '\r')) {
                     e += 1;
                 }
-                self.p = e;
-                return;
+                self.cur.p = e;
             }
-            10 => {
-                let mut e = p + 1;
-                while self.c(e) == 10 {
-                    e += 1;
-                }
-                self.emit(T::Newline, p, e);
-                return;
+            '\n' => {
+                let e = self.newlines_end(p);
+                self.cur.emit_to(T::Newline, e);
             }
-            34 => {
-                self.quoted();
-                return;
+            '"' => self.quoted(),
+            '{' => {
+                self.cur.state = S::Block;
+                self.cur.emit_to(T::BlockStart, p + 1);
             }
-            123 => {
-                self.state = BLOCK;
-                self.emit(T::BlockStart, p, p + 1);
-                return;
-            }
-            35 => {
-                self.emit(T::Brkt, p, p + 1);
-                return;
-            }
-            44 => {
-                self.emit(T::Comma, p, p + 1);
-                return;
-            }
-            58 => {
-                if self.c(p + 1) == 58 && self.c(p + 2) == 58 {
-                    self.emit(T::StyleSeparator, p, p + 3);
+            '#' => self.cur.emit_to(T::Brkt, p + 1),
+            ',' => self.cur.emit_to(T::Comma, p + 1),
+            ':' => {
+                if self.at(':', p + 1) && self.at(':', p + 2) {
+                    self.cur.emit_to(T::StyleSeparator, p + 3);
                 } else {
-                    self.emit(T::Colon, p, p + 1);
+                    self.cur.emit_to(T::Colon, p + 1);
                 }
-                return;
             }
-            91 => {
-                self.emit(T::Sqs, p, p + 1);
-                return;
+            '[' => self.cur.emit_to(T::Sqs, p + 1),
+            ']' => self.cur.emit_to(T::Sqe, p + 1),
+            _ if c.is_ascii_digit() => self.number(c),
+            _ if self.keyword(c.to_ascii_lowercase()) => {}
+            _ if Run::Text.has(Some(c)) => {
+                let mut e = self.cur.after(p);
+                while Run::Text.has(self.cur.char_at(e)) {
+                    e = self.cur.after(e);
+                }
+                self.cur.emit_to(T::UnicodeText, e);
             }
-            93 => {
-                self.emit(T::Sqe, p, p + 1);
-                return;
-            }
-            _ => {}
+            _ => self.emit_char(T::Char),
         }
-        if is_digit(c) {
-            self.number(c);
-            return;
+    }
+
+    /// The end of the run of line feeds at `from`.
+    fn newlines_end(&self, from: usize) -> usize {
+        let mut e = from + 1;
+        while self.at('\n', e) {
+            e += 1;
         }
-        if self.keyword(if (65..=90).contains(&c) { c + 32 } else { c }) {
-            return;
-        }
-        if is_run(c, TEXT) {
-            let mut e = p + width_at(self.src, p);
-            while is_run(self.c(e), TEXT) {
-                e += width_at(self.src, e);
-            }
-            self.emit(T::UnicodeText, p, e);
-            return;
-        }
-        self.emit_char(T::Char);
+        e
     }
 
     /// Mermaid's generic type rule: a run of non-space characters holding a
     /// `~`, through the last `~` on the line.
     fn generic(&mut self) -> bool {
-        let p = self.p;
-        let n = self.n;
-        if self.tilde_known && self.tilde_next.is_none() {
-            return false;
-        }
-        if !self.tilde_known || self.tilde_next.is_some_and(|next| next < p) {
-            self.tilde_known = true;
-            self.tilde_next = self.src[p..].find('~').map(|at| p + at);
-            if self.tilde_next.is_none() {
+        let p = self.cur.p;
+        if self.tilde_next.flatten().is_none_or(|next| next < p) {
+            if self.tilde_next == Some(None) {
                 return false;
             }
+            self.tilde_next = Some(self.cur.src[p..].find('~').map(|at| p + at));
         }
-        let tilde_next = self.tilde_next.unwrap_or(n);
+        let Some(Some(tilde_next)) = self.tilde_next else {
+            return false;
+        };
         if self.ws_next.is_none_or(|ws| ws < p) {
-            let mut q = p;
-            while q < n && !is_space(self.c(q)) {
-                q += width_at(self.src, q);
-            }
-            self.ws_next = Some(q);
+            self.ws_next = Some(self.word_end(p));
         }
         if self.ws_next.is_some_and(|ws| tilde_next >= ws) {
             return false;
         }
         if self.tilde_line.is_none_or(|line| line < p) {
-            let line = self.next_line_end(p);
+            let line = self.cur.terminator_end(p);
             self.tilde_line = Some(line);
-            self.tilde_last = self.src[..line].rfind('~');
+            self.tilde_last = self.cur.src[..line].rfind('~');
         }
         let Some(tilde_last) = self.tilde_last.filter(|&last| last > tilde_next) else {
             return false;
         };
-        let mut e = tilde_last + 1;
-        while e < n && !is_space(self.c(e)) {
-            e += width_at(self.src, e);
-        }
-        self.emit(T::AttributeWord, p, e);
+        let e = self.word_end(tilde_last + 1);
+        self.cur.emit_to(T::AttributeWord, e);
         true
     }
 
-    fn block(&mut self, c: u32) {
-        let p = self.p;
+    fn block(&mut self, c: char) {
+        let p = self.cur.p;
         if is_space(c) {
-            self.p = self.skip_spaces(p);
+            self.cur.p = self.cur.space_end(p);
             return;
         }
-        let lc = c | 32;
-        if (lc == 112 || lc == 102 || lc == 117)
-            && (self.c(p + 1) | 32) == 107
-            && !is_word(self.c(p + 2))
+        if matches!(c.to_ascii_lowercase(), 'p' | 'f' | 'u')
+            && self.lower(p + 1) == Some('k')
+            && self.boundary(p + 2)
         {
-            self.emit(T::AttributeKey, p, p + 2);
+            self.cur.emit_to(T::AttributeKey, p + 2);
             return;
         }
         if self.generic() {
             return;
         }
-        if is_attr(c, ATTR_START) {
-            let mut e = p + width_at(self.src, p);
-            while e < self.n && is_attr(self.c(e), ATTR_REST) {
-                e += width_at(self.src, e);
+        if Run::AttrStart.has_in_attribute(Some(c)) {
+            let mut e = self.cur.after(p);
+            while Run::AttrRest.has_in_attribute(self.cur.char_at(e)) {
+                e = self.cur.after(e);
             }
-            self.emit(T::AttributeWord, p, e);
+            self.cur.emit_to(T::AttributeWord, e);
             return;
         }
-        if c == 96 {
-            self.state = BLOCK_BQ;
-            self.p += 1;
-            return;
-        }
-        if c == 34 {
-            if let Some(e) = self.src[p + 1..].find('"') {
-                self.emit(T::Comment, p, p + 1 + e + 1);
-                return;
+        match c {
+            '`' => {
+                self.cur.state = S::BlockBacktick;
+                self.cur.p += 1;
             }
-        } else if c == 125 {
-            self.state = INITIAL;
-            self.emit(T::BlockStop, p, p + 1);
-            return;
+            '"' if self.cur.src[p + 1..].contains('"') => {
+                let e = self.cur.find('"', p + 1);
+                self.cur.emit_to(T::Comment, e + 1);
+            }
+            '}' => {
+                self.cur.state = S::Initial;
+                self.cur.emit_to(T::BlockStop, p + 1);
+            }
+            _ => self.emit_char(T::Char),
         }
-        self.emit_char(T::Char);
     }
 
     /// Answers whether lexing goes on: false after an unrecognised character.
-    fn style(&mut self, c: u32) -> bool {
-        let p = self.p;
-        if c == 10 {
-            let mut e = p + 1;
-            while self.c(e) == 10 {
-                e += 1;
+    fn style(&mut self, c: char) -> bool {
+        let p = self.cur.p;
+        match c {
+            '\n' => {
+                let e = self.newlines_end(p);
+                self.cur.state = S::Initial;
+                self.cur.emit_to(T::Newline, e);
             }
-            self.state = INITIAL;
-            self.emit(T::Newline, p, e);
-        } else if is_space(c) {
-            self.p = self.skip_spaces(p);
-        } else if c == 58 {
-            self.emit(T::Colon, p, p + 1);
-        } else if c == 44 {
-            self.emit(T::Comma, p, p + 1);
-        } else if c == 35 {
-            self.emit(T::Brkt, p, p + 1);
-        } else if c == 59 {
-            self.emit(T::Semi, p, p + 1);
-        } else if is_run(c, STYLE_CLASS) {
-            let mut e = p + width_at(self.src, p);
-            while is_run(self.c(e), STYLE_CLASS) {
-                e += width_at(self.src, e);
+            _ if is_space(c) => self.cur.p = self.cur.space_end(p),
+            ':' => self.cur.emit_to(T::Colon, p + 1),
+            ',' => self.cur.emit_to(T::Comma, p + 1),
+            '#' => self.cur.emit_to(T::Brkt, p + 1),
+            ';' => self.cur.emit_to(T::Semi, p + 1),
+            _ if Run::StyleText.has(Some(c)) => {
+                let mut e = self.cur.after(p);
+                while Run::StyleText.has(self.cur.char_at(e)) {
+                    e = self.cur.after(e);
+                }
+                self.cur.emit_to(T::StyleText, e);
             }
-            self.emit(T::StyleText, p, e);
-        } else {
-            self.tokens.push(Token::new(T::Error, "", p));
-            return false;
+            _ => {
+                self.cur.tokens.push(Token::new(T::Error, "", p));
+                return false;
+            }
         }
         true
     }
@@ -591,59 +401,50 @@ impl<'s> Lexer<'s> {
 pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
     let n = src.len();
     let mut lx = Lexer {
-        src,
-        n,
-        tokens: Vec::new(),
-        state: INITIAL,
-        p: 0,
-        dir_next: None,
-        dir_known: false,
-        dir_failed: 0,
-        line_end: None,
+        cur: Cursor::new(src, S::Initial),
+        directions: Directions::caseless(src, &RE_DIRECTION),
         tilde_next: None,
-        tilde_known: false,
         tilde_line: None,
         tilde_last: None,
         ws_next: None,
     };
 
-    while lx.p < n {
-        let p = lx.p;
-        let c = code_at(src, p);
-        match lx.state {
-            INITIAL => lx.initial(c),
-            BLOCK => lx.block(c),
-            BLOCK_BQ => {
-                if c == 96 {
-                    lx.state = BLOCK;
-                    lx.p += 1;
+    while let Some(c) = lx.cur.char_at(lx.cur.p) {
+        let p = lx.cur.p;
+        match lx.cur.state {
+            S::Initial => lx.initial(c),
+            S::Block => lx.block(c),
+            S::BlockBacktick => {
+                if c == '`' {
+                    lx.cur.state = S::Block;
+                    lx.cur.p += 1;
                 } else {
-                    let e = src[p..].find('`').map_or(n, |at| p + at);
-                    lx.emit(T::AttributeWord, p, e);
+                    let e = lx.cur.find('`', p);
+                    lx.cur.emit_to(T::AttributeWord, e);
                 }
             }
-            ACC_TITLE_STATE | ACC_DESCR_STATE => {
-                let e = src[p..].find('\n').map_or(n, |at| p + at);
-                let kind = if lx.state == ACC_TITLE_STATE {
+            S::AccTitle | S::AccDescr => {
+                let e = lx.cur.line_end(p);
+                let kind = if lx.cur.state == S::AccTitle {
                     T::AccTitleValue
                 } else {
                     T::AccDescrValue
                 };
-                lx.emit(kind, p, e);
-                lx.state = INITIAL;
+                lx.cur.emit_to(kind, e);
+                lx.cur.state = S::Initial;
             }
-            ACC_DESCR_MULTILINE => {
-                if c == 125 {
-                    lx.state = INITIAL;
-                    lx.p += 1;
+            S::AccDescrMultiline => {
+                if c == '}' {
+                    lx.cur.state = S::Initial;
+                    lx.cur.p += 1;
                 } else {
-                    let e = src[p..].find('}').map_or(n, |at| p + at);
-                    lx.emit(T::AccDescrMultilineValue, p, e);
+                    let e = lx.cur.find('}', p);
+                    lx.cur.emit_to(T::AccDescrMultilineValue, e);
                 }
             }
-            _ => {
+            S::Style => {
                 if !lx.style(c) {
-                    return lx.tokens;
+                    return lx.cur.tokens;
                 }
             }
         }
@@ -652,14 +453,14 @@ pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
     // At the end of input Jison's INITIAL state yields EOF, the title and
     // description states yield an empty value, and the block and style
     // states yield nothing.
-    let last = match lx.state {
-        INITIAL => Some(T::Eof),
-        ACC_TITLE_STATE => Some(T::AccTitleValue),
-        ACC_DESCR_STATE => Some(T::AccDescrValue),
-        ACC_DESCR_MULTILINE => Some(T::AccDescrMultilineValue),
+    let last = match lx.cur.state {
+        S::Initial => Some(T::Eof),
+        S::AccTitle => Some(T::AccTitleValue),
+        S::AccDescr => Some(T::AccDescrValue),
+        S::AccDescrMultiline => Some(T::AccDescrMultilineValue),
         _ => None,
     };
-    let mut tokens = lx.tokens;
+    let mut tokens = lx.cur.tokens;
     if let Some(last) = last {
         tokens.push(Token::new(last, "", n));
     }

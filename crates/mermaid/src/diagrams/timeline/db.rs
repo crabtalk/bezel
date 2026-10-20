@@ -1,11 +1,16 @@
 //! Pele's `diagrams/timeline/db.ts`.
 
-use serde::Serialize;
+use crate::diagrams::common::db::Titles;
+use serde::{Serialize, Serializer};
 
-use crate::{Error, detect::Kind, js::Lazy};
+use crate::{Error, detect::Kind};
 
-static RE_LEAD: Lazy = Lazy::new(r"^\s+", "g");
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
+fn index_or_minus_one<S: Serializer>(index: &Option<usize>, s: S) -> Result<S::Ok, S::Error> {
+    match index {
+        Some(index) => s.serialize_u64(*index as u64),
+        None => s.serialize_i64(-1),
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -15,8 +20,10 @@ pub struct TimelinePeriod {
     /// Name of the section in force when the period was declared, `""`
     /// before the first one.
     pub section: String,
-    /// Index into `sections` of that section, -1 before the first one.
-    pub section_index: i64,
+    /// Index into `sections` of that section, `None` before the first one,
+    /// which the JSON writes as -1.
+    #[serde(serialize_with = "index_or_minus_one")]
+    pub section_index: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -24,12 +31,8 @@ pub struct TimelinePeriod {
 pub struct TimelineModel {
     #[serde(rename = "type")]
     pub kind: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_descr: Option<String>,
+    #[serde(flatten)]
+    pub titles: Titles,
     /// `LR` or `TD`.
     pub direction: &'static str,
     pub sections: Vec<String>,
@@ -47,9 +50,7 @@ impl TimelineModel {
     pub fn new() -> Self {
         Self {
             kind: "timeline",
-            title: None,
-            acc_title: None,
-            acc_descr: None,
+            titles: Titles::default(),
             direction: "LR",
             sections: Vec::new(),
             periods: Vec::new(),
@@ -57,36 +58,17 @@ impl TimelineModel {
         }
     }
 
-    pub fn set_diagram_title(&mut self, text: &str) {
-        self.title = Some(text.to_string());
-    }
-
-    pub fn set_acc_title(&mut self, text: &str) {
-        self.acc_title = Some(RE_LEAD.replace(text, |_| String::new()));
-    }
-
-    pub fn set_acc_description(&mut self, text: &str) {
-        self.acc_descr = Some(RE_INDENT.replace(text, |_| "\n".into()));
-    }
-
-    pub fn set_direction(&mut self, direction: &'static str) {
-        self.direction = direction;
-    }
-
     pub fn add_section(&mut self, text: &str) {
         self.current_section = text.to_string();
         self.sections.push(text.to_string());
     }
 
-    pub fn add_task(&mut self, period: &str, _length: f64, event: Option<&str>) {
+    pub fn add_period(&mut self, period: &str) {
         self.periods.push(TimelinePeriod {
             text: period.to_string(),
-            events: event
-                .filter(|event| !event.is_empty())
-                .map(|event| vec![event.to_string()])
-                .unwrap_or_default(),
+            events: Vec::new(),
             section: self.current_section.clone(),
-            section_index: self.sections.len() as i64 - 1,
+            section_index: self.sections.len().checked_sub(1),
         });
     }
 

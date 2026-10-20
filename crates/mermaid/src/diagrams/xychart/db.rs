@@ -2,15 +2,10 @@
 
 use serde::{Serialize, Serializer};
 
-use crate::js::{self, JsonNumber, Lazy};
-
-static RE_LEAD: Lazy = Lazy::new(r"^\s+", "g");
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct XyText {
-    pub text: String,
-}
+use crate::{
+    diagrams::common::db::Titles,
+    js::{self, JsonNumber},
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DataPoint {
@@ -49,9 +44,8 @@ impl XAxis {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(tag = "type", rename = "linear")]
 pub struct LinearAxis {
-    #[serde(rename = "type")]
-    pub kind: &'static str,
     pub title: String,
     #[serde(serialize_with = "js::json_number")]
     pub min: f64,
@@ -70,11 +64,18 @@ fn plot_data_json<S: Serializer>(data: &PlotData, s: S) -> Result<S::Ok, S::Erro
     )
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlotKind {
+    Line,
+    Bar,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Plot {
     #[serde(rename = "type")]
-    pub kind: &'static str,
+    pub kind: PlotKind,
     pub title: String,
     #[serde(serialize_with = "plot_data_json")]
     pub data: PlotData,
@@ -84,16 +85,10 @@ pub struct Plot {
 
 /// Pele's `XyChartDb`, which is its model.
 #[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(tag = "type", rename = "xychart", rename_all = "camelCase")]
 pub struct XyChartModel {
-    #[serde(rename = "type")]
-    pub kind: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_descr: Option<String>,
+    #[serde(flatten)]
+    pub titles: Titles,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub orientation: Option<&'static str>,
     pub x_axis: XAxis,
@@ -108,17 +103,13 @@ pub struct XyChartModel {
 impl Default for XyChartModel {
     fn default() -> Self {
         Self {
-            kind: "xychart",
-            title: None,
-            acc_title: None,
-            acc_descr: None,
+            titles: Titles::default(),
             orientation: None,
             x_axis: XAxis::Band {
                 title: String::new(),
                 categories: Vec::new(),
             },
             y_axis: LinearAxis {
-                kind: "linear",
                 title: String::new(),
                 min: f64::INFINITY,
                 max: f64::NEG_INFINITY,
@@ -139,8 +130,8 @@ impl XyChartModel {
         });
     }
 
-    pub fn set_x_axis_title(&mut self, title: XyText) {
-        *self.x_axis.title_mut() = js::trim(&title.text).to_string();
+    pub fn set_x_axis_title(&mut self, title: &str) {
+        *self.x_axis.title_mut() = js::trim(title).to_string();
     }
 
     pub fn set_x_axis_range_data(&mut self, min: f64, max: f64) {
@@ -152,24 +143,20 @@ impl XyChartModel {
         self.has_set_x_axis = true;
     }
 
-    pub fn set_x_axis_band(&mut self, categories: Vec<XyText>) {
+    pub fn set_x_axis_band(&mut self, categories: &[String]) {
         self.x_axis = XAxis::Band {
             title: self.x_axis.title().to_string(),
-            categories: categories
-                .iter()
-                .map(|c| js::trim(&c.text).to_string())
-                .collect(),
+            categories: categories.iter().map(|c| js::trim(c).to_string()).collect(),
         };
         self.has_set_x_axis = true;
     }
 
-    pub fn set_y_axis_title(&mut self, title: XyText) {
-        self.y_axis.title = js::trim(&title.text).to_string();
+    pub fn set_y_axis_title(&mut self, title: &str) {
+        self.y_axis.title = js::trim(title).to_string();
     }
 
     pub fn set_y_axis_range_data(&mut self, min: f64, max: f64) {
         self.y_axis = LinearAxis {
-            kind: "linear",
             title: self.y_axis.title.clone(),
             min,
             max,
@@ -201,7 +188,6 @@ impl XyChartModel {
                 }
             }
             self.y_axis = LinearAxis {
-                kind: "linear",
                 title: self.y_axis.title.clone(),
                 min,
                 max,
@@ -227,17 +213,17 @@ impl XyChartModel {
         }
     }
 
-    fn add_plot(&mut self, kind: &'static str, title: XyText, data: Vec<DataPoint>) {
+    pub fn add_plot(&mut self, kind: PlotKind, title: &str, data: &[DataPoint]) {
         let values = data.iter().map(|d| d.value).collect();
         let mut plot = Plot {
             kind,
-            title: js::trim(&title.text).to_string(),
+            title: js::trim(title).to_string(),
             data: self.plot_data(values),
             point_labels: None,
         };
         // Mermaid accepts labels on the points of a bar series and ignores
         // them.
-        if kind == "line" && data.iter().any(|d| !js::trim(&d.label).is_empty()) {
+        if kind == PlotKind::Line && data.iter().any(|d| !js::trim(&d.label).is_empty()) {
             plot.point_labels = Some(
                 data.iter()
                     .map(|d| js::trim(&d.label).to_string())
@@ -245,25 +231,5 @@ impl XyChartModel {
             );
         }
         self.plots.push(plot);
-    }
-
-    pub fn set_line_data(&mut self, title: XyText, data: Vec<DataPoint>) {
-        self.add_plot("line", title, data);
-    }
-
-    pub fn set_bar_data(&mut self, title: XyText, data: Vec<DataPoint>) {
-        self.add_plot("bar", title, data);
-    }
-
-    pub fn set_diagram_title(&mut self, text: &str) {
-        self.title = Some(text.to_string());
-    }
-
-    pub fn set_acc_title(&mut self, text: &str) {
-        self.acc_title = Some(RE_LEAD.replace(text, |_| String::new()));
-    }
-
-    pub fn set_acc_description(&mut self, text: &str) {
-        self.acc_descr = Some(RE_INDENT.replace(text, |_| "\n".into()));
     }
 }

@@ -34,6 +34,6 @@ fn scanner() -> Scanner {
     })
 }
 
-pub fn acc_descr(name: &'static str) -> TokenType {
+pub fn acc_descr<K>(name: &'static str) -> TokenType<K> {
     base().named(name).scanner(scanner)
 }

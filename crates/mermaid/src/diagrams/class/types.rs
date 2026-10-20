@@ -4,20 +4,47 @@ use indexmap::IndexSet;
 use serde::{Serialize, Serializer};
 
 use super::members::ClassMember;
+pub use crate::diagrams::common::style_class::StyleClass;
 
-/// A relation's end marker: Mermaid's relationType number, or none.
+/// Mermaid's relationType: what one end of a relation draws. Serialized as
+/// its number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum RelationType {
+    Aggregation,
+    Extension,
+    Composition,
+    Dependency,
+    Lollipop,
+}
+
+/// A relation's end marker, or none.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RelationEnd {
-    Type(u8),
+    Type(RelationType),
     None,
 }
 
 impl Serialize for RelationEnd {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         match self {
-            Self::Type(n) => s.serialize_u8(*n),
+            Self::Type(kind) => s.serialize_u8(*kind as u8),
             Self::None => s.serialize_str("none"),
         }
+    }
+}
+
+/// Mermaid's lineType. Serialized as its number.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum LineType {
+    Line,
+    Dotted,
+}
+
+impl Serialize for LineType {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_u8(*self as u8)
     }
 }
 
@@ -50,7 +77,7 @@ pub struct ClassNode {
 pub struct Relation {
     pub type1: RelationEnd,
     pub type2: RelationEnd,
-    pub line_type: u8,
+    pub line_type: LineType,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -98,12 +125,4 @@ pub struct NamespaceNode {
     /// False for the ancestors created on the way to a dotted name such as
     /// `A.B.C`.
     pub explicit: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StyleClass {
-    pub id: String,
-    pub styles: Vec<String>,
-    pub text_styles: Vec<String>,
 }

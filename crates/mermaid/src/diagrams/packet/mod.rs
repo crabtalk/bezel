@@ -10,7 +10,7 @@ pub use model::{PacketBlock, PacketModel};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
@@ -25,7 +25,7 @@ impl Diagram for Packet {
         _line_offset: usize,
         _limits: &ParseLimits,
     ) -> Result<Model, Error> {
-        model::build_packet(parser::parse_packet(source)?, &config.packet, title).map(Model::Packet)
+        PacketModel::new(parser::parse_packet(source)?, &config.packet, title).map(Model::Packet)
     }
 }
 
@@ -52,9 +52,8 @@ pub struct PacketConfig {
     pub bit_order: Option<String>,
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Packet(model) = model else {
-        unreachable!("packet renders a packet model")
-    };
-    Ok(render::render_packet(model, &config.packet, ctx))
+impl Render for PacketModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_packet(self, &config.packet, ctx))
+    }
 }

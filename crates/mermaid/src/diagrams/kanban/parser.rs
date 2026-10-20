@@ -2,13 +2,9 @@
 
 use crate::{
     Error,
-    diagrams::common::outline::{OutlineDb, Tokens, parse_outline, tokenize as tokenize_outline},
+    diagrams::common::outline::{Outline, OutlineDb},
 };
 
-pub fn tokenize(src: &str) -> Tokens {
-    tokenize_outline(src, true)
-}
-
 pub fn parse_kanban(src: &str, db: &mut dyn OutlineDb) -> Result<(), Error> {
-    parse_outline(src, db, true)
+    Outline::Kanban.parse(src, db)
 }

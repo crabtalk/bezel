@@ -6,7 +6,7 @@ use super::{
     config::{Map, Value},
     js::{self, Lazy},
 };
-use crate::js::JsValue;
+use crate::{js::JsValue, util::chars};
 
 const MAX_DEPTH: usize = 64;
 
@@ -18,12 +18,10 @@ static RE_FLOAT: Lazy = Lazy::new(
     r"^[-+]?(?:[0-9][0-9]*(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?$",
     "",
 );
-static RE_KEY_START: Lazy = Lazy::new(r#"[\s#:,[\]{}&*!|>'"%@`]"#, "");
 static RE_INF: Lazy = Lazy::new(r"^[-+]?\.(?:inf|Inf|INF)$", "");
 static RE_NAN: Lazy = Lazy::new(r"^\.(?:nan|NaN|NAN)$", "");
 static RE_BLOCK_HEADER: Lazy = Lazy::new(r"^[|>][-+0-9]*\s*(?:#.*)?$", "");
 static RE_CONTINUED: Lazy = Lazy::new(r"\\\n[ \t]*", "g");
-static RE_PLAIN_END: Lazy = Lazy::new(r"[\s,[\]{}]", "");
 
 /// Why the text is not YAML: js-yaml's message, which the error shows.
 #[derive(Debug)]
@@ -78,8 +76,20 @@ impl Reader {
     }
 }
 
-fn is_blank(ch: Option<u8>) -> bool {
-    matches!(ch, Some(b' ' | b'\t' | b'\n' | b'\r'))
+fn is_blank(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | b'\r')
+}
+
+/// The end of the run of blanks at byte `from` of `bytes`.
+fn blanks_end(bytes: &[u8], from: usize) -> usize {
+    from + bytes
+        .get(from..)
+        .map_or(0, |rest| rest.iter().take_while(|&&b| is_blank(b)).count())
+}
+
+/// Whether `c` ends a plain scalar after a `:`.
+fn ends_plain(c: char) -> bool {
+    chars::is_space(c) || matches!(c, ',' | '[' | ']' | '{' | '}')
 }
 
 fn leading(line: &str) -> usize {
@@ -88,11 +98,11 @@ fn leading(line: &str) -> usize {
 
 /// Splits `key: rest` at the start of a line: the raw key and where the
 /// value starts.
-fn split_key(line: &str) -> Option<(String, usize)> {
+fn split_key(line: &str) -> Option<(&str, usize)> {
     let bytes = line.as_bytes();
     let first = *bytes.first()?;
     let end;
-    let mut colon;
+    let colon;
     if first == b'"' || first == b'\'' {
         let mut i = 1;
         loop {
@@ -112,47 +122,38 @@ fn split_key(line: &str) -> Option<(String, usize)> {
             }
         }
         end = i + 1;
-        colon = end;
-        while is_blank(bytes.get(colon).copied()) {
-            colon += 1;
-        }
+        colon = blanks_end(bytes, end);
         if bytes.get(colon) != Some(&b':') {
             return None;
         }
     } else {
         let first_char = line.chars().next()?;
-        if RE_KEY_START.test(first_char.encode_utf8(&mut [0; 4])) {
+        if chars::is_space(first_char) || "#:,[]{}&*!|>'\"%@`".contains(first_char) {
             return None;
         }
         if first == b'-'
-            && (bytes.len() < 2
-                || is_blank(bytes.get(1).copied())
-                || bytes[1] == b':'
-                || bytes[1] == b'#')
+            && bytes
+                .get(1)
+                .is_none_or(|&b| is_blank(b) || matches!(b, b':' | b'#'))
         {
             return None;
         }
-        colon = 1;
-        while colon < bytes.len() && bytes[colon] != b':' && bytes[colon] != b'#' {
-            colon += 1;
-        }
+        colon = 1 + bytes[1..]
+            .iter()
+            .take_while(|&&b| !matches!(b, b':' | b'#'))
+            .count();
         if bytes.get(colon) != Some(&b':') {
             return None;
         }
-        let mut e = colon;
-        while e > 0 && is_blank(bytes.get(e - 1).copied()) {
-            e -= 1;
-        }
-        end = e;
+        end = bytes[..colon]
+            .iter()
+            .rposition(|&b| !is_blank(b))
+            .map_or(0, |at| at + 1);
     }
-    let mut length = colon + 1;
-    if length < bytes.len() && !is_blank(bytes.get(length).copied()) {
+    if bytes.get(colon + 1).is_some_and(|&b| !is_blank(b)) {
         return None;
     }
-    while is_blank(bytes.get(length).copied()) {
-        length += 1;
-    }
-    Some((line[..end].to_string(), length))
+    Some((&line[..end], blanks_end(bytes, colon + 1)))
 }
 
 fn scalar(raw: &str) -> Value {
@@ -232,69 +233,57 @@ fn fold(text: &str) -> String {
     }
     let joined = trimmed.join("\n");
     let mut out = String::with_capacity(joined.len());
+    let push_breaks = |out: &mut String, breaks: usize| match breaks {
+        0 => {}
+        1 => out.push(' '),
+        _ => out.push_str(&"\n".repeat(breaks - 1)),
+    };
     let mut breaks = 0;
     for c in joined.chars() {
         if c == '\n' {
             breaks += 1;
             continue;
         }
-        if breaks > 0 {
-            if breaks == 1 {
-                out.push(' ');
-            } else {
-                out.push_str(&"\n".repeat(breaks - 1));
-            }
-            breaks = 0;
-        }
+        push_breaks(&mut out, breaks);
+        breaks = 0;
         out.push(c);
     }
-    if breaks == 1 {
-        out.push(' ');
-    } else if breaks > 1 {
-        out.push_str(&"\n".repeat(breaks - 1));
-    }
+    push_breaks(&mut out, breaks);
     out
 }
 
 fn unquote_double(body: &str) -> Result<String> {
     let s = fold(&RE_CONTINUED.replace(body, |_| String::new()));
-    let chars: Vec<char> = s.chars().collect();
+    let mut chars = s.chars();
     let mut out = String::new();
-    let mut i = 0;
-    while i < chars.len() {
-        let ch = chars[i];
+    while let Some(ch) = chars.next() {
         if ch != '\\' {
             out.push(ch);
-            i += 1;
             continue;
         }
-        i += 1;
-        let Some(&e) = chars.get(i) else {
+        let Some(e) = chars.next() else {
             return error("YAML: unknown escape sequence");
         };
-        if e == 'x' || e == 'u' || e == 'U' {
-            let len = match e {
-                'x' => 2,
-                'u' => 4,
-                _ => 8,
-            };
-            let digits: String = chars[(i + 1).min(chars.len())..(i + 1 + len).min(chars.len())]
-                .iter()
-                .collect();
-            let code = js::parse_int(&digits, 16);
-            match (code.is_finite() && code >= 0.0)
-                .then(|| char::from_u32(code as u32))
-                .flatten()
-            {
-                Some(c) => out.push(c),
-                None => return error("Invalid code point"),
+        let digits = match e {
+            'x' => 2,
+            'u' => 4,
+            'U' => 8,
+            _ => {
+                let Some(c) = escape(e) else {
+                    return error("YAML: unknown escape sequence");
+                };
+                out.push(c);
+                continue;
             }
-            i += len + 1;
-        } else if let Some(c) = escape(e) {
-            out.push(c);
-            i += 1;
-        } else {
-            return error("YAML: unknown escape sequence");
+        };
+        let digits: String = chars.by_ref().take(digits).collect();
+        let code = js::parse_int(&digits, 16);
+        match (code.is_finite() && code >= 0.0)
+            .then(|| char::from_u32(code as u32))
+            .flatten()
+        {
+            Some(c) => out.push(c),
+            None => return error("Invalid code point"),
         }
     }
     Ok(out)
@@ -304,9 +293,10 @@ fn skip(s: &str, mut pos: usize) -> usize {
     let bytes = s.as_bytes();
     while pos < bytes.len() {
         let c = bytes[pos];
-        if c == b' ' || c == b'\n' || c == b'\t' || c == b'\r' {
+        if is_blank(c) {
             pos += 1;
-        } else if c == b'#' && (pos == 0 || s[..pos].chars().next_back().is_some_and(js::is_space))
+        } else if c == b'#'
+            && (pos == 0 || s[..pos].chars().next_back().is_some_and(chars::is_space))
         {
             pos = s[pos..].find('\n').map_or(s.len(), |nl| pos + nl);
         } else {
@@ -316,16 +306,40 @@ fn skip(s: &str, mut pos: usize) -> usize {
     pos
 }
 
-/// Entries of a flow collection are separated by exactly one comma, as
-/// js-yaml requires.
-fn entry_start(ch: u8, separated: bool) -> Result<()> {
-    if !separated {
-        return error("YAML: missed comma between flow collection entries");
+/// Reads the entries of a flow collection from `pos`, past its opening
+/// bracket, with `entry`, which answers where each ends. Answers the index
+/// after `close`.
+fn flow_entries(
+    s: &str,
+    mut pos: usize,
+    close: u8,
+    mut entry: impl FnMut(usize) -> Result<usize>,
+) -> Result<usize> {
+    let bytes = s.as_bytes();
+    let mut separated = true;
+    loop {
+        pos = skip(s, pos);
+        let Some(&c) = bytes.get(pos) else {
+            return Err(Failure::Incomplete(
+                "YAML: unexpected end of the stream within a flow collection".into(),
+            ));
+        };
+        if c == close {
+            return Ok(pos + 1);
+        }
+        // Entries are separated by exactly one comma, as js-yaml requires.
+        if !separated {
+            return error("YAML: missed comma between flow collection entries");
+        }
+        if c == b',' {
+            return error("YAML: expected the node content, but found ','");
+        }
+        pos = skip(s, entry(pos)?);
+        separated = bytes.get(pos) == Some(&b',');
+        if separated {
+            pos += 1;
+        }
     }
-    if ch == b',' {
-        return error("YAML: expected the node content, but found ','");
-    }
-    Ok(())
 }
 
 /// Parses a flow value starting at `pos`: the value and the index after it.
@@ -334,62 +348,30 @@ fn flow(s: &str, pos: usize, stops: &str, depth: usize) -> Result<(Value, usize)
         return error("YAML: nesting is too deep");
     }
     let bytes = s.as_bytes();
-    let mut pos = skip(s, pos);
+    let pos = skip(s, pos);
     let ch = bytes.get(pos).copied();
     if ch == Some(b'{') {
         let mut out = Map::new();
-        pos += 1;
-        let mut separated = true;
-        loop {
-            pos = skip(s, pos);
-            if pos >= bytes.len() {
-                return Err(Failure::Incomplete(
-                    "YAML: unexpected end of the stream within a flow collection".into(),
-                ));
-            }
-            if bytes[pos] == b'}' {
-                return Ok((Value::Object(out), pos + 1));
-            }
-            entry_start(bytes[pos], separated)?;
+        let end = flow_entries(s, pos + 1, b'}', |pos| {
             let (key, after) = flow(s, pos, ":,}", depth + 1)?;
-            pos = skip(s, after);
+            let mut pos = skip(s, after);
             let mut value = Value::Null;
             if bytes.get(pos) == Some(&b':') {
-                let (v, after) = flow(s, pos + 1, ",}", depth + 1)?;
-                value = v;
-                pos = after;
+                (value, pos) = flow(s, pos + 1, ",}", depth + 1)?;
             }
             out.insert(key.to_js_string(), value);
-            pos = skip(s, pos);
-            separated = bytes.get(pos) == Some(&b',');
-            if separated {
-                pos += 1;
-            }
-        }
+            Ok(pos)
+        })?;
+        return Ok((Value::Object(out), end));
     }
     if ch == Some(b'[') {
         let mut out = Vec::new();
-        pos += 1;
-        let mut separated = true;
-        loop {
-            pos = skip(s, pos);
-            if pos >= bytes.len() {
-                return Err(Failure::Incomplete(
-                    "YAML: unexpected end of the stream within a flow collection".into(),
-                ));
-            }
-            if bytes[pos] == b']' {
-                return Ok((Value::Array(out), pos + 1));
-            }
-            entry_start(bytes[pos], separated)?;
+        let end = flow_entries(s, pos + 1, b']', |pos| {
             let (value, after) = flow(s, pos, ",]", depth + 1)?;
             out.push(value);
-            pos = skip(s, after);
-            separated = bytes.get(pos) == Some(&b',');
-            if separated {
-                pos += 1;
-            }
-        }
+            Ok(after)
+        })?;
+        return Ok((Value::Array(out), end));
     }
     if ch == Some(b'"') {
         let mut end = pos + 1;
@@ -431,14 +413,11 @@ fn flow(s: &str, pos: usize, stops: &str, depth: usize) -> Result<(Value, usize)
         if stops.as_bytes().contains(&c)
             && (c != b':'
                 || end + 1 >= bytes.len()
-                || s[end + 1..]
-                    .chars()
-                    .next()
-                    .is_some_and(|next| RE_PLAIN_END.test(next.encode_utf8(&mut [0; 4]))))
+                || s[end + 1..].chars().next().is_some_and(ends_plain))
         {
             break;
         }
-        if c == b'#' && end > pos && s[..end].chars().next_back().is_some_and(js::is_space) {
+        if c == b'#' && end > pos && s[..end].chars().next_back().is_some_and(chars::is_space) {
             let nl = s[end..].find('\n').map_or(s.len(), |nl| end + nl);
             return Ok((scalar(&fold(js::trim(&s[pos..end]))), nl));
         }
@@ -452,18 +431,18 @@ fn flow(s: &str, pos: usize, stops: &str, depth: usize) -> Result<(Value, usize)
 
 fn strip_comment(s: &str) -> &str {
     let bytes = s.as_bytes();
-    let mut quote = 0u8;
+    let mut quote = None;
     let mut i = 0;
     while i < bytes.len() {
         let c = bytes[i];
-        if quote != 0 {
-            if c == b'\\' && quote == b'"' {
+        if let Some(q) = quote {
+            if c == b'\\' && q == b'"' {
                 i += 1;
-            } else if c == quote {
-                quote = 0;
+            } else if c == q {
+                quote = None;
             }
         } else if c == b'"' || c == b'\'' {
-            quote = c;
+            quote = Some(c);
         } else if c == b'#' && (i == 0 || bytes[i - 1] == b' ' || bytes[i - 1] == b'\t') {
             return &s[..i];
         }
@@ -472,243 +451,270 @@ fn strip_comment(s: &str) -> &str {
     s
 }
 
-fn block_scalar(r: &mut Reader, header: &str, parent_indent: usize) -> String {
-    let folded = header.starts_with('>');
-    let chomp = if header.contains('-') {
-        '-'
-    } else if header.contains('+') {
-        '+'
-    } else {
-        ' '
-    };
-    let explicit = header.chars().find(|c| ('1'..='9').contains(c));
-    let mut indent: Option<usize> =
-        explicit.map(|d| parent_indent + d.to_digit(10).unwrap_or(0) as usize);
-    let mut out: Vec<String> = Vec::new();
-    while r.i < r.lines.len() {
-        let line = r.lines[r.i].clone();
-        if js::trim(&line).is_empty() {
-            out.push(String::new());
-            r.i += 1;
-            continue;
-        }
-        let k = leading(&line);
-        let indent_now = match indent {
-            Some(indent) => indent,
-            None => {
-                if k <= parent_indent {
-                    break;
-                }
-                indent = Some(k);
-                k
-            }
-        };
-        if k < indent_now {
-            break;
-        }
-        out.push(line.get(indent_now..).unwrap_or("").to_string());
-        r.i += 1;
-    }
-    let mut trailing = 0;
-    while out.last().is_some_and(String::is_empty) {
-        out.pop();
-        trailing += 1;
-    }
-    let text = if folded {
-        let mut text = String::new();
-        for i in 0..out.len() {
-            let cur = &out[i];
-            if i > 0 {
-                let prev = &out[i - 1];
-                if cur.is_empty() {
-                    text.push('\n');
-                } else if !prev.is_empty() {
-                    let indented = |s: &str| s.starts_with([' ', '\t']);
-                    text.push(if indented(prev) || indented(cur) {
-                        '\n'
-                    } else {
-                        ' '
-                    });
-                }
-            }
-            text.push_str(cur);
-        }
-        text
-    } else {
-        out.join("\n")
-    };
-    if out.is_empty() {
-        return if chomp == '+' {
-            "\n".repeat(trailing)
-        } else {
-            String::new()
-        };
-    }
-    match chomp {
-        '-' => text,
-        '+' => text + &"\n".repeat(trailing + 1),
-        _ => text + "\n",
-    }
+/// A block scalar's chomping indicator: what becomes of its final line
+/// breaks.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Chomp {
+    /// `-`: none are kept.
+    Strip,
+    /// No indicator: one is kept.
+    Clip,
+    /// `+`: all are kept.
+    Keep,
 }
 
-fn inline_value(r: &mut Reader, rest: &str, indent: isize) -> Result<Value> {
-    let first = rest.as_bytes().first().copied();
-    if matches!(first, Some(b'|' | b'>')) && RE_BLOCK_HEADER.test(rest) {
-        return Ok(Value::String(block_scalar(r, rest, indent.max(0) as usize)));
-    }
-    if matches!(first, Some(b'{' | b'[' | b'"' | b'\'')) {
-        // The value may continue on later lines: read them in growing
-        // batches until it closes.
-        let start = r.i;
-        let mut text = rest.to_string();
-        let mut taken = 0;
-        let mut batch = 1;
-        loop {
-            match flow(&text, 0, "", 0) {
-                Ok((value, end)) => {
-                    let used = text[..end.min(text.len())].matches('\n').count();
-                    let line_end = text[end..].find('\n').map_or(text.len(), |nl| end + nl);
-                    if !js::trim(strip_comment(&text[end..line_end])).is_empty() {
-                        return error("YAML: unexpected content after a value");
-                    }
-                    r.i = start + used;
-                    return Ok(value);
-                }
-                Err(Failure::Incomplete(message)) => {
-                    if start + taken >= r.lines.len() {
-                        return Err(Failure::Error(message));
-                    }
-                    let to = (start + taken + batch).min(r.lines.len());
-                    let more = &r.lines[start + taken..to];
-                    text.push('\n');
-                    text.push_str(&more.join("\n"));
-                    taken += more.len();
-                    batch *= 2;
-                }
-                Err(other) => return Err(other),
-            }
+impl Chomp {
+    /// The indicator in a block scalar's `header`.
+    fn of(header: &str) -> Self {
+        if header.contains('-') {
+            Self::Strip
+        } else if header.contains('+') {
+            Self::Keep
+        } else {
+            Self::Clip
         }
     }
-    let mut text = js::trim(strip_comment(rest)).to_string();
-    while r.i < r.lines.len() {
-        let line = &r.lines[r.i];
-        if js::trim(line).is_empty() {
-            let mut j = r.i;
-            while j < r.lines.len() && js::trim(&r.lines[j]).is_empty() {
-                j += 1;
-            }
-            if j >= r.lines.len() || leading(&r.lines[j]) as isize <= indent {
-                break;
-            }
-            text.push_str(&"\n".repeat(j - r.i));
-            r.i = j;
-            continue;
-        }
-        if leading(line) as isize <= indent {
-            break;
-        }
-        let more = js::trim(strip_comment(line)).to_string();
-        if !text.ends_with('\n') {
-            text.push(' ');
-        }
-        text.push_str(&more);
-        r.i += 1;
-    }
-    Ok(scalar(&text))
 }
 
 fn is_seq(line: &str) -> bool {
     line == "-" || line.starts_with("- ")
 }
 
-fn block(r: &mut Reader, min_indent: usize, depth: usize) -> Result<Value> {
-    if depth > MAX_DEPTH {
-        return error("YAML: nesting is too deep");
-    }
-    r.skip_blank();
-    if r.i >= r.lines.len() {
-        return Ok(Value::Null);
-    }
-    let indent = r.indent()?;
-    if indent < min_indent {
-        return Ok(Value::Null);
-    }
-    let line = r.lines[r.i][indent..].to_string();
-
-    if is_seq(&line) {
-        let mut out = Vec::new();
-        while r.i < r.lines.len() {
-            r.skip_blank();
-            if r.i >= r.lines.len() || r.indent()? != indent {
+impl Reader {
+    fn block_scalar(&mut self, header: &str, parent_indent: usize) -> String {
+        let folded = header.starts_with('>');
+        let chomp = Chomp::of(header);
+        let mut indent = header
+            .chars()
+            .find_map(|c| c.to_digit(10).filter(|&d| d > 0))
+            .map(|d| parent_indent + d as usize);
+        let mut out: Vec<String> = Vec::new();
+        while self.i < self.lines.len() {
+            let line = self.lines[self.i].clone();
+            if js::trim(&line).is_empty() {
+                out.push(String::new());
+                self.i += 1;
+                continue;
+            }
+            let k = leading(&line);
+            let indent_now = match indent {
+                Some(indent) => indent,
+                None => {
+                    if k <= parent_indent {
+                        break;
+                    }
+                    indent = Some(k);
+                    k
+                }
+            };
+            if k < indent_now {
                 break;
             }
-            let cur = r.lines[r.i][indent..].to_string();
-            if !is_seq(&cur) {
-                break;
+            out.push(line.get(indent_now..).unwrap_or("").to_string());
+            self.i += 1;
+        }
+        let mut trailing = 0;
+        while out.last().is_some_and(String::is_empty) {
+            out.pop();
+            trailing += 1;
+        }
+        let text = if folded {
+            let mut text = String::new();
+            let mut prev: Option<&String> = None;
+            for cur in &out {
+                if let Some(prev) = prev {
+                    if cur.is_empty() {
+                        text.push('\n');
+                    } else if !prev.is_empty() {
+                        let indented = |s: &str| s.starts_with([' ', '\t']);
+                        text.push(if indented(prev) || indented(cur) {
+                            '\n'
+                        } else {
+                            ' '
+                        });
+                    }
+                }
+                text.push_str(cur);
+                prev = Some(cur);
             }
-            let rest = &cur[1..];
-            let pad = rest.len() - js::trim_start(rest).len() + 1;
-            let body = js::trim(strip_comment(rest));
-            if body.is_empty() {
-                r.i += 1;
-                out.push(block(r, indent + 1, depth + 1)?);
-            } else if split_key(body).is_some() {
-                r.lines[r.i] = format!("{}{}", " ".repeat(indent + pad), js::trim_start(rest));
-                out.push(block(r, indent + pad, depth + 1)?);
-            } else {
-                r.i += 1;
-                out.push(inline_value(r, js::trim(rest), indent as isize)?);
-            }
-        }
-        return Ok(Value::Array(out));
-    }
-
-    if split_key(&line).is_none() {
-        r.i += 1;
-        return inline_value(r, js::trim(&line), indent as isize - 1);
-    }
-
-    let mut out = Map::new();
-    while r.i < r.lines.len() {
-        r.skip_blank();
-        if r.i >= r.lines.len() {
-            break;
-        }
-        let k = r.indent()?;
-        if k < indent {
-            break;
-        }
-        if k > indent {
-            return error("YAML: bad indentation of a mapping entry");
-        }
-        let cur = r.lines[r.i][indent..].to_string();
-        let Some((raw_key, length)) = split_key(&cur) else {
-            return error("YAML: can not read a block mapping entry");
-        };
-        let key = flow(&raw_key, 0, "", 0)?.0.to_js_string();
-        let rest = cur[length..].to_string();
-        r.i += 1;
-        if js::trim(strip_comment(&rest)).is_empty() {
-            r.skip_blank();
-            if r.i < r.lines.len() {
-                let next = r.indent()?;
-                let next_line = r.lines[r.i][next..].to_string();
-                let seq = is_seq(&next_line);
-                let value = if next > indent || (seq && next == indent) {
-                    block(r, if seq { indent } else { indent + 1 }, depth + 1)?
-                } else {
-                    Value::Null
-                };
-                out.insert(key, value);
-            } else {
-                out.insert(key, Value::Null);
-            }
+            text
         } else {
-            let value = inline_value(r, js::trim(&rest), indent as isize)?;
-            out.insert(key, value);
+            out.join("\n")
+        };
+        if out.is_empty() {
+            return if chomp == Chomp::Keep {
+                "\n".repeat(trailing)
+            } else {
+                String::new()
+            };
+        }
+        match chomp {
+            Chomp::Strip => text,
+            Chomp::Keep => text + &"\n".repeat(trailing + 1),
+            Chomp::Clip => text + "\n",
         }
     }
-    Ok(Value::Object(out))
+
+    /// The value `rest` starts, with the lines after it that are indented
+    /// past `parent`; with no `parent`, every line.
+    fn inline_value(&mut self, rest: &str, parent: Option<usize>) -> Result<Value> {
+        let first = rest.as_bytes().first().copied();
+        if matches!(first, Some(b'|' | b'>')) && RE_BLOCK_HEADER.test(rest) {
+            return Ok(Value::String(self.block_scalar(rest, parent.unwrap_or(0))));
+        }
+        if matches!(first, Some(b'{' | b'[' | b'"' | b'\'')) {
+            // The value may continue on later lines: read them in growing
+            // batches until it closes.
+            let start = self.i;
+            let mut text = rest.to_string();
+            let mut taken = 0;
+            let mut batch = 1;
+            loop {
+                match flow(&text, 0, "", 0) {
+                    Ok((value, end)) => {
+                        let used = text[..end.min(text.len())].matches('\n').count();
+                        let line_end = text[end..].find('\n').map_or(text.len(), |nl| end + nl);
+                        if !js::trim(strip_comment(&text[end..line_end])).is_empty() {
+                            return error("YAML: unexpected content after a value");
+                        }
+                        self.i = start + used;
+                        return Ok(value);
+                    }
+                    Err(Failure::Incomplete(message)) => {
+                        if start + taken >= self.lines.len() {
+                            return Err(Failure::Error(message));
+                        }
+                        let to = (start + taken + batch).min(self.lines.len());
+                        let more = &self.lines[start + taken..to];
+                        text.push('\n');
+                        text.push_str(&more.join("\n"));
+                        taken += more.len();
+                        batch *= 2;
+                    }
+                    Err(other) => return Err(other),
+                }
+            }
+        }
+        let mut text = js::trim(strip_comment(rest)).to_string();
+        while self.i < self.lines.len() {
+            let line = &self.lines[self.i];
+            if js::trim(line).is_empty() {
+                let mut j = self.i;
+                while j < self.lines.len() && js::trim(&self.lines[j]).is_empty() {
+                    j += 1;
+                }
+                if j >= self.lines.len()
+                    || parent.is_some_and(|parent| leading(&self.lines[j]) <= parent)
+                {
+                    break;
+                }
+                text.push_str(&"\n".repeat(j - self.i));
+                self.i = j;
+                continue;
+            }
+            if parent.is_some_and(|parent| leading(line) <= parent) {
+                break;
+            }
+            let more = js::trim(strip_comment(line)).to_string();
+            if !text.ends_with('\n') {
+                text.push(' ');
+            }
+            text.push_str(&more);
+            self.i += 1;
+        }
+        Ok(scalar(&text))
+    }
+
+    fn block(&mut self, min_indent: usize, depth: usize) -> Result<Value> {
+        if depth > MAX_DEPTH {
+            return error("YAML: nesting is too deep");
+        }
+        self.skip_blank();
+        if self.i >= self.lines.len() {
+            return Ok(Value::Null);
+        }
+        let indent = self.indent()?;
+        if indent < min_indent {
+            return Ok(Value::Null);
+        }
+        let line = self.lines[self.i][indent..].to_string();
+
+        if is_seq(&line) {
+            let mut out = Vec::new();
+            while self.i < self.lines.len() {
+                self.skip_blank();
+                if self.i >= self.lines.len() || self.indent()? != indent {
+                    break;
+                }
+                let cur = self.lines[self.i][indent..].to_string();
+                if !is_seq(&cur) {
+                    break;
+                }
+                let rest = &cur[1..];
+                let pad = rest.len() - js::trim_start(rest).len() + 1;
+                let body = js::trim(strip_comment(rest));
+                if body.is_empty() {
+                    self.i += 1;
+                    out.push(self.block(indent + 1, depth + 1)?);
+                } else if split_key(body).is_some() {
+                    self.lines[self.i] =
+                        format!("{}{}", " ".repeat(indent + pad), js::trim_start(rest));
+                    out.push(self.block(indent + pad, depth + 1)?);
+                } else {
+                    self.i += 1;
+                    out.push(self.inline_value(js::trim(rest), Some(indent))?);
+                }
+            }
+            return Ok(Value::Array(out));
+        }
+
+        if split_key(&line).is_none() {
+            self.i += 1;
+            return self.inline_value(js::trim(&line), indent.checked_sub(1));
+        }
+
+        let mut out = Map::new();
+        while self.i < self.lines.len() {
+            self.skip_blank();
+            if self.i >= self.lines.len() {
+                break;
+            }
+            let k = self.indent()?;
+            if k < indent {
+                break;
+            }
+            if k > indent {
+                return error("YAML: bad indentation of a mapping entry");
+            }
+            let cur = self.lines[self.i][indent..].to_string();
+            let Some((raw_key, length)) = split_key(&cur) else {
+                return error("YAML: can not read a block mapping entry");
+            };
+            let key = flow(raw_key, 0, "", 0)?.0.to_js_string();
+            let rest = cur[length..].to_string();
+            self.i += 1;
+            if js::trim(strip_comment(&rest)).is_empty() {
+                self.skip_blank();
+                if self.i < self.lines.len() {
+                    let next = self.indent()?;
+                    let next_line = self.lines[self.i][next..].to_string();
+                    let seq = is_seq(&next_line);
+                    let value = if next > indent || (seq && next == indent) {
+                        self.block(if seq { indent } else { indent + 1 }, depth + 1)?
+                    } else {
+                        Value::Null
+                    };
+                    out.insert(key, value);
+                } else {
+                    out.insert(key, Value::Null);
+                }
+            } else {
+                let value = self.inline_value(js::trim(&rest), Some(indent))?;
+                out.insert(key, value);
+            }
+        }
+        Ok(Value::Object(out))
+    }
 }
 
 pub fn parse_yaml(src: &str) -> std::result::Result<Value, YamlError> {
@@ -723,7 +729,7 @@ pub fn parse_yaml(src: &str) -> std::result::Result<Value, YamlError> {
         }
     }
     let mut r = Reader::new(src);
-    let value = block(&mut r, 0, 0).map_err(fail)?;
+    let value = r.block(0, 0).map_err(fail)?;
     r.skip_blank();
     if r.i < r.lines.len() && js::trim(&r.lines[r.i]) != "..." {
         return Err(YamlError(

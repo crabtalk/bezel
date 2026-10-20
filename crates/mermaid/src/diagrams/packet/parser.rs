@@ -1,51 +1,35 @@
 //! Pele's `diagrams/packet/parser.ts`.
 
-use std::sync::LazyLock;
-
 use crate::{
     detect::Kind,
     diagrams::common::tokens::{
-        Reader, Table, TokenType, acc_descr, acc_descr_value, acc_title, acc_title_value,
-        directive, keyword, newline, single_line_comment, string, string_value, title, title_value,
-        tokenize, whitespace, yaml,
+        Header, Reader, TokenType, acc_descr, acc_title, directive, keyword, newline,
+        single_line_comment, string, string_value, title, token_kinds, whitespace, yaml,
     },
     error::Error,
-    js,
 };
 
-const PACKET_BETA: i32 = 0;
-const PACKET: i32 = 1;
-const DASH: i32 = 2;
-const PLUS: i32 = 3;
-const COLON: i32 = 4;
-const ACC_DESCR: i32 = 5;
-const ACC_TITLE: i32 = 6;
-const TITLE: i32 = 7;
-const INT: i32 = 8;
-const STRING: i32 = 9;
-const NEWLINE: i32 = 10;
-
-static TOKENS: LazyLock<Table> = LazyLock::new(|| {
-    Table::new(vec![
-        TokenType::literal("packet-beta", "packet-beta"),
-        keyword("packet"),
+token_kinds! {
+    enum Token {
+        PacketBeta = TokenType::literal("packet-beta"),
+        Packet = keyword("packet"),
         // A front matter block also starts with dashes, so Langium lets it
         // win over a dash.
-        TokenType::literal("-", "-").longer(&["YAML"]),
-        TokenType::literal("+", "+"),
-        TokenType::literal(":", ":"),
-        acc_descr(),
-        acc_title(),
-        title(),
-        TokenType::regex("INT", r"0|[1-9][0-9]*(?!\.)", None),
-        string(),
-        newline(),
-        whitespace(),
-        yaml(),
-        directive(),
-        single_line_comment(),
-    ])
-});
+        Dash = TokenType::literal("-").longer(&[Token::Yaml]),
+        Plus = TokenType::literal("+"),
+        Colon = TokenType::literal(":"),
+        AccDescr = acc_descr(),
+        AccTitle = acc_title(),
+        Title = title(),
+        Int = TokenType::regex("INT", r"0|[1-9][0-9]*(?!\.)", None),
+        String = string(),
+        Newline = newline(),
+        Whitespace = whitespace(),
+        Yaml = yaml(),
+        Directive = directive(),
+        Comment = single_line_comment(),
+    }
+}
 
 pub struct PacketBlockAst {
     pub start: Option<f64>,
@@ -56,70 +40,44 @@ pub struct PacketBlockAst {
 
 #[derive(Default)]
 pub struct PacketAst {
-    pub title: Option<String>,
-    pub acc_title: Option<String>,
-    pub acc_descr: Option<String>,
+    pub header: Header,
     pub blocks: Vec<PacketBlockAst>,
 }
 
 pub fn parse_packet(src: &str) -> Result<PacketAst, Error> {
-    let tokens = tokenize(src, &TOKENS, Kind::Packet)?;
-    let mut r = Reader::new(&tokens, &TOKENS, Kind::Packet);
+    let mut r = Reader::<Token>::new(src, Kind::Packet)?;
     let mut ast = PacketAst::default();
 
-    fn end_of_line(r: &mut Reader) -> Result<(), Error> {
-        if r.kind() == -1 {
-            return Ok(());
-        }
-        if r.kind() != NEWLINE {
-            return Err(r.fail("a line break or the end of input"));
-        }
-        while r.kind() == NEWLINE {
-            r.i += 1;
-        }
-        Ok(())
+    r.skip(Token::Newline);
+    if !r.accept(Token::PacketBeta) {
+        r.expect(Token::Packet)?;
     }
-
-    while r.kind() == NEWLINE {
-        r.i += 1;
-    }
-    if !r.accept(PACKET_BETA) {
-        r.expect(PACKET)?;
-    }
-    while r.kind() != -1 {
-        match r.kind() {
-            NEWLINE => r.i += 1,
-            ACC_DESCR => {
-                ast.acc_descr = Some(acc_descr_value(r.take()));
-                end_of_line(&mut r)?;
-            }
-            ACC_TITLE => {
-                ast.acc_title = Some(acc_title_value(r.take()));
-                end_of_line(&mut r)?;
-            }
-            TITLE => {
-                ast.title = Some(title_value(r.take()));
-                end_of_line(&mut r)?;
-            }
-            INT | PLUS => {
+    while let Some(kind) = r.kind() {
+        if r.heading(&mut ast.header) {
+            r.end_of_line(Token::Newline)?;
+            continue;
+        }
+        match kind {
+            Token::Newline => r.bump(),
+            Token::Int | Token::Plus => {
                 let mut block = PacketBlockAst {
                     start: None,
                     end: None,
                     bits: None,
                     label: String::new(),
                 };
-                if r.accept(PLUS) {
-                    block.bits = Some(js::number(r.expect(INT)?));
+                if r.accept(Token::Plus) {
+                    block.bits = Some(r.number(Token::Int)?);
                 } else {
-                    block.start = Some(js::number(r.take()));
-                    if r.accept(DASH) {
-                        block.end = Some(js::number(r.expect(INT)?));
+                    block.start = Some(r.number(Token::Int)?);
+                    if r.accept(Token::Dash) {
+                        block.end = Some(r.number(Token::Int)?);
                     }
                 }
-                r.expect(COLON)?;
-                block.label = string_value(r.expect(STRING)?);
+                r.expect(Token::Colon)?;
+                block.label = string_value(r.expect(Token::String)?);
                 ast.blocks.push(block);
-                end_of_line(&mut r)?;
+                r.end_of_line(Token::Newline)?;
             }
             _ => return Err(r.fail("a field, a title, or a line break")),
         }

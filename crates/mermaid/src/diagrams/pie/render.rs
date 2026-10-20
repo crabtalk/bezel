@@ -1,7 +1,8 @@
 //! Pele's `diagrams/pie/render.ts`.
 
+use crate::geom::Point;
 use crate::js::JsValue;
-use crate::svg::builder::{EscText, LabelSvg, Point, fragment};
+use crate::svg::builder::{EscText, fragment};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{
@@ -21,7 +22,7 @@ use crate::{
         root::{Accessible, svg_document},
         theme::series_color,
     },
-    text::{Label, Style, layout_label},
+    text::{Label, Style},
 };
 
 const RADIUS: f64 = 120.0;
@@ -46,7 +47,7 @@ pub struct PieConfig {
 }
 
 fn point(angle: f64, radius: f64) -> Point {
-    Point(angle.sin() * radius, -angle.cos() * radius)
+    Point::new(angle.sin() * radius, -angle.cos() * radius)
 }
 
 fn slice(start: f64, end: f64, outer: f64, inner: f64) -> impl fmt::Display {
@@ -150,7 +151,7 @@ fn draw(
             } else {
                 label.to_string()
             };
-            layout_label(Some(&text), false, &*measure, small, 4000.0, 0)
+            Label::layout(Some(&text), false, &*measure, small, 4000.0, 0)
         })
         .collect();
     let mut legend_width: f64 = 0.0;
@@ -164,8 +165,8 @@ fn draw(
     };
     let legend_height = legend.len() as f64 * ROW;
 
-    let title = layout_label(
-        model.title.as_deref(),
+    let title = Label::layout(
+        model.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -253,11 +254,9 @@ fn draw(
     let _ = write!(
         content,
         "{}<g class=\"{p}-slices\" transform=\"translate({},{})\" stroke=\"var(--_bg)\" stroke-width=\"1\" stroke-linejoin=\"round\">",
-        LabelSvg(
-            &title,
-            total_width / 2.0,
-            pad + title.height / 2.0,
-            crate::svg::builder::TITLE,
+        title.svg(
+            Point::new(total_width / 2.0, pad + title.height / 2.0),
+            crate::svg::builder::TITLE
         ),
         num(cx),
         num(cy)
@@ -391,7 +390,7 @@ fn draw(
                 num(SWATCH),
                 num(SWATCH),
                 series_color(index as i64),
-                LabelSvg(label, lx + SWATCH + 8.0 + label.width / 2.0, y, "")
+                label.svg(Point::new(lx + SWATCH + 8.0 + label.width / 2.0, y), "")
             );
         }
         content.push_str("</g>");
@@ -405,8 +404,8 @@ fn draw(
             size,
             ctx,
             Accessible {
-                acc_title: model.acc_title.as_deref(),
-                acc_descr: model.acc_descr.as_deref(),
+                acc_title: model.titles.acc_title.as_deref(),
+                acc_descr: model.titles.acc_descr.as_deref(),
             },
             &content,
         ),

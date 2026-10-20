@@ -1,76 +1,91 @@
 //! `railroad-peg-beta`: parsing expression grammars. Pele's
 //! `diagrams/railroad/peg.ts`.
 
-use std::sync::LazyLock;
-
 use super::{
     common::{
-        Grammar, Syntax, SyntaxRule, acc_descr, acc_title, choice, hidden_tokens, identifier,
-        literal, nonterminal, opening, optional, parse_grammar, quoted, repetition, sequence,
-        special, terminal, title, to_rules, unescape,
+        Grammar, Parser, Syntax, SyntaxRule, ToNode, acc_descr, acc_title, blank, identifier,
+        quoted, title, unescape,
     },
-    types::{NodeId, Nodes, RailroadNode, RailroadRule},
+    types::{NodeId, Nodes, RailroadNode},
 };
 use crate::{
-    diagrams::common::tokens::{Reader, Table, TokenType},
+    diagrams::common::tokens::{
+        TokenType, directive, keyword, single_line_comment, token_kinds, yaml,
+    },
     error::Error,
 };
 
-const ARROW: i32 = 1;
-const SEMICOLON: i32 = 2;
-const SLASH: i32 = 3;
-const AND: i32 = 4;
-const NOT: i32 = 5;
-const QUESTION: i32 = 6;
-const STAR: i32 = 7;
-const PLUS: i32 = 8;
-const GROUP: i32 = 9;
-const GROUP_END: i32 = 10;
-const DOT: i32 = 11;
-const TITLE: i32 = 12;
-const ID: i32 = 15;
-const STRING: i32 = 16;
-const ID_NAME: &str = "PEG_ID";
-
-pub static PEG_TOKENS: LazyLock<Table> = LazyLock::new(|| {
-    let mut types = vec![
-        opening("railroad-peg-beta", ID_NAME),
-        literal("<-"),
-        literal(";"),
-        literal("/"),
-        literal("&"),
-        literal("!"),
-        literal("?"),
-        literal("*"),
-        literal("+"),
-        literal("("),
-        literal(")"),
-        literal("."),
-        title(),
-        acc_title(),
-        acc_descr(),
-        identifier(ID_NAME),
-        quoted("PEG_STRING"),
-    ];
-    types.extend(hidden_tokens("PEG"));
-    types.push(TokenType::regex("PEG_LINE_COMMENT", r"#[^\n\r]*", Some("#")).hidden());
-    Table::new(types)
-});
+token_kinds! {
+    enum Token {
+        Keyword = keyword("railroad-peg-beta").longer(&[Token::Id]),
+        Arrow = TokenType::literal("<-"),
+        Semicolon = TokenType::literal(";"),
+        Slash = TokenType::literal("/"),
+        And = TokenType::literal("&"),
+        Not = TokenType::literal("!"),
+        Question = TokenType::literal("?"),
+        Star = TokenType::literal("*"),
+        Plus = TokenType::literal("+"),
+        Group = TokenType::literal("("),
+        GroupEnd = TokenType::literal(")"),
+        Dot = TokenType::literal("."),
+        Title = title(),
+        AccTitle = acc_title(),
+        AccDescr = acc_descr(),
+        Id = identifier("PEG_ID"),
+        String = quoted("PEG_STRING"),
+        Whitespace = blank(),
+        Yaml = yaml(),
+        Directive = directive(),
+        Comment = single_line_comment(),
+        LineComment = TokenType::regex("PEG_LINE_COMMENT", r"#[^\n\r]*", Some("#")).hidden(),
+    }
+}
 
 pub enum PegPart {
     OrderedChoice,
     Sequence,
-    Prefix(Option<String>),
-    Suffix(Option<String>),
+    Prefix(Option<Predicate>),
+    Suffix(Option<Suffix>),
     Literal(String),
     Identifier(String),
-    Any(String),
+    /// `.`
+    Any,
     Group,
 }
 
-pub struct PegAst {
-    pub grammar: Grammar,
-    pub syntax: Syntax<PegPart>,
+/// `&` or `!`.
+#[derive(Clone, Copy)]
+pub enum Predicate {
+    And,
+    Not,
+}
+
+/// `?`, `*` or `+`.
+#[derive(Clone, Copy)]
+pub enum Suffix {
+    Optional,
+    ZeroOrMore,
+    OneOrMore,
+}
+
+impl Token {
+    fn predicate(self) -> Option<Predicate> {
+        match self {
+            Self::And => Some(Predicate::And),
+            Self::Not => Some(Predicate::Not),
+            _ => None,
+        }
+    }
+
+    fn suffix(self) -> Option<Suffix> {
+        match self {
+            Self::Question => Some(Suffix::Optional),
+            Self::Star => Some(Suffix::ZeroOrMore),
+            Self::Plus => Some(Suffix::OneOrMore),
+            _ => None,
+        }
+    }
 }
 
 /// One open group, or the rule itself at the bottom of the stack.
@@ -79,133 +94,146 @@ struct Frame {
     sequence: usize,
     /// The group's node and the predicate written before it.
     node: Option<usize>,
-    operator: Option<String>,
+    operator: Option<Predicate>,
 }
 
-fn frame(
-    syntax: &mut Syntax<PegPart>,
-    node: Option<usize>,
-    choice: usize,
-    operator: Option<String>,
-) -> Frame {
-    let sequence = syntax.add(PegPart::Sequence, Vec::new());
-    syntax.parts[choice].kids.push(sequence);
-    Frame {
-        choice,
-        sequence,
-        node,
-        operator,
-    }
-}
-
-fn definition(r: &mut Reader, syntax: &mut Syntax<PegPart>) -> Result<usize, Error> {
-    let mut stack: Vec<Frame> = Vec::new();
-    let root = syntax.add(PegPart::OrderedChoice, Vec::new());
-    let mut top = frame(syntax, None, root, None);
-    loop {
-        let mut operator = if r.kind() == AND || r.kind() == NOT {
-            Some(r.take().to_string())
-        } else {
-            None
-        };
-        let mut primary = match r.kind() {
-            STRING => syntax.add(PegPart::Literal(unescape(r.take())), Vec::new()),
-            ID => syntax.add(PegPart::Identifier(r.take().to_string()), Vec::new()),
-            DOT => syntax.add(PegPart::Any(r.take().to_string()), Vec::new()),
-            GROUP => {
-                r.i += 1;
-                let element = syntax.add(PegPart::OrderedChoice, Vec::new());
-                let group = syntax.add(PegPart::Group, vec![element]);
-                let next = frame(syntax, Some(group), element, operator);
-                stack.push(std::mem::replace(&mut top, next));
-                continue;
-            }
-            _ => {
-                return Err(r.fail("a literal, a name, a dot, or an opening parenthesis"));
-            }
-        };
-        loop {
-            let suffix_operator = if matches!(r.kind(), QUESTION | STAR | PLUS) {
-                Some(r.take().to_string())
-            } else {
-                None
-            };
-            let suffix = syntax.add(PegPart::Suffix(suffix_operator), vec![primary]);
-            let prefix = syntax.add(PegPart::Prefix(operator.take()), vec![suffix]);
-            syntax.parts[top.sequence].kids.push(prefix);
-            let k = r.kind();
-            if k == GROUP_END && !stack.is_empty() {
-                r.i += 1;
-                primary = top.node.unwrap_or_default();
-                let parent = stack
-                    .pop()
-                    .unwrap_or_else(|| unreachable!("a group has a parent"));
-                operator = std::mem::replace(&mut top, parent).operator;
-                continue;
-            }
-            if k == SLASH {
-                r.i += 1;
-                top.sequence = syntax.add(PegPart::Sequence, Vec::new());
-                syntax.parts[top.choice].kids.push(top.sequence);
-            } else if !matches!(k, AND | NOT | STRING | ID | DOT | GROUP) {
-                if stack.is_empty() {
-                    return Ok(top.choice);
-                }
-                return Err(r.fail("token of type ')'"));
-            }
-            break;
+impl Frame {
+    fn open(
+        syntax: &mut Syntax<PegPart>,
+        node: Option<usize>,
+        choice: usize,
+        operator: Option<Predicate>,
+    ) -> Self {
+        let sequence = syntax.add(PegPart::Sequence, Vec::new());
+        syntax.parts[choice].kids.push(sequence);
+        Self {
+            choice,
+            sequence,
+            node,
+            operator,
         }
     }
 }
 
-pub fn parse_peg(src: &str) -> Result<PegAst, Error> {
-    let mut syntax = Syntax::default();
-    let grammar = parse_grammar(src, &PEG_TOKENS, TITLE, unescape, |r| {
-        let name = r.expect(ID)?.to_string();
-        r.expect(ARROW)?;
-        let definition = definition(r, &mut syntax)?;
-        r.expect(SEMICOLON)?;
+impl Parser<'_, Token, PegPart> {
+    fn rule(&mut self) -> Result<SyntaxRule, Error> {
+        let name = self.r.expect(Token::Id)?.to_string();
+        self.r.expect(Token::Arrow)?;
+        let definition = self.definition()?;
+        self.r.expect(Token::Semicolon)?;
         Ok(SyntaxRule { name, definition })
-    })?;
-    Ok(PegAst { grammar, syntax })
-}
-
-/// What a predicate shows of the expression it looks ahead for.
-fn label(node: &RailroadNode) -> String {
-    match node {
-        RailroadNode::Terminal { value } => format!("\"{value}\""),
-        RailroadNode::NonTerminal { name } => name.clone(),
-        RailroadNode::Special { text } => text.clone(),
-        _ => "(...)".into(),
     }
-}
 
-fn node(part: &PegPart, kids: Vec<NodeId>, nodes: &mut Nodes) -> NodeId {
-    let kid = kids.first().copied().unwrap_or_default();
-    match part {
-        PegPart::OrderedChoice => choice(nodes, kids),
-        PegPart::Sequence => sequence(nodes, kids),
-        PegPart::Prefix(Some(operator)) if !operator.is_empty() => {
-            let text = format!("{operator}{}", label(nodes.get(kid)));
-            special(nodes, text)
-        }
-        PegPart::Prefix(_) => kid,
-        PegPart::Suffix(Some(operator)) if !operator.is_empty() => {
-            if operator == "?" {
-                optional(nodes, kid)
-            } else {
-                let min = if operator == "+" { 1.0 } else { 0.0 };
-                repetition(nodes, kid, min, f64::INFINITY)
+    fn definition(&mut self) -> Result<usize, Error> {
+        let syntax = &mut self.syntax;
+        let r = &mut self.r;
+        let mut stack: Vec<Frame> = Vec::new();
+        let root = syntax.add(PegPart::OrderedChoice, Vec::new());
+        let mut top = Frame::open(syntax, None, root, None);
+        loop {
+            let mut operator = r.kind().and_then(Token::predicate);
+            if operator.is_some() {
+                r.bump();
+            }
+            let mut primary = match r.kind() {
+                Some(Token::String) => syntax.add(PegPart::Literal(unescape(r.take())), Vec::new()),
+                Some(Token::Id) => {
+                    syntax.add(PegPart::Identifier(r.take().to_string()), Vec::new())
+                }
+                Some(Token::Dot) => {
+                    r.bump();
+                    syntax.add(PegPart::Any, Vec::new())
+                }
+                Some(Token::Group) => {
+                    r.bump();
+                    let element = syntax.add(PegPart::OrderedChoice, Vec::new());
+                    let group = syntax.add(PegPart::Group, vec![element]);
+                    let next = Frame::open(syntax, Some(group), element, operator);
+                    stack.push(std::mem::replace(&mut top, next));
+                    continue;
+                }
+                _ => {
+                    return Err(r.fail("a literal, a name, a dot, or an opening parenthesis"));
+                }
+            };
+            loop {
+                let suffix_operator = r.kind().and_then(Token::suffix);
+                if suffix_operator.is_some() {
+                    r.bump();
+                }
+                let suffix = syntax.add(PegPart::Suffix(suffix_operator), vec![primary]);
+                let prefix = syntax.add(PegPart::Prefix(operator.take()), vec![suffix]);
+                syntax.parts[top.sequence].kids.push(prefix);
+                if r.at(Token::GroupEnd) && !stack.is_empty() {
+                    r.bump();
+                    primary = top.node.unwrap_or_default();
+                    let parent = stack
+                        .pop()
+                        .unwrap_or_else(|| unreachable!("a group has a parent"));
+                    operator = std::mem::replace(&mut top, parent).operator;
+                    continue;
+                }
+                match r.kind() {
+                    Some(Token::Slash) => {
+                        r.bump();
+                        top.sequence = syntax.add(PegPart::Sequence, Vec::new());
+                        syntax.parts[top.choice].kids.push(top.sequence);
+                    }
+                    Some(
+                        Token::And
+                        | Token::Not
+                        | Token::String
+                        | Token::Id
+                        | Token::Dot
+                        | Token::Group,
+                    ) => {}
+                    _ if stack.is_empty() => return Ok(top.choice),
+                    _ => return Err(r.expected(Token::GroupEnd)),
+                }
+                break;
             }
         }
-        PegPart::Suffix(_) => kid,
-        PegPart::Literal(value) => terminal(nodes, value.clone()),
-        PegPart::Identifier(name) => nonterminal(nodes, name.clone()),
-        PegPart::Any(dot) => special(nodes, dot.clone()),
-        PegPart::Group => kid,
     }
 }
 
-pub fn peg_rules(ast: &PegAst, nodes: &mut Nodes) -> Vec<RailroadRule> {
-    to_rules(&ast.grammar, &ast.syntax, nodes, node)
+pub fn parse_peg(src: &str) -> Result<Grammar<PegPart>, Error> {
+    Parser::parse(src, Token::Keyword, unescape, Parser::rule)
+}
+
+impl RailroadNode {
+    /// What a predicate shows of the expression it looks ahead for.
+    fn predicate_label(&self) -> String {
+        match self {
+            Self::Terminal { value } => format!("\"{value}\""),
+            Self::NonTerminal { name } => name.clone(),
+            Self::Special { text } => text.clone(),
+            _ => "(...)".into(),
+        }
+    }
+}
+
+impl ToNode for PegPart {
+    fn to_node(&self, kids: Vec<NodeId>, nodes: &mut Nodes) -> NodeId {
+        let kid = kids.first().copied().unwrap_or_default();
+        match self {
+            PegPart::OrderedChoice => nodes.choice(kids),
+            PegPart::Sequence => nodes.sequence(kids),
+            PegPart::Prefix(Some(predicate)) => {
+                let symbol = match predicate {
+                    Predicate::And => '&',
+                    Predicate::Not => '!',
+                };
+                let text = format!("{symbol}{}", nodes.get(kid).predicate_label());
+                nodes.special(text)
+            }
+            PegPart::Suffix(Some(Suffix::Optional)) => nodes.optional(kid),
+            PegPart::Suffix(Some(Suffix::ZeroOrMore)) => nodes.repetition(kid, 0.0, f64::INFINITY),
+            PegPart::Suffix(Some(Suffix::OneOrMore)) => nodes.repetition(kid, 1.0, f64::INFINITY),
+            PegPart::Prefix(None) | PegPart::Suffix(None) => kid,
+            PegPart::Literal(value) => nodes.terminal(value.clone()),
+            PegPart::Identifier(name) => nodes.nonterminal(name.clone()),
+            PegPart::Any => nodes.special(".".into()),
+            PegPart::Group => kid,
+        }
+    }
 }

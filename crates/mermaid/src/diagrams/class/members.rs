@@ -1,17 +1,13 @@
 //! Pele's `diagrams/class/members.ts`.
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 use std::fmt::Write as _;
 
 use crate::{
     diagrams::common::generics::parse_generic_types,
     js,
-    util::chars::{code_at, is_line_end, width_at},
+    util::chars::{is_line_end, is_space},
 };
-
-fn is_visibility(ch: &str) -> bool {
-    matches!(ch, "#" | "+" | "~" | "-")
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -20,14 +16,89 @@ pub enum MemberType {
     Attribute,
 }
 
+/// The marker before a member: `+`, `-`, `#` or `~`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Visibility {
+    Public,
+    Private,
+    Protected,
+    Package,
+}
+
+impl Visibility {
+    fn parse(c: char) -> Option<Self> {
+        match c {
+            '+' => Some(Self::Public),
+            '-' => Some(Self::Private),
+            '#' => Some(Self::Protected),
+            '~' => Some(Self::Package),
+            _ => None,
+        }
+    }
+
+    pub fn marker(self) -> &'static str {
+        match self {
+            Self::Public => "+",
+            Self::Private => "-",
+            Self::Protected => "#",
+            Self::Package => "~",
+        }
+    }
+}
+
+/// The marker after a member: `$` or `*`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Classifier {
+    Static,
+    Abstract,
+}
+
+impl Classifier {
+    fn parse(c: char) -> Option<Self> {
+        match c {
+            '$' => Some(Self::Static),
+            '*' => Some(Self::Abstract),
+            _ => None,
+        }
+    }
+
+    pub fn marker(self) -> &'static str {
+        match self {
+            Self::Static => "$",
+            Self::Abstract => "*",
+        }
+    }
+
+    pub fn css_style(self) -> &'static str {
+        match self {
+            Self::Static => "text-decoration:underline;",
+            Self::Abstract => "font-style:italic;",
+        }
+    }
+}
+
+/// A marker as its character, and no marker as the empty string.
+fn marker<S: Serializer>(marker: Option<&'static str>, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_str(marker.unwrap_or(""))
+}
+
+fn visibility<S: Serializer>(value: &Option<Visibility>, s: S) -> Result<S::Ok, S::Error> {
+    marker(value.map(Visibility::marker), s)
+}
+
+fn classifier<S: Serializer>(value: &Option<Classifier>, s: S) -> Result<S::Ok, S::Error> {
+    marker(value.map(Classifier::marker), s)
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClassMember {
     pub id: String,
     pub member_type: MemberType,
-    /// `#`, `+`, `~`, `-` or empty.
-    pub visibility: String,
-    pub classifier: String,
+    #[serde(serialize_with = "visibility")]
+    pub visibility: Option<Visibility>,
+    #[serde(serialize_with = "classifier")]
+    pub classifier: Option<Classifier>,
     pub parameters: String,
     pub return_type: String,
 }
@@ -37,13 +108,20 @@ pub struct DisplayDetails {
     pub css_style: &'static str,
 }
 
+/// The end of the line at `from` of `input`.
+fn line_end(input: &str, from: usize) -> usize {
+    input[from..]
+        .find(|c: char| is_line_end(c))
+        .map_or(input.len(), |at| from + at)
+}
+
 impl ClassMember {
     pub fn new(input: &str, member_type: MemberType) -> Self {
         let mut member = Self {
             id: String::new(),
             member_type,
-            visibility: String::new(),
-            classifier: String::new(),
+            visibility: None,
+            classifier: None,
             parameters: String::new(),
             return_type: String::new(),
         };
@@ -66,84 +144,68 @@ impl ClassMember {
     /// first line with an opening parenthesis after its first character and a
     /// closing one later.
     fn parse_method(&mut self, input: &str) -> bool {
-        let n = input.len();
-        let bytes = input.as_bytes();
         let mut start = 0;
-        while start < n {
-            let mut end = start;
-            while end < n && !is_line_end(code_at(input, end)) {
-                end += width_at(input, end);
+        while start < input.len() {
+            let end = line_end(input, start);
+            let line = &input[start..end];
+            let parens = line
+                .rfind(')')
+                .filter(|&close| close > 0)
+                .and_then(|close| {
+                    line[..close]
+                        .rfind('(')
+                        .filter(|&open| open > 0)
+                        .map(|open| (start + open, start + close))
+                });
+            let Some((open, close)) = parens else {
+                start = end + input[end..].chars().next().map_or(1, char::len_utf8);
+                continue;
+            };
+            let visibility = line
+                .chars()
+                .next()
+                .and_then(Visibility::parse)
+                .filter(|_| open > start + 1);
+            self.visibility = visibility;
+            let id_start = if visibility.is_some() {
+                start + 1
+            } else {
+                start
+            };
+            self.id = input[id_start..open].to_string();
+            self.parameters = js::trim(&input[open + 1..close]).to_string();
+            let mut rest = close + 1;
+            if let Some(c) = input[rest..].chars().next()
+                && (Classifier::parse(c).is_some() || is_space(c))
+            {
+                self.classifier = Classifier::parse(c);
+                rest += c.len_utf8();
             }
-            let mut close = end as isize - 1;
-            while close > start as isize && bytes[close as usize] != b')' {
-                close -= 1;
+            self.return_type = js::trim(&input[rest..line_end(input, rest)]).to_string();
+            if self.classifier.is_none()
+                && let Some(c) = self.return_type.chars().next_back()
+                && let Some(classifier) = Classifier::parse(c)
+            {
+                self.classifier = Some(classifier);
+                self.return_type.pop();
             }
-            let mut open = close - 1;
-            while open > start as isize && bytes[open as usize] != b'(' {
-                open -= 1;
-            }
-            if open > start as isize {
-                let (open, close) = (open as usize, close as usize);
-                let first = &input[start..start + width_at(input, start)];
-                let visible = is_visibility(first) && open > start + 1;
-                if visible {
-                    self.visibility = first.to_string();
-                }
-                self.id = input[if visible { start + 1 } else { start }..open].to_string();
-                self.parameters = js::trim(&input[open + 1..close]).to_string();
-                let mut rest = close + 1;
-                let mut classifier = "";
-                if rest < n {
-                    let next = &input[rest..rest + width_at(input, rest)];
-                    if next == "$" || next == "*" || js::trim(next).is_empty() {
-                        classifier = js::trim(next);
-                        rest += next.len();
-                    }
-                }
-                let mut stop = rest;
-                while stop < n && !is_line_end(code_at(input, stop)) {
-                    stop += width_at(input, stop);
-                }
-                self.return_type = js::trim(&input[rest..stop]).to_string();
-                if classifier.is_empty()
-                    && (self.return_type.ends_with('$') || self.return_type.ends_with('*'))
-                {
-                    let cut = self.return_type.len() - 1;
-                    classifier = if self.return_type.ends_with('$') {
-                        "$"
-                    } else {
-                        "*"
-                    };
-                    self.return_type.truncate(cut);
-                }
-                self.classifier = classifier.to_string();
-                return true;
-            }
-            start = end + width_at(input, end);
+            return true;
         }
         self.member_type = MemberType::Attribute;
         false
     }
 
     fn parse_attribute(&mut self, input: &str) {
-        let first = input.get(..1).unwrap_or("");
-        if is_visibility(first) {
-            self.visibility = first.to_string();
-        }
-        if input.ends_with('$') || input.ends_with('*') {
-            self.classifier = input[input.len() - 1..].to_string();
-        }
-        let from = if self.visibility.is_empty() { 0 } else { 1 };
-        let to = if self.classifier.is_empty() {
-            input.len()
-        } else {
-            input.len() - 1
-        };
+        self.visibility = input.chars().next().and_then(Visibility::parse);
+        self.classifier = input.chars().next_back().and_then(Classifier::parse);
+        let from = usize::from(self.visibility.is_some());
+        let to = input.len() - usize::from(self.classifier.is_some());
         self.id = input[from.min(to)..from.max(to)].to_string();
     }
 
     pub fn display_details(&self) -> DisplayDetails {
-        let mut display_text = self.visibility.clone() + &parse_generic_types(&self.id);
+        let mut display_text = self.visibility.map_or("", Visibility::marker).to_string()
+            + &parse_generic_types(&self.id);
         if self.member_type == MemberType::Method {
             let _ = write!(
                 display_text,
@@ -157,15 +219,7 @@ impl ClassMember {
         }
         DisplayDetails {
             display_text: js::trim(&display_text).to_string(),
-            css_style: self.parse_classifier(),
-        }
-    }
-
-    pub fn parse_classifier(&self) -> &'static str {
-        match self.classifier.as_str() {
-            "*" => "font-style:italic;",
-            "$" => "text-decoration:underline;",
-            _ => "",
+            css_style: self.classifier.map_or("", Classifier::css_style),
         }
     }
 }

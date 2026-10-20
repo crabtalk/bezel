@@ -8,7 +8,7 @@ pub mod render;
 
 pub use model::WardleyModel;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 pub use render::WardleyConfig;
@@ -24,16 +24,15 @@ impl Diagram for Wardley {
         _line_offset: usize,
         _limits: &ParseLimits,
     ) -> Result<Model, Error> {
-        Ok(Model::Wardley(Box::new(model::build_wardley(
+        Ok(Model::Wardley(Box::new(WardleyModel::new(
             parser::parse_wardley(source)?,
             title,
         )?)))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Wardley(model) = model else {
-        unreachable!("wardley renders a wardley model")
-    };
-    Ok(render::render_wardley(model, &config.wardley, ctx))
+impl Render for WardleyModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_wardley(self, &config.wardley, ctx))
+    }
 }

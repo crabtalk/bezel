@@ -1,107 +1,76 @@
 //! `railroad-ebnf-beta`: EBNF in the W3C and ISO 14977 styles. Pele's
 //! `diagrams/railroad/ebnf.ts`.
 
-use std::sync::LazyLock;
-
 use super::{
     common::{
-        Grammar, Syntax, SyntaxRule, acc_descr, acc_title, choice, hidden_tokens, identifier,
-        inner, literal, nonterminal, opening, optional, parse_grammar, quoted, repetition,
-        sequence, special, terminal, title, to_rules, unescape,
+        Grammar, Parser, Syntax, SyntaxRule, ToNode, acc_descr, acc_title, blank, identifier,
+        quoted, title, unescape,
     },
-    types::{NodeId, Nodes, RailroadNode, RailroadRule},
+    types::{NodeId, Nodes, RailroadNode},
 };
 use crate::{
-    diagrams::common::tokens::{Reader, Table, TokenType},
+    diagrams::common::tokens::{
+        TokenType, directive, keyword, single_line_comment, token_kinds, yaml,
+    },
     error::Error,
     js,
-    util::chars::{code_at, is_space, width_at},
+    util::chars::{inner, is_space},
 };
 
-const DEFINES: i32 = 1;
-const EQUALS: i32 = 2;
-const SEMICOLON: i32 = 3;
-const BAR: i32 = 4;
-const COMMA: i32 = 5;
-const GROUP: i32 = 6;
-const OPTION: i32 = 8;
-const REPEAT: i32 = 10;
-const QUESTION: i32 = 12;
-const STAR: i32 = 13;
-const PLUS: i32 = 14;
-const MINUS: i32 = 15;
-const TITLE: i32 = 16;
-const ID: i32 = 19;
-const STRING: i32 = 20;
-const SPECIAL: i32 = 21;
-const ID_NAME: &str = "EBNF_ID";
-const SPECIAL_NAME: &str = "EBNF_SPECIAL_SEQUENCE";
-const ISO_COMMENT_NAME: &str = "EBNF_ISO_COMMENT";
-
-pub static EBNF_TOKENS: LazyLock<Table> = LazyLock::new(|| {
-    let iso_comment = || {
-        TokenType::regex(ISO_COMMENT_NAME, r"\(\*[\s\S]*?\*\)", Some("("))
-            .hidden()
-            .opener(r"\(\*")
-    };
-    let mut types = vec![
-        opening("railroad-ebnf-beta", ID_NAME),
-        literal("::="),
-        literal("="),
-        literal(";"),
-        literal("|"),
-        literal(","),
-        literal("(").longer(&[ISO_COMMENT_NAME]),
-        literal(")"),
-        literal("["),
-        literal("]"),
-        literal("{"),
-        literal("}"),
-        literal("?").longer(&[SPECIAL_NAME]),
-        literal("*"),
-        literal("+"),
-        literal("-").longer(&["EBNF_YAML"]),
-        title(),
-        acc_title(),
-        acc_descr(),
-        identifier(ID_NAME),
-        quoted("EBNF_STRING"),
-        TokenType::regex(
-            SPECIAL_NAME,
+token_kinds! {
+    enum Token {
+        Keyword = keyword("railroad-ebnf-beta").longer(&[Token::Id]),
+        Defines = TokenType::literal("::="),
+        Equals = TokenType::literal("="),
+        Semicolon = TokenType::literal(";"),
+        Bar = TokenType::literal("|"),
+        Comma = TokenType::literal(","),
+        Group = TokenType::literal("(").longer(&[Token::IsoComment]),
+        GroupEnd = TokenType::literal(")"),
+        Optional = TokenType::literal("["),
+        OptionalEnd = TokenType::literal("]"),
+        Repeat = TokenType::literal("{"),
+        RepeatEnd = TokenType::literal("}"),
+        Question = TokenType::literal("?").longer(&[Token::Special]),
+        Star = TokenType::literal("*"),
+        Plus = TokenType::literal("+"),
+        Minus = TokenType::literal("-").longer(&[Token::Yaml]),
+        Title = title(),
+        AccTitle = acc_title(),
+        AccDescr = acc_descr(),
+        Id = identifier("EBNF_ID"),
+        String = quoted("EBNF_STRING"),
+        Special = TokenType::regex(
+            "EBNF_SPECIAL_SEQUENCE",
             r"\?(?=[^?;]*[^?\s;][^?;]*\?)[^?;]*\?",
             Some("?"),
         )
         .matcher(special_sequence),
-    ];
-    types.extend(hidden_tokens("EBNF"));
-    types.push(
-        TokenType::regex("EBNF_BLOCK_COMMENT", r"\/\*[\s\S]*?\*\/", Some("/"))
+        Whitespace = blank(),
+        Yaml = yaml(),
+        Directive = directive(),
+        Comment = single_line_comment(),
+        BlockComment = TokenType::regex("EBNF_BLOCK_COMMENT", r"\/\*[\s\S]*?\*\/", Some("/"))
             .hidden()
             .opener(r"\/\*"),
-    );
-    types.push(iso_comment());
-    Table::new(types)
-});
+        IsoComment = TokenType::regex("EBNF_ISO_COMMENT", r"\(\*[\s\S]*?\*\)", Some("("))
+            .hidden()
+            .opener(r"\(\*"),
+    }
+}
 
 /// A question mark, text with something other than blanks in it and no `?`
 /// or `;`, and a question mark. Mermaid's pattern looks ahead with two nested
 /// runs, which rescans; this reads the text once.
 fn special_sequence(src: &str, at: usize) -> Option<usize> {
-    if code_at(src, at) != 63 {
-        return None;
-    }
+    let body = src[at..].strip_prefix('?')?;
     let mut solid = false;
-    let mut i = at + 1;
-    while i < src.len() {
-        let c = code_at(src, i);
-        if c == 63 {
-            return solid.then_some(i + 1);
+    for (i, c) in body.char_indices() {
+        match c {
+            '?' => return solid.then_some(at + 1 + i + 1),
+            ';' => return None,
+            _ => solid = solid || !is_space(c),
         }
-        if c == 59 {
-            return None;
-        }
-        solid = solid || !is_space(c);
-        i += width_at(src, i);
     }
     None
 }
@@ -127,11 +96,6 @@ pub enum EbnfPart {
     Repetition,
 }
 
-pub struct EbnfAst {
-    pub grammar: Grammar,
-    pub syntax: Syntax<EbnfPart>,
-}
-
 /// One open bracket, or the rule itself at the bottom of the stack.
 struct Frame {
     choice: usize,
@@ -140,171 +104,185 @@ struct Frame {
     /// The bracket's node, its closing token, and whether it is the right
     /// side of an exception.
     node: Option<usize>,
-    close: i32,
+    close: Option<Token>,
     except: bool,
 }
 
-fn frame(
-    syntax: &mut Syntax<EbnfPart>,
-    node: Option<usize>,
-    choice: usize,
-    close: i32,
-    except: bool,
-) -> Frame {
-    let sequence = syntax.add(EbnfPart::Sequence, Vec::new());
-    syntax.parts[choice].kids.push(sequence);
-    Frame {
-        choice,
-        sequence,
-        term: None,
-        node,
-        close,
-        except,
+impl Frame {
+    fn open(
+        syntax: &mut Syntax<EbnfPart>,
+        node: Option<usize>,
+        choice: usize,
+        close: Option<Token>,
+        except: bool,
+    ) -> Self {
+        let sequence = syntax.add(EbnfPart::Sequence, Vec::new());
+        syntax.parts[choice].kids.push(sequence);
+        Self {
+            choice,
+            sequence,
+            term: None,
+            node,
+            close,
+            except,
+        }
     }
 }
 
-fn definition(r: &mut Reader, syntax: &mut Syntax<EbnfPart>) -> Result<usize, Error> {
-    let mut stack: Vec<Frame> = Vec::new();
-    let root = syntax.add(EbnfPart::Choice, Vec::new());
-    let mut top = frame(syntax, None, root, -2, false);
-    let mut except = false;
-    loop {
-        let kind = r.kind();
-        let mut primary = match kind {
-            STRING => syntax.add(EbnfPart::Terminal(unescape(r.take())), Vec::new()),
-            ID => syntax.add(EbnfPart::NonTerminal(r.take().to_string()), Vec::new()),
-            SPECIAL => {
-                let text = js::trim(inner(r.take())).to_string();
-                syntax.add(EbnfPart::Special(text), Vec::new())
-            }
-            GROUP | OPTION | REPEAT => {
-                r.i += 1;
-                let element = syntax.add(EbnfPart::Choice, Vec::new());
-                let bracket = match (kind - GROUP) >> 1 {
-                    0 => EbnfPart::Group,
-                    1 => EbnfPart::Optional,
-                    _ => EbnfPart::Repetition,
-                };
-                let bracket = syntax.add(bracket, vec![element]);
-                let next = frame(syntax, Some(bracket), element, kind + 1, except);
-                stack.push(std::mem::replace(&mut top, next));
-                except = false;
-                continue;
-            }
-            _ => return Err(r.fail("a terminal, a name, or an opening bracket")),
-        };
+impl Parser<'_, Token, EbnfPart> {
+    fn rule(&mut self) -> Result<SyntaxRule, Error> {
+        let name = self.r.expect(Token::Id)?.to_string();
+        if !self.r.accept(Token::Equals) {
+            self.r.expect(Token::Defines)?;
+        }
+        let definition = self.definition()?;
+        self.r.expect(Token::Semicolon)?;
+        Ok(SyntaxRule { name, definition })
+    }
+
+    fn definition(&mut self) -> Result<usize, Error> {
+        let syntax = &mut self.syntax;
+        let r = &mut self.r;
+        let mut stack: Vec<Frame> = Vec::new();
+        let root = syntax.add(EbnfPart::Choice, Vec::new());
+        let mut top = Frame::open(syntax, None, root, None, false);
+        let mut except = false;
         loop {
-            let term = match top.term {
-                Some(term) if except => {
-                    let part = &mut syntax.parts[term];
-                    if let EbnfPart::Term(postfixes) = &mut part.kind {
-                        postfixes.push(EbnfPostfix::Exception);
-                    }
-                    part.kids.push(primary);
+            let mut primary = match r.kind() {
+                Some(Token::String) => {
+                    syntax.add(EbnfPart::Terminal(unescape(r.take())), Vec::new())
+                }
+                Some(Token::Id) => {
+                    syntax.add(EbnfPart::NonTerminal(r.take().to_string()), Vec::new())
+                }
+                Some(Token::Special) => {
+                    let text = js::trim(inner(r.take())).to_string();
+                    syntax.add(EbnfPart::Special(text), Vec::new())
+                }
+                Some(kind @ (Token::Group | Token::Optional | Token::Repeat)) => {
+                    r.bump();
+                    let element = syntax.add(EbnfPart::Choice, Vec::new());
+                    let (bracket, close) = match kind {
+                        Token::Group => (EbnfPart::Group, Token::GroupEnd),
+                        Token::Optional => (EbnfPart::Optional, Token::OptionalEnd),
+                        _ => (EbnfPart::Repetition, Token::RepeatEnd),
+                    };
+                    let bracket = syntax.add(bracket, vec![element]);
+                    let next = Frame::open(syntax, Some(bracket), element, Some(close), except);
+                    stack.push(std::mem::replace(&mut top, next));
                     except = false;
-                    term
+                    continue;
                 }
-                _ => {
-                    let term = syntax.add(EbnfPart::Term(Vec::new()), vec![primary]);
-                    top.term = Some(term);
-                    syntax.parts[top.sequence].kids.push(term);
-                    term
-                }
+                _ => return Err(r.fail("a terminal, a name, or an opening bracket")),
             };
             loop {
-                let postfix = match r.kind() {
-                    QUESTION => EbnfPostfix::Optional,
-                    STAR => EbnfPostfix::ZeroOrMore,
-                    PLUS => EbnfPostfix::OneOrMore,
-                    _ => break,
-                };
-                r.i += 1;
-                if let EbnfPart::Term(postfixes) = &mut syntax.parts[term].kind {
-                    postfixes.push(postfix);
-                }
-            }
-            let k = r.kind();
-            if k == top.close {
-                r.i += 1;
-                primary = top.node.unwrap_or_default();
-                except = top.except;
-                top = stack
-                    .pop()
-                    .unwrap_or_else(|| unreachable!("a bracket has a parent"));
-                continue;
-            }
-            if k == MINUS {
-                r.i += 1;
-                except = true;
-            } else if k == COMMA {
-                r.i += 1;
-            } else if k == BAR {
-                r.i += 1;
-                top.sequence = syntax.add(EbnfPart::Sequence, Vec::new());
-                syntax.parts[top.choice].kids.push(top.sequence);
-            } else if !matches!(k, STRING | ID | SPECIAL | GROUP | OPTION | REPEAT) {
-                if stack.is_empty() {
-                    return Ok(top.choice);
-                }
-                return Err(r.fail(&format!(
-                    "token of type '{}'",
-                    EBNF_TOKENS.types[top.close as usize].name
-                )));
-            }
-            break;
-        }
-    }
-}
-
-pub fn parse_ebnf(src: &str) -> Result<EbnfAst, Error> {
-    let mut syntax = Syntax::default();
-    let grammar = parse_grammar(src, &EBNF_TOKENS, TITLE, unescape, |r| {
-        let name = r.expect(ID)?.to_string();
-        if !r.accept(EQUALS) {
-            r.expect(DEFINES)?;
-        }
-        let definition = definition(r, &mut syntax)?;
-        r.expect(SEMICOLON)?;
-        Ok(SyntaxRule { name, definition })
-    })?;
-    Ok(EbnfAst { grammar, syntax })
-}
-
-fn node(part: &EbnfPart, kids: Vec<NodeId>, nodes: &mut Nodes) -> NodeId {
-    match part {
-        EbnfPart::Choice => choice(nodes, kids),
-        EbnfPart::Sequence => sequence(nodes, kids),
-        EbnfPart::Term(postfixes) => {
-            // Each postfix operator applies to everything before it in the
-            // term.
-            let mut result = kids[0];
-            let mut next = 1;
-            for postfix in postfixes {
-                result = match postfix {
-                    EbnfPostfix::Optional => optional(nodes, result),
-                    EbnfPostfix::Exception => {
-                        let minus = terminal(nodes, "-".into());
-                        let except = kids[next];
-                        next += 1;
-                        nodes.add(RailroadNode::Sequence {
-                            elements: vec![result, minus, except],
-                        })
+                let term = match top.term {
+                    Some(term) if except => {
+                        let part = &mut syntax.parts[term];
+                        if let EbnfPart::Term(postfixes) = &mut part.kind {
+                            postfixes.push(EbnfPostfix::Exception);
+                        }
+                        part.kids.push(primary);
+                        except = false;
+                        term
                     }
-                    EbnfPostfix::OneOrMore => repetition(nodes, result, 1.0, f64::INFINITY),
-                    EbnfPostfix::ZeroOrMore => repetition(nodes, result, 0.0, f64::INFINITY),
+                    _ => {
+                        let term = syntax.add(EbnfPart::Term(Vec::new()), vec![primary]);
+                        top.term = Some(term);
+                        syntax.parts[top.sequence].kids.push(term);
+                        term
+                    }
                 };
+                loop {
+                    let postfix = match r.kind() {
+                        Some(Token::Question) => EbnfPostfix::Optional,
+                        Some(Token::Star) => EbnfPostfix::ZeroOrMore,
+                        Some(Token::Plus) => EbnfPostfix::OneOrMore,
+                        _ => break,
+                    };
+                    r.bump();
+                    if let EbnfPart::Term(postfixes) = &mut syntax.parts[term].kind {
+                        postfixes.push(postfix);
+                    }
+                }
+                if top.close.is_some_and(|close| r.at(close)) {
+                    r.bump();
+                    primary = top.node.unwrap_or_default();
+                    except = top.except;
+                    top = stack
+                        .pop()
+                        .unwrap_or_else(|| unreachable!("a bracket has a parent"));
+                    continue;
+                }
+                match r.kind() {
+                    Some(Token::Minus) => {
+                        r.bump();
+                        except = true;
+                    }
+                    Some(Token::Comma) => r.bump(),
+                    Some(Token::Bar) => {
+                        r.bump();
+                        top.sequence = syntax.add(EbnfPart::Sequence, Vec::new());
+                        syntax.parts[top.choice].kids.push(top.sequence);
+                    }
+                    Some(
+                        Token::String
+                        | Token::Id
+                        | Token::Special
+                        | Token::Group
+                        | Token::Optional
+                        | Token::Repeat,
+                    ) => {}
+                    _ => {
+                        return match top.close {
+                            Some(close) => Err(r.expected(close)),
+                            None => Ok(top.choice),
+                        };
+                    }
+                }
+                break;
             }
-            result
         }
-        EbnfPart::Terminal(value) => terminal(nodes, value.clone()),
-        EbnfPart::NonTerminal(name) => nonterminal(nodes, name.clone()),
-        EbnfPart::Special(text) => special(nodes, text.clone()),
-        EbnfPart::Group => kids[0],
-        EbnfPart::Optional => optional(nodes, kids[0]),
-        EbnfPart::Repetition => repetition(nodes, kids[0], 0.0, f64::INFINITY),
     }
 }
 
-pub fn ebnf_rules(ast: &EbnfAst, nodes: &mut Nodes) -> Vec<RailroadRule> {
-    to_rules(&ast.grammar, &ast.syntax, nodes, node)
+pub fn parse_ebnf(src: &str) -> Result<Grammar<EbnfPart>, Error> {
+    Parser::parse(src, Token::Keyword, unescape, Parser::rule)
+}
+
+impl ToNode for EbnfPart {
+    fn to_node(&self, kids: Vec<NodeId>, nodes: &mut Nodes) -> NodeId {
+        match self {
+            EbnfPart::Choice => nodes.choice(kids),
+            EbnfPart::Sequence => nodes.sequence(kids),
+            EbnfPart::Term(postfixes) => {
+                // Each postfix operator applies to everything before it in the
+                // term.
+                let mut result = kids[0];
+                let mut next = 1;
+                for postfix in postfixes {
+                    result = match postfix {
+                        EbnfPostfix::Optional => nodes.optional(result),
+                        EbnfPostfix::Exception => {
+                            let minus = nodes.terminal("-".into());
+                            let except = kids[next];
+                            next += 1;
+                            nodes.add(RailroadNode::Sequence {
+                                elements: vec![result, minus, except],
+                            })
+                        }
+                        EbnfPostfix::OneOrMore => nodes.repetition(result, 1.0, f64::INFINITY),
+                        EbnfPostfix::ZeroOrMore => nodes.repetition(result, 0.0, f64::INFINITY),
+                    };
+                }
+                result
+            }
+            EbnfPart::Terminal(value) => nodes.terminal(value.clone()),
+            EbnfPart::NonTerminal(name) => nodes.nonterminal(name.clone()),
+            EbnfPart::Special(text) => nodes.special(text.clone()),
+            EbnfPart::Group => kids[0],
+            EbnfPart::Optional => nodes.optional(kids[0]),
+            EbnfPart::Repetition => nodes.repetition(kids[0], 0.0, f64::INFINITY),
+        }
+    }
 }

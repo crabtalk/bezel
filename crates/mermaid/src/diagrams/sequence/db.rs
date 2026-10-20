@@ -1,5 +1,6 @@
 //! Pele's `diagrams/sequence/db.ts`.
 
+use crate::diagrams::common::db::Titles;
 use crate::js::JsValue;
 use indexmap::IndexMap;
 use serde::{Serialize, Serializer, ser::SerializeMap};
@@ -7,8 +8,8 @@ use serde::{Serialize, Serializer, ser::SerializeMap};
 use super::{
     colors::is_css_color,
     types::{
-        NoteActor, Participant, SeqActor, SeqBox, SeqBoxData, SeqMessage, SeqMessageText, SeqNote,
-        SeqNumbering, SeqStatement, SeqText, line,
+        NoteActor, Participant, Placement, SeqActor, SeqBox, SeqBoxData, SeqMessage,
+        SeqMessageText, SeqNote, SeqNumbering, SeqStatement, SeqText, line,
     },
 };
 use crate::{
@@ -26,30 +27,9 @@ static RE_WRAP_PREFIX: Lazy = Lazy::new(r"^:?(?:no)?wrap:", "");
 static RE_BOX_FUNCTION: Lazy = Lazy::new(r"^(?:rgba?|hsla?)\s*\(", "");
 static RE_LINE_TERMINATOR: Lazy = Lazy::new(r"[\r  ]", "");
 static RE_WORD: Lazy = Lazy::new(r"^\w*", "");
-static RE_LEAD: Lazy = Lazy::new(r"^\s+", "g");
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
 
 fn fail(message: impl Into<String>) -> Error {
     Error::semantic(message).of(Kind::Sequence)
-}
-
-fn extract_wrap(raw: &str) -> SeqText {
-    let text = js::trim(raw);
-    let wrap = if RE_WRAP.test(text) {
-        Some(true)
-    } else if RE_NOWRAP.test(text) {
-        Some(false)
-    } else {
-        None
-    };
-    let text = match wrap {
-        None => text.to_string(),
-        Some(_) => RE_WRAP_PREFIX.replace(text, |_| String::new()),
-    };
-    SeqText {
-        text: js::trim(&text).to_string(),
-        wrap,
-    }
 }
 
 /// Splits a box line into a leading color and the rest, as Mermaid's
@@ -94,18 +74,67 @@ fn entries(value: Value) -> Vec<(String, Value)> {
     }
 }
 
-/// `text.slice(from, to)` in UTF-16 units, negative `to` counting from the
+/// `text.slice(0, to)` in UTF-16 units, a negative `to` counting from the
 /// end.
-fn slice_units(text: &str, from: i64, to: Option<i64>) -> String {
+fn slice_units(text: &str, to: i64) -> String {
     let units: Vec<u16> = text.encode_utf16().collect();
     let len = units.len() as i64;
-    let clamp = |at: i64| (if at < 0 { len + at } else { at }).clamp(0, len) as usize;
-    let from = clamp(from);
-    let to = to.map_or(units.len(), clamp);
-    if from >= to {
-        return String::new();
+    let to = (if to < 0 { len + to } else { to }).clamp(0, len) as usize;
+    String::from_utf16_lossy(&units[..to])
+}
+
+impl SeqText {
+    /// A message, without the `wrap:` or `nowrap:` that may open it.
+    pub fn parse(raw: &str) -> Self {
+        let text = js::trim(raw);
+        let wrap = if RE_WRAP.test(text) {
+            Some(true)
+        } else if RE_NOWRAP.test(text) {
+            Some(false)
+        } else {
+            None
+        };
+        let text = match wrap {
+            None => text.to_string(),
+            Some(_) => RE_WRAP_PREFIX.replace(text, |_| String::new()),
+        };
+        Self {
+            text: js::trim(&text).to_string(),
+            wrap,
+        }
     }
-    String::from_utf16_lossy(&units[from..to])
+}
+
+impl SeqBoxData {
+    /// A box line: a leading color, then the title.
+    pub fn parse(text: &str) -> Self {
+        let found = split_box(text);
+        let mut color = match found {
+            Some((color, _)) if !color.is_empty() => js::trim(color).to_string(),
+            _ => "transparent".to_string(),
+        };
+        let mut title = match found {
+            Some((_, rest)) if !rest.is_empty() => Some(js::trim(rest).to_string()),
+            _ => None,
+        };
+        if !is_css_color(&color) {
+            color = "transparent".into();
+            title = Some(js::trim(text).to_string());
+        }
+        let Some(title) = title else {
+            return Self {
+                text: None,
+                color,
+                wrap: None,
+            };
+        };
+        let SeqText { text, wrap } = SeqText::parse(&title);
+        Self {
+            text: (!text.is_empty()).then_some(text),
+            color,
+            wrap,
+        }
+    }
 }
 
 /// Pele's `SeqDb`, which is its model.
@@ -117,9 +146,7 @@ pub struct SequenceModel {
     pub boxes: Vec<SeqBox>,
     pub messages: Vec<SeqMessage>,
     pub notes: Vec<SeqNote>,
-    pub title: Option<String>,
-    pub acc_title: Option<String>,
-    pub acc_descr: Option<String>,
+    pub titles: Titles,
     prev_actor: Option<String>,
     current_box: Option<usize>,
     last_created: Option<String>,
@@ -141,9 +168,7 @@ impl SequenceModel {
             boxes: Vec::new(),
             messages: Vec::new(),
             notes: Vec::new(),
-            title: None,
-            acc_title: None,
-            acc_descr: None,
+            titles: Titles::default(),
             prev_actor: None,
             current_box: None,
             last_created: None,
@@ -156,51 +181,6 @@ impl SequenceModel {
 
     pub fn auto_wrap(&self) -> bool {
         self.wrap_enabled.unwrap_or(self.sequence_wrap)
-    }
-
-    pub fn set_acc_title(&mut self, text: &str) {
-        self.acc_title = Some(RE_LEAD.replace(text, |_| String::new()));
-    }
-
-    pub fn set_acc_description(&mut self, text: &str) {
-        self.acc_descr = Some(RE_INDENT.replace(text, |_| "\n".into()));
-    }
-
-    pub fn set_diagram_title(&mut self, text: &str) {
-        self.title = Some(text.to_string());
-    }
-
-    pub fn parse_message(&self, text: &str) -> SeqText {
-        extract_wrap(text)
-    }
-
-    pub fn parse_box_data(&self, text: &str) -> SeqBoxData {
-        let found = split_box(text);
-        let mut color = match found {
-            Some((color, _)) if !color.is_empty() => js::trim(color).to_string(),
-            _ => "transparent".to_string(),
-        };
-        let mut title = match found {
-            Some((_, rest)) if !rest.is_empty() => Some(js::trim(rest).to_string()),
-            _ => None,
-        };
-        if !is_css_color(&color) {
-            color = "transparent".into();
-            title = Some(js::trim(text).to_string());
-        }
-        let Some(title) = title else {
-            return SeqBoxData {
-                text: None,
-                color,
-                wrap: None,
-            };
-        };
-        let SeqText { text, wrap } = extract_wrap(&title);
-        SeqBoxData {
-            text: (!text.is_empty()).then_some(text),
-            color,
-            wrap,
-        }
     }
 
     pub fn add_box(&mut self, data: SeqBoxData) {
@@ -366,7 +346,7 @@ impl SequenceModel {
         Ok(())
     }
 
-    pub fn add_note(&mut self, actor: NoteActor, placement: i32, message: &SeqText) {
+    pub fn add_note(&mut self, actor: NoteActor, placement: Placement, message: &SeqText) {
         let wrap = message.wrap.unwrap_or_else(|| self.auto_wrap());
         let (from, to) = match &actor {
             NoteActor::One(actor) => (actor.clone(), actor.clone()),
@@ -409,15 +389,19 @@ impl SequenceModel {
         let Some(actor) = self.actors.get_mut(actor_id) else {
             return;
         };
-        let sep = text
-            .text
-            .find('@')
-            .map_or(-1, |at| js::len(&text.text[..at]) as i64);
-        let key = slice_units(&text.text, 0, Some(sep - 1));
-        let value = slice_units(&text.text, sep + 1, None);
+        let text = text.text.as_str();
+        // Mermaid's `text.slice(0, at - 1)` and `text.slice(at + 1)`, with
+        // `at` -1 when there is no `@`.
+        let (key, value) = match text.find('@') {
+            Some(at) => (
+                slice_units(text, js::len(&text[..at]) as i64 - 1),
+                &text[at + 1..],
+            ),
+            None => (slice_units(text, -2), text),
+        };
         actor.links.insert(
             js::trim(&key).to_string(),
-            Value::String(js::trim(&value).to_string()),
+            Value::String(js::trim(value).to_string()),
         );
     }
 
@@ -574,13 +558,13 @@ impl Serialize for SequenceModel {
         map.serialize_entry("boxes", &self.boxes)?;
         map.serialize_entry("messages", &self.messages)?;
         map.serialize_entry("notes", &self.notes)?;
-        if let Some(title) = &self.title {
+        if let Some(title) = &self.titles.title {
             map.serialize_entry("title", title)?;
         }
-        if let Some(text) = &self.acc_title {
+        if let Some(text) = &self.titles.acc_title {
             map.serialize_entry("accTitle", text)?;
         }
-        if let Some(text) = &self.acc_descr {
+        if let Some(text) = &self.titles.acc_descr {
             map.serialize_entry("accDescr", text)?;
         }
         if let Some(prev) = &self.prev_actor {

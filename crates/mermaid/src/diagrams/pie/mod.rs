@@ -6,7 +6,7 @@ pub mod render;
 
 pub use model::PieModel;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 pub use render::PieConfig;
@@ -22,16 +22,15 @@ impl Diagram for Pie {
         _line_offset: usize,
         _limits: &ParseLimits,
     ) -> Result<Model, Error> {
-        Ok(Model::Pie(model::build_pie(
+        Ok(Model::Pie(PieModel::new(
             parser::parse_pie(source)?,
             title,
         )?))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Pie(model) = model else {
-        unreachable!("pie renders a pie model")
-    };
-    Ok(render::render_pie(model, &config.pie, ctx))
+impl Render for PieModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_pie(self, &config.pie, ctx))
+    }
 }

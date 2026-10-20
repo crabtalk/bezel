@@ -3,7 +3,7 @@
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use crate::js;
+use crate::{detect::Kind, js};
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SankeyNode {
@@ -24,7 +24,7 @@ pub struct SankeyLink {
 #[serde(rename_all = "camelCase")]
 pub struct SankeyModel {
     #[serde(rename = "type")]
-    pub kind: &'static str,
+    pub kind: Kind,
     pub nodes: Vec<SankeyNode>,
     pub links: Vec<SankeyLink>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -39,7 +39,7 @@ pub struct SankeyModel {
 impl Default for SankeyModel {
     fn default() -> Self {
         Self {
-            kind: "sankey",
+            kind: Kind::Sankey,
             nodes: Vec::new(),
             links: Vec::new(),
             title: None,

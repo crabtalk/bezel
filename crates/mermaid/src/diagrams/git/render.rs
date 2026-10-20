@@ -1,6 +1,7 @@
 //! Pele's `diagrams/git/render.ts`.
 
 use super::GitGraphConfig;
+use crate::geom::Point;
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
@@ -13,11 +14,11 @@ use crate::{
     diagrams::common::{fit::plain_label, fit_width::turn_to_fit},
     js,
     svg::{
-        builder::{EscText, LabelSvg, Point, fragment, num},
+        builder::{EscText, fragment, num},
         root::{Accessible, svg_document},
         theme::{RADIUS, series_color},
     },
-    text::{Label, Style, layout_label},
+    text::{Label, Style},
 };
 
 const DOT: f64 = 7.0;
@@ -76,16 +77,16 @@ fn symbol(kind: u8, x: f64, y: f64, color: impl fmt::Display) -> impl fmt::Displ
             write!(
                 f,
                 "<path d=\"M{}l6,6M{}l6,-6\" fill=\"none\" stroke=\"var(--_bg)\" stroke-width=\"1.5\" stroke-linecap=\"round\"/>",
-                Point(x - 3.0, y - 3.0),
-                Point(x - 3.0, y + 3.0)
+                Point::new(x - 3.0, y - 3.0),
+                Point::new(x - 3.0, y + 3.0)
             )?;
         } else if kind == commit_type::CHERRY_PICK {
             write!(
                 f,
                 "<path d=\"M{}L{}L{}\" fill=\"none\" stroke=\"var(--_bg)\" stroke-linejoin=\"round\"/><circle cx=\"{}\" cy=\"{}\" r=\"1.8\" fill=\"var(--_bg)\"/><circle cx=\"{}\" cy=\"{}\" r=\"1.8\" fill=\"var(--_bg)\"/>",
-                Point(x - 2.6, y + 1.0),
-                Point(x + 0.8, y - 4.2),
-                Point(x + 2.6, y + 1.0),
+                Point::new(x - 2.6, y + 1.0),
+                Point::new(x + 0.8, y - 4.2),
+                Point::new(x + 2.6, y + 1.0),
                 num(x - 2.6),
                 num(y + 2.2),
                 num(x + 2.6),
@@ -324,7 +325,7 @@ fn draw(
             c
         }
     };
-    let point = |m: f64, c: f64| Point(px(m, c), py(m, c));
+    let point = |m: f64, c: f64| Point::new(px(m, c), py(m, c));
 
     let mut bounds = Bounds {
         min_x: f64::INFINITY,
@@ -381,7 +382,10 @@ fn draw(
                 let _ = write!(
                     branches,
                     "{}",
-                    LabelSvg(name, cx, cy, crate::class!("label", "fill=\"var(--_bg)\""),)
+                    name.svg(
+                        Point::new(cx, cy),
+                        crate::class!("label", "fill=\"var(--_bg)\"")
+                    )
                 );
             }
             branches.push_str("</g>");
@@ -599,7 +603,7 @@ fn draw(
                     num(ax),
                     num(ay),
                     back(ax - w / 2.0, ay),
-                    LabelSvg(label, ax - w / 2.0, ay, "")
+                    label.svg(Point::new(ax - w / 2.0, ay), "")
                 );
             } else {
                 let cx = if vertical { x - DOT - 6.0 - w / 2.0 } else { x };
@@ -609,7 +613,7 @@ fn draw(
                     commits,
                     "<g class=\"{p}-commit-label\">{}{}</g>",
                     back(cx, cy),
-                    LabelSvg(label, cx, cy, "")
+                    label.svg(Point::new(cx, cy), "")
                 );
             }
         }
@@ -642,10 +646,8 @@ fn draw(
                 num(left + NOTCH),
                 num(left + NOTCH),
                 num(cy),
-                LabelSvg(
-                    tag,
-                    left + NOTCH + 4.0 + tag.width / 2.0,
-                    cy,
+                tag.svg(
+                    Point::new(left + NOTCH + 4.0 + tag.width / 2.0, cy),
                     " fill=\"var(--_fg)\""
                 )
             );
@@ -662,8 +664,8 @@ fn draw(
         max_x,
         max_y,
     } = bounds;
-    let title = layout_label(
-        model.title.as_deref(),
+    let title = Label::layout(
+        model.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -687,7 +689,10 @@ fn draw(
     let _ = write!(
         content,
         "{}",
-        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
+        title.svg(
+            Point::new(width / 2.0, pad + title.height / 2.0),
+            title_attrs
+        )
     );
     let _ = write!(
         content,
@@ -725,8 +730,8 @@ fn draw(
             size,
             ctx,
             Accessible {
-                acc_title: model.acc_title.as_deref(),
-                acc_descr: model.acc_descr.as_deref(),
+                acc_title: model.titles.acc_title.as_deref(),
+                acc_descr: model.titles.acc_descr.as_deref(),
             },
             &content,
         ),

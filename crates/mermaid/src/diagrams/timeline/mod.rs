@@ -8,7 +8,7 @@ pub mod render;
 
 pub use db::{TimelineModel, TimelinePeriod};
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 pub use render::TimelineConfig;
@@ -25,15 +25,14 @@ impl Diagram for Timeline {
         _limits: &ParseLimits,
     ) -> Result<Model, Error> {
         let mut db = TimelineModel::new();
-        db.title = title.map(str::to_string);
+        db.titles.title = title.map(str::to_string);
         parser::parse_timeline(source, &mut db)?;
         Ok(Model::Timeline(db))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Timeline(model) = model else {
-        unreachable!("timeline renders a timeline model")
-    };
-    Ok(render::render_timeline(model, &config.timeline, ctx))
+impl Render for TimelineModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_timeline(self, &config.timeline, ctx))
+    }
 }

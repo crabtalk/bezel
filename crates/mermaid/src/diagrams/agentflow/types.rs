@@ -5,7 +5,7 @@ use serde::Serialize;
 use crate::{config::Map, detect::Kind};
 
 pub use crate::diagrams::flowchart::types::{
-    DocItem, FlowText, LabelType, LinkInfo, Node, Payload, Vertex,
+    ArrowType, DocItem, FlowText, LabelType, LinkInfo, Node, Payload, Stroke, Vertex,
 };
 
 /// A parsed agentflow: the database the parser fills.
@@ -67,10 +67,10 @@ impl Payload for super::Agentflow {
     type Subgraph = SubgraphExt;
 
     fn line(info: &LinkInfo) -> LineExt {
-        let edge_semantic = match (info.kind.as_str(), info.stroke.as_str()) {
-            ("arrow_point", "normal") => Some(EdgeSemantic::Sequence),
-            ("arrow_cross", "normal") => Some(EdgeSemantic::Failure),
-            ("arrow_open", "dotted") => Some(EdgeSemantic::Reference),
+        let edge_semantic = match (info.kind, info.stroke) {
+            (ArrowType::Point, Stroke::Normal) => Some(EdgeSemantic::Sequence),
+            (ArrowType::Cross, Stroke::Normal) => Some(EdgeSemantic::Failure),
+            (ArrowType::Open, Stroke::Dotted) => Some(EdgeSemantic::Reference),
             _ => None,
         };
         LineExt { edge_semantic }

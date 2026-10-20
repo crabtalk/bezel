@@ -1,7 +1,9 @@
 //! Pele's `diagrams/cynefin/render.ts`.
 
 use crate::config::within;
-use crate::svg::builder::{EscText, LabelSvg};
+use crate::geom::Point;
+use crate::svg::builder::EscText;
+use crate::svg::edges::Marker;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{collections::HashMap, fmt::Write as _};
@@ -17,12 +19,11 @@ use crate::{Ctx, Host};
 use crate::{
     Rendered, js,
     svg::{
-        builder::{Point, TITLE, fragment, num},
-        edges::{marker, marker_trim},
+        builder::{TITLE, fragment, num},
         root::{Accessible, svg_document},
         theme::{RADIUS, series_color},
     },
-    text::{Label, Style, layout_label},
+    text::{Label, Style},
 };
 
 /// [domain, column, row, series color]
@@ -113,7 +114,7 @@ pub fn render_cynefin(
     let item_line = js::round(item_size * 1.5);
 
     let badge = |text: String, overflow: bool| -> Badge {
-        let label = layout_label(Some(&text), false, measure, item_size, ITEM_MAX_WIDTH, 0);
+        let label = Label::layout(Some(&text), false, measure, item_size, ITEM_MAX_WIDTH, 0);
         Badge {
             w: label.width + 2.0 * ITEM_PAD_X,
             h: label.height.max(item_line) + 2.0 * ITEM_PAD_Y,
@@ -125,12 +126,12 @@ pub fn render_cynefin(
 
     let block = |name: &'static str| -> Block {
         let meta = meta(name);
-        let title = layout_label(Some(meta.0), false, measure, size, 4000.0, Style::BOLD);
+        let title = Label::layout(Some(meta.0), false, measure, size, 4000.0, Style::BOLD);
         let mut subtitles = Vec::new();
         if show_descriptions {
             for text in [meta.1, meta.2] {
                 if !text.is_empty() {
-                    subtitles.push(layout_label(
+                    subtitles.push(Label::layout(
                         Some(text),
                         false,
                         measure,
@@ -211,8 +212,8 @@ pub fn render_cynefin(
         }
     }
 
-    let title = layout_label(
-        model.title.as_deref(),
+    let title = Label::layout(
+        model.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -272,9 +273,9 @@ pub fn render_cynefin(
     let drop = cliff(cx, cy, bottom, width * 0.03);
     let at = |curve: &[f64], end: bool| -> Point {
         if end {
-            Point(curve[curve.len() - 2], curve[curve.len() - 1])
+            Point::new(curve[curve.len() - 2], curve[curve.len() - 1])
         } else {
-            Point(curve[0], curve[1])
+            Point::new(curve[0], curve[1])
         }
     };
 
@@ -327,7 +328,10 @@ pub fn render_cynefin(
     let _ = write!(
         content,
         "{}<g class=\"{p}-cynefin-regions\">",
-        LabelSvg(&title, x0 + width / 2.0, pad + title.height / 2.0, TITLE)
+        title.svg(
+            Point::new(x0 + width / 2.0, pad + title.height / 2.0),
+            TITLE
+        )
     );
     for (name, _, _, color) in QUADRANTS {
         let _ = write!(
@@ -369,11 +373,9 @@ pub fn render_cynefin(
             out,
             "<g class=\"{p}-cynefin-domain\" data-id=\"{}\">{}",
             b.name,
-            LabelSvg(
-                &b.title,
-                b.cx,
-                y + b.title.height / 2.0,
-                crate::class!("label", "font-weight=\"var(--_hw)\""),
+            b.title.svg(
+                Point::new(b.cx, y + b.title.height / 2.0),
+                crate::class!("label", "font-weight=\"var(--_hw)\"")
             )
         );
         y += b.title.height;
@@ -381,7 +383,7 @@ pub fn render_cynefin(
             let _ = write!(
                 out,
                 "{}",
-                LabelSvg(s, b.cx, y + s.height / 2.0, &subtitle_attrs)
+                s.svg(Point::new(b.cx, y + s.height / 2.0), &subtitle_attrs)
             );
             y += s.height;
         }
@@ -410,10 +412,8 @@ pub fn render_cynefin(
                 } else {
                     ""
                 },
-                LabelSvg(
-                    &item.label,
-                    b.cx,
-                    y + item.h / 2.0,
+                item.label.svg(
+                    Point::new(b.cx, y + item.h / 2.0),
                     if item.overflow {
                         &overflow_attrs
                     } else {
@@ -472,7 +472,7 @@ pub fn render_cynefin(
 
         let dx = to.cx - from.cx;
         let dy = to.cy - from.cy;
-        let len = or_one(js::hypot(dx, dy));
+        let len = js::or_one(js::hypot(dx, dy));
         let mx = (from.cx + to.cx) / 2.0;
         let my = (from.cy + to.cy) / 2.0;
         // Curves bow away from the middle of the diagram, which keeps them
@@ -545,12 +545,12 @@ pub fn render_cynefin(
         };
         let qx = blossom(from.cx, px, to.cx);
         let qy = blossom(from.cy, py, to.cy);
-        let el = or_one(js::hypot(ex - qx, ey - qy));
+        let el = js::or_one(js::hypot(ex - qx, ey - qy));
         let ux = (ex - qx) / el;
         let uy = (ey - qy) / el;
-        let head = marker("arrow_point", ex, ey, ux, uy, "var(--_l)");
-        ex -= ux * marker_trim("arrow_point");
-        ey -= uy * marker_trim("arrow_point");
+        let head = Marker::Arrow.draw(Point::new(ex, ey), Point::new(ux, uy), "var(--_l)");
+        ex -= ux * Marker::Arrow.trim();
+        ey -= uy * Marker::Arrow.trim();
 
         if content.len() == edges_at {
             let _ = write!(content, "<g class=\"{p}-edges\">");
@@ -568,7 +568,7 @@ pub fn render_cynefin(
             num(ey)
         );
         if let Some(raw) = transition.label.as_deref().filter(|l| !l.is_empty()) {
-            let label = layout_label(Some(raw), false, measure, small, ITEM_MAX_WIDTH, 0);
+            let label = Label::layout(Some(raw), false, measure, small, ITEM_MAX_WIDTH, 0);
             let (lx, ly) = point((t0 + t1) / 2.0);
             let away = (nx.abs() * label.width) / 2.0 + (ny.abs() * label.height) / 2.0 + 6.0;
             let half = label.width / 2.0 + 4.0;
@@ -578,7 +578,7 @@ pub fn render_cynefin(
             let _ = write!(
                 content,
                 "{}",
-                LabelSvg(&label, tx, ly + ny * away, &edge_attrs)
+                label.svg(Point::new(tx, ly + ny * away), &edge_attrs)
             );
         }
         content.push_str("</g>");
@@ -595,8 +595,8 @@ pub fn render_cynefin(
             size,
             ctx,
             Accessible {
-                acc_title: model.acc_title.as_deref(),
-                acc_descr: model.acc_descr.as_deref(),
+                acc_title: model.titles.acc_title.as_deref(),
+                acc_descr: model.titles.acc_descr.as_deref(),
             },
             &content,
         ),
@@ -604,9 +604,4 @@ pub fn render_cynefin(
         height: total_height,
         links: Vec::new(),
     }
-}
-
-/// `x || 1` for a number.
-fn or_one(x: f64) -> f64 {
-    if js::truthy(x) { x } else { 1.0 }
 }

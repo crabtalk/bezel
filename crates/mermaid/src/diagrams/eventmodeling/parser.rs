@@ -1,166 +1,120 @@
 //! Pele's `diagrams/eventmodeling/parser.ts`.
 
-use std::sync::LazyLock;
-
 use crate::{
     detect::Kind,
     diagrams::common::{
         acc_descr::acc_descr,
         tokens::{
-            Reader, Table, TokenType, acc_title, directive, keyword, single_line_comment, title,
-            tokenize, yaml,
+            Header, Reader, TokenType, acc_title, directive, keyword, single_line_comment, title,
+            token_kinds, yaml,
         },
     },
     error::Error,
 };
 
-const WORDS: [&str; 23] = [
-    "resetframe",
-    "readmodel",
-    "processor",
-    "timeframe",
-    "command",
-    "entity",
-    "event",
-    "jsobj",
-    "figma",
-    "given",
-    "json",
-    "salt",
-    "html",
-    "text",
-    "data",
-    "note",
-    "when",
-    "then",
-    "rmo",
-    "cmd",
-    "evt",
-    "pcr",
-    "uri",
-];
-
-pub static EVENTMODELING_TOKENS: LazyLock<Table> = LazyLock::new(|| {
-    let mut types = vec![keyword("eventmodeling").longer(&["EM_ID"])];
-    types.extend(WORDS.iter().map(|text| word(text)));
-    types.extend([
-        sign("->>"),
-        word("gwt"),
-        word("ui"),
-        word("md"),
-        word("tf"),
-        sign("[["),
-        sign("]]"),
-        word("rf"),
-        sign("`"),
-        sign("."),
-        TokenType::regex("EM_ID", r"[_a-zA-Z][\w_]*", None),
-        TokenType::regex("EM_FID", r"\d{1,3}", None),
-        TokenType::regex("EM_DATA_INLINE", r#"\{(.*)\}|"(.*)"|'(.*)'"#, None),
-        TokenType::regex(
+token_kinds! {
+    enum Token {
+        Keyword = keyword("eventmodeling").longer(&[Token::Id]),
+        ResetFrame = word("resetframe"),
+        ReadModel = word("readmodel"),
+        Processor = word("processor"),
+        TimeFrame = word("timeframe"),
+        Command = word("command"),
+        Entity = word("entity"),
+        Event = word("event"),
+        Jsobj = word("jsobj"),
+        Figma = word("figma"),
+        Given = word("given"),
+        Json = word("json"),
+        Salt = word("salt"),
+        Html = word("html"),
+        Text = word("text"),
+        Data = word("data"),
+        Note = word("note"),
+        When = word("when"),
+        Then = word("then"),
+        Rmo = word("rmo"),
+        Cmd = word("cmd"),
+        Evt = word("evt"),
+        Pcr = word("pcr"),
+        Uri = word("uri"),
+        Arrow = TokenType::literal("->>"),
+        Gwt = word("gwt"),
+        Ui = word("ui"),
+        Md = word("md"),
+        Tf = word("tf"),
+        Open = TokenType::literal("[["),
+        Close = TokenType::literal("]]"),
+        Rf = word("rf"),
+        Tick = TokenType::literal("`"),
+        Dot = TokenType::literal("."),
+        Id = TokenType::regex("EM_ID", r"[_a-zA-Z][\w_]*", None),
+        FrameId = TokenType::regex("EM_FID", r"\d{1,3}", None),
+        Inline = TokenType::regex("EM_DATA_INLINE", r#"\{(.*)\}|"(.*)"|'(.*)'"#, None),
+        Block = TokenType::regex(
             "EM_DATA_BLOCK",
             r"\{[\t ]*\r?\n(?:[\S\s]*?\r?\n)?\}(?:\r?\n|(?!\S))",
             None,
         ),
-        acc_descr("EM_ACC_DESCR"),
-        acc_title().named("EM_ACC_TITLE"),
-        title().named("EM_TITLE"),
-        TokenType::regex("EM_WS", r"\s+", None).hidden(),
-        yaml().named("EM_YAML"),
-        directive().named("EM_DIRECTIVE"),
-        single_line_comment().named("EM_SINGLE_LINE_COMMENT"),
-        TokenType::regex("EM_ML_COMMENT", r"\/\*[\s\S]*?\*\/", None).hidden(),
-        TokenType::regex("EM_SL_COMMENT", r"\/\/[^\n\r]*", None).hidden(),
-    ]);
-    Table::new(types)
-});
-
-/// Token kinds by name, as the parser reads them.
-struct Kinds {
-    keyword: i32,
-    arrow: i32,
-    open: i32,
-    close: i32,
-    tick: i32,
-    dot: i32,
-    id: i32,
-    frame_id: i32,
-    inline: i32,
-    block: i32,
-    acc_descr: i32,
-    acc_title: i32,
-    title: i32,
-    entity: i32,
-    data: i32,
-    note: i32,
-    gwt: i32,
-    given: i32,
-    when: i32,
-    then: i32,
-    time_frame: [i32; 2],
-    reset_frame: [i32; 2],
-    entity_type: Vec<i32>,
-    data_type: Vec<i32>,
-}
-
-static T: LazyLock<Kinds> = LazyLock::new(|| {
-    let table = &*EVENTMODELING_TOKENS;
-    let index = |name: &str| table.index(name);
-    let kinds = |names: &[&str]| names.iter().map(|name| index(name)).collect::<Vec<_>>();
-    Kinds {
-        keyword: 0,
-        arrow: index("->>"),
-        open: index("[["),
-        close: index("]]"),
-        tick: index("`"),
-        dot: index("."),
-        id: index("EM_ID"),
-        frame_id: index("EM_FID"),
-        inline: index("EM_DATA_INLINE"),
-        block: index("EM_DATA_BLOCK"),
-        acc_descr: index("EM_ACC_DESCR"),
-        acc_title: index("EM_ACC_TITLE"),
-        title: index("EM_TITLE"),
-        entity: index("entity"),
-        data: index("data"),
-        note: index("note"),
-        gwt: index("gwt"),
-        given: index("given"),
-        when: index("when"),
-        then: index("then"),
-        time_frame: [index("tf"), index("timeframe")],
-        reset_frame: [index("rf"), index("resetframe")],
-        entity_type: kinds(&[
-            "rmo",
-            "readmodel",
-            "ui",
-            "cmd",
-            "command",
-            "evt",
-            "event",
-            "pcr",
-            "processor",
-        ]),
-        data_type: kinds(&[
-            "json", "jsobj", "figma", "salt", "uri", "md", "html", "text",
-        ]),
+        AccDescr = acc_descr("EM_ACC_DESCR"),
+        AccTitle = acc_title().named("EM_ACC_TITLE"),
+        Title = title().named("EM_TITLE"),
+        Ws = TokenType::regex("EM_WS", r"\s+", None).hidden(),
+        Yaml = yaml().named("EM_YAML"),
+        Directive = directive().named("EM_DIRECTIVE"),
+        Comment = single_line_comment().named("EM_SINGLE_LINE_COMMENT"),
+        MlComment = TokenType::regex("EM_ML_COMMENT", r"\/\*[\s\S]*?\*\/", None).hidden(),
+        SlComment = TokenType::regex("EM_SL_COMMENT", r"\/\/[^\n\r]*", None).hidden(),
     }
-});
+}
 
 /// Langium gives every keyword that is also an identifier the identifier as
 /// a longer alternative.
-fn word(text: &'static str) -> TokenType {
-    TokenType::literal(text, text).longer(&["EM_ID"])
+fn word(text: &'static str) -> TokenType<Token> {
+    TokenType::literal(text).longer(&[Token::Id])
 }
 
-fn sign(text: &'static str) -> TokenType {
-    TokenType::literal(text, text)
+/// A frame's model entity type, by its name or short name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntityType {
+    Ui,
+    Processor,
+    ReadModel,
+    Command,
+    Event,
+}
+
+impl Token {
+    fn entity_type(self) -> Option<EntityType> {
+        Some(match self {
+            Self::Rmo | Self::ReadModel => EntityType::ReadModel,
+            Self::Ui => EntityType::Ui,
+            Self::Cmd | Self::Command => EntityType::Command,
+            Self::Evt | Self::Event => EntityType::Event,
+            Self::Pcr | Self::Processor => EntityType::Processor,
+            _ => return None,
+        })
+    }
+
+    fn is_data_type(self) -> bool {
+        matches!(
+            self,
+            Self::Json
+                | Self::Jsobj
+                | Self::Figma
+                | Self::Salt
+                | Self::Uri
+                | Self::Md
+                | Self::Html
+                | Self::Text
+        )
+    }
 }
 
 pub struct EmFrame {
     pub reset: bool,
     pub name: String,
-    pub model_entity_type: String,
+    pub model_entity_type: EntityType,
     pub entity_identifier: String,
     pub source_frames: Vec<String>,
     pub data_reference: Option<String>,
@@ -191,11 +145,7 @@ pub struct EmGwt {
 
 #[derive(Default)]
 pub struct EventModelAst {
-    /// The whole token, keyword included: the grammar's own terminals get no
-    /// value conversion.
-    pub title: Option<String>,
-    pub acc_title: Option<String>,
-    pub acc_descr: Option<String>,
+    pub header: Header,
     pub model_entities: Vec<String>,
     pub frames: Vec<EmFrame>,
     pub data_entities: Vec<EmDataEntity>,
@@ -204,135 +154,162 @@ pub struct EventModelAst {
     pub source: String,
 }
 
-fn one<'s>(r: &mut Reader<'_, 's>, set: &[i32], expected: &str) -> Result<&'s str, Error> {
-    if set.contains(&r.kind()) {
-        Ok(r.take())
-    } else {
-        Err(r.fail(expected))
-    }
+struct Parser<'s> {
+    r: Reader<'s, Token>,
 }
 
-fn qualified_name(r: &mut Reader) -> Result<String, Error> {
-    let mut name = r.expect(T.id)?.to_string();
-    while r.accept(T.dot) {
-        name.push('.');
-        name.push_str(r.expect(T.id)?);
+impl Parser<'_> {
+    fn entity_type(&mut self) -> Result<EntityType, Error> {
+        let Some(entity_type) = self.r.kind().and_then(Token::entity_type) else {
+            return Err(self.r.fail("an entity type"));
+        };
+        self.r.bump();
+        Ok(entity_type)
     }
-    Ok(name)
-}
 
-fn data_type(r: &mut Reader) -> Result<Option<String>, Error> {
-    if !r.accept(T.tick) {
-        return Ok(None);
-    }
-    let kind = one(r, &T.data_type, "a data type")?.to_string();
-    r.expect(T.tick)?;
-    Ok(Some(kind))
-}
-
-fn statements(r: &mut Reader) -> Result<Vec<String>, Error> {
-    let mut out = Vec::new();
-    loop {
-        one(r, &T.entity_type, "an entity type")?;
-        out.push(r.expect(T.id)?.to_string());
-        if !T.entity_type.contains(&r.kind()) {
-            break;
+    fn qualified_name(&mut self) -> Result<String, Error> {
+        let mut name = self.r.expect(Token::Id)?.to_string();
+        while self.r.accept(Token::Dot) {
+            name.push('.');
+            name.push_str(self.r.expect(Token::Id)?);
         }
+        Ok(name)
     }
-    Ok(out)
+
+    fn data_type(&mut self) -> Result<Option<String>, Error> {
+        if !self.r.accept(Token::Tick) {
+            return Ok(None);
+        }
+        if !self.r.kind().is_some_and(Token::is_data_type) {
+            return Err(self.r.fail("a data type"));
+        }
+        let kind = self.r.take().to_string();
+        self.r.expect(Token::Tick)?;
+        Ok(Some(kind))
+    }
+
+    fn statements(&mut self) -> Result<Vec<String>, Error> {
+        let mut out = Vec::new();
+        loop {
+            self.entity_type()?;
+            out.push(self.r.expect(Token::Id)?.to_string());
+            if self.r.kind().and_then(Token::entity_type).is_none() {
+                break;
+            }
+        }
+        Ok(out)
+    }
+
+    /// A frame after its keyword at `offset`.
+    fn frame(&mut self, reset: bool, offset: usize) -> Result<EmFrame, Error> {
+        let name = self.r.expect(Token::FrameId)?.to_string();
+        let model_entity_type = self.entity_type()?;
+        let entity_identifier = self.qualified_name()?;
+        let mut frame = EmFrame {
+            reset,
+            name,
+            model_entity_type,
+            entity_identifier,
+            source_frames: Vec::new(),
+            data_reference: None,
+            data_type: None,
+            data_inline_value: None,
+            offset,
+        };
+        while self.r.accept(Token::Arrow) {
+            frame
+                .source_frames
+                .push(self.r.expect(Token::FrameId)?.to_string());
+        }
+        if self.r.accept(Token::Open) {
+            frame.data_reference = Some(self.r.expect(Token::Id)?.to_string());
+            self.r.expect(Token::Close)?;
+        }
+        if self.r.at(Token::Tick) || self.r.at(Token::Inline) {
+            if let Some(kind) = self.data_type()? {
+                frame.data_type = Some(kind);
+            }
+            frame.data_inline_value = Some(self.r.expect(Token::Inline)?.to_string());
+        }
+        Ok(frame)
+    }
+
+    fn gwt(&mut self) -> Result<EmGwt, Error> {
+        let source_frame = self.r.expect(Token::FrameId)?.to_string();
+        self.r.expect(Token::Given)?;
+        let given_statements = self.statements()?;
+        let when_statements = if self.r.accept(Token::When) {
+            self.statements()?
+        } else {
+            Vec::new()
+        };
+        self.r.expect(Token::Then)?;
+        let then_statements = self.statements()?;
+        Ok(EmGwt {
+            source_frame,
+            given_statements,
+            when_statements,
+            then_statements,
+        })
+    }
 }
 
 pub fn parse_event_model(src: &str) -> Result<EventModelAst, Error> {
-    let tokens = tokenize(src, &EVENTMODELING_TOKENS, Kind::Eventmodeling)?;
-    let mut r = Reader::new(&tokens, &EVENTMODELING_TOKENS, Kind::Eventmodeling);
+    let mut p = Parser {
+        r: Reader::new(src, Kind::Eventmodeling)?,
+    };
     let mut ast = EventModelAst {
         source: src.to_string(),
         ..EventModelAst::default()
     };
 
-    r.expect(T.keyword)?;
-    while r.kind() != -1 {
-        let kind = r.kind();
-        if kind == T.acc_descr {
-            ast.acc_descr = Some(r.take().to_string());
-        } else if kind == T.acc_title {
-            ast.acc_title = Some(r.take().to_string());
-        } else if kind == T.title {
-            ast.title = Some(r.take().to_string());
-        } else if kind == T.entity {
-            r.i += 1;
-            ast.model_entities.push(qualified_name(&mut r)?);
-        } else if T.time_frame.contains(&kind) || T.reset_frame.contains(&kind) {
-            let offset = r.tokens.starts[r.i];
-            r.i += 1;
-            let name = r.expect(T.frame_id)?.to_string();
-            let model_entity_type = one(&mut r, &T.entity_type, "an entity type")?.to_string();
-            let entity_identifier = qualified_name(&mut r)?;
-            let mut frame = EmFrame {
-                reset: !T.time_frame.contains(&kind),
-                name,
-                model_entity_type,
-                entity_identifier,
-                source_frames: Vec::new(),
-                data_reference: None,
-                data_type: None,
-                data_inline_value: None,
-                offset,
-            };
-            while r.accept(T.arrow) {
-                frame.source_frames.push(r.expect(T.frame_id)?.to_string());
+    p.r.expect(Token::Keyword)?;
+    while let Some(kind) = p.r.kind() {
+        if p.r.heading(&mut ast.header) {
+            continue;
+        }
+        let offset = p.r.start();
+        match kind {
+            Token::Entity => {
+                p.r.bump();
+                ast.model_entities.push(p.qualified_name()?);
             }
-            if r.accept(T.open) {
-                frame.data_reference = Some(r.expect(T.id)?.to_string());
-                r.expect(T.close)?;
+            Token::Tf | Token::TimeFrame | Token::Rf | Token::ResetFrame => {
+                p.r.bump();
+                let reset = matches!(kind, Token::Rf | Token::ResetFrame);
+                ast.frames.push(p.frame(reset, offset)?);
             }
-            if r.kind() == T.tick || r.kind() == T.inline {
-                if let Some(kind) = data_type(&mut r)? {
-                    frame.data_type = Some(kind);
-                }
-                frame.data_inline_value = Some(r.expect(T.inline)?.to_string());
+            Token::Data => {
+                p.r.bump();
+                let name = p.r.expect(Token::Id)?.to_string();
+                let data_type = p.data_type()?;
+                let data_block_value = p.r.expect(Token::Block)?.to_string();
+                ast.data_entities.push(EmDataEntity {
+                    name,
+                    data_type,
+                    data_block_value,
+                });
             }
-            ast.frames.push(frame);
-        } else if kind == T.data {
-            r.i += 1;
-            let name = r.expect(T.id)?.to_string();
-            let data_type = data_type(&mut r)?;
-            let data_block_value = r.expect(T.block)?.to_string();
-            ast.data_entities.push(EmDataEntity {
-                name,
-                data_type,
-                data_block_value,
-            });
-        } else if kind == T.note {
-            r.i += 1;
-            let source_frame = r.expect(T.frame_id)?.to_string();
-            let data_type = data_type(&mut r)?;
-            let data_block_value = r.expect(T.block)?.to_string();
-            ast.note_entities.push(EmNoteEntity {
-                source_frame,
-                data_type,
-                data_block_value,
-            });
-        } else if kind == T.gwt {
-            r.i += 1;
-            let source_frame = r.expect(T.frame_id)?.to_string();
-            r.expect(T.given)?;
-            let given_statements = statements(&mut r)?;
-            let when_statements = if r.accept(T.when) {
-                statements(&mut r)?
-            } else {
-                Vec::new()
-            };
-            r.expect(T.then)?;
-            let then_statements = statements(&mut r)?;
-            ast.gwt_entities.push(EmGwt {
-                source_frame,
-                given_statements,
-                when_statements,
-                then_statements,
-            });
-        } else {
-            return Err(r.fail("a frame, an entity, a data block, a note, or a specification"));
+            Token::Note => {
+                p.r.bump();
+                let source_frame = p.r.expect(Token::FrameId)?.to_string();
+                let data_type = p.data_type()?;
+                let data_block_value = p.r.expect(Token::Block)?.to_string();
+                ast.note_entities.push(EmNoteEntity {
+                    source_frame,
+                    data_type,
+                    data_block_value,
+                });
+            }
+            Token::Gwt => {
+                p.r.bump();
+                ast.gwt_entities.push(p.gwt()?);
+            }
+            _ => {
+                return Err(p
+                    .r
+                    .fail("a frame, an entity, a data block, a note, or a specification"));
+            }
         }
     }
     Ok(ast)

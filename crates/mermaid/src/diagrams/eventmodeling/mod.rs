@@ -7,7 +7,7 @@ pub mod render;
 
 pub use model::EventModelingModel;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
@@ -26,16 +26,15 @@ impl Diagram for EventModeling {
         _line_offset: usize,
         _limits: &ParseLimits,
     ) -> Result<Model, Error> {
-        Ok(Model::EventModeling(Box::new(model::build_event_model(
+        Ok(Model::EventModeling(Box::new(EventModelingModel::new(
             parser::parse_event_model(source)?,
             title,
         )?)))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::EventModeling(model) = model else {
-        unreachable!("eventmodeling renders an eventmodeling model")
-    };
-    Ok(render::render_event_model(model, config, ctx))
+impl Render for EventModelingModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_event_model(self, config, ctx))
+    }
 }

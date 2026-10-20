@@ -7,7 +7,7 @@ mod render;
 
 pub use db::{MindmapModel, MindmapNode};
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 pub use render::MindmapConfig;
@@ -29,9 +29,8 @@ impl Diagram for Mindmap {
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Mindmap(model) = model else {
-        unreachable!("mindmap renders a mindmap model")
-    };
-    Ok(render::render_mindmap(model, &config.mindmap, ctx))
+impl Render for MindmapModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_mindmap(self, &config.mindmap, ctx))
+    }
 }

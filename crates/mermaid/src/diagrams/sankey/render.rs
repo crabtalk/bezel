@@ -1,5 +1,7 @@
 //! Pele's `diagrams/sankey/render.ts`.
 
+use crate::geom::Point;
+use crate::text::Label;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
@@ -18,11 +20,11 @@ use crate::{
     diagrams::common::fit_width::{title_room, try_fit_width},
     js,
     svg::{
-        builder::{LabelSvg, TITLE, fragment, num},
+        builder::{TITLE, fragment, num},
         root::{Accessible, svg_document},
         theme::{resolve_style, series_color},
     },
-    text::{Style, layout_label},
+    text::Style,
 };
 
 const LABEL_GAP: f64 = 6.0;
@@ -300,7 +302,7 @@ fn draw(
         );
     }
 
-    let title = layout_label(
+    let title = Label::layout(
         model.title.as_deref(),
         false,
         measure,
@@ -324,7 +326,7 @@ fn draw(
     let _ = write!(
         content,
         "{}<g transform=\"translate({},{})\"><g class=\"{p}-sankey-links\" fill-opacity=\"0.4\">{links_out}</g><g class=\"{p}-sankey-nodes\">{nodes_out}</g><g class=\"{p}-labels\" font-size=\"{}\">{labels_out}</g></g>",
-        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, TITLE),
+        title.svg(Point::new(width / 2.0, pad + title.height / 2.0), TITLE),
         num(ox),
         num(oy),
         js::Number(small)

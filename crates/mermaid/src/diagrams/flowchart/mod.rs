@@ -15,7 +15,7 @@ pub mod types;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
@@ -60,16 +60,15 @@ impl Diagram for Flowchart {
             max_edges: Some(limits.max_edges),
         });
         if let Some(title) = title.filter(|title| !title.is_empty()) {
-            db.title = Some(title.to_string());
+            db.titles.set_title(title);
         }
         parser::parse_flowchart(source, &mut db)?;
         Ok(Model::Flowchart(Box::new(db)))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Flowchart(db) = model else {
-        unreachable!("flowchart renders a flowchart model")
-    };
-    Ok(render::render_flowchart(db, &config.flowchart, ctx, None))
+impl Render for FlowDb {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_flowchart(self, &config.flowchart, ctx, None))
+    }
 }

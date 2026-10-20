@@ -6,37 +6,35 @@ use super::{
     tokens::T,
     types::{Cardinality, DocItem, Identification, ParsedAttribute, RelSpec},
 };
+use crate::util::chars::inner;
 use crate::{detect::Kind, error::Error, js, token::Stream};
 
 const NAME: &str = "'UNICODE_TEXT', 'NUM', 'ENTITY_NAME', 'DECIMAL_NUM', 'ENTITY_ONE'";
 const CARDS: &str = "'ZERO_OR_ONE', 'ZERO_OR_MORE', 'ONE_OR_MORE', 'ONLY_ONE', 'MD_PARENT'";
 const LINE: &str = "'EOF', 'NEWLINE', 'title', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'SUBGRAPH', 'direction_tb', 'direction_bt', 'direction_rl', 'direction_lr', 'CLASSDEF', 'CLASS', 'STYLE', 'UNICODE_TEXT', 'NUM', 'ENTITY_NAME', 'DECIMAL_NUM', 'ENTITY_ONE'";
 
-fn cardinality(t: T) -> Option<Cardinality> {
-    Some(match t {
-        T::ZeroOrOne => Cardinality::ZeroOrOne,
-        T::ZeroOrMore => Cardinality::ZeroOrMore,
-        T::OneOrMore => Cardinality::OneOrMore,
-        T::OnlyOne => Cardinality::OnlyOne,
-        T::MdParent => Cardinality::MdParent,
-        _ => return None,
-    })
-}
+impl T {
+    fn cardinality(self) -> Option<Cardinality> {
+        Some(match self {
+            T::ZeroOrOne => Cardinality::ZeroOrOne,
+            T::ZeroOrMore => Cardinality::ZeroOrMore,
+            T::OneOrMore => Cardinality::OneOrMore,
+            T::OnlyOne => Cardinality::OnlyOne,
+            T::MdParent => Cardinality::MdParent,
+            _ => return None,
+        })
+    }
 
-fn is_name(t: T) -> bool {
-    matches!(
-        t,
-        T::UnicodeText | T::EntityName | T::Num | T::DecimalNum | T::EntityOne
-    )
-}
+    fn is_name(self) -> bool {
+        matches!(
+            self,
+            T::UnicodeText | T::EntityName | T::Num | T::DecimalNum | T::EntityOne
+        )
+    }
 
-fn is_style_component(t: T) -> bool {
-    matches!(t, T::StyleText | T::Num | T::Colon | T::Brkt)
-}
-
-/// `text` without its first and last characters, which are quotes.
-fn unquote(text: &str) -> &str {
-    &text[1..text.len() - 1]
+    fn is_style_component(self) -> bool {
+        matches!(self, T::StyleText | T::Num | T::Colon | T::Brkt)
+    }
 }
 
 struct Frame {
@@ -50,6 +48,8 @@ struct Frame {
 
 struct Parser<'t, 's> {
     s: Stream<'t, 's, T>,
+    /// The subgraphs being read, innermost last.
+    open: Vec<Frame>,
 }
 
 impl<'t> Parser<'t, '_> {
@@ -63,12 +63,12 @@ impl<'t> Parser<'t, '_> {
 
     fn entity_name(&mut self) -> Result<&'t str, Error> {
         let t = self.s.kind();
-        if !is_name(t) {
+        if !t.is_name() {
             return Err(self.s.fail(NAME));
         }
         let text = self.s.take();
         Ok(if t == T::EntityName {
-            unquote(text)
+            inner(text)
         } else {
             text
         })
@@ -90,11 +90,11 @@ impl<'t> Parser<'t, '_> {
     fn styles_opt(&mut self) -> Result<Vec<String>, Error> {
         let mut styles = Vec::new();
         loop {
-            if !is_style_component(self.s.kind()) {
+            if !self.s.kind().is_style_component() {
                 return Err(self.s.fail("'STYLE_TEXT', 'COLON', 'NUM', 'BRKT'"));
             }
             let mut style = self.s.take().to_string();
-            while is_style_component(self.s.kind()) {
+            while self.s.kind().is_style_component() {
                 style.push_str(self.s.take());
             }
             styles.push(style);
@@ -105,7 +105,7 @@ impl<'t> Parser<'t, '_> {
     }
 
     fn rel_spec(&mut self) -> Result<RelSpec, Error> {
-        let card_b = cardinality(self.s.kind()).unwrap_or(Cardinality::OnlyOne);
+        let card_b = self.s.kind().cardinality().unwrap_or(Cardinality::OnlyOne);
         self.s.bump();
         let r = self.s.kind();
         if r != T::Identifying && r != T::NonIdentifying {
@@ -117,7 +117,7 @@ impl<'t> Parser<'t, '_> {
             Identification::NonIdentifying
         };
         self.s.bump();
-        let Some(card_a) = cardinality(self.s.kind()) else {
+        let Some(card_a) = self.s.kind().cardinality() else {
             return Err(self.s.fail(CARDS));
         };
         self.s.bump();
@@ -137,7 +137,7 @@ impl<'t> Parser<'t, '_> {
         Ok(if t == T::UnicodeText {
             text
         } else {
-            unquote(text)
+            inner(text)
         })
     }
 
@@ -177,7 +177,7 @@ impl<'t> Parser<'t, '_> {
                 attribute.keys = Some(keys);
             }
             if self.s.is(T::Comment) {
-                attribute.comment = Some(unquote(self.s.take()).to_string());
+                attribute.comment = Some(inner(self.s.take()).to_string());
             }
             list.push(attribute);
             if self.s.is(T::BlockStop) {
@@ -229,7 +229,7 @@ impl<'t> Parser<'t, '_> {
             classes = Some(self.id_list()?);
             t = self.s.kind();
         }
-        if cardinality(t).is_some() {
+        if t.cardinality().is_some() {
             let spec = self.rel_spec()?;
             let b = self.entity_name()?;
             let mut classes_b = None;
@@ -259,45 +259,50 @@ impl<'t> Parser<'t, '_> {
         }
         Ok(vec![a])
     }
+
+    /// Lists `value` in the subgraph being read, if any.
+    fn list(&mut self, value: &str) {
+        if let Some(frame) = self.open.last_mut() {
+            frame.list.push(DocItem::Name(value.to_string()));
+        }
+    }
+
+    /// What a line may hold here, for an error.
+    fn line_expected(&self) -> String {
+        if self.open.is_empty() {
+            LINE.to_string()
+        } else {
+            format!("'END', {LINE}")
+        }
+    }
 }
 
 pub fn parse_er(src: &str, db: &mut ErModel) -> Result<(), Error> {
     let tokens = tokenize(src);
     let mut r = Parser {
         s: Stream::new(Kind::Er, src, &tokens),
+        open: Vec::new(),
     };
 
     r.s.expect(T::ErDiagram, "")?;
-    // Subgraphs nest on this stack rather than on the call stack; the first
-    // frame is the diagram itself.
-    let mut frames = vec![Frame {
-        id: String::new(),
-        title: String::new(),
-        list: Vec::new(),
-    }];
-    let nested = |frames: &Vec<Frame>| frames.len() > 1;
-
     loop {
         let t = r.s.kind();
         match t {
             T::Newline => r.s.bump(),
             T::Eof => {
                 r.s.bump();
-                if nested(&frames) {
-                    return Err(r.s.fail(&format!("'END', {LINE}")));
+                if !r.open.is_empty() {
+                    return Err(r.s.fail(&r.line_expected()));
                 }
                 return Ok(());
             }
             T::EndKw => {
-                if !nested(&frames) {
+                let Some(frame) = r.open.pop() else {
                     return Err(r.s.fail(LINE));
-                }
+                };
                 r.s.bump();
-                let frame = frames.pop().unwrap_or_else(|| unreachable!());
                 let id = db.add_sub_graph(&frame.id, &frame.list, &frame.title);
-                if nested(&frames)
-                    && let Some(parent) = frames.last_mut()
-                {
+                if let Some(parent) = r.open.last_mut() {
                     parent.list.push(DocItem::Name(id));
                 }
             }
@@ -307,14 +312,14 @@ pub fn parse_er(src: &str, db: &mut ErModel) -> Result<(), Error> {
                 let mut title = id.to_string();
                 if r.s.eat(T::Sqs) {
                     title = r.entity_name()?.to_string();
-                    while is_name(r.s.kind()) {
+                    while r.s.kind().is_name() {
                         title.push(' ');
                         title.push_str(r.entity_name()?);
                     }
                     r.s.expect(T::Sqe, "")?;
                 }
                 r.separator()?;
-                frames.push(Frame {
+                r.open.push(Frame {
                     id: id.to_string(),
                     title,
                     list: Vec::new(),
@@ -322,8 +327,7 @@ pub fn parse_er(src: &str, db: &mut ErModel) -> Result<(), Error> {
             }
             T::AccTitle | T::AccDescr | T::AccDescrMultilineValue => {
                 let value = if t == T::AccDescrMultilineValue {
-                    let text = r.s.take();
-                    js::trim(text)
+                    js::trim(r.s.take())
                 } else {
                     r.s.bump();
                     js::trim(r.s.expect(
@@ -336,11 +340,11 @@ pub fn parse_er(src: &str, db: &mut ErModel) -> Result<(), Error> {
                     )?)
                 };
                 if t == T::AccTitle {
-                    db.set_acc_title(value);
+                    db.titles.set_acc_title(value);
                 } else {
-                    db.set_acc_description(value);
+                    db.titles.set_acc_descr(value);
                 }
-                push_name(&mut frames, value);
+                r.list(value);
             }
             T::DirectionTb | T::DirectionBt | T::DirectionRl | T::DirectionLr => {
                 r.s.bump();
@@ -350,12 +354,9 @@ pub fn parse_er(src: &str, db: &mut ErModel) -> Result<(), Error> {
                     T::DirectionRl => "RL",
                     _ => "LR",
                 };
-                if nested(&frames) {
-                    if let Some(frame) = frames.last_mut() {
-                        frame.list.push(DocItem::Dir(value));
-                    }
-                } else {
-                    db.set_direction(value);
+                match r.open.last_mut() {
+                    Some(frame) => frame.list.push(DocItem::Dir(value)),
+                    None => db.set_direction(value),
                 }
             }
             T::Classdef | T::Style => {
@@ -368,37 +369,24 @@ pub fn parse_er(src: &str, db: &mut ErModel) -> Result<(), Error> {
                 } else {
                     db.add_css_styles(&ids, &styles);
                 }
-                push_name(&mut frames, keyword);
+                r.list(keyword);
             }
             T::Class => {
                 let keyword = r.s.take();
                 let ids = r.id_list()?;
                 let names = r.id_list()?;
                 db.set_class(&ids, &names);
-                push_name(&mut frames, keyword);
+                r.list(keyword);
             }
             _ => {
-                if !is_name(t) {
-                    return Err(r.s.fail(&if nested(&frames) {
-                        format!("'END', {LINE}")
-                    } else {
-                        LINE.to_string()
-                    }));
+                if !t.is_name() {
+                    return Err(r.s.fail(&r.line_expected()));
                 }
                 let names = r.entity_statement(db)?;
                 for name in names {
-                    push_name(&mut frames, name);
+                    r.list(name);
                 }
             }
         }
-    }
-}
-
-/// Lists `value` in the subgraph being read, if any.
-fn push_name(frames: &mut [Frame], value: &str) {
-    if frames.len() > 1
-        && let Some(frame) = frames.last_mut()
-    {
-        frame.list.push(DocItem::Name(value.to_string()));
     }
 }

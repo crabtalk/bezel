@@ -1,5 +1,6 @@
 //! Pele's `diagrams/venn/render.ts`.
 
+use crate::geom::Point;
 use crate::js::JsValue;
 use crate::svg::builder::EscText;
 use indexmap::{IndexMap, IndexSet};
@@ -15,11 +16,11 @@ use crate::{
     config::Value,
     js,
     svg::{
-        builder::{LabelSvg, TITLE, num},
+        builder::{TITLE, num},
         root::{Accessible, svg_document},
         theme::{ResolvedStyle, resolve_style, series_color},
     },
-    text::{Label, Style, layout_label},
+    text::{Label, Style},
 };
 use crate::{Ctx, Host};
 
@@ -150,7 +151,7 @@ pub fn render_venn(model: &VennDb, _config: &Config, ctx: &Ctx<'_, impl Host>) -
         };
         if let Some(text) = text.filter(|text| !text.is_empty()) {
             let font_size = if region.sets.len() == 1 { size } else { small };
-            let label = layout_label(Some(&text), false, measure, font_size, 4000.0, base);
+            let label = Label::layout(Some(&text), false, measure, font_size, 4000.0, base);
             region.lines.push(Line {
                 id: None,
                 raw: text,
@@ -164,7 +165,7 @@ pub fn render_venn(model: &VennDb, _config: &Config, ctx: &Ctx<'_, impl Host>) -
     for node in &model.text_nodes {
         let raw = node.label.clone().unwrap_or_else(|| node.id.clone());
         if let Some(region) = regions.get_mut(&key_of(&node.sets)) {
-            let label = layout_label(Some(&raw), false, measure, tiny, 4000.0, 0);
+            let label = Label::layout(Some(&raw), false, measure, tiny, 4000.0, 0);
             region.lines.push(Line {
                 id: Some(node.id.clone()),
                 raw,
@@ -207,7 +208,7 @@ pub fn render_venn(model: &VennDb, _config: &Config, ctx: &Ctx<'_, impl Host>) -
         for line in &mut region.lines {
             if line.label.width > room {
                 line.label =
-                    layout_label(Some(&line.raw), false, measure, line.size, room, line.base);
+                    Label::layout(Some(&line.raw), false, measure, line.size, room, line.base);
             }
         }
     }
@@ -242,7 +243,7 @@ pub fn render_venn(model: &VennDb, _config: &Config, ctx: &Ctx<'_, impl Host>) -
     }
 
     let title_text = model.title.as_deref().map(normalize_text);
-    let title = layout_label(
+    let title = Label::layout(
         title_text.as_deref(),
         false,
         measure,
@@ -336,7 +337,8 @@ pub fn render_venn(model: &VennDb, _config: &Config, ctx: &Ctx<'_, impl Host>) -
             let _ = write!(
                 labels,
                 "{}",
-                LabelSvg(&line.label, x, y + line.label.height / 2.0, &attrs)
+                line.label
+                    .svg(Point::new(x, y + line.label.height / 2.0), &attrs)
             );
             y += line.label.height;
         }
@@ -347,7 +349,7 @@ pub fn render_venn(model: &VennDb, _config: &Config, ctx: &Ctx<'_, impl Host>) -
     let _ = write!(
         body,
         "{}",
-        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, TITLE)
+        title.svg(Point::new(width / 2.0, pad + title.height / 2.0), TITLE)
     );
     let _ = write!(body, "<g class=\"{p}-venn-sets\">{sets}</g>");
     if !overlaps.is_empty() {

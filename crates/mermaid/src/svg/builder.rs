@@ -8,6 +8,7 @@ use std::{
 };
 
 use crate::{
+    geom::Point,
     js,
     text::{Label, Span, Style, decoded},
 };
@@ -185,12 +186,9 @@ pub fn styled<'a>(attrs: &'a str, style: &str) -> Cow<'a, str> {
 }
 
 /// `x,y`, each as [`num`] writes it.
-#[derive(Clone, Copy, Debug)]
-pub struct Point(pub f64, pub f64);
-
 impl fmt::Display for Point {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{},{}", Num(self.0), Num(self.1))
+        write!(f, "{},{}", Num(self.x), Num(self.y))
     }
 }
 
@@ -208,55 +206,108 @@ impl fmt::Display for Num {
     }
 }
 
-/// A measured label as SVG text centred on (`cx`, `cy`), as a value `write!`
-/// writes in place. `attrs` go on the `<text>` as written.
-#[derive(Clone, Copy)]
-pub struct LabelSvg<'a>(pub &'a Label, pub f64, pub f64, pub &'a str);
+impl Label {
+    /// The label as SVG text centred on `center`. `attrs` go on the `<text>`
+    /// as written.
+    pub fn svg<'a>(&'a self, center: Point, attrs: &'a str) -> LabelSvg<'a> {
+        LabelSvg {
+            label: self,
+            center,
+            attrs,
+        }
+    }
 
-impl fmt::Display for LabelSvg<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write_label(f, self.0, self.1, self.2, self.3)
+    /// The label with each line starting at `at.x`, centred on `at.y` as a
+    /// whole: each line is drawn as a one-line label of its own width.
+    pub fn left_svg<'a>(&'a self, at: Point, attrs: &'a str) -> LeftLabel<'a> {
+        LeftLabel {
+            label: self,
+            at,
+            attrs,
+        }
+    }
+
+    /// Line `index` of the label, as a one-line label of its own width
+    /// centred on `center`.
+    pub fn line_svg<'a>(&'a self, index: usize, center: Point, attrs: &'a str) -> LineSvg<'a> {
+        LineSvg {
+            label: self,
+            index,
+            center,
+            attrs,
+        }
+    }
+
+    /// The emphasis every span of the label has. It is written once, on the
+    /// text element, where a CSS rule for the label reaches it.
+    pub fn shared_style(&self) -> u8 {
+        shared_of(&self.lines)
     }
 }
 
-/// A label with each line starting at `left`, centred on `cy` as a whole:
-/// each line is drawn as a one-line label of its own width.
+/// [`Label::svg`], written in place by `write!`.
 #[derive(Clone, Copy)]
-pub struct LeftLabel<'a>(pub &'a Label, pub f64, pub f64, pub &'a str);
+pub struct LabelSvg<'a> {
+    label: &'a Label,
+    center: Point,
+    attrs: &'a str,
+}
+
+impl fmt::Display for LabelSvg<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write_label(f, self.label, self.center, self.attrs)
+    }
+}
+
+/// [`Label::left_svg`], written in place by `write!`.
+#[derive(Clone, Copy)]
+pub struct LeftLabel<'a> {
+    label: &'a Label,
+    at: Point,
+    attrs: &'a str,
+}
 
 impl fmt::Display for LeftLabel<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let LeftLabel(label, left, cy, attrs) = *self;
+        let LeftLabel { label, at, attrs } = *self;
         if label.lines.len() < 2 {
-            return write_label(f, label, left + label.width / 2.0, cy, attrs);
+            return write_label(f, label, Point::new(at.x + label.width / 2.0, at.y), attrs);
         }
         for i in 0..label.lines.len() {
-            let line_cy = cy - label.height / 2.0 + (i as f64 + 0.5) * label.line_height;
-            let cx = left + label.widths[i] / 2.0;
-            write!(f, "{}", LineSvg(label, i, cx, line_cy, attrs))?;
+            let line_cy = at.y - label.height / 2.0 + (i as f64 + 0.5) * label.line_height;
+            let cx = at.x + label.widths[i] / 2.0;
+            write!(f, "{}", label.line_svg(i, Point::new(cx, line_cy), attrs))?;
         }
         Ok(())
     }
 }
 
-/// Line `index` of a label, as a one-line label of its own width centred on
-/// (`cx`, `cy`).
+/// [`Label::line_svg`], written in place by `write!`.
 #[derive(Clone, Copy)]
-pub struct LineSvg<'a>(pub &'a Label, pub usize, pub f64, pub f64, pub &'a str);
+pub struct LineSvg<'a> {
+    label: &'a Label,
+    index: usize,
+    center: Point,
+    attrs: &'a str,
+}
 
 impl fmt::Display for LineSvg<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let LineSvg(label, i, cx, cy, attrs) = *self;
-        write_lines(f, label, i..i + 1, label.line_height, cx, cy, attrs)
+        let LineSvg {
+            label,
+            index,
+            center,
+            attrs,
+        } = *self;
+        write_lines(f, label, index..index + 1, label.line_height, center, attrs)
     }
 }
 
-/// A square of `side` at (`x`, `y`) holding icon `name`, drawn by `markup`
-/// on a 24-unit grid.
+/// A square of `side` with its top left corner at `at`, holding icon
+/// `name`, drawn by `markup` on a 24-unit grid.
 pub fn icon_element<'a>(
     name: &'a str,
-    x: f64,
-    y: f64,
+    at: Point,
     side: f64,
     markup: impl fmt::Display + 'a,
 ) -> impl fmt::Display + 'a {
@@ -265,8 +316,8 @@ pub fn icon_element<'a>(
             f,
             "<svg class=\"{p}-icon\" data-icon=\"{}\" x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">{markup}</svg>",
             EscText(name),
-            num(x),
-            num(y),
+            num(at.x),
+            num(at.y),
             num(side),
             num(side),
             p = crate::PREFIX,
@@ -274,29 +325,28 @@ pub fn icon_element<'a>(
     })
 }
 
-fn write_label(out: &mut impl Write, label: &Label, cx: f64, cy: f64, attrs: &str) -> fmt::Result {
+fn write_label(out: &mut impl Write, label: &Label, center: Point, attrs: &str) -> fmt::Result {
     write_lines(
         out,
         label,
         0..label.lines.len(),
         label.height,
-        cx,
-        cy,
+        center,
         attrs,
     )
 }
 
-/// `label`'s lines in `range` as a label `height` tall, centred on (`cx`,
-/// `cy`).
+/// `label`'s lines in `range` as a label `height` tall, centred on
+/// `center`.
 fn write_lines(
     out: &mut impl Write,
     label: &Label,
     range: Range<usize>,
     height: f64,
-    cx: f64,
-    cy: f64,
+    center: Point,
     attrs: &str,
 ) -> fmt::Result {
+    let Point { x: cx, y: cy } = center;
     let widths = &label.widths[range.clone()];
     let lines = &label.lines[range];
     if lines.is_empty() {
@@ -375,7 +425,12 @@ fn write_lines(
                 write!(
                     out,
                     "{}",
-                    icon_element(&icon.name, x, y - shift - side / 2.0, side, &icon.markup)
+                    icon_element(
+                        &icon.name,
+                        Point::new(x, y - shift - side / 2.0),
+                        side,
+                        &icon.markup
+                    )
                 )?;
             }
             x += span.width;
@@ -394,12 +449,6 @@ pub fn span_style(style: u8) -> &'static str {
     }
 }
 
-/// The emphasis every span of a label has. It is written once, on the text
-/// element, where a CSS rule for the label reaches it.
-pub fn shared_style(label: &Label) -> u8 {
-    shared_of(&label.lines)
-}
-
 fn shared_of(lines: &[Vec<Span>]) -> u8 {
     let mut shared = Style::BOLD | Style::ITALIC;
     let mut any = false;
@@ -415,8 +464,8 @@ fn shared_of(lines: &[Vec<Span>]) -> u8 {
     if any { shared } else { 0 }
 }
 
-/// Adds that emphasis to a text element's attributes, unless they give a
-/// weight of their own.
+/// Adds `shared`, a [`Label::shared_style`], to a text element's attributes,
+/// unless they give a weight of their own.
 pub fn text_style(attrs: &str, shared: u8) -> impl fmt::Display + '_ {
     fragment(move |f| write!(f, "{attrs}{}", TextStyle(attrs, shared)))
 }

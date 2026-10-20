@@ -58,6 +58,29 @@ pub struct Dialect {
     pub destruct_link: fn(&str, Option<&str>) -> LinkInfo,
 }
 
+/// A run of `SHAPE_DATA` tokens: their text, and the indices of the first
+/// and the last.
+pub struct ShapeData {
+    pub text: String,
+    pub from: usize,
+    pub to: usize,
+}
+
+/// What a diagram does with the vertices and links its statements read.
+pub trait Builder {
+    type Payload: Payload;
+
+    fn store(&mut self) -> &mut FlowStore<Self::Payload>;
+    /// Gives the shape data after a vertex to what `id` names.
+    fn attach(&mut self, id: &str, data: &ShapeData) -> Result<(), Error>;
+    /// The vertex `id`, `bare` of a shape, was read from token `from`
+    /// through token `to`.
+    fn vertex_read(&mut self, _id: &str, _bare: bool, _from: usize, _to: usize) {}
+    /// A statement read from token `from` through token `to` ends in a link
+    /// to `ends`.
+    fn link_read(&mut self, _ends: &[String], _from: usize, _to: usize) {}
+}
+
 /// A vertex id and the shape written after it.
 pub struct Node<'a> {
     pub id: String,
@@ -107,10 +130,6 @@ impl<'a> Reader<'a> {
         }
         self.s.bump();
         Ok(())
-    }
-
-    pub fn at_vertex(&self) -> bool {
-        self.s.is_any(&ID)
     }
 
     pub fn fail_statement(&self) -> Error {
@@ -202,18 +221,25 @@ impl<'a> Reader<'a> {
         Ok(FlowText { text, kind })
     }
 
-    /// The run of `SHAPE_DATA` tokens from here, joined. The current token
-    /// must be one.
-    pub fn shape_data(&mut self) -> String {
-        let mut data = self.s.take().to_string();
-        while self.s.is(T::ShapeData) {
-            data += self.s.take();
+    /// The run of `SHAPE_DATA` tokens from here, if any.
+    pub fn shape_data(&mut self) -> Option<ShapeData> {
+        if !self.s.is(T::ShapeData) {
+            return None;
         }
-        data
+        let from = self.s.index();
+        let mut text = String::new();
+        while self.s.is(T::ShapeData) {
+            text += self.s.take();
+        }
+        Some(ShapeData {
+            text,
+            from,
+            to: self.s.index() - 1,
+        })
     }
 
     /// A vertex id and the shape after it, if any.
-    pub fn node(&mut self) -> Result<Node<'a>, Error> {
+    fn node(&mut self) -> Result<Node<'a>, Error> {
         let id = self.id_string()?;
         let mut prop = None;
         let shape = match self.s.kind() {
@@ -289,11 +315,69 @@ impl<'a> Reader<'a> {
         Ok((label, straight.1))
     }
 
-    pub fn at_link(&self) -> bool {
-        self.s.is_any(&[T::Link, T::StartLink, T::LinkId])
+    /// A vertex, and the class after `:::`.
+    fn vertex<B: Builder>(&mut self, b: &mut B) -> Result<String, Error> {
+        let from = self.s.index();
+        let node = self.node()?;
+        b.store().add_vertex(&node.id, node.vertex());
+        b.vertex_read(&node.id, node.shape.is_none(), from, self.s.index() - 1);
+        if self.s.eat(T::StyleSeparator) {
+            let class = self.id_string()?;
+            b.store().set_class(&node.id, &class);
+        }
+        Ok(node.id)
     }
 
-    pub fn link(&mut self) -> Result<LinkInfo, Error> {
+    /// A run of vertices joined by `&`, the shape data after each given to
+    /// it.
+    fn vertices<B: Builder>(&mut self, b: &mut B) -> Result<Vec<String>, Error> {
+        let mut ids = vec![self.vertex(b)?];
+        loop {
+            let data = self.shape_data();
+            let last = &ids[ids.len() - 1];
+            if !self.s.eat(T::Space) {
+                if let Some(data) = data {
+                    b.attach(last, &data)?;
+                }
+                return Ok(ids);
+            }
+            self.s.eat_all(T::Space);
+            if !self.s.eat(T::Amp) {
+                if data.is_some() {
+                    return Err(self.s.fail("'AMP'"));
+                }
+                return Ok(ids);
+            }
+            if !self.s.eat(T::Space) {
+                return Err(self.s.fail("'SPACE'"));
+            }
+            self.s.eat_all(T::Space);
+            let next = self.vertex(b)?;
+            if let Some(data) = data {
+                b.attach(&ids[ids.len() - 1], &data)?;
+            }
+            ids.push(next);
+        }
+    }
+
+    /// Vertices and the links between them; the ids of every vertex, the
+    /// last linked first.
+    fn vertex_statement<B: Builder>(&mut self, b: &mut B) -> Result<Vec<String>, Error> {
+        let from = self.s.index();
+        let mut stmt = self.vertices(b)?;
+        let mut nodes = stmt.clone();
+        while self.s.is_any(&[T::Link, T::StartLink, T::LinkId]) {
+            let info = self.link()?;
+            let next = self.vertices(b)?;
+            b.store().add_link(&stmt, &next, Some(&info))?;
+            b.link_read(&next, from, self.s.index() - 1);
+            nodes.splice(0..0, next.iter().cloned());
+            stmt = next;
+        }
+        Ok(nodes)
+    }
+
+    fn link(&mut self) -> Result<LinkInfo, Error> {
         let id = self.s.is(T::LinkId).then(|| self.s.take().to_string());
         if self.s.is(T::Link) {
             let end = self.s.take();
@@ -430,13 +514,10 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 
-    /// A statement both diagrams have, through its separator; `None` at a
-    /// token none of them starts with.
-    pub fn statement<P: Payload>(
-        &mut self,
-        store: &mut FlowStore<P>,
-    ) -> Result<Option<DocItem>, Error> {
+    /// A statement both diagrams have, through its separator.
+    pub fn statement<B: Builder>(&mut self, b: &mut B) -> Result<DocItem, Error> {
         let none = DocItem::List(Vec::new());
+        let store = b.store();
         let item = match self.s.kind() {
             T::Style => {
                 self.s.bump();
@@ -500,22 +581,27 @@ impl<'a> Reader<'a> {
             T::AccTitle => {
                 self.s.bump();
                 let value = js::trim(self.s.expect(T::AccTitleValue, "")?).to_string();
-                store.set_acc_title(&value);
+                store.titles.set_acc_title(&value);
                 DocItem::Str(value)
             }
             T::AccDescr => {
                 self.s.bump();
                 let value = js::trim(self.s.expect(T::AccDescrValue, "")?).to_string();
-                store.set_acc_description(&value);
+                store.titles.set_acc_descr(&value);
                 DocItem::Str(value)
             }
             T::AccDescrMultilineValue => {
                 let value = js::trim(self.s.take()).to_string();
-                store.set_acc_description(&value);
+                store.titles.set_acc_descr(&value);
                 DocItem::Str(value)
             }
-            _ => return Ok(None),
+            t if ID.contains(&t) => {
+                let nodes = self.vertex_statement(b)?;
+                self.separator()?;
+                DocItem::List(nodes)
+            }
+            _ => return Err(self.s.fail(self.dialect.statement_start)),
         };
-        Ok(Some(item))
+        Ok(item)
     }
 }

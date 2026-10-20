@@ -9,28 +9,22 @@ use std::{
 };
 
 use super::model::RadarModel;
-use crate::{Ctx, Host};
+use crate::{Ctx, Host, geom::Point};
 use crate::{
     Rendered,
     diagrams::common::fit_width::{fit_width, title_room},
     js,
     svg::{
-        builder::{EscText, LabelSvg, Point as Xy, fragment, num},
+        builder::{EscText, fragment, num},
         root::{Accessible, svg_document},
         theme::series_color,
     },
-    text::{Label, Style, layout_label},
+    text::{Label, Style},
 };
 
 const SWATCH: f64 = 12.0;
 const ROW: f64 = 26.0;
 const GAP: f64 = 24.0;
-
-#[derive(Clone, Copy)]
-pub struct Point {
-    pub x: f64,
-    pub y: f64,
-}
 
 pub fn relative_radius(value: f64, min: f64, max: f64, radius: f64) -> f64 {
     let clipped = js::min(js::max(value, min), max);
@@ -41,7 +35,7 @@ pub fn relative_radius(value: f64, min: f64, max: f64, radius: f64) -> f64 {
 pub fn closed_round_curve(points: &[Point], tension: f64) -> impl fmt::Display + '_ {
     fragment(move |f| {
         let n = points.len();
-        write!(f, "M{}", Xy(points[0].x, points[0].y))?;
+        write!(f, "M{}", points[0])?;
         for i in 0..n {
             let p0 = points[(i + n - 1) % n];
             let p1 = points[i];
@@ -68,7 +62,7 @@ fn polygon(points: impl Iterator<Item = Point> + Clone) -> impl fmt::Display {
             if i > 0 {
                 f.write_str(" ")?;
             }
-            write!(f, "{}", Xy(p.x, p.y))?;
+            write!(f, "{}", p)?;
         }
         Ok(())
     })
@@ -182,7 +176,7 @@ fn draw(
     let at = radius * label_factor + 6.0;
     let mut axis_labels = Vec::with_capacity(count);
     for (axis, u) in axes.iter().zip(&unit) {
-        let label = layout_label(Some(&axis.label), false, measure, small, 4000.0, 0);
+        let label = Label::layout(Some(&axis.label), false, measure, small, 4000.0, 0);
         // Each label hangs off its axis on the side away from the center.
         let cx = u.x * at
             + if u.x > 0.01 {
@@ -210,7 +204,7 @@ fn draw(
     let legend: Vec<Label> = if model.options.show_legend {
         curves
             .iter()
-            .map(|curve| layout_label(Some(&curve.label), false, &*measure, small, 4000.0, 0))
+            .map(|curve| Label::layout(Some(&curve.label), false, &*measure, small, 4000.0, 0))
             .collect()
     } else {
         Vec::new()
@@ -239,8 +233,8 @@ fn draw(
         y0 = y0.min(-legend_height / 2.0);
         y1 = y1.max(legend_height / 2.0);
     }
-    let title = layout_label(
-        model.title.as_deref(),
+    let title = Label::layout(
+        model.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -261,11 +255,9 @@ fn draw(
     let _ = write!(
         content,
         "{}<g transform=\"translate({},{})\">",
-        LabelSvg(
-            &title,
-            total_width / 2.0,
-            pad + title.height / 2.0,
-            crate::svg::builder::TITLE,
+        title.svg(
+            Point::new(total_width / 2.0, pad + title.height / 2.0),
+            crate::svg::builder::TITLE
         ),
         num(pad + (body_width - (x1 - x0)) / 2.0 - x0),
         num(pad + title_height - y0)
@@ -297,7 +289,7 @@ fn draw(
     if count > 0 {
         let _ = write!(content, "<path class=\"{p}-axes\" d=\"");
         for u in &unit {
-            let _ = write!(content, "M0,0L{}", Xy(u.x * reach, u.y * reach));
+            let _ = write!(content, "M0,0L{}", Point::new(u.x * reach, u.y * reach));
         }
         content.push_str("\" fill=\"none\" stroke=\"var(--_b)\"/>");
     }
@@ -352,7 +344,7 @@ fn draw(
                 content,
                 "<g class=\"{p}-axis-label\" data-id=\"{}\">{}</g>",
                 EscText(&axis.name),
-                LabelSvg(label, *cx, *cy, "")
+                label.svg(Point::new(*cx, *cy), "")
             );
         }
         content.push_str("</g>");
@@ -370,7 +362,10 @@ fn draw(
                 num(y - SWATCH / 2.0),
                 js::Number(SWATCH),
                 js::Number(SWATCH),
-                LabelSvg(label, legend_x + SWATCH + 8.0 + label.width / 2.0, y, "")
+                label.svg(
+                    Point::new(legend_x + SWATCH + 8.0 + label.width / 2.0, y),
+                    ""
+                )
             );
         }
         content.push_str("</g>");
@@ -385,8 +380,8 @@ fn draw(
             size,
             ctx,
             Accessible {
-                acc_title: model.acc_title.as_deref(),
-                acc_descr: model.acc_descr.as_deref(),
+                acc_title: model.titles.acc_title.as_deref(),
+                acc_descr: model.titles.acc_descr.as_deref(),
             },
             &content,
         ),

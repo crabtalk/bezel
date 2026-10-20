@@ -8,7 +8,7 @@ pub mod render;
 
 pub use model::CynefinModel;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 pub use render::CynefinConfig;
@@ -24,16 +24,15 @@ impl Diagram for Cynefin {
         _line_offset: usize,
         _limits: &ParseLimits,
     ) -> Result<Model, Error> {
-        Ok(Model::Cynefin(model::build_cynefin(
+        Ok(Model::Cynefin(CynefinModel::new(
             parser::parse_cynefin(source)?,
             title,
         )))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Cynefin(model) = model else {
-        unreachable!("cynefin renders a cynefin model")
-    };
-    Ok(render::render_cynefin(model, &config.cynefin, ctx))
+impl Render for CynefinModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_cynefin(self, &config.cynefin, ctx))
+    }
 }

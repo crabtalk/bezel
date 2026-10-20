@@ -7,80 +7,60 @@
 
 use super::{
     db::IshikawaDb,
-    lexer::{END, EOF, ISHIKAWA, NL, SPACELINE, SPACELIST, TEXT, TOKEN_NAMES, tokenize},
+    lexer::{T, tokenize},
 };
-use crate::{detect::Kind, error::Error, js};
+use crate::{detect::Kind, error::Error, js, token::Stream};
 
 const STOP: &str = "'SPACELINE', 'NL', 'EOF'";
+const STOPS: [T; 3] = [T::Spaceline, T::Nl, T::Eof];
 
 pub fn parse_ishikawa(src: &str, db: &mut IshikawaDb) -> Result<(), Error> {
     let tokens = tokenize(src);
-    let types = &tokens.types;
-    let starts = &tokens.starts;
-    let ends = &tokens.ends;
-    let mut i = 0;
+    let mut s = Stream::new(Kind::Ishikawa, src, &tokens);
 
-    let fail = |i: usize, expected: &str| -> Error {
-        Error::at(
-            Kind::Ishikawa,
-            src,
-            starts[i],
-            &format!(
-                "Expecting {expected}, got '{}'",
-                TOKEN_NAMES[types[i] as usize]
-            ),
-            false,
-        )
-    };
-
-    if types[i] == SPACELINE {
-        i += 1;
-        while types[i] == SPACELINE || types[i] == NL {
-            i += 1;
+    if s.eat(T::Spaceline) {
+        while s.is_any(&[T::Spaceline, T::Nl]) {
+            s.bump();
         }
-        if types[i] != ISHIKAWA {
-            return Err(fail(i, "'SPACELINE', 'NL', 'ISHIKAWA'"));
+        if !s.is(T::Ishikawa) {
+            return Err(s.fail("'SPACELINE', 'NL', 'ISHIKAWA'"));
         }
-    } else if types[i] != ISHIKAWA {
-        return Err(fail(i, "'SPACELINE', 'ISHIKAWA'"));
+    } else if !s.is(T::Ishikawa) {
+        return Err(s.fail("'SPACELINE', 'ISHIKAWA'"));
     }
-    i += 1;
-    if types[i] == NL {
-        i += 1;
-    }
+    s.bump();
+    s.eat(T::Nl);
 
     loop {
-        let kind = types[i];
-        if kind == TEXT || (kind == SPACELIST && types[i + 1] == TEXT) {
-            let text = if kind == TEXT { i } else { i + 1 };
-            i = text + 1;
-            if types[i] != SPACELINE && types[i] != NL && types[i] != EOF {
-                return Err(fail(i, STOP));
-            }
-            let level = if kind == TEXT {
+        let kind = s.kind();
+        if kind == T::Text || (kind == T::Spacelist && s.peek(1) == T::Text) {
+            let level = if kind == T::Text {
                 0
             } else {
-                js::len(&src[starts[text - 1]..ends[text - 1]]) as i64
+                s.take().chars().count() as i64
             };
-            db.add_node(level, js::trim(&src[starts[text]..ends[text]]).to_string());
-        } else if kind == SPACELINE || kind == SPACELIST {
-            i += 1;
-            if types[i] != SPACELINE && types[i] != NL && types[i] != EOF {
-                let expected = if kind == SPACELIST {
+            let text = s.take();
+            if !s.is_any(&STOPS) {
+                return Err(s.fail(STOP));
+            }
+            db.add_node(level, js::trim(text).to_string());
+        } else if kind == T::Spaceline || kind == T::Spacelist {
+            s.bump();
+            if !s.is_any(&STOPS) {
+                return Err(s.fail(&if kind == T::Spacelist {
                     format!("{STOP}, 'TEXT'")
                 } else {
                     STOP.to_string()
-                };
-                return Err(fail(i, &expected));
+                }));
             }
         } else {
-            return Err(fail(i, "'SPACELINE', 'SPACELIST', 'TEXT'"));
+            return Err(s.fail("'SPACELINE', 'SPACELIST', 'TEXT'"));
         }
-        i += 1;
-        while types[i] == NL || types[i] == EOF {
-            i += 1;
+        s.bump();
+        while s.is_any(&[T::Nl, T::Eof]) {
+            s.bump();
         }
-        if types[i] == END {
+        if s.is(T::End) {
             return Ok(());
         }
     }

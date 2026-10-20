@@ -1,5 +1,8 @@
 //! Pele's `diagrams/agentflow/render.ts`.
 
+use crate::geom::{Axis, Direction, Point, RoutePoint, Size};
+use crate::svg::edges::Curve;
+use crate::svg::edges::Marker;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
@@ -27,18 +30,18 @@ use crate::{
     },
     js::{self, Lazy},
     layout::{
-        compound::{CEdge, CNode, Dir, cnode, compound_layout, direction, shift_layout},
+        compound::{CEdge, CNode, compound_layout, shift_layout},
         layered::LayeredOptions,
     },
     svg::{
-        builder::{Esc, EscText, LabelSvg, Point, fragment, num},
-        cluster::{Crossings, cluster_title_x, mark_crossings},
-        edges::{EdgePath, edge_label_svg, loop_path, marker, marker_trim, route_path},
+        builder::{Esc, EscText, fragment, num},
+        cluster::Crossings,
+        edges::{EdgePath, edge_label_svg, loop_path, route_path},
         root::{Accessible, svg_document},
-        shapes::{PAD_X, PAD_Y, ShapeView, draw_shape, inset_route, shape_size},
+        shapes::{PAD_X, PAD_Y, Shape, ShapeView},
         theme::{RADIUS, ResolvedStyle, class_names, resolve_style, series_color},
     },
-    text::{Label, Style, decode_entities, layout_label},
+    text::{Label, Style, decode_entities},
     util::url::{NoteLink, linked},
 };
 
@@ -62,12 +65,12 @@ static RE_EDGE_CLASSES: Lazy = Lazy::new(
 );
 
 /// The side a flow runs toward, with sides numbered clockwise from the top.
-fn flow_end(dir: Dir) -> usize {
+fn flow_end(dir: Direction) -> usize {
     match dir {
-        Dir::TB => 2,
-        Dir::RL => 3,
-        Dir::BT => 0,
-        Dir::LR => 1,
+        Direction::TopToBottom => 2,
+        Direction::RightToLeft => 3,
+        Direction::BottomToTop => 0,
+        Direction::LeftToRight => 1,
     }
 }
 
@@ -113,7 +116,7 @@ fn dot(x: f64, y: f64) -> impl fmt::Display {
         write!(
             f,
             "M{}a1.75,1.75 0 1 0 3.5,0a1.75,1.75 0 1 0 -3.5,0Z",
-            Point(x - 1.75, y)
+            Point::new(x - 1.75, y)
         )
     })
 }
@@ -130,11 +133,10 @@ struct NodeView<'g> {
 }
 
 impl NodeView<'_> {
-    fn shape_view(&self) -> ShapeView<'_> {
+    fn shape_view(&self) -> ShapeView {
         ShapeView {
-            shape: &self.shape,
-            w: self.w,
-            h: self.h,
+            shape: Shape::named(&self.shape),
+            size: Size::new(self.w, self.h),
         }
     }
 }
@@ -195,7 +197,7 @@ fn draw(
         let view: NodeView;
         let mut c: CNode;
         if node.is_group {
-            let label = layout_label(
+            let label = Label::layout(
                 node.label.as_deref(),
                 markdown,
                 measure,
@@ -203,13 +205,13 @@ fn draw(
                 4000.0,
                 text_style,
             );
-            c = cnode(0.0, 0.0, -1);
+            c = CNode::new(Size::default(), None);
             c.is_group = true;
             c.dir = node
                 .dir
                 .as_deref()
                 .filter(|d| !d.is_empty())
-                .map(|d| direction(Some(d)));
+                .map(Direction::from_name);
             c.pad_x = GROUP_PAD;
             c.pad_top = if label.height > 0.0 {
                 label.height + 16.0
@@ -229,7 +231,7 @@ fn draw(
                 loops: 0,
             };
         } else if node.shape == "collapsedGroup" {
-            let label = layout_label(
+            let label = Label::layout(
                 node.label.as_deref(),
                 markdown,
                 measure,
@@ -249,10 +251,10 @@ fn draw(
                 dy: -DOTS / 2.0,
                 loops: 0,
             };
-            c = cnode(w, h, -1);
+            c = CNode::new(Size::new(w, h), None);
         } else {
             let shape = canonical_shape(Some(&node.shape));
-            let label = layout_label(
+            let label = Label::layout(
                 node.label.as_deref(),
                 markdown,
                 measure,
@@ -262,84 +264,93 @@ fn draw(
             );
             // A diamond grows twice as fast as its label, so it keeps the
             // label's own width.
-            let s = shape_size(
-                shape,
+            let s = Shape::named(shape).size(Size::new(
                 if shape == "diam" {
                     label.width
                 } else {
                     label.width.max(min_width)
                 },
                 label.height,
-            );
+            ));
             view = NodeView {
                 node,
                 style,
                 label,
                 shape: shape.to_string(),
-                w: s.w,
-                h: s.h,
+                w: s.size.w,
+                h: s.size.h,
                 dy: s.dy,
                 loops: 0,
             };
-            c = cnode(s.w, s.h, -1);
+            c = CNode::new(s.size, None);
         }
         c.seq = views.len() as f64;
         views.push(view);
         cnodes.push(c);
     }
     for (i, node) in graph.nodes.iter().enumerate() {
-        cnodes[i].parent = match &node.parent_id {
-            Some(parent) => index.get(parent.as_str()).map_or(-1, |&at| at as i32),
-            None => -1,
-        };
+        cnodes[i].parent = node
+            .parent_id
+            .as_ref()
+            .and_then(|parent| index.get(parent.as_str()).copied());
     }
 
     let root_dir = if turned {
-        Dir::TB
+        Direction::TopToBottom
     } else {
-        direction(db.store.direction.as_deref())
+        db.store
+            .direction
+            .as_deref()
+            .map(Direction::from_name)
+            .unwrap_or_default()
     };
     // The direction of the level a node sits in.
-    let flow_of = |cnodes: &[CNode], i: usize| -> Dir {
-        let mut dir: Option<Dir> = None;
+    let flow_of = |cnodes: &[CNode], i: usize| -> Direction {
+        let mut dir: Option<Direction> = None;
         let mut p = cnodes[i].parent;
         let mut hops = 0;
-        while p >= 0 && dir.is_none() && hops < 10000 {
-            dir = cnodes[p as usize].dir;
-            p = cnodes[p as usize].parent;
+        while let Some(at) = p
+            && dir.is_none()
+            && hops < 10000
+        {
+            dir = cnodes[at].dir;
+            p = cnodes[at].parent;
             hops += 1;
         }
         dir.unwrap_or(root_dir)
     };
     let flows_sideways = |cnodes: &[CNode], i: usize| -> bool {
         let dir = flow_of(cnodes, i);
-        dir == Dir::LR || dir == Dir::RL
+        !dir.is_vertical()
     };
 
     let mut depth: Vec<i32> = vec![-1; cnodes.len()];
     for i in 0..cnodes.len() {
         let mut chain: Vec<usize> = Vec::new();
-        let mut j = i as i32;
-        while j >= 0 && depth[j as usize] < 0 && chain.len() <= cnodes.len() {
-            chain.push(j as usize);
-            j = cnodes[j as usize].parent;
+        let mut j = Some(i);
+        while let Some(at) = j
+            && depth[at] < 0
+            && chain.len() <= cnodes.len()
+        {
+            chain.push(at);
+            j = cnodes[at].parent;
         }
-        let d = if j >= 0 { depth[j as usize] + 1 } else { 0 };
+        let d = j.map_or(0, |at| depth[at] + 1);
         for (d, &k) in (d..).zip(chain.iter().rev()) {
             depth[k] = d;
         }
     }
     let contains = |cnodes: &[CNode], group: usize, i: usize| -> bool {
-        let mut j = i as i32;
+        let mut j = Some(i);
         let mut d = depth[i];
         while d > depth[group] {
-            if j < 0 {
+            let Some(at) = j else {
                 return false;
-            }
-            j = cnodes[j as usize].parent;
+            };
+            j = cnodes[at].parent;
             d -= 1;
         }
-        j == group as i32 && i != group
+        j == Some(group) && i != group
     };
 
     let mut cedges: Vec<CEdge> = Vec::new();
@@ -355,7 +366,7 @@ fn draw(
         else {
             continue;
         };
-        let label = layout_label(
+        let label = Label::layout(
             Some(&edge.label),
             edge.label_type == LabelType::Markdown,
             measure,
@@ -377,7 +388,7 @@ fn draw(
             // node's box grows to hold it.
             views[src].loops += 1;
             if flows_sideways(&cnodes, src) {
-                cnodes[src].h += 2.0
+                cnodes[src].size.h += 2.0
                     * (LOOP
                         + if label.height > 0.0 {
                             label.height + 8.0
@@ -385,7 +396,7 @@ fn draw(
                             0.0
                         });
             } else {
-                cnodes[src].w += 2.0
+                cnodes[src].size.w += 2.0
                     * (LOOP
                         + if label.width > 0.0 {
                             label.width + 12.0
@@ -399,19 +410,8 @@ fn draw(
             src,
             dst,
             minlen: edge.minlen.unwrap_or(1),
-            label_w: if label.width > 0.0 {
-                label.width + 12.0
-            } else {
-                0.0
-            },
-            label_h: if label.height > 0.0 {
-                label.height + 4.0
-            } else {
-                0.0
-            },
-            route: Vec::new(),
-            label_x: 0.0,
-            label_y: 0.0,
+            label: CEdge::label_room(&label),
+            ..CEdge::default()
         });
         edge_labels.push(label);
     }
@@ -429,8 +429,8 @@ fn draw(
         },
     );
 
-    let title = layout_label(
-        db.store.title.as_deref(),
+    let title = Label::layout(
+        db.store.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -442,12 +442,12 @@ fn draw(
     } else {
         0.0
     };
-    let inner = layout.width.max(title.width);
-    let ox = pad + (inner - layout.width) / 2.0;
+    let inner = layout.w.max(title.width);
+    let ox = pad + (inner - layout.w) / 2.0;
     let oy = pad + title_height;
-    shift_layout(&mut cnodes, &mut cedges, ox, oy);
+    shift_layout(&mut cnodes, &mut cedges, Point::new(ox, oy));
     let width = (inner + 2.0 * pad).ceil();
-    let height = (layout.height + title_height + 2.0 * pad).ceil();
+    let height = (layout.h + title_height + 2.0 * pad).ceil();
     let mut links: Vec<Link> = Vec::new();
 
     // An edge between a node and a container around it runs straight between
@@ -455,8 +455,8 @@ fn draw(
     // it. If another node is in the way it takes a side instead, and failing
     // that the far end.
     let mut held_paths: Vec<EdgePath> = Vec::new();
-    let mut held_labels: Vec<f64> = Vec::new();
-    let mut held_routes: Vec<Vec<f64>> = Vec::new();
+    let mut held_labels: Vec<Point> = Vec::new();
+    let mut held_routes: Vec<Vec<RoutePoint>> = Vec::new();
     let careful = ((held.len() * cnodes.len()) as f64) < 2e6;
     for h in &held {
         let out = contains(&cnodes, h.dst, h.src);
@@ -466,44 +466,49 @@ fn draw(
         let n = &cnodes[i];
         let end = flow_end(g.dir.unwrap_or_else(|| flow_of(&cnodes, outer)));
         let first = if out { end } else { (end + 2) & 3 };
-        let toward = |side: usize| -> Vec<f64> {
+        let toward = |side: usize| -> Vec<RoutePoint> {
             let upright = (side & 1) == 0;
             let sign = if side == 0 || side == 3 { -1.0 } else { 1.0 };
             let nx = if upright {
-                n.x
+                n.center.x
             } else {
-                n.x + (sign * n.w) / 2.0
+                n.center.x + (sign * n.size.w) / 2.0
             };
             let ny = if upright {
-                n.y + (sign * n.h) / 2.0
+                n.center.y + (sign * n.size.h) / 2.0
             } else {
-                n.y
+                n.center.y
             };
             let bx = if upright {
-                n.x
+                n.center.x
             } else {
-                g.x + (sign * g.w) / 2.0
+                g.center.x + (sign * g.size.w) / 2.0
             };
             let by = if upright {
-                g.y + (sign * g.h) / 2.0
+                g.center.y + (sign * g.size.h) / 2.0
             } else {
-                n.y
+                n.center.y
             };
-            let axis = if upright { 0.0 } else { 1.0 };
+            let axis = if upright { Axis::Y } else { Axis::X };
+            let (inner, border) = (
+                RoutePoint::new(Point::new(nx, ny), axis),
+                RoutePoint::new(Point::new(bx, by), axis),
+            );
             if out {
-                vec![nx, ny, axis, bx, by, axis]
+                vec![inner, border]
             } else {
-                vec![bx, by, axis, nx, ny, axis]
+                vec![border, inner]
             }
         };
-        let blocked = |r: &[f64]| -> bool {
+        let blocked = |r: &[RoutePoint]| -> bool {
+            let (a, b) = (r[0].at, r[1].at);
             cnodes.iter().enumerate().any(|(k, c)| {
                 k != i
                     && !c.is_group
-                    && c.x + c.w / 2.0 > r[0].min(r[3]) - 1.0
-                    && c.x - c.w / 2.0 < r[0].max(r[3]) + 1.0
-                    && c.y + c.h / 2.0 > r[1].min(r[4]) - 1.0
-                    && c.y - c.h / 2.0 < r[1].max(r[4]) + 1.0
+                    && c.center.x + c.size.w / 2.0 > a.x.min(b.x) - 1.0
+                    && c.center.x - c.size.w / 2.0 < a.x.max(b.x) + 1.0
+                    && c.center.y + c.size.h / 2.0 > a.y.min(b.y) - 1.0
+                    && c.center.y - c.size.h / 2.0 < a.y.max(b.y) + 1.0
             })
         };
         let mut route = toward(first);
@@ -516,33 +521,29 @@ fn draw(
                 }
             }
         }
-        held_labels.push((route[0] + route[3]) / 2.0);
-        held_labels.push((route[1] + route[4]) / 2.0);
+        held_labels.push(route[0].at.midpoint(route[1].at));
         let mut drawn_route = route.clone();
-        inset_route(
-            &mut drawn_route,
-            if out { 0 } else { 3 },
-            &views[i].shape_view(),
-            n,
-        );
+        views[i]
+            .shape_view()
+            .inset_end(n, &mut drawn_route[if out { 0 } else { 1 }].at);
         held_paths.push(route_path(
             &drawn_route,
-            Some("linear"),
+            Curve::Linear,
             0.0,
-            marker_trim(&h.edge.arrow_type_end),
+            Marker::trim_of(Marker::from_name(&h.edge.arrow_type_end)),
             None,
             None,
         ));
         held_routes.push(route);
     }
 
-    let mut crossings: Crossings = HashMap::new();
+    let mut crossings: Crossings = Crossings::new();
     if cnodes.iter().any(|c| c.is_group) {
         for e in &cedges {
-            mark_crossings(&mut crossings, &e.route);
+            crossings.mark(&e.route);
         }
         for route in &held_routes {
-            mark_crossings(&mut crossings, route);
+            crossings.mark(route);
         }
     }
 
@@ -557,32 +558,30 @@ fn draw(
         let view = &views[i];
         let c = &cnodes[i];
         let node = view.node;
-        let x = c.x;
-        let y = c.y;
+        let x = c.center.x;
+        let y = c.center.y;
         let classes = class_names(&RE_DEFAULT.replace(&node.css_classes, |_| String::new()));
         let id = EscText(&node.id);
         if c.is_group {
-            let title_x = cluster_title_x(c, view.label.width, &crossings, GROUP_PAD);
+            let title_x = crossings.title_x(c, view.label.width, GROUP_PAD);
             let _ = write!(
                 clusters,
                 "<g class=\"{p}-cluster {p}-flow{classes}\" data-id=\"{id}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{}{}/>{}</g>",
-                num(x - c.w / 2.0),
-                num(y - c.h / 2.0),
-                num(c.w),
-                num(c.h),
+                num(x - c.size.w / 2.0),
+                num(y - c.size.h / 2.0),
+                num(c.size.w),
+                num(c.size.h),
                 tint(node.color_index.unwrap_or(KIND_COUNT), "0.06", &view.style),
                 view.style.shape,
-                LabelSvg(
-                    &view.label,
-                    title_x,
-                    y - c.h / 2.0 + 8.0 + view.label.height / 2.0,
+                view.label.svg(
+                    Point::new(title_x, y - c.size.h / 2.0 + 8.0 + view.label.height / 2.0),
                     rewrite(
                         &mut title_attrs,
                         format_args!(
                             " class=\"{p}-cluster-label\" fill=\"var(--_m)\"{}",
                             view.style.text
                         )
-                    ),
+                    )
                 ),
             );
             continue;
@@ -618,7 +617,7 @@ fn draw(
                     num(h),
                     tint(slot, "0.06", &view.style),
                     view.style.shape,
-                    Point(-w / 2.0 + 10.0, line),
+                    Point::new(-w / 2.0 + 10.0, line),
                     num(w / 2.0 - 10.0),
                     view.style.line,
                     dot(-9.0, dots),
@@ -628,11 +627,9 @@ fn draw(
             }
             Some(name) => {
                 let slot = kind_slot(name).unwrap_or(1);
-                draw_shape(
+                Shape::named(&view.shape).draw(
                     &mut inner,
-                    &view.shape,
-                    w,
-                    h,
+                    Size::new(w, h),
                     rewrite(
                         &mut shape_attrs,
                         format_args!("{}{}", tint(slot, "0.14", &view.style), view.style.shape),
@@ -653,7 +650,7 @@ fn draw(
             &mut label_attrs_buf,
             format_args!(" class=\"{p}-label\"{}", view.style.text),
         );
-        let text = LabelSvg(&view.label, 0.0, view.dy, label_attrs);
+        let text = view.label.svg(Point::new(0.0, view.dy), label_attrs);
         let note = node
             .label
             .as_deref()
@@ -686,7 +683,7 @@ fn draw(
 
     let mut edges_out = String::new();
     let mut labels_out = String::new();
-    let mut put = |edge: &GraphEdge, label: &Label, path: &EdgePath, x: f64, y: f64| {
+    let mut put = |edge: &GraphEdge, label: &Label, path: &EdgePath, at: Point| {
         let style = if !edge.style.is_empty() || !edge.css_compiled_styles.is_empty() {
             let mut all = edge.css_compiled_styles.clone();
             all.extend(edge.style.iter().cloned());
@@ -718,7 +715,7 @@ fn draw(
             } else {
                 ""
             },
-            marker(end_type, path.ex, path.ey, path.edx, path.edy, &color),
+            Marker::draw_of(Marker::from_name(end_type), path.end, path.end_dir, &color),
         );
         if label.width > 0.0 {
             let _ = write!(
@@ -727,9 +724,8 @@ fn draw(
                 edge_label_svg(
                     &edge.id,
                     label,
-                    x,
-                    y,
-                    style.as_ref().map_or("", |s| s.text.as_str()),
+                    at,
+                    style.as_ref().map_or("", |s| s.text.as_str())
                 )
             );
         }
@@ -747,44 +743,37 @@ fn draw(
             let sideways = flows_sideways(&cnodes, src);
             loop_path(
                 &cnodes[src],
-                view.w,
-                view.h,
+                Size::new(view.w, view.h),
                 k as f64,
                 sideways,
                 LOOP,
-                marker_trim(end_type),
+                Marker::trim_of(Marker::from_name(end_type)),
                 &mut cedges[i],
             )
         } else {
             let mut route = cedges[i].route.clone();
-            let at_end = route.len() - 3;
-            inset_route(&mut route, 0, &views[src].shape_view(), &cnodes[src]);
-            inset_route(&mut route, at_end, &views[dst].shape_view(), &cnodes[dst]);
+            let last = route.len() - 1;
+            views[src]
+                .shape_view()
+                .inset_end(&cnodes[src], &mut route[0].at);
+            views[dst]
+                .shape_view()
+                .inset_end(&cnodes[dst], &mut route[last].at);
             route_path(
                 &route,
-                edge.curve.as_deref(),
+                edge.curve
+                    .as_deref()
+                    .map_or(Curve::Smooth, Curve::from_name),
                 0.0,
-                marker_trim(end_type),
+                Marker::trim_of(Marker::from_name(end_type)),
                 None,
                 None,
             )
         };
-        put(
-            edge,
-            &edge_labels[i],
-            &path,
-            cedges[i].label_x,
-            cedges[i].label_y,
-        );
+        put(edge, &edge_labels[i], &path, cedges[i].label_at);
     }
     for (i, h) in held.iter().enumerate() {
-        put(
-            h.edge,
-            &h.label,
-            &held_paths[i],
-            held_labels[2 * i],
-            held_labels[2 * i + 1],
-        );
+        put(h.edge, &h.label, &held_paths[i], held_labels[i]);
     }
 
     let title_attrs = crate::svg::builder::TITLE;
@@ -794,7 +783,10 @@ fn draw(
     let _ = write!(
         content,
         "{}",
-        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
+        title.svg(
+            Point::new(width / 2.0, pad + title.height / 2.0),
+            title_attrs
+        )
     );
     if !clusters.is_empty() {
         let _ = write!(content, "<g class=\"{p}-clusters\">{clusters}</g>");
@@ -821,8 +813,8 @@ fn draw(
         size,
         ctx,
         Accessible {
-            acc_title: db.store.acc_title.as_deref(),
-            acc_descr: db.store.acc_descr.as_deref(),
+            acc_title: db.store.titles.acc_title.as_deref(),
+            acc_descr: db.store.titles.acc_descr.as_deref(),
         },
         &content,
     );

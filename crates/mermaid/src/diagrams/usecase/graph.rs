@@ -3,6 +3,7 @@
 //! every relationship and note connector as an edge with its markers. Ports
 //! getData from Mermaid's use case DB. Pele's `diagrams/usecase/graph.ts`.
 
+use super::json::pointer_key;
 use crate::js::JsValue;
 use indexmap::IndexMap;
 
@@ -89,10 +90,6 @@ fn scalar(value: &Value) -> String {
         Value::Null => "null".into(),
         other => other.to_js_string(),
     }
-}
-
-fn pointer_key(key: &str) -> String {
-    key.replace('~', "~0").replace('/', "~1")
 }
 
 impl UsecaseJsonNode {

@@ -11,7 +11,7 @@ pub use model::{NodeType, TreeNode, TreeViewModel};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::config::{Map, Value};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
@@ -27,7 +27,7 @@ impl Diagram for TreeView {
         _line_offset: usize,
         _limits: &ParseLimits,
     ) -> Result<Model, Error> {
-        Ok(Model::TreeView(model::build_tree_view(
+        Ok(Model::TreeView(TreeViewModel::new(
             model::read_tree_view(source)?,
             title,
         )))
@@ -59,9 +59,8 @@ pub struct TreeViewConfig {
     pub extension_icons: Option<Map>,
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::TreeView(model) = model else {
-        unreachable!("treeView renders a treeView model")
-    };
-    Ok(render::render_tree_view(model, &config.tree_view, ctx))
+impl Render for TreeViewModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_tree_view(self, &config.tree_view, ctx))
+    }
 }

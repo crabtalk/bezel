@@ -2,6 +2,7 @@
 
 use super::GanttConfig;
 use crate::config::clamped;
+use crate::geom::Point;
 use crate::svg::builder::rewrite;
 use indexmap::IndexMap;
 use std::fmt::Write as _;
@@ -21,11 +22,11 @@ use crate::{
         date::{Date, LocalZone},
     },
     svg::{
-        builder::{Esc, EscText, LabelSvg, Point, fragment, num},
+        builder::{Esc, EscText, fragment, num},
         root::{Accessible, svg_document},
         theme::{CRITICAL, RADIUS, resolve_style},
     },
-    text::{Host, Label, Style, layout_label},
+    text::{Host, Label, Style},
     util::url::linked,
 };
 
@@ -37,7 +38,7 @@ static RE_BREAK: Lazy = Lazy::new(r"<br\s*\/?>", "gi");
 
 /// A task label sits on one row, so only its first line is kept.
 fn one_line(raw: &str, measure: &impl Host, size: f64) -> Label {
-    let label = layout_label(
+    let label = Label::layout(
         Some(&RE_BREAK.replace(raw, |_| " ".into())),
         false,
         measure,
@@ -127,8 +128,8 @@ struct Bar {
 
 fn accessible(model: &GanttDb) -> Accessible<'_> {
     Accessible {
-        acc_title: model.acc_title.as_deref(),
-        acc_descr: model.acc_descr.as_deref(),
+        acc_title: model.titles.acc_title.as_deref(),
+        acc_descr: model.titles.acc_descr.as_deref(),
     }
 }
 
@@ -204,8 +205,8 @@ pub fn render_gantt(
     }
     let has_plot = start <= stop;
 
-    let title = layout_label(
-        model.title.as_deref(),
+    let title = Label::layout(
+        model.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -226,7 +227,10 @@ pub fn render_gantt(
         let _ = write!(
             content,
             "{}",
-            LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
+            title.svg(
+                Point::new(width / 2.0, pad + title.height / 2.0),
+                title_attrs
+            )
         );
         return Ok(Rendered {
             svg: svg_document(
@@ -247,7 +251,7 @@ pub fn render_gantt(
     let mut section_labels: IndexMap<&str, Label> = IndexMap::new();
     let mut section_width: f64 = 0.0;
     for &section in categories.keys() {
-        let label = layout_label(Some(section), false, measure, section_size, 180.0, 0);
+        let label = Label::layout(Some(section), false, measure, section_size, 180.0, 0);
         section_width = section_width.max(label.width);
         section_labels.insert(section, label);
     }
@@ -479,14 +483,12 @@ pub fn render_gantt(
         let _ = write!(
             vert_labels,
             "{}",
-            LabelSvg(
-                &label,
-                cx,
-                vert_top + line as f64 * vert_line + vert_line / 2.0,
+            label.svg(
+                Point::new(cx, vert_top + line as f64 * vert_line + vert_line / 2.0),
                 &format!(
                     " class=\"{p}-vert-label\" data-id=\"{}\"",
                     EscText(&task.id)
-                ),
+                )
             )
         );
     }
@@ -535,14 +537,12 @@ pub fn render_gantt(
         let _ = write!(
             section_out,
             "{}",
-            LabelSvg(
-                label,
-                pad + 8.0 + label.width / 2.0,
-                y + h / 2.0,
+            label.svg(
+                Point::new(pad + 8.0 + label.width / 2.0, y + h / 2.0),
                 &format!(
                     " class=\"{p}-section-label\" data-id=\"{}\"",
                     EscText(section)
-                ),
+                )
             )
         );
         row = end;
@@ -666,10 +666,10 @@ pub fn render_gantt(
                 write!(
                     f,
                     "<path d=\"M{}L{}L{}L{}Z\" {paint} stroke=\"{stroke}\" stroke-linejoin=\"round\"/>",
-                    Point(cx, cy - r),
-                    Point(cx + r, cy),
-                    Point(cx, cy + r),
-                    Point(cx - r, cy)
+                    Point::new(cx, cy - r),
+                    Point::new(cx + r, cy),
+                    Point::new(cx, cy + r),
+                    Point::new(cx - r, cy)
                 )?;
             } else {
                 write!(
@@ -681,7 +681,11 @@ pub fn render_gantt(
                     num(bar_height)
                 )?;
             }
-            write!(f, "{}", LabelSvg(&bar.label, bar.label_x, cy, label_attrs))
+            write!(
+                f,
+                "{}",
+                bar.label.svg(Point::new(bar.label_x, cy), label_attrs)
+            )
         });
         let url = model.links.get(&task.id).map(String::as_str);
         let body = linked(body, url, &task.id, &mut links, ctx, "");
@@ -734,7 +738,10 @@ pub fn render_gantt(
     let _ = write!(
         content,
         "{}",
-        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
+        title.svg(
+            Point::new(width / 2.0, pad + title.height / 2.0),
+            title_attrs
+        )
     );
     if !bands.is_empty() {
         let _ = write!(content, "<g class=\"{p}-sections\">{bands}</g>");

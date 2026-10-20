@@ -8,5 +8,5 @@ mod metrics;
 
 pub use entities::{decode_entities, decoded};
 pub use icons::{icon, icon_markup};
-pub use label::{Icon, LINE_HEIGHT, Label, Span, layout_label};
+pub use label::{Icon, LINE_HEIGHT, Label, Span};
 pub use measure::{Host, Metrics, Style};

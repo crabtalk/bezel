@@ -1,7 +1,9 @@
 //! Pele's `diagrams/block/render.ts`.
 
 use crate::config::capped;
+use crate::geom::{Point, Side, Size};
 use crate::svg::builder::rewrite;
+use crate::svg::edges::Marker;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{
@@ -21,13 +23,13 @@ use crate::{
     diagrams::common::fit_width::{title_room, try_tighten},
     js,
     svg::{
-        builder::{EscText, LabelSvg, num},
-        edges::{EdgePath, edge_label_svg, marker, marker_trim},
+        builder::{EscText, num},
+        edges::{EdgePath, edge_label_svg},
         root::{Accessible, svg_document},
-        shapes::{draw_shape, shape_inset, shape_size},
+        shapes::Shape,
         theme::{RADIUS, ResolvedStyle, class_names, resolve_style},
     },
-    text::{Host, Label, Style, layout_label},
+    text::{Host, Label, Style},
 };
 
 const GAP: f64 = 12.0;
@@ -118,7 +120,12 @@ fn edge_y(v: &View, x: f64, sign: f64) -> f64 {
     } else if v.kind == ViewKind::Leaf && v.shape == "diam" {
         reach = hh * (1.0 - dx / hw).max(0.0);
     } else if v.kind == ViewKind::Leaf {
-        reach = hh - shape_inset(v.shape, v.bw, v.bh, if sign > 0.0 { 2 } else { 0 }, 0.0);
+        reach = hh
+            - Shape::named(v.shape).inset(
+                Size::new(v.bw, v.bh),
+                if sign > 0.0 { Side::Bottom } else { Side::Top },
+                0.0,
+            );
     } else if v.kind == ViewKind::Arrow && arrow_axis(v.mask) == Axis::X {
         reach = hh - OVERHANG;
     }
@@ -137,16 +144,16 @@ fn edge_x(v: &View, y: f64, sign: f64) -> f64 {
     } else if v.kind == ViewKind::Leaf && v.shape == "diam" {
         reach = hw * (1.0 - dy / hh).max(0.0);
     } else if v.kind == ViewKind::Leaf {
-        reach = hw - shape_inset(v.shape, v.bw, v.bh, if sign > 0.0 { 1 } else { 3 }, 0.0);
+        reach = hw
+            - Shape::named(v.shape).inset(
+                Size::new(v.bw, v.bh),
+                if sign > 0.0 { Side::Right } else { Side::Left },
+                0.0,
+            );
     } else if v.kind == ViewKind::Arrow && arrow_axis(v.mask) == Axis::Y {
         reach = hw - OVERHANG;
     }
     v.x + sign * reach
-}
-
-/// `x || 1`.
-fn or_one(x: f64) -> f64 {
-    if js::truthy(x) { x } else { 1.0 }
 }
 
 /// Where the line from the center toward (tx, ty) leaves the outline.
@@ -156,9 +163,9 @@ fn border(v: &View, tx: f64, ty: f64, out: &mut Vec<f64>) {
     let hw = v.bw / 2.0;
     let hh = v.bh / 2.0;
     let mut k = if is_round(v) {
-        hw / or_one(js::hypot(dx, dy))
+        hw / js::or_one(js::hypot(dx, dy))
     } else if v.kind == ViewKind::Leaf && v.shape == "diam" {
-        1.0 / or_one(dx.abs() / hw + dy.abs() / hh)
+        1.0 / js::or_one(dx.abs() / hw + dy.abs() / hh)
     } else {
         js::min(
             if dx == 0.0 {
@@ -367,13 +374,13 @@ fn trace(p: &[f64], mut start_trim: f64, mut end_trim: f64) -> EdgePath {
     let mut ax = p[2] - sx;
     let mut ay = p[3] - sy;
     let first = js::hypot(ax, ay);
-    ax /= or_one(first);
-    ay /= or_one(first);
+    ax /= js::or_one(first);
+    ay /= js::or_one(first);
     let mut bx = ex - p[n - 4];
     let mut by = ey - p[n - 3];
     let last = js::hypot(bx, by);
-    bx /= or_one(last);
-    by /= or_one(last);
+    bx /= js::or_one(last);
+    by /= js::or_one(last);
     if n == 4 && start_trim + end_trim > first {
         let scale = first / (start_trim + end_trim);
         start_trim *= scale;
@@ -410,14 +417,10 @@ fn trace(p: &[f64], mut start_trim: f64, mut end_trim: f64) -> EdgePath {
     );
     EdgePath {
         d,
-        sx,
-        sy,
-        sdx: -ax,
-        sdy: -ay,
-        ex,
-        ey,
-        edx: bx,
-        edy: by,
+        start: Point::new(sx, sy),
+        start_dir: Point::new(-ax, -ay),
+        end: Point::new(ex, ey),
+        end_dir: Point::new(bx, by),
     }
 }
 
@@ -473,14 +476,16 @@ fn loop_path(v: &View, k: f64, start_trim: f64, end_trim: f64) -> EdgePath {
             num(x2),
             num(y2)
         ),
-        sx,
-        sy,
-        sdx: if sl > 0.0 { (sx - x1) / sl } else { a1.sin() },
-        sdy: if sl > 0.0 { (sy - y1) / sl } else { -a1.cos() },
-        ex,
-        ey,
-        edx: if el > 0.0 { (ex - x2) / el } else { -a2.sin() },
-        edy: if el > 0.0 { (ey - y2) / el } else { a2.cos() },
+        start: Point::new(sx, sy),
+        start_dir: Point::new(
+            if sl > 0.0 { (sx - x1) / sl } else { a1.sin() },
+            if sl > 0.0 { (sy - y1) / sl } else { -a1.cos() },
+        ),
+        end: Point::new(ex, ey),
+        end_dir: Point::new(
+            if el > 0.0 { (ex - x2) / el } else { -a2.sin() },
+            if el > 0.0 { (ey - y2) / el } else { a2.cos() },
+        ),
     }
 }
 
@@ -622,7 +627,7 @@ impl<H: Host> Viewer<'_, H> {
         let raw = block.label.as_deref();
         if kind_str == Some("space") {
             kind = ViewKind::Space;
-            label = layout_label(None, false, self.ctx.host, font_size, self.wrap, 0);
+            label = Label::layout(None, false, self.ctx.host, font_size, self.wrap, 0);
         } else if kind_str == Some("composite") {
             kind = ViewKind::Composite;
             let room = if self.tight {
@@ -630,7 +635,7 @@ impl<H: Host> Viewer<'_, H> {
             } else {
                 4000.0
             };
-            label = layout_label(raw, false, self.ctx.host, font_size, room, text_style);
+            label = Label::layout(raw, false, self.ctx.host, font_size, room, text_style);
             head = if label.height > 0.0 {
                 label.height + 4.0
             } else {
@@ -640,7 +645,7 @@ impl<H: Host> Viewer<'_, H> {
             nh = head + 2.0 * self.gap;
         } else if kind_str == Some("block_arrow") {
             kind = ViewKind::Arrow;
-            label = layout_label(raw, false, self.ctx.host, font_size, self.wrap, text_style);
+            label = Label::layout(raw, false, self.ctx.host, font_size, self.wrap, text_style);
             let blank = label
                 .lines
                 .iter()
@@ -662,15 +667,15 @@ impl<H: Host> Viewer<'_, H> {
                 .iter()
                 .find(|(name, _)| *name == kind_str)
                 .map_or("rect", |(_, shape)| shape);
-            label = layout_label(raw, false, self.ctx.host, font_size, self.wrap, text_style);
-            let s = shape_size(shape, label.width, label.height);
-            nw = s.w;
+            label = Label::layout(raw, false, self.ctx.host, font_size, self.wrap, text_style);
+            let s = Shape::named(shape).size(Size::new(label.width, label.height));
+            nw = s.size.w;
             // A cylinder's caps deepen as it widens, so it is sized for the
             // deepest ones.
             nh = if shape == "cyl" {
-                s.h.max(label.height + 40.0)
+                s.size.h.max(label.height + 40.0)
             } else {
-                s.h
+                s.size.h
             };
             dy = s.dy;
         }
@@ -828,7 +833,7 @@ fn draw(
         let k = seen.get(&key).copied().unwrap_or(0);
         seen.insert(key, k + 1);
         let k = k as f64;
-        let label = layout_label(
+        let label = Label::layout(
             model.block(edge).label.as_deref(),
             false,
             measure,
@@ -888,7 +893,7 @@ fn draw(
         });
     }
 
-    let title = layout_label(
+    let title = Label::layout(
         model.title.as_deref(),
         false,
         measure,
@@ -940,17 +945,15 @@ fn draw(
                 num(c.w),
                 num(c.h),
                 v.style.shape,
-                LabelSvg(
-                    &v.label,
-                    v.x,
-                    top + (c.head + gap) / 2.0 + 2.0,
+                v.label.svg(
+                    Point::new(v.x, top + (c.head + gap) / 2.0 + 2.0),
                     rewrite(
                         &mut title_attrs,
                         format_args!(
                             " class=\"{p}-cluster-label\" fill=\"var(--_m)\"{}",
                             v.style.text
                         )
-                    ),
+                    )
                 ),
             );
             continue;
@@ -970,11 +973,9 @@ fn draw(
         if arrow {
             draw_arrow(&mut nodes, v.mask, v.bw, v.bh, shape_attrs);
         } else {
-            draw_shape(
+            Shape::named(v.shape).draw(
                 &mut nodes,
-                v.shape,
-                v.bw,
-                v.bh,
+                Size::new(v.bw, v.bh),
                 shape_attrs,
                 rewrite(
                     &mut line_attrs,
@@ -986,7 +987,11 @@ fn draw(
             &mut label_attrs_buf,
             format_args!(" class=\"{p}-label\"{}", v.style.text),
         );
-        let _ = write!(nodes, "{}</g>", LabelSvg(&v.label, v.dx, v.dy, label_attrs));
+        let _ = write!(
+            nodes,
+            "{}</g>",
+            v.label.svg(Point::new(v.dx, v.dy), label_attrs)
+        );
     }
 
     let mut edges = String::new();
@@ -999,8 +1004,8 @@ fn draw(
             loop_path(
                 &views[ends[i].0],
                 route.loop_k,
-                marker_trim(start_type),
-                marker_trim(end_type),
+                Marker::trim_of(Marker::from_name(start_type)),
+                Marker::trim_of(Marker::from_name(end_type)),
             )
         } else {
             for pair in route.points.chunks_mut(2) {
@@ -1009,8 +1014,8 @@ fn draw(
             }
             trace(
                 &route.points,
-                marker_trim(start_type),
-                marker_trim(end_type),
+                Marker::trim_of(Marker::from_name(start_type)),
+                Marker::trim_of(Marker::from_name(end_type)),
             )
         };
         let id = edge.id.as_deref().unwrap_or("");
@@ -1029,21 +1034,29 @@ fn draw(
             } else {
                 ""
             },
-            marker(
-                start_type,
-                path.sx,
-                path.sy,
-                path.sdx,
-                path.sdy,
+            Marker::draw_of(
+                Marker::from_name(start_type),
+                path.start,
+                path.start_dir,
                 "var(--_l)"
             ),
-            marker(end_type, path.ex, path.ey, path.edx, path.edy, "var(--_l)"),
+            Marker::draw_of(
+                Marker::from_name(end_type),
+                path.end,
+                path.end_dir,
+                "var(--_l)"
+            ),
         );
         if route.label.width > 0.0 {
             let _ = write!(
                 labels,
                 "{}",
-                edge_label_svg(id, &route.label, route.lx + ox, route.ly + oy, "",)
+                edge_label_svg(
+                    id,
+                    &route.label,
+                    Point::new(route.lx + ox, route.ly + oy),
+                    ""
+                )
             );
         }
     }
@@ -1054,7 +1067,10 @@ fn draw(
     let _ = write!(
         content,
         "{}",
-        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
+        title.svg(
+            Point::new(width / 2.0, pad + title.height / 2.0),
+            title_attrs
+        )
     );
     if !clusters.is_empty() {
         let _ = write!(content, "<g class=\"{p}-clusters\">{clusters}</g>");

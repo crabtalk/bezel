@@ -8,7 +8,7 @@ pub mod render;
 
 pub use db::{JourneyModel, JourneyTask};
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
@@ -24,15 +24,14 @@ impl Diagram for Journey {
         _limits: &ParseLimits,
     ) -> Result<Model, Error> {
         let mut db = JourneyModel::new();
-        db.title = title.map(str::to_string);
+        db.titles.title = title.map(str::to_string);
         parser::parse_journey(source, &mut db)?;
         Ok(Model::Journey(db))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Journey(model) = model else {
-        unreachable!("journey renders a journey model")
-    };
-    Ok(render::render_journey(model, config, ctx))
+impl Render for JourneyModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_journey(self, config, ctx))
+    }
 }

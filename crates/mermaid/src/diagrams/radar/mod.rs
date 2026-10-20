@@ -6,7 +6,7 @@ pub mod render;
 
 pub use model::RadarModel;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 pub use render::RadarConfig;
@@ -22,16 +22,15 @@ impl Diagram for Radar {
         _line_offset: usize,
         _limits: &ParseLimits,
     ) -> Result<Model, Error> {
-        Ok(Model::Radar(model::build_radar(
+        Ok(Model::Radar(RadarModel::new(
             parser::parse_radar(source)?,
             title,
         )?))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Radar(model) = model else {
-        unreachable!("radar renders a radar model")
-    };
-    Ok(render::render_radar(model, &config.radar, ctx))
+impl Render for RadarModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_radar(self, &config.radar, ctx))
+    }
 }

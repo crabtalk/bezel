@@ -1,8 +1,9 @@
 //! Pele's `diagrams/block/db.ts`.
 
+use crate::diagrams::common::style_class::StyleClass;
 use indexmap::{IndexMap, IndexSet};
 
-use super::types::{Block, BlockClassDef, BlockModel, Statement};
+use super::types::{Block, BlockModel, Statement};
 use crate::{Error, Kind, js};
 
 const MAX_SPACES: f64 = 100000.0;
@@ -69,19 +70,21 @@ struct Frame {
     children: Vec<usize>,
 }
 
-fn frame(statements: Vec<Statement>, parent: usize) -> Frame {
-    let mut list = Vec::new();
-    for statement in statements {
-        match statement {
-            Statement::One(at) => list.push(at),
-            Statement::List(items) => list.extend(items),
+impl Frame {
+    fn new(statements: Vec<Statement>, parent: usize) -> Self {
+        let mut list = Vec::new();
+        for statement in statements {
+            match statement {
+                Statement::One(at) => list.push(at),
+                Statement::List(items) => list.extend(items),
+            }
         }
-    }
-    Frame {
-        list,
-        at: 0,
-        parent,
-        children: Vec::new(),
+        Self {
+            list,
+            at: 0,
+            parent,
+            children: Vec::new(),
+        }
     }
 }
 
@@ -125,27 +128,9 @@ impl BlockModel {
         let found = self
             .classes
             .entry(id.to_string())
-            .or_insert_with(|| BlockClassDef {
-                id: id.to_string(),
-                styles: Vec::new(),
-                text_styles: Vec::new(),
-            });
+            .or_insert_with(|| StyleClass::new(id));
         for attribute in style_attributes.split(',') {
-            let fixed = match attribute.find(';') {
-                None => js::trim(attribute).to_string(),
-                Some(semi) => {
-                    js::trim(&format!("{}{}", &attribute[..semi], &attribute[semi + 1..]))
-                        .to_string()
-                }
-            };
-            if attribute.contains("color") {
-                found.text_styles.push(
-                    fixed
-                        .replacen("fill", "bgFill", 1)
-                        .replacen("color", "fill", 1),
-                );
-            }
-            found.styles.push(fixed);
+            found.push_attribute(attribute);
         }
     }
 
@@ -191,7 +176,7 @@ impl BlockModel {
     }
 
     pub fn set_hierarchy(&mut self, statements: Vec<Statement>) -> Result<(), Error> {
-        let mut stack = vec![frame(statements, self.root)];
+        let mut stack = vec![Frame::new(statements, self.root)];
         while let Some(f) = stack.last_mut() {
             if f.at == f.list.len() {
                 let f = stack.pop().expect("a frame");
@@ -310,7 +295,7 @@ impl BlockModel {
             let f = stack.last_mut().expect("a frame");
             f.children.extend(pushed);
             if !inner.is_empty() {
-                stack.push(frame(inner, at));
+                stack.push(Frame::new(inner, at));
             }
         }
         Ok(())

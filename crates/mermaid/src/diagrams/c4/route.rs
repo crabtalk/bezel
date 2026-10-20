@@ -70,7 +70,7 @@ pub struct Route {
     pub points: Vec<f64>,
 }
 
-/// The cap radii `draw_shape` uses for the two cylinders.
+/// The cap radii `Shape::draw` uses for the two cylinders.
 pub fn cyl_ry(w: f64) -> f64 {
     min(12.0, max(6.0, w / 14.0))
 }
@@ -246,7 +246,7 @@ fn connect(a: &C4Box, b: &C4Box, shift: f64) -> [f64; 4] {
         qy = py;
     }
     let len = js::hypot(qx - px, qy - py);
-    let len = if js::truthy(len) { len } else { 1.0 };
+    let len = js::or_one(len);
     let nx = (-(qy - py) / len) * shift;
     let ny = ((qx - px) / len) * shift;
     let mut ta = hit(a, qx + nx, qy + ny, px + nx, py + ny);
@@ -960,7 +960,7 @@ pub fn route(
     }
 
     let len = js::hypot(ex - sx, ey - sy);
-    let len = if js::truthy(len) { len } else { 1.0 };
+    let len = js::or_one(len);
     let dx = (ex - sx) / len;
     let dy = (ey - sy) / len;
     if upright || sy == ey {

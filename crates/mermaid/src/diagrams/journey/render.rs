@@ -1,12 +1,13 @@
 //! Pele's `diagrams/journey/render.ts`.
 
-use crate::svg::builder::{EscText, LabelSvg};
+use crate::geom::Point;
+use crate::svg::builder::EscText;
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
 };
 
-use super::db::{JourneyModel, journey_actors};
+use super::db::JourneyModel;
 use crate::{
     Config, Rendered,
     diagrams::common::{
@@ -72,8 +73,8 @@ fn face(x: f64, y: f64, mood: &str) -> impl fmt::Display + '_ {
 
 fn accessible(model: &JourneyModel) -> Accessible<'_> {
     Accessible {
-        acc_title: model.acc_title.as_deref(),
-        acc_descr: model.acc_descr.as_deref(),
+        acc_title: model.titles.acc_title.as_deref(),
+        acc_descr: model.titles.acc_descr.as_deref(),
     }
 }
 
@@ -110,7 +111,8 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
 
     // `Task: 5:` names an actor with no name; Mermaid gives it a dot and an
     // empty legend row.
-    let names: Vec<String> = journey_actors(tasks)
+    let names: Vec<String> = model
+        .actors()
         .into_iter()
         .filter(|name| !name.is_empty())
         .collect();
@@ -177,7 +179,7 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
 
     let body_w = if n > 0 { GUTTER + plot_w } else { 0.0 };
     let title = fit_label(
-        model.title.as_deref(),
+        model.titles.title.as_deref(),
         measure,
         size,
         body_w.max(320.0),
@@ -243,7 +245,10 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
     let _ = write!(
         body,
         "{}",
-        LabelSvg(&title, pad + width / 2.0, pad + title.height / 2.0, TITLE)
+        title.svg(
+            Point::new(pad + width / 2.0, pad + title.height / 2.0),
+            TITLE
+        )
     );
     let mut bottom = top;
     if n > 0 {
@@ -306,7 +311,7 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
                 num(cards_y),
                 num(card_w),
                 num(card_h),
-                LabelSvg(&labels[i], cx, cards_y + PAD_Y + text_h / 2.0, &card_attrs),
+                labels[i].svg(Point::new(cx, cards_y + PAD_Y + text_h / 2.0), &card_attrs),
             );
             let people: Vec<&String> = task.people.iter().filter(|name| !name.is_empty()).collect();
             let count = people.len() as f64;
@@ -362,7 +367,7 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
                 num(top),
                 num(w),
                 num(band_h),
-                LabelSvg(label, x + w / 2.0, top + band_h / 2.0, &band_attrs),
+                label.svg(Point::new(x + w / 2.0, top + band_h / 2.0), &band_attrs),
             );
         }
         bottom = chart_bottom + FACE;
@@ -381,10 +386,8 @@ fn draw(model: &JourneyModel, _config: &Config, ctx: &Ctx<'_, impl Host>, down: 
                     num(cy),
                     js::Number(DOT),
                     series_color(actor.get(item.name.as_str()).copied().unwrap_or(0)),
-                    LabelSvg(
-                        &item.label,
-                        x0 + item.x + 2.0 * DOT + 6.0 + item.label.width / 2.0,
-                        cy,
+                    item.label.svg(
+                        Point::new(x0 + item.x + 2.0 * DOT + 6.0 + item.label.width / 2.0, cy),
                         ""
                     ),
                 );
@@ -423,8 +426,15 @@ fn vertical_journey(model: &JourneyModel, ctx: &Ctx<'_, impl Host>) -> Rendered 
     let pad = ctx.options.padding.unwrap_or(8.0);
     let p = crate::PREFIX;
     let room = 140f64.max(ctx.options.max_width.unwrap_or(320.0) - 2.0 * pad);
-    let title = fit_label(model.title.as_deref(), measure, size, room, Style::BOLD);
-    let names: Vec<String> = journey_actors(&model.tasks)
+    let title = fit_label(
+        model.titles.title.as_deref(),
+        measure,
+        size,
+        room,
+        Style::BOLD,
+    );
+    let names: Vec<String> = model
+        .actors()
         .into_iter()
         .filter(|name| !name.is_empty())
         .collect();
@@ -455,11 +465,9 @@ fn vertical_journey(model: &JourneyModel, ctx: &Ctx<'_, impl Host>) -> Rendered 
                 let _ = write!(
                     body,
                     "{}",
-                    LabelSvg(
-                        &head,
-                        pad + 8.0 + head.width / 2.0,
-                        y + head.height / 2.0,
-                        crate::class!("cluster-label", "font-weight=\"var(--_hw)\""),
+                    head.svg(
+                        Point::new(pad + 8.0 + head.width / 2.0, y + head.height / 2.0),
+                        crate::class!("cluster-label", "font-weight=\"var(--_hw)\"")
                     )
                 );
                 width = width.max(head.width + 16.0);
@@ -495,11 +503,12 @@ fn vertical_journey(model: &JourneyModel, ctx: &Ctx<'_, impl Host>) -> Rendered 
         let _ = write!(
             body,
             "{}",
-            LabelSvg(
-                &label,
-                pad + PAD_X + label.width / 2.0,
-                y + PAD_Y + label.height / 2.0,
-                crate::class!("label"),
+            label.svg(
+                Point::new(
+                    pad + PAD_X + label.width / 2.0,
+                    y + PAD_Y + label.height / 2.0
+                ),
+                crate::class!("label")
             )
         );
         let cx = pad + w - 28.0;
@@ -528,11 +537,9 @@ fn vertical_journey(model: &JourneyModel, ctx: &Ctx<'_, impl Host>) -> Rendered 
             let _ = write!(
                 body,
                 "{}",
-                LabelSvg(
-                    person,
-                    pad + 28.0 + person.width / 2.0,
-                    py + ph / 2.0,
-                    &actor_attrs,
+                person.svg(
+                    Point::new(pad + 28.0 + person.width / 2.0, py + ph / 2.0),
+                    &actor_attrs
                 )
             );
             py += ph + 4.0;
@@ -556,7 +563,10 @@ fn vertical_journey(model: &JourneyModel, ctx: &Ctx<'_, impl Host>) -> Rendered 
     let _ = write!(
         content,
         "{}{body}",
-        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE)
+        title.svg(
+            Point::new(total_width / 2.0, pad + title.height / 2.0),
+            TITLE
+        )
     );
     Rendered {
         svg: svg_document(

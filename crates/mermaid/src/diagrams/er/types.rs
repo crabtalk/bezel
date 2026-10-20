@@ -83,14 +83,6 @@ pub struct ErRelationship {
     pub rel_spec: RelSpec,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ErClassDef {
-    pub id: String,
-    pub styles: Vec<String>,
-    pub text_styles: Vec<String>,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LabelType {

@@ -1,8 +1,8 @@
 //! Pele's `diagrams/requirement/graph.ts`.
 
 use super::{
-    db::{RequirementModel, relationships},
-    types::{Requirement, RequirementElement},
+    db::RequirementModel,
+    types::{Relationship, Requirement, RequirementElement},
 };
 
 pub struct GraphNode<'a> {
@@ -60,8 +60,8 @@ pub fn build_requirement_graph(model: &RequirementModel) -> RequirementGraph<'_>
                 id: format!("{}-{}-{index}", relation.src, relation.dst),
                 start: has(&relation.src).then_some(relation.src.as_str()),
                 end: has(&relation.dst).then_some(relation.dst.as_str()),
-                kind: &relation.kind,
-                contains: relation.kind == relationships::CONTAINS,
+                kind: relation.kind.name(),
+                contains: relation.kind == Relationship::Contains,
             }
         })
         .collect();

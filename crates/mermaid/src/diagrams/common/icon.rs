@@ -1,5 +1,6 @@
 //! Pele's `diagrams/common/icon.ts`.
 
+use crate::geom::Point;
 use std::fmt;
 
 use crate::{
@@ -18,8 +19,7 @@ pub fn icon_svg<'a>(
 ) -> impl fmt::Display + 'a {
     icon_element(
         name,
-        x,
-        y,
+        Point::new(x, y),
         side,
         fragment(move |f| f.write_str(&icon_markup(host, name))),
     )

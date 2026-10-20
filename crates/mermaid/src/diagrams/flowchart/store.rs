@@ -4,18 +4,14 @@
 use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 
-use super::types::{
-    ClassDef, DocItem, Edge, FlowText, LabelType, LinkInfo, Node, Payload, Subgraph, Vertex,
-};
+use super::types::{DocItem, Edge, FlowText, LabelType, LinkInfo, Node, Payload, Subgraph, Vertex};
 use crate::{
     config::Value,
+    diagrams::common::{db::Titles, style_class::StyleClass},
     error::Error,
-    js::{self, Lazy},
-    util::url::safe_url,
+    js,
+    util::{chars::unquote, url::safe_url},
 };
-
-static RE_LEAD: Lazy = Lazy::new(r"^\s+", "g");
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,14 +19,6 @@ pub struct StoreOptions {
     pub inherit_dir: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_edges: Option<usize>,
-}
-
-fn unquote(text: &str) -> &str {
-    if text.len() >= 2 && text.starts_with('"') && text.ends_with('"') {
-        &text[1..text.len() - 1]
-    } else {
-        text
-    }
 }
 
 /// The record an id names.
@@ -54,13 +42,11 @@ pub struct FlowStore<P: Payload> {
     pub nodes: IndexMap<String, Node<P>>,
     pub edges: Vec<Edge<P>>,
     pub subgraphs: Vec<Subgraph<P>>,
-    pub classes: IndexMap<String, ClassDef>,
+    pub classes: IndexMap<String, StyleClass>,
     pub tooltips: IndexMap<String, String>,
     pub default_edge_style: Option<Vec<String>>,
     pub default_interpolate: Option<String>,
-    pub title: Option<String>,
-    pub acc_title: Option<String>,
-    pub acc_descr: Option<String>,
+    pub titles: Titles,
 
     /// Subgraphs by id, as indices into `subgraphs`.
     pub(crate) subgraph_lookup: IndexMap<String, usize>,
@@ -84,9 +70,7 @@ impl<P: Payload> FlowStore<P> {
             tooltips: IndexMap::new(),
             default_edge_style: None,
             default_interpolate: None,
-            title: None,
-            acc_title: None,
-            acc_descr: None,
+            titles: Titles::default(),
             subgraph_lookup: IndexMap::new(),
             members: IndexSet::new(),
             edge_by_id: IndexMap::new(),
@@ -157,8 +141,8 @@ impl<P: Payload> FlowStore<P> {
             edge.label_type = text.kind;
         }
         if let Some(info) = info {
-            edge.kind = Some(info.kind.clone());
-            edge.stroke = Some(info.stroke.clone());
+            edge.kind = Some(info.kind.name().to_string());
+            edge.stroke = Some(info.stroke.name().to_string());
             edge.line = P::line(info);
             edge.length = info
                 .length
@@ -218,9 +202,10 @@ impl<P: Payload> FlowStore<P> {
     /// Mermaid checks the bounds only for a numeric index and crashes on the
     /// strings its own parser passes.
     fn edge_at(&self, pos: &str) -> Result<usize, Error> {
-        let index = js::number(pos);
-        if index >= 0.0 && index.fract() == 0.0 && (index as usize) < self.edges.len() {
-            return Ok(index as usize);
+        if let Ok(index) = pos.parse::<usize>()
+            && index < self.edges.len()
+        {
+            return Ok(index);
         }
         Err(Error::semantic(format!(
             "The index {pos} for linkStyle is out of bounds. Valid indices for linkStyle are between 0 and {}. (Help: Ensure that the index is within the range of existing edges.)",
@@ -375,16 +360,9 @@ impl<P: Payload> FlowStore<P> {
             let class = self
                 .classes
                 .entry(id.to_string())
-                .or_insert_with(|| ClassDef {
-                    id: id.to_string(),
-                    styles: Vec::new(),
-                    text_styles: Vec::new(),
-                });
+                .or_insert_with(|| StyleClass::new(id));
             for s in &style {
-                if s.contains("color") {
-                    class.text_styles.push(s.replacen("fill", "bgFill", 1));
-                }
-                class.styles.push(s.to_string());
+                class.push(s);
             }
         }
     }
@@ -444,13 +422,5 @@ impl<P: Payload> FlowStore<P> {
     /// in Mermaid's strict mode.
     pub fn set_click_event(&mut self, ids: &str) {
         self.set_class(ids, "clickable");
-    }
-
-    pub fn set_acc_title(&mut self, text: &str) {
-        self.acc_title = Some(RE_LEAD.replace(text, |_| String::new()));
-    }
-
-    pub fn set_acc_description(&mut self, text: &str) {
-        self.acc_descr = Some(RE_INDENT.replace(text, |_| "\n".into()));
     }
 }

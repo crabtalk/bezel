@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     js::{max, min},
-    text::{Host, Label, Style, layout_label},
+    text::{Host, Label, Style},
 };
 
 const SHAPE_W: f64 = 216.0;
@@ -127,8 +127,8 @@ fn measure(
         .filter(|techn| !techn.is_empty())
         .map(|techn| format!("[{techn}]"));
     let labels = vec![
-        layout_label(Some(&kind), false, measurer, small - 1.0, inner, 0),
-        layout_label(
+        Label::layout(Some(&kind), false, measurer, small - 1.0, inner, 0),
+        Label::layout(
             Some(&shape.label),
             false,
             measurer,
@@ -136,8 +136,8 @@ fn measure(
             inner,
             Style::BOLD,
         ),
-        layout_label(techn.as_deref(), false, measurer, small, inner, 0),
-        layout_label(shape.descr.as_deref(), false, measurer, small, inner, 0),
+        Label::layout(techn.as_deref(), false, measurer, small, inner, 0),
+        Label::layout(shape.descr.as_deref(), false, measurer, small, inner, 0),
     ];
     let mut tw: f64 = 0.0;
     let mut text_h = if labels[3].height > 0.0 { 4.0 } else { 0.0 };
@@ -221,7 +221,7 @@ pub fn layout_c4(
                 .filter(|ty| !ty.is_empty())
                 .map(|ty| format!("[{ty}]"));
             vec![
-                layout_label(
+                Label::layout(
                     Some(&boundary.label),
                     false,
                     measurer,
@@ -229,8 +229,8 @@ pub fn layout_c4(
                     label_room,
                     Style::BOLD,
                 ),
-                layout_label(ty.as_deref(), false, measurer, small, label_room, 0),
-                layout_label(
+                Label::layout(ty.as_deref(), false, measurer, small, label_room, 0),
+                Label::layout(
                     boundary.descr.as_deref(),
                     false,
                     measurer,

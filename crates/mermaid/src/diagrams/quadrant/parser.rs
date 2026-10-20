@@ -1,158 +1,90 @@
 //! Pele's `diagrams/quadrant/parser.ts`.
 
 use super::{
-    db::{QuadrantModel, QuadrantText},
+    db::{QuadrantModel, QuadrantText, TextKind},
     lexer::tokenize,
-    tokens::*,
+    tokens::{QUADRANTS, T},
 };
-use crate::{detect::Kind, error::Error, js};
+use crate::diagrams::common::chart::ChartKind;
+use crate::{detect::Kind, error::Error, js, token::Stream};
 
 const TEXT_TOKENS: &str = "'STR', 'MD_STR', 'ALPHA', 'NUM', 'UNICODE_TEXT', 'PUNCTUATION'";
 
-fn is_word_token(t: u8) -> bool {
-    matches!(
-        t,
-        PUNCTUATION
-            | AMP
-            | NUM
-            | ALPHA
-            | COMMA
-            | PLUS
-            | EQUALS
-            | MULT
-            | DOT
-            | BRKT
-            | UNDERSCORE
-            | UNICODE_TEXT
-    )
+fn text(s: &mut Stream<'_, '_, T>) -> Result<QuadrantText, Error> {
+    let first = s.kind();
+    if !first.is_text() {
+        return Err(s.fail(TEXT_TOKENS));
+    }
+    let mut text = s.take().to_string();
+    while s.kind().is_word() || s.is_any(&[T::Space, T::Minus]) {
+        text += s.take();
+    }
+    Ok(QuadrantText {
+        text,
+        kind: if first == T::MdStr {
+            TextKind::Markdown
+        } else {
+            TextKind::Text
+        },
+    })
 }
 
-fn is_id(t: u8) -> bool {
-    matches!(
-        t,
-        ALPHA | NUM | MINUS | COMMA | COLON | AMP | BRKT | MULT | UNICODE_TEXT
-    )
-}
-
-fn is_style(t: u8) -> bool {
-    matches!(t, ALPHA | NUM | COLON | SPACE | BRKT | MINUS)
-}
-
-fn is_eol(t: u8) -> bool {
-    matches!(t, NEWLINE | SEMI | EOF)
-}
-
-fn is_text(t: u8) -> bool {
-    t == STR || t == MD_STR || is_word_token(t)
+fn styles(s: &mut Stream<'_, '_, T>) -> Result<Vec<String>, Error> {
+    let mut out = Vec::new();
+    loop {
+        if !s.kind().is_style() {
+            return Err(s.fail("'ALPHA', 'NUM', 'COLON', 'SPACE', 'BRKT', 'MINUS'"));
+        }
+        let mut style = String::new();
+        while s.kind().is_style() {
+            style += s.take();
+        }
+        out.push(js::trim(&style).to_string());
+        if !s.eat(T::Comma) {
+            return Ok(out);
+        }
+    }
 }
 
 pub fn parse_quadrant(src: &str, db: &mut QuadrantModel) -> Result<(), Error> {
     let tokens = tokenize(src);
-    let (types, texts, starts) = (&tokens.types, &tokens.texts, &tokens.starts);
-    let mut i = 0;
+    let mut s = Stream::new(Kind::QuadrantChart, src, &tokens);
 
-    let fail = |i: usize, expected: &str| -> Error {
-        let t = types[i];
-        if t == ERROR {
-            return Error::at(Kind::QuadrantChart, src, starts[i], "", true);
-        }
-        Error::at(
-            Kind::QuadrantChart,
-            src,
-            starts[i],
-            &format!("Expecting {expected}, got '{}'", TOKEN_NAMES[t as usize]),
-            false,
-        )
-    };
-
-    let expect = |i: &mut usize, kind: u8| -> Result<&str, Error> {
-        if types[*i] != kind {
-            return Err(fail(*i, &format!("'{}'", TOKEN_NAMES[kind as usize])));
-        }
-        *i += 1;
-        Ok(texts[*i - 1])
-    };
-
-    let text = |i: &mut usize| -> Result<QuadrantText, Error> {
-        let first = types[*i];
-        if !is_text(first) {
-            return Err(fail(*i, TEXT_TOKENS));
-        }
-        let mut s = texts[*i].to_string();
-        *i += 1;
-        while is_word_token(types[*i]) || types[*i] == SPACE || types[*i] == MINUS {
-            s.push_str(texts[*i]);
-            *i += 1;
-        }
-        Ok(QuadrantText {
-            text: s,
-            kind: if first == MD_STR { "markdown" } else { "text" },
-        })
-    };
-
-    let styles = |i: &mut usize| -> Result<Vec<String>, Error> {
-        let mut out = Vec::new();
-        loop {
-            if !is_style(types[*i]) {
-                return Err(fail(
-                    *i,
-                    "'ALPHA', 'NUM', 'COLON', 'SPACE', 'BRKT', 'MINUS'",
-                ));
-            }
-            let mut s = texts[*i].to_string();
-            *i += 1;
-            while is_style(types[*i]) {
-                s.push_str(texts[*i]);
-                *i += 1;
-            }
-            out.push(js::trim(&s).to_string());
-            if types[*i] != COMMA {
-                return Ok(out);
-            }
-            *i += 1;
-        }
-    };
-
-    while is_eol(types[i]) || types[i] == SPACE {
-        i += 1;
+    while s.kind().is_eol() || s.is(T::Space) {
+        s.bump();
     }
-    expect(&mut i, QUADRANT)?;
+    s.expect(T::Quadrant, "")?;
 
-    while types[i] != END {
-        while types[i] == SPACE {
-            i += 1;
-        }
-        let t = types[i];
+    while !s.is(T::End) {
+        s.eat_all(T::Space);
+        let t = s.kind();
         match t {
-            CLASSDEF => {
-                i += 1;
-                expect(&mut i, SPACE)?;
-                if !is_id(types[i]) {
-                    return Err(fail(i, "'ALPHA', 'NUM', 'UNICODE_TEXT'"));
+            T::Classdef => {
+                s.bump();
+                s.expect(T::Space, "")?;
+                if !s.kind().is_id() {
+                    return Err(s.fail("'ALPHA', 'NUM', 'UNICODE_TEXT'"));
                 }
-                let mut id = texts[i].to_string();
-                i += 1;
-                while is_id(types[i]) {
-                    id.push_str(texts[i]);
-                    i += 1;
+                let mut id = String::new();
+                while s.kind().is_id() {
+                    id += s.take();
                 }
-                expect(&mut i, SPACE)?;
-                let list = styles(&mut i)?;
+                s.expect(T::Space, "")?;
+                let list = styles(&mut s)?;
                 db.add_class(id, &list)?;
             }
-            X_AXIS | Y_AXIS => {
-                i += 1;
-                let mut from = text(&mut i)?;
+            T::XAxis | T::YAxis => {
+                s.bump();
+                let mut from = text(&mut s)?;
                 let mut to = None;
-                if types[i] == DELIMITER {
-                    i += 1;
-                    if is_text(types[i]) {
-                        to = Some(text(&mut i)?);
+                if s.eat(T::Delimiter) {
+                    if s.kind().is_text() {
+                        to = Some(text(&mut s)?);
                     } else {
                         from.text.push_str(" ⟶ ");
                     }
                 }
-                if t == X_AXIS {
+                if t == T::XAxis {
                     db.set_x_axis_left_text(from);
                     if let Some(to) = to {
                         db.set_x_axis_right_text(to);
@@ -164,52 +96,50 @@ pub fn parse_quadrant(src: &str, db: &mut QuadrantModel) -> Result<(), Error> {
                     }
                 }
             }
-            QUADRANT_1 | QUADRANT_2 | QUADRANT_3 | QUADRANT_4 => {
-                i += 1;
-                let label = text(&mut i)?;
-                db.set_quadrant_text((t - QUADRANT_1) as usize, label);
+            T::Quadrant1 | T::Quadrant2 | T::Quadrant3 | T::Quadrant4 => {
+                s.bump();
+                let label = text(&mut s)?;
+                let k = QUADRANTS.iter().position(|&q| q == t).unwrap_or_default();
+                db.set_quadrant_text(k, label);
             }
-            TITLE => {
-                i += 1;
-                db.set_diagram_title(js::trim(expect(&mut i, TITLE_VALUE)?));
+            T::Title => {
+                s.bump();
+                db.titles.set_title(js::trim(s.expect(T::TitleValue, "")?));
             }
-            ACC_TITLE => {
-                i += 1;
-                db.set_acc_title(js::trim(expect(&mut i, ACC_TITLE_VALUE)?));
+            T::AccTitle => {
+                s.bump();
+                db.titles
+                    .set_acc_title(js::trim(s.expect(T::AccTitleValue, "")?));
             }
-            ACC_DESCR => {
-                i += 1;
-                db.set_acc_description(js::trim(expect(&mut i, ACC_DESCR_VALUE)?));
+            T::AccDescr => {
+                s.bump();
+                db.titles
+                    .set_acc_descr(js::trim(s.expect(T::AccDescrValue, "")?));
             }
-            ACC_DESCR_MULTILINE_VALUE => {
-                db.set_acc_description(js::trim(texts[i]));
-                i += 1;
+            T::AccDescrMultilineValue => db.titles.set_acc_descr(js::trim(s.take())),
+            _ if t.is_text() => {
+                let label = text(&mut s)?;
+                let class_name = if s.is(T::ClassName) {
+                    s.take().to_string()
+                } else {
+                    String::new()
+                };
+                s.expect(T::PointStart, "")?;
+                let x = s.expect(T::PointX, "")?;
+                let y = s.expect(T::PointY, "")?;
+                let list = if s.kind().is_style() {
+                    styles(&mut s)?
+                } else {
+                    Vec::new()
+                };
+                db.add_point(label, class_name, x, y, &list)?;
             }
-            _ => {
-                if is_text(t) {
-                    let label = text(&mut i)?;
-                    let class_name = if types[i] == CLASS_NAME {
-                        i += 1;
-                        texts[i - 1].to_string()
-                    } else {
-                        String::new()
-                    };
-                    expect(&mut i, POINT_START)?;
-                    let x = expect(&mut i, POINT_X)?;
-                    let y = expect(&mut i, POINT_Y)?;
-                    let list = if is_style(types[i]) {
-                        styles(&mut i)?
-                    } else {
-                        Vec::new()
-                    };
-                    db.add_point(label, class_name, x, y, &list)?;
-                }
-            }
+            _ => {}
         }
-        if !is_eol(types[i]) {
-            return Err(fail(i, "'NEWLINE', 'SEMI', 'EOF'"));
+        if !s.kind().is_eol() {
+            return Err(s.fail("'NEWLINE', 'SEMI', 'EOF'"));
         }
-        i += 1;
+        s.bump();
     }
     Ok(())
 }

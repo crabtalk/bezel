@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use super::{
-    db::{ClassModel, LOLLIPOP},
-    types::{ClassNode, RelationEnd},
+    db::ClassModel,
+    types::{ClassNode, LineType, RelationEnd, RelationType},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -241,9 +241,10 @@ pub fn build_class_graph(model: &ClassModel, hierarchical: bool) -> ClassGraph<'
         let (type1, type2) = (relation.relation.type1, relation.relation.type2);
         // add_relation swaps in an interface for the lollipop end of a relation
         // with no other marker.
-        let start_is_interface = type1 == RelationEnd::Type(LOLLIPOP) && type2 == RelationEnd::None;
+        let start_is_interface =
+            type1 == RelationEnd::Type(RelationType::Lollipop) && type2 == RelationEnd::None;
         let end_is_interface = !start_is_interface
-            && type2 == RelationEnd::Type(LOLLIPOP)
+            && type2 == RelationEnd::Type(RelationType::Lollipop)
             && type1 == RelationEnd::None;
         let start_at = if start_is_interface {
             &interface_at
@@ -270,7 +271,7 @@ pub fn build_class_graph(model: &ClassModel, hierarchical: bool) -> ClassGraph<'
             arrow_type_end: marker(type2),
             start_label_right: end_title(&relation.relation_title1),
             end_label_left: end_title(&relation.relation_title2),
-            pattern: if relation.relation.line_type == 1 {
+            pattern: if relation.relation.line_type == LineType::Dotted {
                 Pattern::Dashed
             } else {
                 Pattern::Solid

@@ -9,7 +9,7 @@ pub mod render;
 
 pub use db::ArchitectureModel;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 pub use render::ArchitectureConfig;
@@ -26,21 +26,13 @@ impl Diagram for Architecture {
         _limits: &ParseLimits,
     ) -> Result<Model, Error> {
         let mut db = ArchitectureModel::new();
-        if let Some(title) = title.filter(|title| !title.is_empty()) {
-            db.title = Some(title.to_string());
-        }
-        db::populate(parser::parse_architecture(source)?, &mut db)?;
+        db.populate(parser::parse_architecture(source)?, title)?;
         Ok(Model::Architecture(Box::new(db)))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Architecture(model) = model else {
-        unreachable!("architecture renders an architecture model")
-    };
-    Ok(render::render_architecture(
-        model,
-        &config.architecture,
-        ctx,
-    ))
+impl Render for ArchitectureModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_architecture(self, &config.architecture, ctx))
+    }
 }

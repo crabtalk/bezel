@@ -96,6 +96,7 @@ pub enum Model {
     C4(c4::C4Model),
     Agentflow(Box<agentflow::AgentflowDb>),
     Usecase(Box<usecase::UsecaseModel>),
+    Swimlane(Box<swimlane::SwimlaneDb>),
 }
 
 /// The type `kind`, when this build has it.
@@ -137,46 +138,48 @@ pub fn diagram(kind: Kind) -> Option<&'static dyn Diagram> {
     })
 }
 
-/// `model`, of type `kind`, drawn.
-pub fn render(
-    kind: Kind,
-    model: &Model,
-    config: &Config,
-    ctx: &Ctx<'_, impl Host>,
-) -> Result<Rendered, Error> {
-    match kind {
-        Kind::GitGraph => git::render(model, config, ctx),
-        Kind::Gantt => gantt::render(model, config, ctx),
-        Kind::Info => info::render(model, config, ctx),
-        Kind::Flowchart => flowchart::render(model, config, ctx),
-        Kind::XyChart => xychart::render(model, config, ctx),
-        Kind::QuadrantChart => quadrant::render(model, config, ctx),
-        Kind::Sankey => sankey::render(model, config, ctx),
-        Kind::Treemap => treemap::render(model, config, ctx),
-        Kind::Radar => radar::render(model, config, ctx),
-        Kind::Pie => pie::render(model, config, ctx),
-        Kind::Mindmap => mindmap::render(model, config, ctx),
-        Kind::Packet => packet::render(model, config, ctx),
-        Kind::TreeView => treeview::render(model, config, ctx),
-        Kind::Ishikawa => ishikawa::render(model, config, ctx),
-        Kind::Railroad => railroad::render(model, config, ctx),
-        Kind::Venn => venn::render(model, config, ctx),
-        Kind::Journey => journey::render(model, config, ctx),
-        Kind::Kanban => kanban::render(model, config, ctx),
-        Kind::Timeline => timeline::render(model, config, ctx),
-        Kind::Class => class::render(model, config, ctx),
-        Kind::State => state::render(model, config, ctx),
-        Kind::Er => er::render(model, config, ctx),
-        Kind::Requirement => requirement::render(model, config, ctx),
-        Kind::Sequence => sequence::render(model, config, ctx),
-        Kind::Cynefin => cynefin::render(model, config, ctx),
-        Kind::Wardley => wardley::render(model, config, ctx),
-        Kind::Eventmodeling => eventmodeling::render(model, config, ctx),
-        Kind::Architecture => architecture::render(model, config, ctx),
-        Kind::Block => block::render(model, config, ctx),
-        Kind::C4 => c4::render(model, config, ctx),
-        Kind::Swimlane => swimlane::render(model, config, ctx),
-        Kind::Agentflow => agentflow::render(model, config, ctx),
-        Kind::Usecase => usecase::render(model, config, ctx),
+/// A parsed diagram that draws itself.
+pub trait Render {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error>;
+}
+
+impl Model {
+    /// The diagram drawn.
+    pub fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        match self {
+            Self::GitGraph(model) => model.render(config, ctx),
+            Self::Gantt(model) => model.render(config, ctx),
+            Self::Info(model) => model.render(config, ctx),
+            Self::Flowchart(model) => model.render(config, ctx),
+            Self::XyChart(model) => model.render(config, ctx),
+            Self::Quadrant(model) => model.render(config, ctx),
+            Self::Sankey(model) => model.render(config, ctx),
+            Self::Treemap(model) => model.render(config, ctx),
+            Self::Radar(model) => model.render(config, ctx),
+            Self::Pie(model) => model.render(config, ctx),
+            Self::Mindmap(model) => model.render(config, ctx),
+            Self::Packet(model) => model.render(config, ctx),
+            Self::TreeView(model) => model.render(config, ctx),
+            Self::Ishikawa(model) => model.render(config, ctx),
+            Self::Railroad(model) => model.render(config, ctx),
+            Self::Venn(model) => model.render(config, ctx),
+            Self::Journey(model) => model.render(config, ctx),
+            Self::Kanban(model) => model.render(config, ctx),
+            Self::Timeline(model) => model.render(config, ctx),
+            Self::Class(model) => model.render(config, ctx),
+            Self::State(model) => model.render(config, ctx),
+            Self::Er(model) => model.render(config, ctx),
+            Self::Requirement(model) => model.render(config, ctx),
+            Self::Sequence(model) => model.render(config, ctx),
+            Self::Cynefin(model) => model.render(config, ctx),
+            Self::Wardley(model) => model.render(config, ctx),
+            Self::EventModeling(model) => model.render(config, ctx),
+            Self::Architecture(model) => model.render(config, ctx),
+            Self::Block(model) => model.render(config, ctx),
+            Self::C4(model) => model.render(config, ctx),
+            Self::Agentflow(model) => model.render(config, ctx),
+            Self::Usecase(model) => model.render(config, ctx),
+            Self::Swimlane(model) => model.render(config, ctx),
+        }
     }
 }

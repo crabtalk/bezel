@@ -12,7 +12,7 @@ pub mod types;
 
 pub use types::BlockModel;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 pub use render::BlockConfig;
@@ -34,9 +34,8 @@ impl Diagram for Block {
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Block(model) = model else {
-        unreachable!("block renders a block model")
-    };
-    render::render_block(model, &config.block, ctx)
+impl Render for BlockModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        render::render_block(self, &config.block, ctx)
+    }
 }

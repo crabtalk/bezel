@@ -2,6 +2,7 @@
 
 use super::TreeViewConfig;
 use crate::config::within;
+use crate::geom::Point;
 use crate::svg::builder::{Esc, EscText};
 use std::{collections::HashMap, fmt::Write as _};
 
@@ -9,7 +10,7 @@ use super::{
     icons::{BUILTIN_PACK, get_node_icon, glyph, icon_config},
     model::{NodeType, TreeNode, TreeViewModel},
 };
-use crate::{Ctx, Host};
+use crate::{Ctx, Host, util::chars};
 use crate::{
     Rendered,
     diagrams::common::{
@@ -18,11 +19,11 @@ use crate::{
     },
     js,
     svg::{
-        builder::{LabelSvg, TITLE, fragment, icon_element, num},
+        builder::{TITLE, fragment, icon_element, num},
         root::{Accessible, svg_document},
         theme::{RADIUS, class_names},
     },
-    text::{Label, Style, decode_entities, layout_label},
+    text::{Label, Style, decode_entities},
 };
 
 const ICON_GAP: f64 = 6.0;
@@ -117,8 +118,8 @@ fn draw(
     let row_height = js::round(size * 1.5) + 2.0 * padding_y;
     let icon_size = size;
 
-    let title = layout_label(
-        model.title.as_deref(),
+    let title = Label::layout(
+        model.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -185,7 +186,7 @@ fn draw(
         let highlighted = node
             .css_class
             .as_deref()
-            .is_some_and(|class| class.split(js::is_space).any(|name| name == "highlight"));
+            .is_some_and(|class| class.split(chars::is_space).any(|name| name == "highlight"));
         if highlighted {
             any_highlight = true;
         }
@@ -295,7 +296,10 @@ fn draw(
     let _ = write!(
         content,
         "{}",
-        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE)
+        title.svg(
+            Point::new(total_width / 2.0, pad + title.height / 2.0),
+            TITLE
+        )
     );
     if !guides.is_empty() {
         let _ = write!(
@@ -356,7 +360,12 @@ fn draw(
             let _ = write!(
                 inner,
                 "{}",
-                icon_element(icon, inset + row.x, cy - icon_size / 2.0, icon_size, drawn)
+                icon_element(
+                    icon,
+                    Point::new(inset + row.x, cy - icon_size / 2.0),
+                    icon_size,
+                    drawn
+                )
             );
         }
         if let Some(label) = &row.label {
@@ -415,8 +424,8 @@ fn draw(
             size,
             ctx,
             Accessible {
-                acc_title: model.acc_title.as_deref(),
-                acc_descr: model.acc_descr.as_deref(),
+                acc_title: model.titles.acc_title.as_deref(),
+                acc_descr: model.titles.acc_descr.as_deref(),
             },
             &content,
         ),

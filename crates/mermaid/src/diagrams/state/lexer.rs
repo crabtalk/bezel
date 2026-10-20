@@ -4,23 +4,26 @@
 use super::tokens::T;
 use crate::{
     js::{self, Lazy},
-    token::Token,
-    util::chars::{code_at, is_space, is_word, width_at},
+    token::{Cursor, Token},
+    util::chars::{digits_end, is_space, is_word, starts_with_caseless, width_at},
 };
 
 static RE_DIRECTION: Lazy = Lazy::new(r"direction", "gi");
-/// The direction kinds in the order [`Lexer::direction`] numbers them.
-const DIRECTIONS: [T; 4] = [
-    T::DirectionTb,
-    T::DirectionBt,
-    T::DirectionRl,
-    T::DirectionLr,
+/// The direction kinds, and the words naming them, in grammar order.
+const DIRECTIONS: [(T, &str); 4] = [
+    (T::DirectionTb, "tb"),
+    (T::DirectionBt, "bt"),
+    (T::DirectionRl, "rl"),
+    (T::DirectionLr, "lr"),
 ];
 static RE_STEREOTYPE: Lazy = Lazy::new(
     r"<<(?:fork|join|choice)>>|\[\[(?:fork|join|choice)\]\]",
     "gi",
 );
+/// The stereotype kinds in `<< >>` and then in `[[ ]]`, in grammar order.
+const STEREOTYPES: [T; 6] = [T::Fork, T::Join, T::Choice, T::Fork, T::Join, T::Choice];
 
+/// Jison's start conditions.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum S {
     Initial,
@@ -45,32 +48,48 @@ enum S {
     FloatingNoteId,
 }
 
-/// Finds the next match of a pattern at or after a position, remembering the
-/// answer so that asking at each token costs one scan of the text in total.
-struct Finder<'s> {
-    src: &'s str,
-    search: fn(&str, usize) -> Option<usize>,
-    from: usize,
-    /// -2 before the first scan, -1 for no match.
-    next: i64,
-}
-
-impl<'s> Finder<'s> {
-    fn new(src: &'s str, search: fn(&str, usize) -> Option<usize>) -> Self {
-        Self {
-            src,
-            search,
-            from: 0,
-            next: -2,
+impl S {
+    /// The token Jison gives in this condition when it tries its rules once
+    /// more on the empty rest of the input.
+    fn end_token(self) -> Option<T> {
+        match self {
+            Self::Initial => Some(T::Nl),
+            Self::AccTitle => Some(T::AccTitleValue),
+            Self::AccDescr => Some(T::AccDescrValue),
+            Self::AccDescrMultiline => Some(T::AccDescrMultilineValue),
+            Self::ClassdefId => Some(T::ClassdefStyleopts),
+            Self::ClassStyle => Some(T::Styleclass),
+            Self::StyledefStyles => Some(T::StyledefStyleopts),
+            Self::StateString => Some(T::StateDescr),
+            Self::FloatingNote => Some(T::NoteText),
+            Self::StateId | Self::FloatingNoteId => Some(T::Id),
+            _ => None,
         }
     }
+}
 
-    fn at(&mut self, q: usize) -> i64 {
-        if self.next == -2 || q < self.from || (self.next != -1 && q as i64 > self.next) {
-            self.next = (self.search)(self.src, q).map_or(-1, |at| at as i64);
-            self.from = q;
+/// Finds the next match of a search at or after a position, remembering the
+/// answer so that asking at each token costs one scan of the text in total.
+struct Finder {
+    search: fn(&str, usize) -> Option<usize>,
+    /// The position last searched from, and what was found.
+    last: Option<(usize, Option<usize>)>,
+}
+
+impl Finder {
+    fn new(search: fn(&str, usize) -> Option<usize>) -> Self {
+        Self { search, last: None }
+    }
+
+    fn at(&mut self, src: &str, q: usize) -> Option<usize> {
+        match self.last {
+            Some((from, next)) if q >= from && next.is_none_or(|next| q <= next) => next,
+            _ => {
+                let next = (self.search)(src, q);
+                self.last = Some((q, next));
+                next
+            }
         }
-        self.next
     }
 }
 
@@ -96,786 +115,645 @@ fn find_brace(src: &str, q: usize) -> Option<usize> {
     src.get(q..)?.find('{').map(|at| q + at)
 }
 
-/// The byte `units` UTF-16 units after `at`, a whole character at a time.
-fn skip_units(src: &str, at: usize, units: usize) -> usize {
-    let mut p = at;
-    let mut left = units;
-    while left > 0 && p < src.len() {
-        let width = width_at(src, p);
-        left = left.saturating_sub(if width == 4 { 2 } else { 1 });
-        p += width;
+/// What a rule found on the line being lexed, kept until a position past
+/// that line is asked about.
+struct LineFinds<const N: usize> {
+    /// The positions the finds hold for.
+    span: Option<(usize, usize)>,
+    /// For each kind, where it was last found, and where it ends.
+    at: [Option<(usize, usize)>; N],
+}
+
+impl<const N: usize> LineFinds<N> {
+    fn new() -> Self {
+        Self {
+            span: None,
+            at: [None; N],
+        }
     }
-    p
+
+    fn holds(&self, q: usize) -> bool {
+        self.span.is_some_and(|(from, to)| (from..=to).contains(&q))
+    }
+
+    /// The first kind found at or after `q`, where it is, and where it ends.
+    fn first(&self, q: usize) -> Option<(usize, usize, usize)> {
+        self.at.iter().enumerate().find_map(|(kind, found)| {
+            found
+                .filter(|&(at, _)| at >= q)
+                .map(|(at, end)| (kind, at, end))
+        })
+    }
 }
 
 struct Lexer<'s> {
-    src: &'s str,
-    n: usize,
-    tokens: Vec<Token<'s, T>>,
-    stack: Vec<S>,
-    state: S,
-    p: usize,
-    next_direction: Finder<'s>,
-    next_stereotype: Finder<'s>,
-    next_line_end: Finder<'s>,
-    next_percent: Finder<'s>,
-    next_brace: Finder<'s>,
-    // The last `direction <dir>` of each kind on the line being lexed, and
-    // where its keyword ends.
-    dir_from: i64,
-    dir_to: i64,
-    dir_at: [i64; 4],
-    dir_end: [usize; 4],
-    // The same for <<fork>>, <<join>>, <<choice>> and their [[ ]] spellings.
-    stereo_from: i64,
-    stereo_to: i64,
-    stereo_at: [i64; 6],
+    cur: Cursor<'s, T, S>,
+    next_direction: Finder,
+    next_stereotype: Finder,
+    next_line_end: Finder,
+    next_percent: Finder,
+    next_brace: Finder,
+    /// The last `direction <dir>` of each kind on the line being lexed, and
+    /// where its direction ends.
+    directions: LineFinds<4>,
+    /// The same for `<<fork>>`, `<<join>>`, `<<choice>>` and their `[[ ]]`
+    /// spellings, and where each ends.
+    stereotypes: LineFinds<6>,
 }
 
 impl<'s> Lexer<'s> {
-    fn code(&self, at: usize) -> u32 {
-        code_at(self.src, at)
+    fn at(&self, q: usize) -> Option<char> {
+        self.cur.char_at(q)
     }
 
-    fn emit(&mut self, kind: T, s: usize, e: usize) {
-        self.tokens.push(Token::new(kind, &self.src[s..e], s));
-        self.p = e;
+    fn emit(&mut self, kind: T, start: usize, end: usize) {
+        self.cur.emit(kind, start, end);
     }
 
-    fn emit_text(&mut self, kind: T, text: String, s: usize, e: usize) {
-        self.tokens.push(Token::new(kind, text, s));
-        self.p = e;
+    fn emit_text(&mut self, kind: T, text: &str, start: usize, end: usize) {
+        self.cur
+            .emit_text(kind, js::trim(text).to_string(), start, end);
     }
 
-    fn push(&mut self, s: S) {
-        self.stack.push(self.state);
-        self.state = s;
+    /// Whether `word`, in lower case, is at `at` in any case.
+    fn word(&self, word: &str, at: usize) -> bool {
+        starts_with_caseless(self.cur.src, at, word)
     }
 
-    fn pop(&mut self) {
-        if let Some(s) = self.stack.pop() {
-            self.state = s;
-        }
-    }
-
-    /// Case-insensitive match of a lowercase ASCII word, as the grammar's /i
-    /// flag gives.
-    fn word(&self, w: &str, q: usize) -> bool {
-        let bytes = self.src.as_bytes();
-        w.bytes().enumerate().all(|(i, a)| match bytes.get(q + i) {
-            Some(&c) => c == a || (a.is_ascii_lowercase() && c == a - 32),
-            None => false,
-        })
+    /// [`Lexer::word`] with no word character after it.
+    fn keyword(&self, word: &str, at: usize) -> bool {
+        self.word(word, at) && !self.at(at + word.len()).is_some_and(is_word)
     }
 
     fn ws_end(&self, q: usize) -> usize {
-        let mut j = q;
-        while j < self.n && is_space(self.code(j)) {
-            j += width_at(self.src, j);
-        }
-        j
+        self.cur.space_end(q)
     }
 
-    fn word_end(&self, q: usize) -> usize {
-        let mut j = q;
-        while j < self.n && is_word(self.code(j)) {
-            j += 1;
-        }
-        j
+    /// The end of the run of whitespace at `q` that holds no line feed.
+    fn blank_end(&self, q: usize) -> usize {
+        self.cur.until(q, |c| c == '\n' || !is_space(c))
     }
 
     fn eol(&self, q: usize) -> usize {
-        self.src
-            .get(q..)
-            .and_then(|rest| rest.find('\n'))
-            .map_or(self.n, |k| q + k)
+        self.cur.line_end(q)
     }
 
     fn line_end(&mut self, q: usize) -> usize {
-        let k = self.next_line_end.at(q);
-        if k == -1 { self.n } else { k as usize }
+        self.next_line_end
+            .at(self.cur.src, q)
+            .unwrap_or(self.cur.src.len())
     }
 
     /// Rules `.*direction\s+TB[^\n]*` and its three siblings: the first kind,
-    /// in grammar order, found between q and the end of its line.
-    fn direction(&mut self, q: usize) -> i64 {
-        let qi = q as i64;
-        if qi < self.dir_from || qi > self.dir_to {
-            let first = self.next_direction.at(q);
-            let end = if first == -1 {
-                self.n
+    /// in grammar order, found between `q` and the end of its line, and
+    /// where its direction ends.
+    fn direction(&mut self, q: usize) -> Option<(T, usize)> {
+        if !self.directions.holds(q) {
+            let src = self.cur.src;
+            let first = self.next_direction.at(src, q);
+            let end = if first.is_none() {
+                src.len()
             } else {
                 self.line_end(q)
             };
-            self.dir_from = qi;
-            self.dir_to = end as i64;
-            self.dir_at = [-1; 4];
-            let mut d = first;
-            while d != -1 && (d as usize) < end {
-                let du = d as usize;
-                let w = self.ws_end(du + 9);
-                if w != du + 9 {
-                    let kind = if self.word("tb", w) {
-                        0
-                    } else if self.word("bt", w) {
-                        1
-                    } else if self.word("rl", w) {
-                        2
-                    } else if self.word("lr", w) {
-                        3
-                    } else {
-                        -1
-                    };
-                    if kind != -1 {
-                        self.dir_at[kind as usize] = d;
-                        self.dir_end[kind as usize] = w + 2;
-                    }
+            self.directions = LineFinds::new();
+            self.directions.span = Some((q, end));
+            let mut found = first;
+            while let Some(at) = found.filter(|&at| at < end) {
+                let dir = self.ws_end(at + 9);
+                if dir != at + 9
+                    && let Some(kind) = DIRECTIONS
+                        .iter()
+                        .position(|&(_, word)| self.word(word, dir))
+                {
+                    self.directions.at[kind] = Some((at, dir + 2));
                 }
-                d = self.next_direction.at(du + 1);
+                found = self.next_direction.at(src, at + 1);
             }
         }
-        (0..4)
-            .find(|&kind| self.dir_at[kind] >= qi)
-            .map_or(-1, |kind| kind as i64)
+        self.directions
+            .first(q)
+            .map(|(kind, _, end)| (DIRECTIONS[kind].0, end))
     }
 
-    fn stereotype(&mut self, q: usize) -> i64 {
-        let qi = q as i64;
-        if qi < self.stereo_from || qi > self.stereo_to {
-            let first = self.next_stereotype.at(q);
-            let end = if first == -1 {
-                self.n
+    /// The first fork, join or choice stereotype from `q` to the end of its
+    /// line: its kind, where it is, and where it ends.
+    fn stereotype(&mut self, q: usize) -> Option<(T, usize, usize)> {
+        if !self.stereotypes.holds(q) {
+            let src = self.cur.src;
+            let first = self.next_stereotype.at(src, q);
+            let end = if first.is_none() {
+                src.len()
             } else {
                 self.line_end(q)
             };
-            self.stereo_from = qi;
-            self.stereo_to = end as i64;
-            self.stereo_at = [-1; 6];
-            let mut d = first;
-            while d != -1 && (d as usize) < end {
-                let du = d as usize;
-                let letter = self.code(du + 2) | 32;
-                let base = if self.code(du) == 60 { 0 } else { 3 };
-                let kind = if letter == 102 {
-                    0
-                } else if letter == 106 {
-                    1
-                } else {
-                    2
+            self.stereotypes = LineFinds::new();
+            self.stereotypes.span = Some((q, end));
+            let mut found = first;
+            while let Some(at) = found.filter(|&at| at < end) {
+                let angled = self.at(at) == Some('<');
+                let (kind, len) = match self.at(at + 2).map(|c| c.to_ascii_lowercase()) {
+                    Some('f') => (0, 8),
+                    Some('j') => (1, 8),
+                    _ => (2, 10),
                 };
-                self.stereo_at[base + kind] = d;
-                d = self.next_stereotype.at(du + 1);
+                self.stereotypes.at[if angled { kind } else { 3 + kind }] = Some((at, at + len));
+                found = self.next_stereotype.at(src, at + 1);
             }
         }
-        (0..6)
-            .find(|&kind| self.stereo_at[kind] >= qi)
-            .map_or(-1, |kind| kind as i64)
+        self.stereotypes
+            .first(q)
+            .map(|(kind, at, end)| (STEREOTYPES[kind], at, end))
     }
 
     /// The grammar's processId(): an id ends at an inline `%%`, and a text
     /// that starts with one is dropped.
-    fn emit_id(&mut self, s: usize, e: usize) -> bool {
-        let at = self.next_percent.at(s);
-        if at == -1 || at as usize + 2 > e {
-            self.emit(T::Id, s, e);
-            return true;
+    fn emit_id(&mut self, start: usize, end: usize) -> bool {
+        match self.next_percent.at(self.cur.src, start) {
+            Some(at) if at + 2 <= end => {
+                if at == start {
+                    self.cur.p = end;
+                    return false;
+                }
+                self.emit(T::Id, start, at);
+            }
+            _ => self.emit(T::Id, start, end),
         }
-        let at = at as usize;
-        if at == s {
-            self.p = e;
-            return false;
-        }
-        self.emit(T::Id, s, at);
         true
     }
 
-    fn finish(mut self, kind: T) -> Vec<Token<'s, T>> {
-        self.tokens.push(Token::new(kind, "", self.p));
-        self.tokens
+    fn is_comment(&self, c: char) -> bool {
+        let p = self.cur.p;
+        c == '#' || (c == '%' && self.at(p + 1) == Some('%') && self.at(p + 2) != Some('{'))
     }
 
-    fn is_comment(&self, c: u32) -> bool {
-        let p = self.p;
-        c == 35 || (c == 37 && self.code(p + 1) == 37 && self.code(p + 2) != 123)
+    /// `INITIAL`, and the inside of a composite state.
+    fn statement(&mut self, c: char) -> Result<(), String> {
+        let src = self.cur.src;
+        let p = self.cur.p;
+        let root = self.cur.state == S::Initial;
+        let lower = c.to_ascii_lowercase();
+        if root {
+            if lower == 'c' && self.keyword("click", p) {
+                self.emit(T::Click, p, p + 5);
+                return Ok(());
+            }
+            if lower == 'h' && self.keyword("href", p) {
+                self.emit(T::Href, p, p + 4);
+                return Ok(());
+            }
+            if c == '"'
+                && let Some(close) = src[p + 1..].find('"')
+            {
+                self.emit(T::String, p, p + 1 + close + 1);
+                return Ok(());
+            }
+            if lower == 'd' && self.keyword("default", p) {
+                self.emit(T::Default, p, p + 7);
+                return Ok(());
+            }
+            if let Some((kind, end)) = self.direction(p) {
+                let end = self.eol(end);
+                self.emit(kind, p, end);
+                return Ok(());
+            }
+            if c == '\n' {
+                let end = self.cur.until(p + 1, |c| c != '\n');
+                self.emit(T::Nl, p, end);
+                return Ok(());
+            }
+            if is_space(c) {
+                self.cur.p = self.ws_end(p);
+                return Ok(());
+            }
+        } else if c != '\n' && is_space(c) {
+            self.cur.p = self.blank_end(p + c.len_utf8());
+            return Ok(());
+        }
+        if self.is_comment(c) {
+            self.cur.p = self.eol(p);
+            return Ok(());
+        }
+        match lower {
+            's' => {
+                if root && self.word("scale", p) {
+                    let end = self.ws_end(p + 5);
+                    if end > p + 5 {
+                        self.emit(T::Scale, p, end);
+                        self.cur.push(S::Scale);
+                        return Ok(());
+                    }
+                }
+                if self.word("style", p) {
+                    let end = self.ws_end(p + 5);
+                    if end > p + 5 {
+                        self.emit(T::Style, p, end);
+                        self.cur.push(S::Style);
+                        return Ok(());
+                    }
+                }
+                if self.word("state", p) {
+                    let end = self.ws_end(p + 5);
+                    if end > p + 5 {
+                        self.cur.p = end;
+                        self.cur.push(S::State);
+                        return Ok(());
+                    }
+                    if root && self.word("diagram", p + 5) {
+                        let from = if self.word("-v2", p + 12) {
+                            p + 15
+                        } else {
+                            p + 12
+                        };
+                        let end = self.ws_end(from);
+                        if end > from {
+                            self.emit(T::Sd, p, end);
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+            'c' if self.word("class", p) => {
+                let def = self.word("def", p + 5);
+                let from = if def { p + 8 } else { p + 5 };
+                let end = self.ws_end(from);
+                if end > from {
+                    self.emit(if def { T::Classdef } else { T::Class }, p, end);
+                    self.cur.push(if def { S::Classdef } else { S::Class });
+                    return Ok(());
+                }
+            }
+            'a' if root && (self.word("acctitle", p) || self.word("accdescr", p)) => {
+                let title = self.at(p + 3).is_some_and(|c| c.eq_ignore_ascii_case(&'t'));
+                let q = self.ws_end(p + 8);
+                match self.at(q) {
+                    Some(':') => {
+                        let end = self.ws_end(q + 1);
+                        self.emit(if title { T::AccTitle } else { T::AccDescr }, p, end);
+                        self.cur.push(if title { S::AccTitle } else { S::AccDescr });
+                        return Ok(());
+                    }
+                    Some('{') if !title => {
+                        self.cur.p = self.ws_end(q + 1);
+                        self.cur.push(S::AccDescrMultiline);
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+            }
+            _ => {}
+        }
+        if root {
+            if c == '{' {
+                self.emit(T::StructStart, p, p + 1);
+                self.cur.push(S::Struct);
+                return Ok(());
+            }
+        } else {
+            if let Some((kind, end)) = self.direction(p) {
+                let end = self.eol(end);
+                self.emit(kind, p, end);
+                return Ok(());
+            }
+            if c == '}' {
+                self.emit(T::StructStop, p, p + 1);
+                self.cur.pop();
+                return Ok(());
+            }
+            if c == '\n' {
+                self.cur.p = p + 1;
+                return Ok(());
+            }
+        }
+        if lower == 'n' && self.word("note", p) {
+            let end = self.ws_end(p + 4);
+            if end > p + 4 {
+                self.emit(T::Note, p, end);
+                self.cur.push(S::Note);
+                return Ok(());
+            }
+        }
+        if root && lower == 'h' && self.keyword("hide empty description", p) {
+            self.emit(T::HideEmpty, p, p + 22);
+            return Ok(());
+        }
+        let next = self.at(p + 1);
+        if c == '[' && next == Some('*') && self.at(p + 2) == Some(']') {
+            self.emit(T::EdgeState, p, p + 3);
+            return Ok(());
+        }
+        let end = self
+            .cur
+            .until(p, |c| matches!(c, ':' | '-' | '{') || is_space(c));
+        if end > p {
+            self.emit_id(p, end);
+            return Ok(());
+        }
+        if c == ':' {
+            let mut end = p + 1;
+            while let Some(d) = self.at(end) {
+                if d == '\n' || d == ';' {
+                    break;
+                }
+                if d == ':' {
+                    if matches!(self.at(end + 1), None | Some(':' | '\n' | ';')) {
+                        break;
+                    }
+                    end += 1;
+                }
+                end += width_at(src, end);
+            }
+            if end > p + 1 {
+                self.emit_text(T::Descr, &src[p..end], p, end);
+                return Ok(());
+            }
+            if next == Some(':') && self.at(p + 2) == Some(':') {
+                self.emit(T::StyleSeparator, p, p + 3);
+                return Ok(());
+            }
+        } else if c == '-' && next == Some('-') {
+            if self.at(p + 2) == Some('>') {
+                self.emit(T::Arrow, p, p + 3);
+                return Ok(());
+            }
+            if !root {
+                self.emit(T::Concurrent, p, p + 2);
+                return Ok(());
+            }
+        }
+        if !root {
+            return Err(String::new());
+        }
+        self.emit(T::Invalid, p, p + c.len_utf8());
+        Ok(())
+    }
+
+    /// After the `state` keyword.
+    fn state(&mut self, c: char) -> Result<(), String> {
+        let src = self.cur.src;
+        let p = self.cur.p;
+        if c != '\n' && is_space(c) {
+            self.cur.p = self.blank_end(p + c.len_utf8());
+            return Ok(());
+        }
+        if self.is_comment(c) {
+            self.cur.p = self.eol(p);
+            return Ok(());
+        }
+        if let Some((kind, at, end)) = self.stereotype(p) {
+            self.emit_text(kind, &src[p..at], p, end);
+            self.cur.pop();
+            return Ok(());
+        }
+        if c == '"' {
+            self.cur.p = p + 1;
+            self.cur.push(S::StateString);
+            return Ok(());
+        }
+        let q = if c == '\n' { self.ws_end(p) } else { p };
+        if self.word("as", q) {
+            let end = self.ws_end(q + 2);
+            if end > q + 2 {
+                self.emit(T::As, p, end);
+                self.cur.push(S::StateId);
+                return Ok(());
+            }
+        }
+        if c == '\n' {
+            self.cur.p = p + 1;
+            self.cur.pop();
+            return Ok(());
+        }
+        if c == '{' {
+            self.emit(T::StructStart, p, p + 1);
+            self.cur.state = S::Struct;
+            return Ok(());
+        }
+        if is_word(c) {
+            let first = self.cur.word_end(p);
+            let second = self.ws_end(first);
+            if second > first
+                && self.at(second).is_some_and(is_word)
+                && let Some(brace) = self.next_brace.at(src, second + 1)
+                && brace < self.line_end(second)
+            {
+                return Err(format!(
+                    "Error: State name must be a single word. Found: \"{}\"",
+                    js::trim(&src[p..brace + 1])
+                ));
+            }
+        }
+        let end = self
+            .cur
+            .until(p + c.len_utf8(), |c| c == '{' || is_space(c));
+        self.emit(T::CompositState, p, end);
+        Ok(())
+    }
+
+    fn note_text(&mut self) -> Result<(), String> {
+        let src = self.cur.src;
+        let p = self.cur.p;
+        let q = self.ws_end(p);
+        if self.at(q) == Some(':') {
+            let end = self.cur.until(q + 1, |c| matches!(c, ':' | '\n' | ';'));
+            if end > q + 1 {
+                // Mermaid drops two characters here, expecting " :"; with no
+                // space before the colon the first character of the note goes
+                // too.
+                let from = p + js::units_end(&src[p..], 2).min(end);
+                self.emit_text(T::NoteText, &src[from..end], p, end);
+                self.cur.pop();
+                return Ok(());
+            }
+        }
+        let mut line = src[p..].find('\n').map(|at| p + at);
+        let mut end = 0;
+        while let Some(at) = line {
+            end = self.ws_end(at);
+            if self.keyword("end note", end) {
+                break;
+            }
+            line = src[end..].find('\n').map(|at| end + at);
+        }
+        if line.is_none() {
+            return Err(String::new());
+        }
+        self.emit_text(T::NoteText, &src[p..end], p, end + 8);
+        self.cur.pop();
+        Ok(())
+    }
+
+    /// Reads one token or skips text; the error token's text where no rule
+    /// matches.
+    fn step(&mut self, c: char) -> Result<(), String> {
+        let src = self.cur.src;
+        let p = self.cur.p;
+        match self.cur.state {
+            S::Initial | S::Struct => return self.statement(c),
+            S::State => return self.state(c),
+            S::StateString => {
+                if c == '"' {
+                    self.cur.p = p + 1;
+                    self.cur.pop();
+                } else {
+                    let end = self.cur.until(p, |c| c == '"');
+                    self.emit(T::StateDescr, p, end);
+                }
+            }
+            S::StateId => {
+                let end = self.cur.until(p, |c| c == '\n' || c == '{');
+                if self.emit_id(p, end) {
+                    self.cur.pop();
+                }
+            }
+            S::Scale => {
+                if c.is_ascii_digit() {
+                    self.emit(T::Width, p, digits_end(src, p));
+                    return Ok(());
+                }
+                let q = self.ws_end(p);
+                if q > p && self.keyword("width", q) {
+                    self.cur.p = q + 5;
+                    self.cur.pop();
+                    return Ok(());
+                }
+                return Err(String::new());
+            }
+            S::AccTitle | S::AccDescr | S::ClassdefId | S::ClassStyle | S::StyledefStyles => {
+                let kind = match self.cur.state {
+                    S::AccTitle => T::AccTitleValue,
+                    S::AccDescr => T::AccDescrValue,
+                    S::ClassdefId => T::ClassdefStyleopts,
+                    S::ClassStyle => T::Styleclass,
+                    _ => T::StyledefStyleopts,
+                };
+                let end = self.eol(p);
+                self.emit(kind, p, end);
+                self.cur.pop();
+            }
+            S::AccDescrMultiline => {
+                if c == '}' {
+                    self.cur.p = p + 1;
+                    self.cur.pop();
+                } else {
+                    let end = self.cur.until(p, |c| c == '}');
+                    self.emit(T::AccDescrMultilineValue, p, end);
+                }
+            }
+            S::Classdef => {
+                let default = self.word("default", p) && self.ws_end(p + 7) > p + 7;
+                let id_end = if default { p + 7 } else { self.cur.word_end(p) };
+                let end = self.ws_end(id_end);
+                if id_end == p || end == id_end {
+                    return Err(String::new());
+                }
+                let kind = if default {
+                    T::DefaultClassdefId
+                } else {
+                    T::ClassdefId
+                };
+                self.emit(kind, p, end);
+                self.cur.state = S::ClassdefId;
+            }
+            S::Class => {
+                let mut end = self.cur.word_end(p);
+                if end == p {
+                    return Err(String::new());
+                }
+                while self.at(end) == Some(',') {
+                    let from = self.ws_end(end + 1);
+                    let to = self.cur.word_end(from);
+                    if to == from {
+                        break;
+                    }
+                    end = to;
+                }
+                self.emit(T::ClassentityIds, p, end);
+                self.cur.state = S::ClassStyle;
+            }
+            S::Style => {
+                let ids_end = self.cur.until(p, |c| !(is_word(c) || c == ','));
+                let end = self.ws_end(ids_end);
+                if ids_end == p || end == ids_end {
+                    return Err(String::new());
+                }
+                self.emit(T::StyleIds, p, end);
+                self.cur.state = S::StyledefStyles;
+            }
+            S::Note => {
+                if self.keyword("left of", p) {
+                    self.emit(T::LeftOf, p, p + 7);
+                    self.cur.state = S::NoteId;
+                } else if self.keyword("right of", p) {
+                    self.emit(T::RightOf, p, p + 8);
+                    self.cur.state = S::NoteId;
+                } else if c == '"' {
+                    self.cur.p = p + 1;
+                    self.cur.state = S::FloatingNote;
+                } else {
+                    return Err(String::new());
+                }
+            }
+            S::NoteId => {
+                let q = self.ws_end(p);
+                let end = self.cur.until(q, |c| c == ':' || c == '-' || is_space(c));
+                if end == q {
+                    return Err(String::new());
+                }
+                if self.emit_id(p, end) {
+                    self.cur.state = S::NoteText;
+                }
+            }
+            S::NoteText => return self.note_text(),
+            S::FloatingNote => {
+                let q = self.ws_end(p);
+                if self.word("as", q) {
+                    let end = self.ws_end(q + 2);
+                    self.emit(T::As, p, end);
+                    self.cur.state = S::FloatingNoteId;
+                } else if c == '"' {
+                    self.cur.p = p + 1;
+                } else {
+                    let end = self.cur.until(p, |c| c == '"');
+                    self.emit(T::NoteText, p, end);
+                }
+            }
+            S::FloatingNoteId => {
+                let end = self.eol(p);
+                if self.emit_id(p, end) {
+                    self.cur.pop();
+                }
+            }
+        }
+        Ok(())
     }
 }
 
 pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
-    let n = src.len();
-    let mut lx = Lexer {
-        src,
-        n,
-        tokens: Vec::new(),
-        stack: Vec::new(),
-        state: S::Initial,
-        p: 0,
-        next_direction: Finder::new(src, find_direction),
-        next_stereotype: Finder::new(src, find_stereotype),
-        next_line_end: Finder::new(src, find_line_end),
-        next_percent: Finder::new(src, find_percent),
-        next_brace: Finder::new(src, find_brace),
-        dir_from: -1,
-        dir_to: -1,
-        dir_at: [-1; 4],
-        dir_end: [0; 4],
-        stereo_from: -1,
-        stereo_to: -1,
-        stereo_at: [-1; 6],
+    let mut lexer = Lexer {
+        cur: Cursor::new(src, S::Initial),
+        next_direction: Finder::new(find_direction),
+        next_stereotype: Finder::new(find_stereotype),
+        next_line_end: Finder::new(find_line_end),
+        next_percent: Finder::new(find_percent),
+        next_brace: Finder::new(find_brace),
+        directions: LineFinds::new(),
+        stereotypes: LineFinds::new(),
     };
 
-    loop {
-        let p = lx.p;
-        if p >= n {
-            // Jison tries the current state's rules once more on the empty
-            // remainder.
-            match lx.state {
-                S::Initial => lx.emit(T::Nl, n, n),
-                S::AccTitle => lx.emit(T::AccTitleValue, n, n),
-                S::AccDescr => lx.emit(T::AccDescrValue, n, n),
-                S::AccDescrMultiline => lx.emit(T::AccDescrMultilineValue, n, n),
-                S::ClassdefId => lx.emit(T::ClassdefStyleopts, n, n),
-                S::ClassStyle => lx.emit(T::Styleclass, n, n),
-                S::StyledefStyles => lx.emit(T::StyledefStyleopts, n, n),
-                S::StateString => lx.emit(T::StateDescr, n, n),
-                S::FloatingNote => lx.emit(T::NoteText, n, n),
-                S::StateId | S::FloatingNoteId => lx.emit(T::Id, n, n),
-                _ => {}
-            }
-            return lx.finish(T::End);
-        }
-
-        let c = lx.code(p);
-        match lx.state {
-            S::Initial | S::Struct => {
-                let root = lx.state == S::Initial;
-                let lc = c | 32;
-                if root {
-                    if lc == 99 && lx.word("click", p) && !is_word(lx.code(p + 5)) {
-                        lx.emit(T::Click, p, p + 5);
-                        continue;
-                    }
-                    if lc == 104 && lx.word("href", p) && !is_word(lx.code(p + 4)) {
-                        lx.emit(T::Href, p, p + 4);
-                        continue;
-                    }
-                    if c == 34
-                        && let Some(close) = src[p + 1..].find('"')
-                    {
-                        lx.emit(T::String, p, p + 1 + close + 1);
-                        continue;
-                    }
-                    if lc == 100 && lx.word("default", p) && !is_word(lx.code(p + 7)) {
-                        lx.emit(T::Default, p, p + 7);
-                        continue;
-                    }
-                    let kind = lx.direction(p);
-                    if kind != -1 {
-                        let end = lx.eol(lx.dir_end[kind as usize]);
-                        lx.emit(DIRECTIONS[kind as usize], p, end);
-                        continue;
-                    }
-                    if c == 10 {
-                        let mut j = p + 1;
-                        while lx.code(j) == 10 {
-                            j += 1;
-                        }
-                        lx.emit(T::Nl, p, j);
-                        continue;
-                    }
-                    if is_space(c) {
-                        lx.p = lx.ws_end(p);
-                        continue;
-                    }
-                } else if c != 10 && is_space(c) {
-                    let mut j = p + width_at(src, p);
-                    while j < n && lx.code(j) != 10 && is_space(lx.code(j)) {
-                        j += width_at(src, j);
-                    }
-                    lx.p = j;
-                    continue;
-                }
-                if lx.is_comment(c) {
-                    lx.p = lx.eol(p);
-                    continue;
-                }
-                if lc == 115 {
-                    if root && lx.word("scale", p) {
-                        let e = lx.ws_end(p + 5);
-                        if e > p + 5 {
-                            lx.emit(T::Scale, p, e);
-                            lx.push(S::Scale);
-                            continue;
-                        }
-                    }
-                    if lx.word("style", p) {
-                        let e = lx.ws_end(p + 5);
-                        if e > p + 5 {
-                            lx.emit(T::Style, p, e);
-                            lx.push(S::Style);
-                            continue;
-                        }
-                    }
-                    if lx.word("state", p) {
-                        let e = lx.ws_end(p + 5);
-                        if e > p + 5 {
-                            lx.p = e;
-                            lx.push(S::State);
-                            continue;
-                        }
-                        if root && lx.word("diagram", p + 5) {
-                            let from = if lx.word("-v2", p + 12) {
-                                p + 15
-                            } else {
-                                p + 12
-                            };
-                            let e = lx.ws_end(from);
-                            if e > from {
-                                lx.emit(T::Sd, p, e);
-                                continue;
-                            }
-                        }
-                    }
-                } else if lc == 99 {
-                    if lx.word("class", p) {
-                        let def = lx.word("def", p + 5);
-                        let from = if def { p + 8 } else { p + 5 };
-                        let e = lx.ws_end(from);
-                        if e > from {
-                            lx.emit(if def { T::Classdef } else { T::Class }, p, e);
-                            lx.push(if def { S::Classdef } else { S::Class });
-                            continue;
-                        }
-                    }
-                } else if lc == 97 && root && (lx.word("acctitle", p) || lx.word("accdescr", p)) {
-                    let title = (lx.code(p + 3) | 32) == 116;
-                    let q = lx.ws_end(p + 8);
-                    let d = lx.code(q);
-                    if d == 58 {
-                        let e = lx.ws_end(q + 1);
-                        lx.emit(if title { T::AccTitle } else { T::AccDescr }, p, e);
-                        lx.push(if title { S::AccTitle } else { S::AccDescr });
-                        continue;
-                    }
-                    if d == 123 && !title {
-                        lx.p = lx.ws_end(q + 1);
-                        lx.push(S::AccDescrMultiline);
-                        continue;
-                    }
-                }
-                if root {
-                    if c == 123 {
-                        lx.emit(T::StructStart, p, p + 1);
-                        lx.push(S::Struct);
-                        continue;
-                    }
-                } else {
-                    let kind = lx.direction(p);
-                    if kind != -1 {
-                        let end = lx.eol(lx.dir_end[kind as usize]);
-                        lx.emit(DIRECTIONS[kind as usize], p, end);
-                        continue;
-                    }
-                    if c == 125 {
-                        lx.emit(T::StructStop, p, p + 1);
-                        lx.pop();
-                        continue;
-                    }
-                    if c == 10 {
-                        lx.p = p + 1;
-                        continue;
-                    }
-                }
-                if lc == 110 && lx.word("note", p) {
-                    let e = lx.ws_end(p + 4);
-                    if e > p + 4 {
-                        lx.emit(T::Note, p, e);
-                        lx.push(S::Note);
-                        continue;
-                    }
-                }
-                if root
-                    && lc == 104
-                    && lx.word("hide empty description", p)
-                    && !is_word(lx.code(p + 22))
-                {
-                    lx.emit(T::HideEmpty, p, p + 22);
-                    continue;
-                }
-                if c == 91 && lx.code(p + 1) == 42 && lx.code(p + 2) == 93 {
-                    lx.emit(T::EdgeState, p, p + 3);
-                    continue;
-                }
-                let mut j = p;
-                while j < n {
-                    let d = lx.code(j);
-                    if d == 58 || d == 45 || d == 123 || is_space(d) {
-                        break;
-                    }
-                    j += width_at(src, j);
-                }
-                if j > p {
-                    lx.emit_id(p, j);
-                    continue;
-                }
-                if c == 58 {
-                    j = p + 1;
-                    while j < n {
-                        let d = lx.code(j);
-                        if d == 10 || d == 59 {
-                            break;
-                        }
-                        if d == 58 {
-                            let after = lx.code(j + 1);
-                            if j + 1 >= n || after == 58 || after == 10 || after == 59 {
-                                break;
-                            }
-                            j += 1;
-                        }
-                        j += width_at(src, j);
-                    }
-                    if j > p + 1 {
-                        let text = js::trim(&src[p..j]).to_string();
-                        lx.emit_text(T::Descr, text, p, j);
-                        continue;
-                    }
-                    if lx.code(p + 1) == 58 && lx.code(p + 2) == 58 {
-                        lx.emit(T::StyleSeparator, p, p + 3);
-                        continue;
-                    }
-                } else if c == 45 && lx.code(p + 1) == 45 {
-                    if lx.code(p + 2) == 62 {
-                        lx.emit(T::Arrow, p, p + 3);
-                        continue;
-                    }
-                    if !root {
-                        lx.emit(T::Concurrent, p, p + 2);
-                        continue;
-                    }
-                }
-                if !root {
-                    return lx.finish(T::Error);
-                }
-                lx.emit(T::Invalid, p, p + width_at(src, p));
-            }
-
-            S::State => {
-                if c != 10 && is_space(c) {
-                    let mut j = p + width_at(src, p);
-                    while j < n && lx.code(j) != 10 && is_space(lx.code(j)) {
-                        j += width_at(src, j);
-                    }
-                    lx.p = j;
-                    continue;
-                }
-                if lx.is_comment(c) {
-                    lx.p = lx.eol(p);
-                    continue;
-                }
-                let kind = lx.stereotype(p);
-                if kind != -1 {
-                    let at = lx.stereo_at[kind as usize] as usize;
-                    let choice = kind == 2 || kind == 5;
-                    let token = if choice {
-                        T::Choice
-                    } else if kind % 3 == 0 {
-                        T::Fork
-                    } else {
-                        T::Join
-                    };
-                    let text = js::trim(&src[p..at]).to_string();
-                    lx.emit_text(token, text, p, at + if choice { 10 } else { 8 });
-                    lx.pop();
-                    continue;
-                }
-                if c == 34 {
-                    lx.p = p + 1;
-                    lx.push(S::StateString);
-                    continue;
-                }
-                let q = if c == 10 { lx.ws_end(p) } else { p };
-                if lx.word("as", q) {
-                    let e = lx.ws_end(q + 2);
-                    if e > q + 2 {
-                        lx.emit(T::As, p, e);
-                        lx.push(S::StateId);
-                        continue;
-                    }
-                }
-                if c == 10 {
-                    lx.p = p + 1;
-                    lx.pop();
-                    continue;
-                }
-                if c == 123 {
-                    lx.emit(T::StructStart, p, p + 1);
-                    lx.pop();
-                    lx.push(S::Struct);
-                    continue;
-                }
-                if is_word(c) {
-                    let first = lx.word_end(p);
-                    let second = lx.ws_end(first);
-                    if second > first && is_word(lx.code(second)) {
-                        let brace = lx.next_brace.at(second + 1);
-                        if brace != -1 && brace < lx.line_end(second) as i64 {
-                            let brace = brace as usize;
-                            let message = format!(
-                                "Error: State name must be a single word. Found: \"{}\"",
-                                js::trim(&src[p..brace + 1])
-                            );
-                            lx.tokens.push(Token::new(T::Error, message, lx.p));
-                            return lx.tokens;
-                        }
-                    }
-                }
-                let mut j = p + width_at(src, p);
-                while j < n {
-                    let d = lx.code(j);
-                    if d == 123 || is_space(d) {
-                        break;
-                    }
-                    j += width_at(src, j);
-                }
-                lx.emit(T::CompositState, p, j);
-            }
-
-            S::StateString => {
-                if c == 34 {
-                    lx.p = p + 1;
-                    lx.pop();
-                    continue;
-                }
-                let close = src[p..].find('"').map_or(n, |k| p + k);
-                lx.emit(T::StateDescr, p, close);
-            }
-
-            S::StateId => {
-                let mut j = p;
-                while j < n {
-                    let d = lx.code(j);
-                    if d == 10 || d == 123 {
-                        break;
-                    }
-                    j += width_at(src, j);
-                }
-                if lx.emit_id(p, j) {
-                    lx.pop();
-                }
-            }
-
-            S::Scale => {
-                if (48..=57).contains(&c) {
-                    let mut j = p + 1;
-                    while j < n && (48..=57).contains(&lx.code(j)) {
-                        j += 1;
-                    }
-                    lx.emit(T::Width, p, j);
-                    continue;
-                }
-                let q = lx.ws_end(p);
-                if q > p && lx.word("width", q) && !is_word(lx.code(q + 5)) {
-                    lx.p = q + 5;
-                    lx.pop();
-                    continue;
-                }
-                return lx.finish(T::Error);
-            }
-
-            S::AccTitle => {
-                let e = lx.eol(p);
-                lx.emit(T::AccTitleValue, p, e);
-                lx.pop();
-            }
-
-            S::AccDescr => {
-                let e = lx.eol(p);
-                lx.emit(T::AccDescrValue, p, e);
-                lx.pop();
-            }
-
-            S::AccDescrMultiline => {
-                if c == 125 {
-                    lx.p = p + 1;
-                    lx.pop();
-                    continue;
-                }
-                let close = src[p..].find('}').map_or(n, |k| p + k);
-                lx.emit(T::AccDescrMultilineValue, p, close);
-            }
-
-            S::Classdef => {
-                let is_default = lx.word("default", p) && lx.ws_end(p + 7) > p + 7;
-                let j = if is_default { p + 7 } else { lx.word_end(p) };
-                let e = lx.ws_end(j);
-                if j == p || e == j {
-                    return lx.finish(T::Error);
-                }
-                lx.emit(
-                    if is_default {
-                        T::DefaultClassdefId
-                    } else {
-                        T::ClassdefId
-                    },
-                    p,
-                    e,
-                );
-                lx.pop();
-                lx.push(S::ClassdefId);
-            }
-
-            S::ClassdefId => {
-                let e = lx.eol(p);
-                lx.emit(T::ClassdefStyleopts, p, e);
-                lx.pop();
-            }
-
-            S::Class => {
-                let mut j = lx.word_end(p);
-                if j == p {
-                    return lx.finish(T::Error);
-                }
-                while lx.code(j) == 44 {
-                    let k = lx.ws_end(j + 1);
-                    let e = lx.word_end(k);
-                    if e == k {
-                        break;
-                    }
-                    j = e;
-                }
-                lx.emit(T::ClassentityIds, p, j);
-                lx.pop();
-                lx.push(S::ClassStyle);
-            }
-
-            S::ClassStyle => {
-                let e = lx.eol(p);
-                lx.emit(T::Styleclass, p, e);
-                lx.pop();
-            }
-
-            S::Style => {
-                let mut j = p;
-                while j < n && (is_word(lx.code(j)) || lx.code(j) == 44) {
-                    j += 1;
-                }
-                let e = lx.ws_end(j);
-                if j == p || e == j {
-                    return lx.finish(T::Error);
-                }
-                lx.emit(T::StyleIds, p, e);
-                lx.pop();
-                lx.push(S::StyledefStyles);
-            }
-
-            S::StyledefStyles => {
-                let e = lx.eol(p);
-                lx.emit(T::StyledefStyleopts, p, e);
-                lx.pop();
-            }
-
-            S::Note => {
-                if lx.word("left of", p) && !is_word(lx.code(p + 7)) {
-                    lx.emit(T::LeftOf, p, p + 7);
-                    lx.pop();
-                    lx.push(S::NoteId);
-                    continue;
-                }
-                if lx.word("right of", p) && !is_word(lx.code(p + 8)) {
-                    lx.emit(T::RightOf, p, p + 8);
-                    lx.pop();
-                    lx.push(S::NoteId);
-                    continue;
-                }
-                if c == 34 {
-                    lx.p = p + 1;
-                    lx.pop();
-                    lx.push(S::FloatingNote);
-                    continue;
-                }
-                return lx.finish(T::Error);
-            }
-
-            S::NoteId => {
-                let q = lx.ws_end(p);
-                let mut j = q;
-                while j < n {
-                    let d = lx.code(j);
-                    if d == 58 || d == 45 || is_space(d) {
-                        break;
-                    }
-                    j += width_at(src, j);
-                }
-                if j == q {
-                    return lx.finish(T::Error);
-                }
-                if lx.emit_id(p, j) {
-                    lx.pop();
-                    lx.push(S::NoteText);
-                }
-            }
-
-            S::NoteText => {
-                let q = lx.ws_end(p);
-                if lx.code(q) == 58 {
-                    let mut j = q + 1;
-                    while j < n {
-                        let d = lx.code(j);
-                        if d == 58 || d == 10 || d == 59 {
-                            break;
-                        }
-                        j += width_at(src, j);
-                    }
-                    if j > q + 1 {
-                        // Mermaid drops two characters here, expecting " :";
-                        // with no space before the colon the first character
-                        // of the note goes too.
-                        let from = skip_units(src, p, 2).min(j);
-                        let text = js::trim(&src[from..j]).to_string();
-                        lx.emit_text(T::NoteText, text, p, j);
-                        lx.pop();
-                        continue;
-                    }
-                }
-                let mut k = src[p..].find('\n').map(|k| p + k);
-                let mut e = 0;
-                while let Some(at) = k {
-                    e = lx.ws_end(at);
-                    if lx.word("end note", e) && !is_word(lx.code(e + 8)) {
-                        break;
-                    }
-                    k = src[e..].find('\n').map(|k| e + k);
-                }
-                if k.is_none() {
-                    return lx.finish(T::Error);
-                }
-                let text = js::trim(&src[p..e]).to_string();
-                lx.emit_text(T::NoteText, text, p, e + 8);
-                lx.pop();
-            }
-
-            S::FloatingNote => {
-                let q = lx.ws_end(p);
-                if lx.word("as", q) {
-                    let e = lx.ws_end(q + 2);
-                    lx.emit(T::As, p, e);
-                    lx.pop();
-                    lx.push(S::FloatingNoteId);
-                    continue;
-                }
-                if c == 34 {
-                    lx.p = p + 1;
-                    continue;
-                }
-                let close = src[p..].find('"').map_or(n, |k| p + k);
-                lx.emit(T::NoteText, p, close);
-            }
-
-            S::FloatingNoteId => {
-                let e = lx.eol(p);
-                if lx.emit_id(p, e) {
-                    lx.pop();
-                }
-            }
+    while let Some(c) = lexer.at(lexer.cur.p) {
+        if let Err(message) = lexer.step(c) {
+            let p = lexer.cur.p;
+            let mut tokens = lexer.cur.tokens;
+            tokens.push(Token::new(T::Error, message, p));
+            return tokens;
         }
     }
+    let n = src.len();
+    if let Some(kind) = lexer.cur.state.end_token() {
+        lexer.emit(kind, n, n);
+    }
+    let mut tokens = lexer.cur.tokens;
+    tokens.push(Token::new(T::End, "", n));
+    tokens
 }

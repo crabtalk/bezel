@@ -4,9 +4,10 @@
 //! and an end point) per cubic segment. Pele's
 //! `diagrams/cynefin/boundaries.ts`.
 
+use crate::geom::Point;
 use crate::{
     js,
-    svg::builder::{Point, fragment, num},
+    svg::builder::{fragment, num},
 };
 use std::fmt;
 
@@ -192,18 +193,18 @@ pub fn backward(curve: &[f64]) -> impl fmt::Display + '_ {
 }
 
 pub fn curve_path(curve: &[f64]) -> impl fmt::Display + '_ {
-    fragment(move |f| write!(f, "M{}{}", Point(curve[0], curve[1]), forward(curve)))
+    fragment(move |f| write!(f, "M{}{}", Point::new(curve[0], curve[1]), forward(curve)))
 }
 
 pub fn ellipse_path(cx: f64, cy: f64, rx: f64, ry: f64) -> impl fmt::Display {
     fragment(move |f| {
-        let r = Point(rx, ry);
+        let r = Point::new(rx, ry);
         write!(
             f,
             "M{}A{r} 0 1,1 {}A{r} 0 1,1 {}Z",
-            Point(cx - rx, cy),
-            Point(cx + rx, cy),
-            Point(cx - rx, cy)
+            Point::new(cx - rx, cy),
+            Point::new(cx + rx, cy),
+            Point::new(cx - rx, cy)
         )
     })
 }

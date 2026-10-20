@@ -15,7 +15,7 @@ pub use db::SequenceModel;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
@@ -35,7 +35,7 @@ impl Diagram for Sequence {
         let sequence_wrap = sequence.wrap == Some(true);
         let mut db = SequenceModel::new(wrap, sequence_wrap);
         if let Some(title) = title.filter(|title| !title.is_empty()) {
-            db.set_diagram_title(title);
+            db.titles.set_title(title);
         }
         parser::parse_sequence(source, &mut db)?;
         Ok(Model::Sequence(Box::new(db)))
@@ -75,9 +75,8 @@ pub struct SequenceConfig {
     pub message_align: Option<String>,
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Sequence(model) = model else {
-        unreachable!("sequenceDiagram renders a sequence model")
-    };
-    Ok(render::render_sequence(model, &config.sequence, ctx))
+impl Render for SequenceModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_sequence(self, &config.sequence, ctx))
+    }
 }

@@ -1,16 +1,14 @@
 //! Labels that keep every character, and labels broken between characters.
 //! Pele's `diagrams/common/literal-label.ts`.
 
+use crate::geom::Point;
 use crate::{
     js,
-    svg::builder::{Esc, LineSvg, fragment, num, shared_style, span_style, text_style},
+    svg::builder::{Esc, fragment, num, span_style, text_style},
     text::{Host, Label, Span},
+    util::chars::is_space,
 };
 use std::fmt;
-
-fn is_space(c: char) -> bool {
-    js::is_space(c)
-}
 
 /// Literal labels, filenames and protocol fields among them, keep every
 /// character but the spaces a line breaks at. A long word breaks between
@@ -190,13 +188,17 @@ pub struct StartLines<'a>(pub &'a Label, pub f64, pub f64, pub &'a str);
 impl fmt::Display for StartLines<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let StartLines(label, x, top, attrs) = *self;
-        let shared = shared_style(label);
+        let shared = label.shared_style();
         let open = fragment(|f| write!(f, "<text{}", text_style(attrs, shared)));
         for (i, spans) in label.lines.iter().enumerate() {
             let cy = top + (i as f64 + 0.5) * label.line_height;
             if spans.iter().any(|span| span.icon.is_some()) {
                 let width = label.widths[i];
-                write!(f, "{}", LineSvg(label, i, x + width / 2.0, cy, attrs))?;
+                write!(
+                    f,
+                    "{}",
+                    label.line_svg(i, Point::new(x + width / 2.0, cy), attrs)
+                )?;
                 continue;
             }
             let shown =

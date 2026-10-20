@@ -69,6 +69,42 @@ impl Nodes {
     pub fn get(&self, id: NodeId) -> &RailroadNode {
         &self.0[id]
     }
+
+    pub fn terminal(&mut self, value: String) -> NodeId {
+        self.add(RailroadNode::Terminal { value })
+    }
+
+    pub fn nonterminal(&mut self, name: String) -> NodeId {
+        self.add(RailroadNode::NonTerminal { name })
+    }
+
+    pub fn special(&mut self, text: String) -> NodeId {
+        self.add(RailroadNode::Special { text })
+    }
+
+    pub fn optional(&mut self, element: NodeId) -> NodeId {
+        self.add(RailroadNode::Optional { element })
+    }
+
+    pub fn repetition(&mut self, element: NodeId, min: f64, max: f64) -> NodeId {
+        self.add(RailroadNode::Repetition { element, min, max })
+    }
+
+    /// A sequence of one is that one, in every notation.
+    pub fn sequence(&mut self, elements: Vec<NodeId>) -> NodeId {
+        if elements.len() == 1 {
+            return elements[0];
+        }
+        self.add(RailroadNode::Sequence { elements })
+    }
+
+    /// A choice of one is that one, in every notation.
+    pub fn choice(&mut self, alternatives: Vec<NodeId>) -> NodeId {
+        if alternatives.len() == 1 {
+            return alternatives[0];
+        }
+        self.add(RailroadNode::Choice { alternatives })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

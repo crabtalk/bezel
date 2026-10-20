@@ -1,147 +1,193 @@
 //! Pele's `diagrams/c4/db.ts`.
 
+use crate::diagrams::common::db::Titles;
 use indexmap::IndexMap;
 use serde::{
     Serialize, Serializer,
     ser::{Error as _, SerializeMap},
 };
 
-use super::types::{C4Attr, C4Element, C4Named, C4Ref, C4Rel};
-use crate::js::{self, JsonNumber, Lazy};
+use super::types::{C4Attr, C4Element, C4Named, C4Ref, C4Rel, C4Type};
+use crate::js::{self, JsonNumber};
 
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
+/// A field of a shape, a boundary or a relation that an argument may set.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Field {
+    Label,
+    Type,
+    Descr,
+    Techn,
+    Sprite,
+    Tags,
+    Link,
+    BgColor,
+    FontColor,
+    BorderColor,
+    Shadowing,
+    Shape,
+    LegendText,
+    LegendSprite,
+    TextColor,
+    LineColor,
+}
 
-const ELEMENT_FIELDS: [&str; 14] = [
-    "label",
-    "type",
-    "descr",
-    "techn",
-    "sprite",
-    "tags",
-    "link",
-    "bgColor",
-    "fontColor",
-    "borderColor",
-    "shadowing",
-    "shape",
-    "legendText",
-    "legendSprite",
-];
-const REL_FIELDS: [&str; 8] = [
-    "label",
-    "descr",
-    "techn",
-    "sprite",
-    "tags",
-    "link",
-    "textColor",
-    "lineColor",
-];
+impl Field {
+    /// The field a named argument's key names.
+    fn from_key(key: &str) -> Option<Self> {
+        Some(match key {
+            "label" => Self::Label,
+            "type" => Self::Type,
+            "descr" => Self::Descr,
+            "techn" => Self::Techn,
+            "sprite" => Self::Sprite,
+            "tags" => Self::Tags,
+            "link" => Self::Link,
+            "bgColor" => Self::BgColor,
+            "fontColor" => Self::FontColor,
+            "borderColor" => Self::BorderColor,
+            "shadowing" => Self::Shadowing,
+            "shape" => Self::Shape,
+            "legendText" => Self::LegendText,
+            "legendSprite" => Self::LegendSprite,
+            "textColor" => Self::TextColor,
+            "lineColor" => Self::LineColor,
+            _ => return None,
+        })
+    }
+}
 
-/// A shape, a boundary or a relation, as the argument helpers fill it.
+/// A shape, a boundary or a relation, as the arguments fill it.
 trait Target {
-    /// The field `name`, one of this target's known ones, set to `value`.
-    fn set(&mut self, name: &str, value: String);
-    /// The text field `name`, `descr` or `techn`.
-    fn text_mut(&mut self, name: &str) -> &mut Option<String>;
+    /// The text field `field`, when this target has it. The label is not one.
+    fn slot(&mut self, field: Field) -> Option<&mut Option<String>>;
     fn label_mut(&mut self) -> (&mut String, &mut Option<C4Named>);
+    fn extra_mut(&mut self) -> &mut Option<IndexMap<String, String>>;
+
     /// Mermaid assigns a named argument to whatever property it names,
     /// structural ones included. Here it reaches only the known fields; any
     /// other name is kept aside in `extra`.
-    fn named(&mut self, attr: &C4Named);
+    fn named(&mut self, attr: &C4Named) {
+        self.named_field(attr);
+    }
+
+    /// [`Target::named`] for the fields [`Target::set`] knows.
+    fn named_field(&mut self, attr: &C4Named) {
+        if let Some(field) = Field::from_key(&attr.key)
+            && self.set(field, attr.value.clone())
+        {
+            return;
+        }
+        self.extra_mut()
+            .get_or_insert_with(IndexMap::new)
+            .insert(attr.key.clone(), attr.value.clone());
+    }
+
+    /// Sets `field` to `value`; false when this target has no such field.
+    fn set(&mut self, field: Field, value: String) -> bool {
+        if field == Field::Label {
+            *self.label_mut().0 = value;
+            return true;
+        }
+        let Some(slot) = self.slot(field) else {
+            return false;
+        };
+        *slot = Some(value);
+        true
+    }
+
+    /// A positional argument fills the field of its slot. A named one fills
+    /// the field it names, whichever slot it is in.
+    fn put(&mut self, field: Field, attr: Option<&C4Attr>) {
+        match attr {
+            None => {}
+            Some(C4Attr::Str(value)) => {
+                self.set(field, value.clone());
+            }
+            Some(C4Attr::Named(attr)) => self.named(attr),
+        }
+    }
+
+    /// [`Target::put`] for a text field, which is the empty string when its
+    /// slot is empty.
+    fn text(&mut self, field: Field, attr: Option<&C4Attr>) {
+        if attr.is_some() {
+            self.put(field, attr);
+        } else if let Some(slot) = self.slot(field) {
+            slot.get_or_insert_with(String::new);
+        }
+    }
+
+    fn label(&mut self, attr: Option<&C4Attr>) {
+        let (text, label_attr) = self.label_mut();
+        *label_attr = None;
+        match attr {
+            Some(C4Attr::Named(attr)) => {
+                *text = String::new();
+                *label_attr = Some(attr.clone());
+                self.named(attr);
+            }
+            Some(C4Attr::Str(value)) => *text = value.clone(),
+            None => *text = String::new(),
+        }
+    }
 }
 
 impl Target for C4Element {
-    fn set(&mut self, name: &str, value: String) {
-        let field = match name {
-            "label" => {
-                self.label = value;
-                return;
-            }
-            "type" => &mut self.ty,
-            "descr" => &mut self.descr,
-            "techn" => &mut self.techn,
-            "sprite" => &mut self.sprite,
-            "tags" => &mut self.tags,
-            "link" => &mut self.link,
-            "bgColor" => &mut self.bg_color,
-            "fontColor" => &mut self.font_color,
-            "borderColor" => &mut self.border_color,
-            "shadowing" => &mut self.shadowing,
-            "shape" => &mut self.shape,
-            "legendText" => &mut self.legend_text,
-            "legendSprite" => &mut self.legend_sprite,
-            _ => unreachable!("not an element field: {name}"),
-        };
-        *field = Some(value);
-    }
-
-    fn text_mut(&mut self, name: &str) -> &mut Option<String> {
-        if name == "descr" {
-            &mut self.descr
-        } else {
-            &mut self.techn
-        }
+    fn slot(&mut self, field: Field) -> Option<&mut Option<String>> {
+        Some(match field {
+            Field::Type => &mut self.ty,
+            Field::Descr => &mut self.descr,
+            Field::Techn => &mut self.techn,
+            Field::Sprite => &mut self.sprite,
+            Field::Tags => &mut self.tags,
+            Field::Link => &mut self.link,
+            Field::BgColor => &mut self.bg_color,
+            Field::FontColor => &mut self.font_color,
+            Field::BorderColor => &mut self.border_color,
+            Field::Shadowing => &mut self.shadowing,
+            Field::Shape => &mut self.shape,
+            Field::LegendText => &mut self.legend_text,
+            Field::LegendSprite => &mut self.legend_sprite,
+            Field::Label | Field::TextColor | Field::LineColor => return None,
+        })
     }
 
     fn label_mut(&mut self) -> (&mut String, &mut Option<C4Named>) {
         (&mut self.label, &mut self.label_attr)
     }
 
-    fn named(&mut self, attr: &C4Named) {
-        if ELEMENT_FIELDS.contains(&attr.key.as_str()) {
-            self.set(&attr.key, attr.value.clone());
-        } else {
-            self.extra
-                .get_or_insert_with(IndexMap::new)
-                .insert(attr.key.clone(), attr.value.clone());
-        }
+    fn extra_mut(&mut self) -> &mut Option<IndexMap<String, String>> {
+        &mut self.extra
     }
 }
 
 impl Target for C4Rel {
-    fn set(&mut self, name: &str, value: String) {
-        let field = match name {
-            "label" => {
-                self.label = value;
-                return;
-            }
-            "descr" => &mut self.descr,
-            "techn" => &mut self.techn,
-            "sprite" => &mut self.sprite,
-            "tags" => &mut self.tags,
-            "link" => &mut self.link,
-            "textColor" => &mut self.text_color,
-            "lineColor" => &mut self.line_color,
-            _ => unreachable!("not a relation field: {name}"),
-        };
-        *field = Some(value);
-    }
-
-    fn text_mut(&mut self, name: &str) -> &mut Option<String> {
-        if name == "descr" {
-            &mut self.descr
-        } else {
-            &mut self.techn
-        }
+    fn slot(&mut self, field: Field) -> Option<&mut Option<String>> {
+        Some(match field {
+            Field::Descr => &mut self.descr,
+            Field::Techn => &mut self.techn,
+            Field::Sprite => &mut self.sprite,
+            Field::Tags => &mut self.tags,
+            Field::Link => &mut self.link,
+            Field::TextColor => &mut self.text_color,
+            Field::LineColor => &mut self.line_color,
+            _ => return None,
+        })
     }
 
     fn label_mut(&mut self) -> (&mut String, &mut Option<C4Named>) {
         (&mut self.label, &mut self.label_attr)
     }
 
+    fn extra_mut(&mut self) -> &mut Option<IndexMap<String, String>> {
+        &mut self.extra
+    }
+
     fn named(&mut self, attr: &C4Named) {
-        let key = attr.key.as_str();
-        if key == "offsetX" {
-            self.offset_x = Some(parse_int(&attr.value));
-        } else if key == "offsetY" {
-            self.offset_y = Some(parse_int(&attr.value));
-        } else if REL_FIELDS.contains(&key) {
-            self.set(key, attr.value.clone());
-        } else {
-            self.extra
-                .get_or_insert_with(IndexMap::new)
-                .insert(attr.key.clone(), attr.value.clone());
+        match attr.key.as_str() {
+            "offsetX" => self.offset_x = Some(parse_int(&attr.value)),
+            "offsetY" => self.offset_y = Some(parse_int(&attr.value)),
+            _ => self.named_field(attr),
         }
     }
 }
@@ -157,38 +203,6 @@ fn parse_int(text: &str) -> f64 {
         js::parse_int(text, 16)
     } else {
         js::parse_int(text, 10)
-    }
-}
-
-/// A positional argument fills the field of its slot. A named one fills the
-/// field it names, whichever slot it is in.
-fn put(target: &mut impl Target, field: &str, attr: Option<&C4Attr>) {
-    match attr {
-        None => {}
-        Some(C4Attr::Str(value)) => target.set(field, value.clone()),
-        Some(C4Attr::Named(attr)) => target.named(attr),
-    }
-}
-
-fn text(target: &mut impl Target, field: &str, attr: Option<&C4Attr>) {
-    if attr.is_none() {
-        target.text_mut(field).get_or_insert_with(String::new);
-    } else {
-        put(target, field, attr);
-    }
-}
-
-fn label(target: &mut impl Target, attr: Option<&C4Attr>) {
-    let (text, label_attr) = target.label_mut();
-    *label_attr = None;
-    match attr {
-        Some(C4Attr::Named(attr)) => {
-            *text = String::new();
-            *label_attr = Some(attr.clone());
-            target.named(attr);
-        }
-        Some(C4Attr::Str(value)) => *text = value.clone(),
-        None => *text = String::new(),
     }
 }
 
@@ -219,19 +233,15 @@ fn element(
         list.push(el);
         at
     });
-    label(&mut list[at], title);
+    list[at].label(title);
     at
 }
 
 /// Pele's `C4Db`, serialized with its lookups as Pele's is.
 #[derive(Clone, Debug, PartialEq)]
 pub struct C4Model {
-    /// The header keyword: C4Context, C4Container, C4Component, C4Dynamic or
-    /// C4Deployment.
-    pub c4_type: Option<String>,
-    pub title: Option<String>,
-    pub acc_title: Option<String>,
-    pub acc_descr: Option<String>,
+    pub c4_type: Option<C4Type>,
+    pub titles: Titles,
     pub shapes: Vec<C4Element>,
     /// The first boundary is the unnamed one that holds everything at the top
     /// level.
@@ -253,9 +263,7 @@ impl Default for C4Model {
     fn default() -> Self {
         Self {
             c4_type: None,
-            title: None,
-            acc_title: None,
-            acc_descr: None,
+            titles: Titles::default(),
             shapes: Vec::new(),
             boundaries: vec![C4Element {
                 alias: "global".into(),
@@ -276,18 +284,6 @@ impl Default for C4Model {
 }
 
 impl C4Model {
-    pub fn set_c4_type(&mut self, ty: &str) {
-        self.c4_type = Some(ty.to_string());
-    }
-
-    pub fn set_title(&mut self, title: &str) {
-        self.title = Some(title.to_string());
-    }
-
-    pub fn set_acc_description(&mut self, descr: &str) {
-        self.acc_descr = Some(RE_INDENT.replace(descr, |_| "\n".into()));
-    }
-
     /// alias, label, ?descr, ?sprite, ?tags, $link
     pub fn add_person_or_system(&mut self, kind: &str, attrs: &[C4Attr]) {
         let at = element(
@@ -296,7 +292,7 @@ impl C4Model {
             attrs.first(),
             attrs.get(1),
         );
-        text(&mut self.shapes[at], "descr", attrs.get(2));
+        self.shapes[at].text(Field::Descr, attrs.get(2));
         self.finish_shape(at, kind, attrs, 3);
     }
 
@@ -308,8 +304,8 @@ impl C4Model {
             attrs.first(),
             attrs.get(1),
         );
-        text(&mut self.shapes[at], "techn", attrs.get(2));
-        text(&mut self.shapes[at], "descr", attrs.get(3));
+        self.shapes[at].text(Field::Techn, attrs.get(2));
+        self.shapes[at].text(Field::Descr, attrs.get(3));
         self.finish_shape(at, kind, attrs, 4);
     }
 
@@ -320,9 +316,9 @@ impl C4Model {
     fn finish_shape(&mut self, at: usize, kind: &str, attrs: &[C4Attr], from: usize) {
         let current = self.current;
         let shape = &mut self.shapes[at];
-        put(shape, "sprite", attrs.get(from));
-        put(shape, "tags", attrs.get(from + 1));
-        put(shape, "link", attrs.get(from + 2));
+        shape.put(Field::Sprite, attrs.get(from));
+        shape.put(Field::Tags, attrs.get(from + 1));
+        shape.put(Field::Link, attrs.get(from + 2));
         shape.kind = Some(kind.to_string());
         shape.parent = Some(current);
     }
@@ -338,7 +334,7 @@ impl C4Model {
         if attrs.get(2).is_none() {
             boundary.ty = Some(fallback.to_string());
         } else {
-            put(boundary, "type", attrs.get(2));
+            boundary.put(Field::Type, attrs.get(2));
         }
         at
     }
@@ -361,8 +357,8 @@ impl C4Model {
     fn add_boundary(&mut self, attrs: &[C4Attr], fallback: &str) {
         let at = self.boundary(attrs, fallback);
         let boundary = &mut self.boundaries[at];
-        put(boundary, "tags", attrs.get(3));
-        put(boundary, "link", attrs.get(4));
+        boundary.put(Field::Tags, attrs.get(3));
+        boundary.put(Field::Link, attrs.get(4));
         self.open(at);
     }
 
@@ -370,12 +366,12 @@ impl C4Model {
     pub fn add_deployment_node(&mut self, node_type: &str, attrs: &[C4Attr]) {
         let at = self.boundary(attrs, "node");
         let boundary = &mut self.boundaries[at];
-        text(boundary, "descr", attrs.get(3));
+        boundary.text(Field::Descr, attrs.get(3));
         // Mermaid drops whatever is in the sprite slot, a named argument
         // included.
-        put(boundary, "sprite", attrs.get(4));
-        put(boundary, "tags", attrs.get(5));
-        put(boundary, "link", attrs.get(6));
+        boundary.put(Field::Sprite, attrs.get(4));
+        boundary.put(Field::Tags, attrs.get(5));
+        boundary.put(Field::Link, attrs.get(6));
         boundary.node_type = Some(node_type.to_string());
         self.open(at);
     }
@@ -424,12 +420,12 @@ impl C4Model {
         });
         let rel = &mut self.rels[at];
         rel.ty = ty.to_string();
-        label(rel, attrs.get(2));
-        text(rel, "techn", attrs.get(3));
-        text(rel, "descr", attrs.get(4));
-        put(rel, "sprite", attrs.get(5));
-        put(rel, "tags", attrs.get(6));
-        put(rel, "link", attrs.get(7));
+        rel.label(attrs.get(2));
+        rel.text(Field::Techn, attrs.get(3));
+        rel.text(Field::Descr, attrs.get(4));
+        rel.put(Field::Sprite, attrs.get(5));
+        rel.put(Field::Tags, attrs.get(6));
+        rel.put(Field::Link, attrs.get(7));
     }
 
     pub fn get_c4_shape(&self, alias: &str) -> Option<C4Ref> {
@@ -459,7 +455,7 @@ impl C4Model {
 
     /// elementName, ?bgColor, ?fontColor, ?borderColor, ?shadowing, ?shape,
     /// ?sprite, ?techn, ?legendText, ?legendSprite
-    pub fn update_el_style(&mut self, _ty: &str, attrs: &[C4Attr]) {
+    pub fn update_el_style(&mut self, attrs: &[C4Attr]) {
         let Some(C4Attr::Str(name)) = attrs.first() else {
             return;
         };
@@ -468,25 +464,25 @@ impl C4Model {
         };
         let el = self.element_mut(at);
         for (i, field) in [
-            "bgColor",
-            "fontColor",
-            "borderColor",
-            "shadowing",
-            "shape",
-            "sprite",
-            "techn",
-            "legendText",
-            "legendSprite",
+            Field::BgColor,
+            Field::FontColor,
+            Field::BorderColor,
+            Field::Shadowing,
+            Field::Shape,
+            Field::Sprite,
+            Field::Techn,
+            Field::LegendText,
+            Field::LegendSprite,
         ]
         .into_iter()
         .enumerate()
         {
-            put(el, field, attrs.get(i + 1));
+            el.put(field, attrs.get(i + 1));
         }
     }
 
     /// from, to, ?textColor, ?lineColor, ?offsetX, ?offsetY
-    pub fn update_rel_style(&mut self, _ty: &str, attrs: &[C4Attr]) {
+    pub fn update_rel_style(&mut self, attrs: &[C4Attr]) {
         let (Some(C4Attr::Str(from)), Some(C4Attr::Str(to))) = (attrs.first(), attrs.get(1)) else {
             return;
         };
@@ -494,8 +490,8 @@ impl C4Model {
             return;
         };
         let rel = &mut self.rels[at];
-        put(rel, "textColor", attrs.get(2));
-        put(rel, "lineColor", attrs.get(3));
+        rel.put(Field::TextColor, attrs.get(2));
+        rel.put(Field::LineColor, attrs.get(3));
         match attrs.get(4) {
             Some(C4Attr::Str(x)) => rel.offset_x = Some(parse_int(x)),
             Some(C4Attr::Named(x)) => rel.named(x),
@@ -510,7 +506,7 @@ impl C4Model {
 
     /// ?c4ShapeInRow, ?c4BoundaryInRow. As in Mermaid, the slot decides which
     /// one a value sets, not its name.
-    pub fn update_layout_config(&mut self, _ty: &str, attrs: &[C4Attr]) {
+    pub fn update_layout_config(&mut self, attrs: &[C4Attr]) {
         let count = |attr: Option<&C4Attr>| -> f64 {
             match attr {
                 None => f64::NAN,
@@ -621,11 +617,13 @@ impl Serialize for C4Model {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let mut map = s.serialize_map(None)?;
         map.serialize_entry("type", "c4")?;
+        if let Some(c4_type) = &self.c4_type {
+            map.serialize_entry("c4Type", c4_type)?;
+        }
         for (key, value) in [
-            ("c4Type", &self.c4_type),
-            ("title", &self.title),
-            ("accTitle", &self.acc_title),
-            ("accDescr", &self.acc_descr),
+            ("title", &self.titles.title),
+            ("accTitle", &self.titles.acc_title),
+            ("accDescr", &self.titles.acc_descr),
         ] {
             if let Some(value) = value {
                 map.serialize_entry(key, value)?;

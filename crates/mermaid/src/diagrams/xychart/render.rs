@@ -1,13 +1,14 @@
 //! Pele's `diagrams/xychart/render.ts`.
 
+use crate::geom::Point;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
 use super::{
-    db::{XAxis, XyChartModel},
+    db::{PlotKind, XAxis, XyChartModel},
     ticks::{tick_index, tick_step, tick_value, ticks_between},
 };
-use crate::svg::builder::{Esc, EscText, LabelSvg, TITLE, fragment};
+use crate::svg::builder::{Esc, EscText, TITLE, fragment};
 use crate::{Ctx, Host};
 use crate::{
     Error, Rendered,
@@ -19,7 +20,7 @@ use crate::{
         root::{Accessible, svg_document},
         theme::series_color,
     },
-    text::{Label, Style, layout_label},
+    text::{Label, Style},
 };
 use std::fmt::{self, Write as _};
 
@@ -135,7 +136,7 @@ fn aligned(label: &Label, x: f64, y: f64, anchor: Anchor) -> impl fmt::Display {
             Anchor::End => -label.width / 2.0,
             Anchor::Middle => 0.0,
         };
-        write!(f, "{}", LabelSvg(label, x + shift, y, ""))
+        write!(f, "{}", label.svg(Point::new(x + shift, y), ""))
     })
 }
 
@@ -173,14 +174,14 @@ pub fn render_xy_chart(
     let x = &model.x_axis;
     let plots = &model.plots;
     let text = |raw: Option<&str>, font_size: f64, max: f64| -> Label {
-        layout_label(raw, false, &*measure, font_size, max, 0)
+        Label::layout(raw, false, &*measure, font_size, max, 0)
     };
     let line_height = text(Some("0"), small, 4000.0).height;
     let tiny_height = text(Some("0"), tiny, 4000.0).height;
 
-    let title = layout_label(
+    let title = Label::layout(
         if chart.show_title.unwrap_or(true) {
-            model.title.as_deref()
+            model.titles.title.as_deref()
         } else {
             None
         },
@@ -216,7 +217,10 @@ pub fn render_xy_chart(
 
     // The value range: as written, or taken from the data, where bars stand
     // on zero and the range grows to whole steps.
-    let bars = plots.iter().filter(|plot| plot.kind == "bar").count();
+    let bars = plots
+        .iter()
+        .filter(|plot| plot.kind == PlotKind::Bar)
+        .count();
     let mut lo = model.y_axis.min;
     let mut hi = model.y_axis.max;
     let exact = model.has_set_y_axis && lo.is_finite() && hi.is_finite() && lo != hi;
@@ -449,7 +453,7 @@ pub fn render_xy_chart(
         for label in plot.point_labels.iter().flatten() {
             point_label_width = point_label_width.max(measure.width(label, tiny, 0));
         }
-        if show_values && horizontal && plot.kind == "bar" {
+        if show_values && horizontal && plot.kind == PlotKind::Bar {
             for &(_, value) in &plot.data {
                 let written = finite(value).map_or(String::new(), js::num_str);
                 value_width = value_width.max(measure.width(&written, tiny, 0));
@@ -671,7 +675,7 @@ pub fn render_xy_chart(
         } else {
             plot.data.len()
         };
-        if plot.kind == "bar" {
+        if plot.kind == PlotKind::Bar {
             let offset = (bar as f64 - (bars_f - 1.0) / 2.0) * thickness - (thickness - gap) / 2.0;
             bar += 1;
             rects.clear();
@@ -850,17 +854,18 @@ pub fn render_xy_chart(
             "<g transform=\"translate({},{}) rotate(-90)\">{}</g>",
             num(pad + left_title.height / 2.0),
             num(top + plot_height / 2.0),
-            LabelSvg(&left_title, 0.0, 0.0, "")
+            left_title.svg(Point::new(0.0, 0.0), "")
         );
     }
     let _ = write!(
         titles,
         "{}",
-        LabelSvg(
-            &bottom_title,
-            left + plot_width / 2.0,
-            height - pad - bottom_title.height / 2.0,
-            "",
+        bottom_title.svg(
+            Point::new(
+                left + plot_width / 2.0,
+                height - pad - bottom_title.height / 2.0
+            ),
+            ""
         )
     );
 
@@ -878,7 +883,7 @@ pub fn render_xy_chart(
         }
         let y = ly + row / 2.0;
         let color = series_color(*index as i64);
-        let bar = plots[*index].kind == "bar";
+        let bar = plots[*index].kind == PlotKind::Bar;
         let swatch = fragment(|f| {
             if bar {
                 write!(
@@ -903,7 +908,7 @@ pub fn render_xy_chart(
             legend_out,
             "<g class=\"{p}-legend-item\" data-id=\"{}\">{swatch}{}</g>",
             EscText(&plots[*index].title),
-            LabelSvg(label, lx + SWATCH + 8.0 + label.width / 2.0, y, "")
+            label.svg(Point::new(lx + SWATCH + 8.0 + label.width / 2.0, y), "")
         );
         ly += row;
     }
@@ -925,7 +930,7 @@ pub fn render_xy_chart(
     let _ = write!(
         content,
         "{}",
-        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, TITLE)
+        title.svg(Point::new(width / 2.0, pad + title.height / 2.0), TITLE)
     );
     if !grid.is_empty() {
         let _ = write!(
@@ -979,8 +984,8 @@ pub fn render_xy_chart(
             size,
             ctx,
             Accessible {
-                acc_title: model.acc_title.as_deref(),
-                acc_descr: model.acc_descr.as_deref(),
+                acc_title: model.titles.acc_title.as_deref(),
+                acc_descr: model.titles.acc_descr.as_deref(),
             },
             &content,
         ),

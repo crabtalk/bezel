@@ -1,66 +1,35 @@
 //! Pele's `diagrams/gantt/lexer.ts`.
 
-use super::tokens::*;
+use super::tokens::T;
 use crate::{
-    diagrams::common::scan::Tokens,
-    js::Lazy,
-    util::chars::{code_at, is_space, width_at},
+    token::{Cursor, Token},
+    util::chars::{is_space, is_word},
 };
 
-const DAYS: [&str; 7] = [
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-    "saturday",
-    "sunday",
+/// What ends most statements' text.
+const STATEMENT_END: &[char] = &['#', '\n', ';'];
+
+/// Statements that start with a keyword, written in lower case, in the
+/// grammar's rule order: the keyword alone, or the keyword, one whitespace
+/// character and text up to the given characters.
+const KEYWORDS: [(&str, Option<&[char]>, T); 12] = [
+    ("axisformat", Some(STATEMENT_END), T::AxisFormat),
+    ("accdescription", Some(STATEMENT_END), T::AccDescription),
+    ("gantt", None, T::Gantt),
+    ("dateformat", Some(STATEMENT_END), T::DateFormat),
+    ("inclusiveenddates", None, T::InclusiveEndDates),
+    ("includes", Some(STATEMENT_END), T::Includes),
+    ("topaxis", None, T::TopAxis),
+    ("tickinterval", Some(STATEMENT_END), T::TickInterval),
+    ("todaymarker", Some(&['\n', ';']), T::TodayMarker),
+    ("title", Some(&['\n']), T::Title),
+    ("excludes", Some(STATEMENT_END), T::Excludes),
+    ("section", Some(&['\n']), T::Section),
 ];
 
-static RE_ACC_TITLE: Lazy = Lazy::new(r"accTitle\s*:\s*", "iy");
-static RE_ACC_DESCR: Lazy = Lazy::new(r"accDescr\s*:\s*", "iy");
-static RE_ACC_DESCR_ML: Lazy = Lazy::new(r"accDescr\s*\{\s*", "iy");
-static RE_HREF: Lazy = Lazy::new(r#"href\s+""#, "iy");
-static RE_CALL: Lazy = Lazy::new(r"call\s+", "iy");
-static RE_CLICK: Lazy = Lazy::new(r"click\s+", "iy");
-static RE_EMPTY_CALL: Lazy = Lazy::new(r"\(\s*\)", "y");
-static RE_WEEKDAY: Lazy = Lazy::new(
-    r"weekday\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
-    "iy",
-);
-static RE_WEEKEND: Lazy = Lazy::new(r"weekend\s+(?:(friday)|saturday)\b", "iy");
-static RE_DATE: Lazy = Lazy::new(r"\d\d\d\d-\d\d-\d\d\b", "y");
-static RE_AXIS_FORMAT: Lazy = Lazy::new(r"axisFormat\s[^#\n;]+", "iy");
-static RE_ACC_DESCRIPTION: Lazy = Lazy::new(r"accDescription\s[^#\n;]+", "iy");
-static RE_GANTT: Lazy = Lazy::new(r"gantt\b", "iy");
-static RE_DATE_FORMAT: Lazy = Lazy::new(r"dateFormat\s[^#\n;]+", "iy");
-static RE_INCLUSIVE: Lazy = Lazy::new(r"inclusiveEndDates\b", "iy");
-static RE_INCLUDES: Lazy = Lazy::new(r"includes\s[^#\n;]+", "iy");
-static RE_TOP_AXIS: Lazy = Lazy::new(r"topAxis\b", "iy");
-static RE_TICK_INTERVAL: Lazy = Lazy::new(r"tickInterval\s[^#\n;]+", "iy");
-static RE_TODAY_MARKER: Lazy = Lazy::new(r"todayMarker\s[^\n;]+", "iy");
-static RE_TITLE: Lazy = Lazy::new(r"title\s[^\n]+", "iy");
-static RE_EXCLUDES: Lazy = Lazy::new(r"excludes\s[^#\n;]+", "iy");
-static RE_SECTION: Lazy = Lazy::new(r"section\s[^\n]+", "iy");
-/// Statements that start with a keyword, with the keyword's first letter, in
-/// the grammar's rule order.
-static KEYWORDS: [(u32, &Lazy, i32); 12] = [
-    (97, &RE_AXIS_FORMAT, AXIS_FORMAT),
-    (97, &RE_ACC_DESCRIPTION, ACC_DESCRIPTION),
-    (103, &RE_GANTT, GANTT),
-    (100, &RE_DATE_FORMAT, DATE_FORMAT),
-    (105, &RE_INCLUSIVE, INCLUSIVE_END_DATES),
-    (105, &RE_INCLUDES, INCLUDES),
-    (116, &RE_TOP_AXIS, TOP_AXIS),
-    (116, &RE_TICK_INTERVAL, TICK_INTERVAL),
-    (116, &RE_TODAY_MARKER, TODAY_MARKER),
-    (116, &RE_TITLE, TITLE),
-    (101, &RE_EXCLUDES, EXCLUDES),
-    (115, &RE_SECTION, SECTION),
-];
-
+/// Jison's start conditions.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum State {
+enum S {
     Initial,
     AccTitle,
     AccDescr,
@@ -71,270 +40,242 @@ enum State {
     Click,
 }
 
-struct Lexer<'a> {
-    src: &'a str,
-    out: Tokens,
-    state: State,
-    p: usize,
+struct Lexer<'s> {
+    cur: Cursor<'s, T, S>,
 }
 
 impl Lexer<'_> {
-    fn emit(&mut self, kind: i32, s: usize, e: usize) {
-        self.out.types.push(kind);
-        self.out.texts.push(self.src[s..e].to_string());
-        self.out.starts.push(s);
-        self.p = e;
+    /// The end of `word`, in any case, at the cursor and the whitespace
+    /// after it.
+    fn word_spaces(&self, word: &str) -> Option<usize> {
+        let p = self.cur.p;
+        self.cur
+            .starts_with_caseless(word, p)
+            .then(|| self.cur.space_end(p + word.len()))
     }
 
-    fn at(&self, re: &Lazy) -> Option<usize> {
-        re.match_end(self.src, self.p)
+    /// The end of `word` and one or more whitespace characters after it.
+    fn word_space(&self, word: &str) -> Option<usize> {
+        self.word_spaces(word)
+            .filter(|&end| end > self.cur.p + word.len())
     }
 
-    fn until(&self, ch: char, from: usize) -> usize {
-        self.src
-            .get(from..)
-            .and_then(|rest| rest.find(ch))
-            .map_or(self.src.len(), |at| from + at)
+    /// A token from the cursor to `end`.
+    fn emit(&mut self, kind: T, end: usize) -> bool {
+        self.cur.emit_to(kind, end);
+        true
     }
 
-    fn keyword(&mut self, c: u32) -> bool {
-        let p = self.p;
-        match c | 32 {
-            97 => {
-                if let Some(e) = self.at(&RE_ACC_TITLE) {
-                    self.state = State::AccTitle;
-                    self.emit(ACC_TITLE, p, e);
-                    return true;
-                }
-                if let Some(e) = self.at(&RE_ACC_DESCR) {
-                    self.state = State::AccDescr;
-                    self.emit(ACC_DESCR, p, e);
-                    return true;
-                }
-                if let Some(e) = self.at(&RE_ACC_DESCR_ML) {
-                    self.state = State::AccDescrMultiline;
-                    self.p = e;
-                    return true;
-                }
-            }
-            104 => {
-                if let Some(e) = self.at(&RE_HREF) {
-                    self.state = State::Href;
-                    self.p = e;
-                    return true;
-                }
-            }
-            99 => {
-                if let Some(e) = self.at(&RE_CALL) {
-                    self.state = State::Callbackname;
-                    self.p = e;
-                    return true;
-                }
-                if let Some(e) = self.at(&RE_CLICK) {
-                    self.state = State::Click;
-                    self.p = e;
-                    return true;
-                }
-            }
-            119 => {
-                if let Some(m) = RE_WEEKDAY.exec_at(self.src, p) {
-                    let day = m.str(1).to_lowercase();
-                    let index = DAYS.iter().position(|d| *d == day).unwrap_or(0) as i32;
-                    let end = m.end();
-                    self.emit(WEEKDAY_MONDAY + index, p, end);
-                    return true;
-                }
-                if let Some(m) = RE_WEEKEND.exec_at(self.src, p) {
-                    let kind = if m.get(1).is_some() {
-                        WEEKEND_FRIDAY
-                    } else {
-                        WEEKEND_SATURDAY
-                    };
-                    let end = m.end();
-                    self.emit(kind, p, end);
-                    return true;
-                }
-            }
-            _ => {}
+    /// Enters `state` at `end`.
+    fn begin(&mut self, state: S, end: usize) -> bool {
+        self.cur.state = state;
+        self.cur.p = end;
+        true
+    }
+
+    /// `\d\d\d\d-\d\d-\d\d\b` at the cursor.
+    fn date(&self) -> Option<usize> {
+        let p = self.cur.p;
+        let shape = self.cur.src.as_bytes().get(p..p + 10)?;
+        let fits = shape.iter().enumerate().all(|(k, b)| match k {
+            4 | 7 => *b == b'-',
+            _ => b.is_ascii_digit(),
+        });
+        (fits && !is_word(self.cur.code(p + 10))).then_some(p + 10)
+    }
+
+    /// A statement that starts with a keyword, at the cursor.
+    fn keyword(&mut self) -> bool {
+        let p = self.cur.p;
+        if let Some(q) = self.word_spaces("acctitle")
+            && self.cur.char_at(q) == Some(':')
+        {
+            self.cur.state = S::AccTitle;
+            let end = self.cur.space_end(q + 1);
+            return self.emit(T::AccTitle, end);
         }
-        for &(_, re, kind) in KEYWORDS.iter().filter(|(first, _, _)| *first == c | 32) {
-            if let Some(e) = self.at(re) {
-                self.emit(kind, p, e);
-                return true;
+        if let Some(q) = self.word_spaces("accdescr") {
+            match self.cur.char_at(q) {
+                Some(':') => {
+                    self.cur.state = S::AccDescr;
+                    let end = self.cur.space_end(q + 1);
+                    return self.emit(T::AccDescr, end);
+                }
+                Some('{') => {
+                    let end = self.cur.space_end(q + 1);
+                    return self.begin(S::AccDescrMultiline, end);
+                }
+                _ => {}
+            }
+        }
+        if let Some(q) = self.word_space("href")
+            && self.cur.char_at(q) == Some('"')
+        {
+            return self.begin(S::Href, q + 1);
+        }
+        if let Some(q) = self.word_space("call") {
+            return self.begin(S::Callbackname, q);
+        }
+        if let Some(q) = self.word_space("click") {
+            return self.begin(S::Click, q);
+        }
+        if let Some(q) = self.word_space("weekday")
+            && let Some(&(kind, day)) = T::WEEKDAYS
+                .iter()
+                .find(|(_, day)| self.cur.keyword_caseless(day, q))
+        {
+            return self.emit(kind, q + day.len());
+        }
+        if let Some(q) = self.word_space("weekend") {
+            for (day, kind) in [
+                ("friday", T::WeekendFriday),
+                ("saturday", T::WeekendSaturday),
+            ] {
+                if self.cur.keyword_caseless(day, q) {
+                    return self.emit(kind, q + day.len());
+                }
+            }
+        }
+        for (word, stops, kind) in KEYWORDS {
+            let end = match stops {
+                Some(stops) => self.cur.keyword_line(word, stops),
+                None => self.cur.keyword_caseless(word, p).then_some(p + word.len()),
+            };
+            if let Some(end) = end {
+                return self.emit(kind, end);
             }
         }
         false
     }
 
-    /// The UTF-16 unit after the character at `p`: a low surrogate when
-    /// that character is outside the BMP.
-    fn next_unit(&self, p: usize) -> u32 {
-        let w = width_at(self.src, p);
-        if w == 4 {
-            0xdc00
+    /// Reads at the cursor in the initial state; `false` ends the tokens.
+    fn initial(&mut self, c: char) -> bool {
+        let p = self.cur.p;
+        let w = c.len_utf8();
+        // The UTF-16 unit after an astral character is the second half of
+        // its pair, which none of these rules match.
+        let d = if c.len_utf16() == 2 {
+            None
         } else {
-            code_at(self.src, p + w)
+            self.cur.char_at(p + w)
+        };
+        if c == '%' {
+            if d != Some('%') {
+                let end = self.cur.line_end(p + 1);
+                self.cur.p = self.cur.run_end(end, |c| c == '\n');
+            } else if self.cur.char_at(p + 2) == Some('{') {
+                self.emit(T::OpenDirective, p + 3);
+                self.cur.emit(T::Error, p, p);
+                return false;
+            } else {
+                self.cur.p = self.cur.line_end(p + 2);
+            }
+        } else if c != '}' && d == Some('%') {
+            // Any character but `}` followed by `%` starts a comment that
+            // runs to the end of the line.
+            self.cur.p = self.cur.line_end(p + w + 1);
+        } else if c == '\n' {
+            let end = self.cur.run_end(p, |c| c == '\n');
+            self.emit(T::Nl, end);
+        } else if is_space(c) {
+            self.cur.p = self.cur.space_end(p + w);
+        } else if !self.keyword() {
+            self.task(c);
+        }
+        true
+    }
+
+    /// A date, a task's text, or its data after a colon.
+    fn task(&mut self, c: char) {
+        let p = self.cur.p;
+        if let Some(end) = self.date() {
+            self.emit(T::Date, end);
+        } else if c != ':' {
+            let from = p + c.len_utf8();
+            let end = self.cur.until(from, |c| matches!(c, ':' | '\n'));
+            self.emit(T::TaskTxt, end);
+        } else {
+            let end = self.cur.until(p + 1, |c| STATEMENT_END.contains(&c));
+            self.emit(if end > p + 1 { T::TaskData } else { T::Colon }, end);
+        }
+    }
+
+    /// Reads at the cursor; `false` ends the tokens.
+    fn step(&mut self, c: char) -> bool {
+        let p = self.cur.p;
+        match self.cur.state {
+            S::Initial => return self.initial(c),
+            S::AccTitle | S::AccDescr => {
+                let kind = if self.cur.state == S::AccTitle {
+                    T::AccTitleValue
+                } else {
+                    T::AccDescrValue
+                };
+                self.cur.state = S::Initial;
+                let end = self.cur.line_end(p);
+                self.emit(kind, end);
+            }
+            S::AccDescrMultiline => self.delimited(c, '}', T::AccDescrMultilineValue),
+            S::Href => self.delimited(c, '"', T::Href),
+            S::Callbackname => {
+                if c == '(' {
+                    let q = self.cur.space_end(p + 1);
+                    if self.cur.char_at(q) == Some(')') {
+                        self.begin(S::Initial, q + 1);
+                    } else {
+                        self.begin(S::Callbackargs, p + 1);
+                    }
+                } else {
+                    let end = self.cur.until(p, |c| c == '(');
+                    self.emit(T::Callbackname, end);
+                }
+            }
+            S::Callbackargs => self.delimited(c, ')', T::Callbackargs),
+            S::Click => {
+                if is_space(c) {
+                    self.begin(S::Initial, p + c.len_utf8());
+                } else {
+                    let end = self.cur.run_end(p + c.len_utf8(), |c| !is_space(c));
+                    self.emit(T::Click, end);
+                }
+            }
+        }
+        true
+    }
+
+    /// Text up to `close`, which returns to the initial state.
+    fn delimited(&mut self, c: char, close: char, kind: T) {
+        let p = self.cur.p;
+        if c == close {
+            self.begin(S::Initial, p + 1);
+        } else {
+            let end = self.cur.until(p, |c| c == close);
+            self.emit(kind, end);
         }
     }
 }
 
-pub fn tokenize(src: &str) -> Tokens {
+pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
     let n = src.len();
-    let mut lx = Lexer {
-        src,
-        out: Tokens::default(),
-        state: State::Initial,
-        p: 0,
+    let mut lexer = Lexer {
+        cur: Cursor::new(src, S::Initial),
     };
-
-    loop {
-        if lx.p >= n {
-            let kind = match lx.state {
-                State::AccTitle => ACC_TITLE_VALUE,
-                State::AccDescr => ACC_DESCR_VALUE,
-                State::AccDescrMultiline => ACC_DESCR_MULTILINE_VALUE,
-                State::Href => HREF,
-                State::Callbackname => CALLBACKNAME,
-                State::Callbackargs => CALLBACKARGS,
-                State::Click => CLICK,
-                State::Initial => EOF,
-            };
-            lx.emit(kind, n, n);
-            break;
-        }
-
-        let p = lx.p;
-        let c = code_at(src, p);
-
-        match lx.state {
-            State::Initial => {
-                let d = lx.next_unit(p);
-                let w = width_at(src, p);
-                if c == 37 {
-                    if d != 37 {
-                        let mut e = lx.until('\n', p + 1);
-                        while code_at(src, e) == 10 {
-                            e += 1;
-                        }
-                        lx.p = e;
-                    } else if code_at(src, p + 2) == 123 {
-                        // The grammar enters a lexer state it never defines,
-                        // so nothing can follow.
-                        lx.emit(OPEN_DIRECTIVE, p, p + 3);
-                        lx.emit(ERROR, p, p);
-                        return lx.out;
-                    } else {
-                        lx.p = lx.until('\n', p + 2);
-                    }
-                } else if c != 125 && d == 37 {
-                    // Any character but `}` followed by `%` starts a comment
-                    // that runs to the end of the line.
-                    lx.p = lx.until('\n', p + w + 1);
-                } else if c == 10 {
-                    let mut e = p + 1;
-                    while code_at(src, e) == 10 {
-                        e += 1;
-                    }
-                    lx.emit(NL, p, e);
-                } else if is_space(c) {
-                    lx.p += w;
-                    while lx.p < n && is_space(code_at(src, lx.p)) {
-                        lx.p += width_at(src, lx.p);
-                    }
-                } else if lx.keyword(c) {
-                    continue;
-                } else if (48..=57).contains(&c) && lx.at(&RE_DATE).is_some() {
-                    lx.emit(DATE, p, p + 10);
-                } else if c != 58 {
-                    let bytes = src.as_bytes();
-                    let mut e = p + w;
-                    while e < n && bytes[e] != b':' && bytes[e] != b'\n' {
-                        e += 1;
-                    }
-                    lx.emit(TASK_TXT, p, e);
-                } else {
-                    let bytes = src.as_bytes();
-                    let mut e = p + 1;
-                    while e < n && !matches!(bytes[e], b'#' | b'\n' | b';') {
-                        e += 1;
-                    }
-                    lx.emit(if e > p + 1 { TASK_DATA } else { COLON }, p, e);
-                }
-            }
-
-            State::AccTitle | State::AccDescr => {
-                let kind = if lx.state == State::AccTitle {
-                    ACC_TITLE_VALUE
-                } else {
-                    ACC_DESCR_VALUE
-                };
-                lx.state = State::Initial;
-                let e = lx.until('\n', p);
-                lx.emit(kind, p, e);
-            }
-
-            State::AccDescrMultiline => {
-                if c == 125 {
-                    lx.state = State::Initial;
-                    lx.p += 1;
-                } else {
-                    let e = lx.until('}', p);
-                    lx.emit(ACC_DESCR_MULTILINE_VALUE, p, e);
-                }
-            }
-
-            State::Href => {
-                if c == 34 {
-                    lx.state = State::Initial;
-                    lx.p += 1;
-                } else {
-                    let e = lx.until('"', p);
-                    lx.emit(HREF, p, e);
-                }
-            }
-
-            State::Callbackname => {
-                if c == 40 {
-                    if let Some(e) = lx.at(&RE_EMPTY_CALL) {
-                        lx.state = State::Initial;
-                        lx.p = e;
-                    } else {
-                        lx.state = State::Callbackargs;
-                        lx.p += 1;
-                    }
-                } else {
-                    let e = lx.until('(', p);
-                    lx.emit(CALLBACKNAME, p, e);
-                }
-            }
-
-            State::Callbackargs => {
-                if c == 41 {
-                    lx.state = State::Initial;
-                    lx.p += 1;
-                } else {
-                    let e = lx.until(')', p);
-                    lx.emit(CALLBACKARGS, p, e);
-                }
-            }
-
-            State::Click => {
-                if is_space(c) {
-                    lx.state = State::Initial;
-                    lx.p += width_at(src, p);
-                } else {
-                    let mut e = p + width_at(src, p);
-                    while e < n && !is_space(code_at(src, e)) {
-                        e += width_at(src, e);
-                    }
-                    lx.emit(CLICK, p, e);
-                }
-            }
+    while let Some(c) = lexer.cur.char_at(lexer.cur.p) {
+        if !lexer.step(c) {
+            return lexer.cur.tokens;
         }
     }
-
-    lx.out.types.push(END);
-    lx.out.texts.push(String::new());
-    lx.out.starts.push(n);
-    lx.out
+    let kind = match lexer.cur.state {
+        S::Initial => T::Eof,
+        S::AccTitle => T::AccTitleValue,
+        S::AccDescr => T::AccDescrValue,
+        S::AccDescrMultiline => T::AccDescrMultilineValue,
+        S::Href => T::Href,
+        S::Callbackname => T::Callbackname,
+        S::Callbackargs => T::Callbackargs,
+        S::Click => T::Click,
+    };
+    lexer.cur.emit(kind, n, n);
+    lexer.cur.emit(T::End, n, n);
+    lexer.cur.tokens
 }

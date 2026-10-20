@@ -39,9 +39,8 @@ pub enum NodeRef {
     Item(usize, usize),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct KanbanModel {
-    pub kind: &'static str,
     pub title: Option<String>,
     pub sections: Vec<KanbanSection>,
     last: Option<NodeRef>,
@@ -67,7 +66,7 @@ impl Serialize for Held<'_> {
 impl Serialize for KanbanModel {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let mut out = s.serialize_struct("KanbanModel", 6)?;
-        out.serialize_field("type", self.kind)?;
+        out.serialize_field("type", "kanban")?;
         if let Some(title) = &self.title {
             out.serialize_field("title", title)?;
         }
@@ -83,24 +82,7 @@ impl Serialize for KanbanModel {
     }
 }
 
-impl Default for KanbanModel {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl KanbanModel {
-    pub fn new() -> Self {
-        Self {
-            kind: "kanban",
-            title: None,
-            sections: Vec::new(),
-            last: None,
-            section_level: 0,
-            misplaced: None,
-        }
-    }
-
     fn held(&self, at: NodeRef) -> Held<'_> {
         match at {
             NodeRef::Section(i) => Held::Section(&self.sections[i]),

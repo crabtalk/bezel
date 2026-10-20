@@ -1,10 +1,9 @@
 //! Pele's `diagrams/class/markers.ts`.
 
 use super::graph::EndMarker;
-use crate::svg::{
-    builder::{fragment, num},
-    edges::{marker, marker_trim},
-};
+use crate::geom::Point;
+use crate::svg::builder::{fragment, num};
+use crate::svg::edges::Marker;
 use std::fmt;
 
 const TRIANGLE: f64 = 12.0;
@@ -19,7 +18,7 @@ pub fn class_marker_trim(kind: EndMarker) -> f64 {
         EndMarker::Extension => TRIANGLE,
         EndMarker::Composition | EndMarker::Aggregation => DIAMOND,
         EndMarker::Lollipop => 2.0 * RING,
-        EndMarker::Dependency => marker_trim("arrow_point"),
+        EndMarker::Dependency => Marker::Arrow.trim(),
         EndMarker::None => 0.0,
     }
 }
@@ -80,7 +79,11 @@ pub fn class_marker(
                 num(y - dy * RING),
                 num(RING)
             ),
-            EndMarker::Dependency => write!(f, "{}", marker("arrow_point", x, y, dx, dy, color)),
+            EndMarker::Dependency => write!(
+                f,
+                "{}",
+                Marker::Arrow.draw(Point::new(x, y), Point::new(dx, dy), color)
+            ),
             EndMarker::None => Ok(()),
         }
     })

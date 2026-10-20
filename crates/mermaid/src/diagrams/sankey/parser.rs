@@ -4,39 +4,17 @@ use super::{
     db::SankeyModel,
     lexer::{T, tokenize},
 };
-use crate::{
-    detect::Kind,
-    error::Error,
-    js::{self, Lazy},
-    token::Stream,
-};
-
-static RE_LINE_BREAKS: Lazy = Lazy::new(r"[\n\r]+", "g");
-
-fn is_blank(c: char) -> bool {
-    let c = c as u32;
-    if c == 10 || c == 13 {
-        return false;
-    }
-    if c < 128 {
-        return c == 32 || c == 9 || c == 11 || c == 12;
-    }
-    c == 0xa0
-        || c == 0x1680
-        || (0x2000..=0x200a).contains(&c)
-        || c == 0x2028
-        || c == 0x2029
-        || c == 0x202f
-        || c == 0x205f
-        || c == 0x3000
-        || c == 0xfeff
-}
+use crate::{detect::Kind, error::Error, js, token::Stream, util::chars::is_inline_space};
 
 /// Mermaid's sankeyUtils: strip blanks at both ends of the text, then
 /// collapse runs of line breaks so that no row is empty.
 pub fn prepare_text_for_parsing(text: &str) -> String {
-    let text = text.trim_matches(is_blank);
-    js::trim(&RE_LINE_BREAKS.replace(text, |_| "\n".into())).to_string()
+    let text = text.trim_matches(|c: char| is_inline_space(c));
+    let rows: Vec<&str> = text
+        .split(['\n', '\r'])
+        .filter(|row| !row.is_empty())
+        .collect();
+    js::trim(&rows.join("\n")).to_string()
 }
 
 pub fn parse_sankey(src: &str, db: &mut SankeyModel) -> Result<(), Error> {

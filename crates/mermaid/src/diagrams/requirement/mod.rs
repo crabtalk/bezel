@@ -11,7 +11,7 @@ pub mod types;
 
 pub use db::RequirementModel;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
@@ -28,16 +28,15 @@ impl Diagram for Requirement {
     ) -> Result<Model, Error> {
         let mut db = RequirementModel::default();
         if let Some(title) = title.filter(|title| !title.is_empty()) {
-            db.title = Some(title.to_string());
+            db.titles.set_title(title);
         }
         parser::parse_requirement(source, &mut db)?;
         Ok(Model::Requirement(Box::new(db)))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Requirement(model) = model else {
-        unreachable!("requirement renders a requirement model")
-    };
-    Ok(render::render_requirement(model, config, ctx))
+impl Render for RequirementModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_requirement(self, config, ctx))
+    }
 }

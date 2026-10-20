@@ -1,11 +1,12 @@
 //! Pele's `diagrams/git/db.ts`.
 
 use super::GitGraphConfig;
+use crate::diagrams::common::db::Titles;
 use indexmap::IndexMap;
 use serde::Serialize;
 
 use super::parser::{CommitTypeName, GitGraphAst, StatementAst};
-use crate::{Error, Kind, js::Lazy};
+use crate::{Error, Kind};
 
 pub mod commit_type {
     pub const NORMAL: u8 = 0;
@@ -14,9 +15,6 @@ pub mod commit_type {
     pub const MERGE: u8 = 3;
     pub const CHERRY_PICK: u8 = 4;
 }
-
-static RE_LEAD: Lazy = Lazy::new(r"^\s+", "g");
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,12 +38,8 @@ pub struct GitCommit {
 pub struct GitModel {
     #[serde(rename = "type")]
     pub kind: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_descr: Option<String>,
+    #[serde(flatten)]
+    pub titles: Titles,
     pub direction: &'static str,
     /// Keyed by commit id, in the order the ids first appeared.
     pub commits: IndexMap<String, GitCommit>,
@@ -59,15 +53,13 @@ pub struct GitModel {
     pub warnings: Vec<String>,
 }
 
-fn fail(message: impl Into<String>) -> Error {
-    Error::semantic(message).of(Kind::GitGraph)
-}
-
-fn type_code(name: CommitTypeName) -> u8 {
-    match name {
-        CommitTypeName::Reverse => commit_type::REVERSE,
-        CommitTypeName::Highlight => commit_type::HIGHLIGHT,
-        CommitTypeName::Normal => commit_type::NORMAL,
+impl CommitTypeName {
+    fn code(self) -> u8 {
+        match self {
+            Self::Reverse => commit_type::REVERSE,
+            Self::Highlight => commit_type::HIGHLIGHT,
+            Self::Normal => commit_type::NORMAL,
+        }
     }
 }
 
@@ -112,9 +104,9 @@ impl Db {
 
     fn checkout(&mut self, branch: &str) -> Result<(), Error> {
         let Some(id) = self.branches.get(branch) else {
-            return Err(fail(format!(
+            return Err(Error::semantic(format!(
                 "Trying to checkout branch which is not yet created. (Help try using \"branch {branch}\")"
-            )));
+            )).of(Kind::GitGraph));
         };
         self.head = id
             .as_ref()
@@ -148,9 +140,9 @@ impl Db {
 
     fn branch(&mut self, name: String, order: Option<f64>) -> Result<(), Error> {
         if self.branches.contains_key(&name) {
-            return Err(fail(format!(
+            return Err(Error::semantic(format!(
                 "Trying to create an existing branch. (Help: Either use a new name if you want create a new branch or try using \"checkout {name}\")"
-            )));
+            )).of(Kind::GitGraph));
         }
         self.branches.insert(name.clone(), self.head_id());
         self.orders.insert(name.clone(), order);
@@ -178,37 +170,45 @@ impl Db {
         if let (Some(current_commit), Some(_)) = (current_commit, other_commit)
             && current_commit.branch == other
         {
-            return Err(fail(format!("Cannot merge branch '{other}' into itself.")));
+            return Err(
+                Error::semantic(format!("Cannot merge branch '{other}' into itself."))
+                    .of(Kind::GitGraph),
+            );
         }
         if current == other {
-            return Err(fail(
+            return Err(Error::semantic(
                 "Incorrect usage of \"merge\". Cannot merge a branch to itself",
-            ));
+            )
+            .of(Kind::GitGraph));
         }
         let Some(current_commit) = current_commit else {
-            return Err(fail(format!(
+            return Err(Error::semantic(format!(
                 "Incorrect usage of \"merge\". Current branch ({current})has no commits"
-            )));
+            ))
+            .of(Kind::GitGraph));
         };
         if !self.branches.contains_key(other) {
-            return Err(fail(format!(
+            return Err(Error::semantic(format!(
                 "Incorrect usage of \"merge\". Branch to be merged ({other}) does not exist"
-            )));
+            ))
+            .of(Kind::GitGraph));
         }
         let Some(other_commit) = other_commit else {
-            return Err(fail(format!(
+            return Err(Error::semantic(format!(
                 "Incorrect usage of \"merge\". Branch to be merged ({other}) has no commits"
-            )));
+            ))
+            .of(Kind::GitGraph));
         };
         if current_commit.id == other_commit.id {
-            return Err(fail(
+            return Err(Error::semantic(
                 "Incorrect usage of \"merge\". Both branches have same head",
-            ));
+            )
+            .of(Kind::GitGraph));
         }
         if !custom_id.is_empty() && self.commits.contains_key(&custom_id) {
-            return Err(fail(format!(
+            return Err(Error::semantic(format!(
                 "Incorrect usage of \"merge\". Commit with id:{custom_id} already exists, use different custom id"
-            )));
+            )).of(Kind::GitGraph));
         }
         let parents = match self.head_id() {
             None => Vec::new(),
@@ -247,40 +247,43 @@ impl Db {
             .and_then(|id| self.commits.get(id))
             .cloned()
         else {
-            return Err(fail(
+            return Err(Error::semantic(
                 "Incorrect usage of \"cherryPick\". Source commit id should exist and provided",
-            ));
+            )
+            .of(Kind::GitGraph));
         };
         let parent = parent.filter(|parent| !parent.is_empty());
         if let Some(parent) = &parent
             && !source.parents.contains(parent)
         {
-            return Err(fail(
+            return Err(Error::semantic(
                 "Invalid operation: The specified parent commit is not an immediate parent of the cherry-picked commit.",
-            ));
+            ).of(Kind::GitGraph));
         }
         if source.kind == commit_type::MERGE && parent.is_none() {
-            return Err(fail(
+            return Err(Error::semantic(
                 "Incorrect usage of cherry-pick: If the source commit is a merge commit, an immediate parent commit must be specified.",
-            ));
+            ).of(Kind::GitGraph));
         }
         if !target_id.is_empty() && self.commits.contains_key(target_id) {
             return Ok(());
         }
         let current = self.current.clone();
         if source.branch == current {
-            return Err(fail(
+            return Err(Error::semantic(
                 "Incorrect usage of \"cherryPick\". Source commit is already on current branch",
-            ));
+            )
+            .of(Kind::GitGraph));
         }
         let current_head = self.branches.get(&current).cloned().flatten();
         if !current_head
             .as_ref()
             .is_some_and(|id| !id.is_empty() && self.commits.contains_key(id))
         {
-            return Err(fail(format!(
+            return Err(Error::semantic(format!(
                 "Incorrect usage of \"cherry-pick\". Current branch ({current})has no commits"
-            )));
+            ))
+            .of(Kind::GitGraph));
         }
         let parents = match self.head_id() {
             None => Vec::new(),
@@ -325,7 +328,7 @@ impl Db {
                 self.commit(
                     message.unwrap_or_default(),
                     id,
-                    kind.map_or(commit_type::NORMAL, type_code),
+                    kind.map_or(commit_type::NORMAL, CommitTypeName::code),
                     tags,
                 );
                 Ok(())
@@ -336,7 +339,12 @@ impl Db {
                 id,
                 tags,
                 kind,
-            } => self.merge(&branch, id.unwrap_or_default(), kind.map(type_code), tags),
+            } => self.merge(
+                &branch,
+                id.unwrap_or_default(),
+                kind.map(CommitTypeName::code),
+                tags,
+            ),
             StatementAst::Checkout { branch } => self.checkout(&branch),
             StatementAst::CherryPicking { id, tags, parent } => self.cherry_pick(
                 id,
@@ -348,75 +356,66 @@ impl Db {
     }
 }
 
-pub fn build_git(
-    ast: GitGraphAst,
-    config: &GitGraphConfig,
-    title: Option<&str>,
-) -> Result<GitModel, Error> {
-    let main_name = config
-        .main_branch_name
-        .as_deref()
-        .unwrap_or("main")
-        .to_string();
-    let main_order = config.main_branch_order.unwrap_or(0.0);
+impl GitModel {
+    pub fn new(
+        ast: GitGraphAst,
+        config: &GitGraphConfig,
+        title: Option<&str>,
+    ) -> Result<Self, Error> {
+        let main_name = config
+            .main_branch_name
+            .as_deref()
+            .unwrap_or("main")
+            .to_string();
+        let main_order = config.main_branch_order.unwrap_or(0.0);
 
-    let mut db = Db {
-        commits: IndexMap::new(),
-        branches: IndexMap::from([(main_name.clone(), None)]),
-        orders: IndexMap::from([(main_name.clone(), Some(main_order))]),
-        warnings: Vec::new(),
-        head: None,
-        current: main_name,
-        direction: "LR",
-        seq: 0,
-    };
+        let mut db = Db {
+            commits: IndexMap::new(),
+            branches: IndexMap::from([(main_name.clone(), None)]),
+            orders: IndexMap::from([(main_name.clone(), Some(main_order))]),
+            warnings: Vec::new(),
+            head: None,
+            current: main_name,
+            direction: "LR",
+            seq: 0,
+        };
 
-    if let Some(dir) = ast.dir {
-        db.direction = dir;
-    }
-    for statement in ast.statements {
-        db.statement(statement)?;
-    }
+        if let Some(dir) = ast.dir {
+            db.direction = dir;
+        }
+        for statement in ast.statements {
+            db.statement(statement)?;
+        }
 
-    // A branch made without an order sorts by creation among those of order
-    // zero, as in Mermaid.
-    let mut lanes: Vec<(String, f64)> = db
-        .orders
-        .iter()
-        .enumerate()
-        .map(|(i, (name, order))| {
-            (
-                name.clone(),
-                order.unwrap_or_else(|| crate::js::parse_float(&format!("0.{i}"))),
-            )
+        // A branch made without an order sorts by creation among those of order
+        // zero, as in Mermaid.
+        let mut lanes: Vec<(String, f64)> = db
+            .orders
+            .iter()
+            .enumerate()
+            .map(|(i, (name, order))| {
+                (
+                    name.clone(),
+                    order.unwrap_or_else(|| format!("0.{i}").parse().unwrap_or_default()),
+                )
+            })
+            .collect();
+        lanes.sort_by(|a, b| {
+            (a.1 - b.1)
+                .partial_cmp(&0.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        Ok(Self {
+            kind: "gitGraph",
+            titles: ast.header.titles(title),
+            direction: db.direction,
+            commits: db.commits,
+            branches: db.branches,
+            lanes: lanes.into_iter().map(|(name, _)| name).collect(),
+            current_branch: db.current,
+            head: db.head,
+            warnings: db.warnings,
         })
-        .collect();
-    lanes.sort_by(|a, b| {
-        (a.1 - b.1)
-            .partial_cmp(&0.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-
-    Ok(GitModel {
-        kind: "gitGraph",
-        title: ast
-            .title
-            .filter(|title| !title.is_empty())
-            .or_else(|| title.map(str::to_string)),
-        acc_title: ast
-            .acc_title
-            .filter(|text| !text.is_empty())
-            .map(|text| RE_LEAD.replace(&text, |_| String::new())),
-        acc_descr: ast
-            .acc_descr
-            .filter(|text| !text.is_empty())
-            .map(|text| RE_INDENT.replace(&text, |_| "\n".into())),
-        direction: db.direction,
-        commits: db.commits,
-        branches: db.branches,
-        lanes: lanes.into_iter().map(|(name, _)| name).collect(),
-        current_branch: db.current,
-        head: db.head,
-        warnings: db.warnings,
-    })
+    }
 }

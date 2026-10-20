@@ -7,16 +7,9 @@ use indexmap::IndexMap;
 
 use super::{
     graph::build_state_graph,
-    types::{
-        Descr, StateClassDef, StateLink, StateModel, StateNote, StateRelation, StateStmt, Stmt,
-    },
+    types::{Descr, StateLink, StateModel, StateNote, StateRelation, StateStmt, Stmt},
 };
-use crate::{
-    error::Error,
-    js::{self, Lazy},
-};
-
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
+use crate::{diagrams::common::style_class::StyleClass, error::Error, js};
 
 /// A document being given ids, taken out of its state while its statements
 /// are visited.
@@ -129,11 +122,11 @@ impl StateModel {
             top.at += 1;
             match &mut top.doc[at] {
                 Stmt::Relation(relation) => {
-                    name_state(&mut relation.state1, &parent_id, true);
-                    name_state(&mut relation.state2, &parent_id, false);
+                    relation.state1.name_in(&parent_id, true);
+                    relation.state2.name_in(&parent_id, false);
                 }
                 Stmt::State(state) => {
-                    name_state(state, &parent_id, true);
+                    state.name_in(&parent_id, true);
                     if let Some(mut doc) = state.doc.take() {
                         let id = state.id.clone();
                         self.regions(&mut doc);
@@ -169,7 +162,7 @@ impl StateModel {
             return;
         }
         if !current.is_empty() {
-            let mut state = StateStmt::new(self.get_divider_id(), Some("divider"));
+            let mut state = StateStmt::new(self.next_divider_id(), Some("divider"));
             state.doc = Some(current);
             regions.push(Stmt::State(Box::new(state)));
         }
@@ -213,7 +206,7 @@ impl StateModel {
                 }
             }
         }
-        if let Some(descr) = descr.filter(|descr| descr.truthy()) {
+        if let Some(descr) = descr.filter(|descr| !descr.is_empty()) {
             for text in descr.texts() {
                 self.add_description(&trimmed, js::trim(&text));
             }
@@ -228,10 +221,6 @@ impl StateModel {
                 self.set_css_class(&trimmed, js::trim(name));
             }
         }
-    }
-
-    pub fn get_state(&self, id: &str) -> Option<&StateStmt> {
-        self.states.get(id)
     }
 
     pub fn add_link(&mut self, state_id: &str, url: &str, tooltip: &str) {
@@ -276,7 +265,7 @@ impl StateModel {
         }
     }
 
-    pub fn get_divider_id(&mut self) -> String {
+    pub fn next_divider_id(&mut self) -> String {
         self.divider_count += 1;
         format!("divider-id-{}", self.divider_count)
     }
@@ -285,24 +274,12 @@ impl StateModel {
         let found = self
             .classes
             .entry(id.to_string())
-            .or_insert_with(|| StateClassDef {
-                id: id.to_string(),
-                styles: Vec::new(),
-                text_styles: Vec::new(),
-            });
+            .or_insert_with(|| StyleClass::new(id));
         if style_attributes.is_empty() {
             return;
         }
-        for attrib in style_attributes.split(',') {
-            let fixed = js::trim(&attrib.replacen(';', "", 1)).to_string();
-            if attrib.contains("color") {
-                found.text_styles.push(
-                    fixed
-                        .replacen("fill", "bgFill", 1)
-                        .replacen("color", "fill", 1),
-                );
-            }
-            found.styles.push(fixed);
+        for attribute in style_attributes.split(',') {
+            found.push_attribute(attribute);
         }
     }
 
@@ -316,30 +293,6 @@ impl StateModel {
                 classes.push(css_class_name.to_string());
             }
         }
-    }
-
-    pub fn get_direction(&self) -> &str {
-        for item in &self.root_doc {
-            if let Stmt::Dir(item) = item {
-                return &item.value;
-            }
-        }
-        "TB"
-    }
-
-    pub fn trim_colon(&self, text: &str) -> String {
-        match text.strip_prefix(':') {
-            Some(rest) => js::trim(rest).to_string(),
-            None => js::trim(text).to_string(),
-        }
-    }
-
-    pub fn set_acc_title(&mut self, text: &str) {
-        self.acc_title = Some(js::trim_start(text).to_string());
-    }
-
-    pub fn set_acc_description(&mut self, text: &str) {
-        self.acc_descr = Some(RE_INDENT.replace(text, |_| "\n".to_string()));
     }
 
     /// The keys of the states a comma-separated list of ids names, created
@@ -362,13 +315,15 @@ impl StateModel {
     }
 }
 
-/// A `[*]` named after its document, as its start or its end; any other id
-/// trimmed.
-fn name_state(state: &mut StateStmt, parent_id: &str, first: bool) {
-    if state.id == "[*]" {
-        state.id = format!("{parent_id}{}", if first { "_start" } else { "_end" });
-        state.start = Some(first);
-    } else {
-        state.id = js::trim(&state.id).to_string();
+impl StateStmt {
+    /// Names a `[*]` after the document `parent_id`, as its start or its end;
+    /// trims any other id.
+    fn name_in(&mut self, parent_id: &str, start: bool) {
+        if self.id == "[*]" {
+            self.id = format!("{parent_id}{}", if start { "_start" } else { "_end" });
+            self.start = Some(start);
+        } else {
+            self.id = js::trim(&self.id).to_string();
+        }
     }
 }

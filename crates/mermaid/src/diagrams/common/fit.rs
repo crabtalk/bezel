@@ -3,7 +3,7 @@
 
 use crate::{
     js::{self, Lazy},
-    text::{Host, Label, layout_label},
+    text::{Host, Label},
 };
 
 static RE_TAG_START: Lazy = Lazy::new(r"<(?!br\s*\/?>)", "gi");
@@ -25,10 +25,10 @@ pub fn plain_label(raw: Option<&str>, measure: &impl Host, size: f64, max: f64, 
         }
         text
     });
-    layout_label(text.as_deref(), false, measure, size, max, base)
+    Label::layout(text.as_deref(), false, measure, size, max, base)
 }
 
-/// [`layout_label`] wraps at spaces only. For a box of fixed width, this
+/// [`Label::layout`] wraps at spaces only. For a box of fixed width, this
 /// also cuts any word too long to fit.
 pub fn fit_label(raw: Option<&str>, measure: &impl Host, size: f64, max: f64, base: u8) -> Label {
     let label = plain_label(raw, measure, size, max, base);

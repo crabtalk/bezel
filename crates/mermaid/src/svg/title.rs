@@ -2,8 +2,10 @@
 //! `svg/title.ts`.
 
 use super::builder::num;
-use crate::svg::builder::{LabelSvg, TITLE};
-use crate::text::{Host, Style, layout_label};
+use crate::geom::Point;
+use crate::svg::builder::TITLE;
+use crate::text::Label;
+use crate::text::{Host, Style};
 use std::fmt::Write as _;
 
 pub struct Titled {
@@ -21,7 +23,7 @@ pub fn with_title(
     height: f64,
     content: String,
 ) -> Titled {
-    let label = layout_label(title, false, measure, size, 4000.0, Style::BOLD);
+    let label = Label::layout(title, false, measure, size, 4000.0, Style::BOLD);
     if label.height == 0.0 {
         return Titled {
             width,
@@ -35,7 +37,7 @@ pub fn with_title(
     let _ = write!(
         out,
         "{}<g transform=\"translate({},{})\">{content}</g>",
-        LabelSvg(&label, full / 2.0, pad + label.height / 2.0, TITLE),
+        label.svg(Point::new(full / 2.0, pad + label.height / 2.0), TITLE),
         num((full - width) / 2.0),
         num(shift),
     );

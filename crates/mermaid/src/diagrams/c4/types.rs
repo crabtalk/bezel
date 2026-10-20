@@ -5,6 +5,21 @@ use serde::Serialize;
 
 use crate::js;
 
+/// The header keyword of a diagram.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum C4Type {
+    #[serde(rename = "C4Context")]
+    Context,
+    #[serde(rename = "C4Container")]
+    Container,
+    #[serde(rename = "C4Component")]
+    Component,
+    #[serde(rename = "C4Dynamic")]
+    Dynamic,
+    #[serde(rename = "C4Deployment")]
+    Deployment,
+}
+
 /// A `$key="value"` argument.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct C4Named {

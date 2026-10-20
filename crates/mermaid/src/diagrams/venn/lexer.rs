@@ -1,8 +1,9 @@
 //! Pele's `diagrams/venn/lexer.ts`.
 
 use crate::{
-    token::{Token, grammar},
-    util::chars::{code_at, is_digit, is_hex, is_space, is_word, width_at},
+    js,
+    token::{Cursor, Token, grammar},
+    util::chars::{digits_end, is_word},
 };
 
 grammar! {
@@ -51,11 +52,10 @@ pub trait IndentHost {
 /// does: every rule ignores case, the first rule that matches wins, and a
 /// keyword must end at a word boundary.
 pub struct VennLexer<'s> {
+    cur: Cursor<'s, T, ()>,
     /// The text and position of the token being read.
     text: &'s str,
     start: usize,
-    src: &'s str,
-    at: usize,
     line_start: bool,
     ended: bool,
 }
@@ -63,58 +63,37 @@ pub struct VennLexer<'s> {
 impl<'s> VennLexer<'s> {
     pub fn new(src: &'s str) -> Self {
         Self {
+            cur: Cursor::new(src, ()),
             text: "",
             start: 0,
-            src,
-            at: 0,
             line_start: false,
             ended: false,
         }
     }
 
-    fn word(&self, at: usize, word: &str) -> bool {
-        word.bytes().enumerate().all(|(k, w)| {
-            let c = code_at(self.src, at + k);
-            let w = u32::from(w);
-            c == w || ((65..=90).contains(&c) && c + 32 == w)
-        })
-    }
-
-    fn keyword(&self, at: usize, word: &str) -> bool {
-        self.word(at, word) && !is_word(code_at(self.src, at + word.len()))
+    fn digit_at(&self, at: usize) -> bool {
+        self.cur.char_at(at).is_some_and(|c| c.is_ascii_digit())
     }
 
     /// The end of `rgb(1, 2, 3)` or `rgba(1, 2, 3, 0.5)` whose parenthesis
     /// opens at `at`.
     fn color(&self, at: usize, parts: usize) -> Option<usize> {
-        let src = self.src;
         let mut i = at + 1;
         for part in 0..parts {
-            while is_space(code_at(src, i)) {
-                i += width_at(src, i);
-            }
+            i = self.cur.space_end(i);
             let from = i;
-            while is_digit(code_at(src, i)) || code_at(src, i) == 46 {
-                i += 1;
-            }
+            i = self.cur.run_end(i, |c| c.is_ascii_digit() || c == '.');
             if i == from {
                 return None;
             }
-            while is_space(code_at(src, i)) {
-                i += width_at(src, i);
-            }
-            if code_at(src, i) != if part == parts - 1 { 41 } else { 44 } {
+            i = self.cur.space_end(i);
+            let close = if part == parts - 1 { ')' } else { ',' };
+            if self.cur.char_at(i) != Some(close) {
                 return None;
             }
             i += 1;
         }
         Some(i)
-    }
-
-    fn line_end(&self, from: usize) -> usize {
-        self.src[from.min(self.src.len())..]
-            .find('\n')
-            .map_or(self.src.len(), |end| from + end)
     }
 
     pub fn next(&mut self, host: &mut dyn IndentHost) -> Token<'s, T> {
@@ -123,187 +102,151 @@ impl<'s> VennLexer<'s> {
     }
 
     fn scan(&mut self, host: &mut dyn IndentHost) -> T {
-        let src = self.src;
-        let n = src.len();
+        let src = self.cur.src;
         loop {
-            let mut i = self.at;
+            let i = self.cur.p;
             self.start = i;
             self.text = "";
-            if i >= n {
+            let Some(c) = self.cur.char_at(i) else {
                 if self.ended {
                     return T::End;
                 }
                 self.ended = true;
                 return T::Eof;
-            }
-            let c = code_at(src, i);
-            let w = width_at(src, i);
+            };
+            let w = c.len_utf8();
             // A comment runs to the end of the line. It also takes the
             // character before it along, whatever that is: a line break, or
             // the last letter of a word.
-            if (c == 37 && code_at(src, i + 1) == 37 && code_at(src, i + 2) != 123)
-                || (c != 125 && code_at(src, i + w) == 37 && code_at(src, i + w + 1) == 37)
+            if (self.cur.starts_with("%%", i) && self.cur.char_at(i + 2) != Some('{'))
+                || (c != '}' && self.cur.starts_with("%%", i + w))
             {
-                self.at = self.line_end(i + w);
+                self.cur.p = self.cur.line_end(i + w);
                 continue;
             }
             if self.line_start {
-                if c == 32 || c == 9 {
-                    let mut j = i + 1;
-                    while matches!(code_at(src, j), 32 | 9) {
-                        j += 1;
-                    }
-                    self.at = j;
-                    if self.keyword(j, "text") && host.indent_mode() {
+                if matches!(c, ' ' | '\t') {
+                    let j = self.cur.run_end(i, |c| matches!(c, ' ' | '\t'));
+                    self.cur.p = j;
+                    if self.cur.keyword_caseless("text", j) && host.indent_mode() {
                         // The word `text` itself is dropped; the indentation
                         // stands for it.
-                        self.at = j + 4;
+                        self.cur.p = j + 4;
                         self.line_start = false;
                         self.text = &src[i..j];
                         return T::IndentText;
                     }
                     continue;
                 }
-                if c != 10 && c != 13 {
+                if !matches!(c, '\n' | '\r') {
                     host.set_indent_mode(false);
                     self.line_start = false;
                 }
             }
-            if c == 10 || c == 13 {
-                i += 1;
-                while matches!(code_at(src, i), 10 | 13) {
-                    i += 1;
-                }
+            if matches!(c, '\n' | '\r') {
                 self.line_start = true;
-                return self.token(T::Newline, i);
+                let end = self.cur.run_end(i, |c| matches!(c, '\n' | '\r'));
+                return self.token(T::Newline, end);
             }
-            if c == 37 && code_at(src, i + 1) == 37 {
-                self.at = self.line_end(i);
+            if self.cur.starts_with("%%", i) {
+                self.cur.p = self.cur.line_end(i);
                 continue;
             }
-            if c == 32 || c == 9 {
-                i += 1;
-                while matches!(code_at(src, i), 32 | 9) {
-                    i += 1;
-                }
-                self.at = i;
+            if matches!(c, ' ' | '\t') {
+                self.cur.p = self.cur.run_end(i, |c| matches!(c, ' ' | '\t'));
                 continue;
             }
 
-            if ((c | 32) >= 97 && (c | 32) <= 122) || c == 95 {
-                if self.word(i, "title") && is_space(code_at(src, i + 5)) {
-                    let body = i + 5 + width_at(src, i + 5);
-                    let mut end = body;
-                    while end < n {
-                        let ch = code_at(src, end);
-                        if ch == 35 || ch == 10 || ch == 59 {
-                            break;
-                        }
-                        end += width_at(src, end);
-                    }
-                    if end > body {
-                        return self.token(T::Title, end);
-                    }
+            if c.is_ascii_alphabetic() || c == '_' {
+                if let Some(end) = self.cur.keyword_line("title", &['#', '\n', ';']) {
+                    return self.token(T::Title, end);
                 }
                 for (word, kind) in KEYWORDS {
-                    if self.keyword(i, word) {
+                    if self.cur.keyword_caseless(word, i) {
                         return self.token(kind, i + word.len());
                     }
                 }
-                if self.word(i, "rgb") {
-                    let alpha = (code_at(src, i + 3) | 32) == 97;
-                    let open = i + if alpha { 4 } else { 3 };
-                    let end = if code_at(src, open) == 40 {
-                        self.color(open, if alpha { 4 } else { 3 })
+                if self.cur.starts_with_caseless("rgb", i) {
+                    let alpha = self
+                        .cur
+                        .char_at(i + 3)
+                        .is_some_and(|c| c.eq_ignore_ascii_case(&'a'));
+                    let (open, parts, kind) = if alpha {
+                        (i + 4, 4, T::Rgbacolor)
                     } else {
-                        None
+                        (i + 3, 3, T::Rgbcolor)
                     };
-                    if let Some(end) = end {
-                        return self.token(if alpha { T::Rgbacolor } else { T::Rgbcolor }, end);
+                    if self.cur.char_at(open) == Some('(')
+                        && let Some(end) = self.color(open, parts)
+                    {
+                        return self.token(kind, end);
                     }
                 }
-                i += 1;
-                while is_word(code_at(src, i)) || code_at(src, i) == 45 {
-                    i += 1;
-                }
-                return self.token(T::Identifier, i);
+                let end = self.cur.run_end(i + 1, |c| is_word(c) || c == '-');
+                return self.token(T::Identifier, end);
             }
-            if c == 91 {
-                if code_at(src, i + 1) == 34 {
-                    let quote = src[i + 2..].find('"').map(|q| i + 2 + q);
-                    let Some(quote) = quote.filter(|&q| code_at(src, q + 1) == 93) else {
+            return match c {
+                '[' => self.bracket_label(i),
+                '0'..='9' | '.' | '+' | '-' => {
+                    let from = if matches!(c, '+' | '-') { i + 1 } else { i };
+                    let digits = digits_end(src, from);
+                    let end = if self.cur.char_at(digits) == Some('.') && self.digit_at(digits + 1)
+                    {
+                        digits_end(src, digits + 1)
+                    } else if digits > from {
+                        digits
+                    } else {
                         return T::Error;
                     };
-                    self.at = quote + 2;
-                    self.text = &src[i + 2..quote];
-                    return T::BracketLabel;
+                    self.token(T::Numeric, end)
                 }
-                let mut end = i + 1;
-                while end < n && !matches!(code_at(src, end), 93 | 34) {
-                    end += width_at(src, end);
-                }
-                if end == i + 1 || code_at(src, end) != 93 {
-                    return T::Error;
-                }
-                self.at = end + 1;
-                self.text = crate::js::trim(&src[i + 1..end]);
-                return T::BracketLabel;
-            }
-            if is_digit(c) || c == 46 || c == 43 || c == 45 {
-                if c == 43 || c == 45 {
-                    i += 1;
-                }
-                let from = i;
-                while is_digit(code_at(src, i)) {
-                    i += 1;
-                }
-                if i > from {
-                    if code_at(src, i) == 46 && is_digit(code_at(src, i + 1)) {
-                        i += 2;
-                        while is_digit(code_at(src, i)) {
-                            i += 1;
-                        }
+                '#' => {
+                    let hex = src[i + 1..]
+                        .bytes()
+                        .take(8)
+                        .take_while(u8::is_ascii_hexdigit)
+                        .count();
+                    if hex >= 3 {
+                        self.token(T::Hexcolor, i + 1 + hex)
+                    } else {
+                        T::Error
                     }
-                } else if code_at(src, i) == 46 && is_digit(code_at(src, i + 1)) {
-                    i += 2;
-                    while is_digit(code_at(src, i)) {
-                        i += 1;
-                    }
-                } else {
-                    return T::Error;
                 }
-                return self.token(T::Numeric, i);
-            }
-            if c == 35 {
-                let mut end = i + 1;
-                while end < i + 9 && is_hex(code_at(src, end)) {
-                    end += 1;
-                }
-                return if end >= i + 4 {
-                    self.token(T::Hexcolor, end)
-                } else {
-                    T::Error
-                };
-            }
-            if c == 34 {
-                return match src[i + 1..].find('"') {
+                '"' => match src[i + 1..].find('"') {
                     Some(quote) => self.token(T::String, i + 1 + quote + 1),
                     None => T::Error,
-                };
-            }
-            if c == 44 {
-                return self.token(T::Comma, i + 1);
-            }
-            if c == 58 {
-                return self.token(T::Colon, i + 1);
-            }
-            return T::Error;
+                },
+                ',' => self.token(T::Comma, i + 1),
+                ':' => self.token(T::Colon, i + 1),
+                _ => T::Error,
+            };
         }
     }
 
+    /// A label in brackets at `i`, quoted or trimmed.
+    fn bracket_label(&mut self, i: usize) -> T {
+        let src = self.cur.src;
+        if self.cur.char_at(i + 1) == Some('"') {
+            let quote = src[i + 2..].find('"').map(|q| i + 2 + q);
+            let Some(quote) = quote.filter(|&q| self.cur.char_at(q + 1) == Some(']')) else {
+                return T::Error;
+            };
+            self.cur.p = quote + 2;
+            self.text = &src[i + 2..quote];
+            return T::BracketLabel;
+        }
+        let end = self.cur.until(i + 1, |c| matches!(c, ']' | '"'));
+        if end == i + 1 || self.cur.char_at(end) != Some(']') {
+            return T::Error;
+        }
+        self.cur.p = end + 1;
+        self.text = js::trim(&src[i + 1..end]);
+        T::BracketLabel
+    }
+
     fn token(&mut self, kind: T, end: usize) -> T {
-        self.text = &self.src[self.at..end];
-        self.at = end;
+        self.text = &self.cur.src[self.cur.p..end];
+        self.cur.p = end;
         kind
     }
 }

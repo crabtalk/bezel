@@ -4,10 +4,11 @@
 use mermaid::{
     Value,
     detect::{Kind, detect},
+    geom::Point,
     js::parse_json,
     preprocess::{cleanup_comments, encode_entities, preprocess},
-    svg::builder::{LabelSvg, esc, num},
-    text::{Host, Metrics, Style, decode_entities, layout_label},
+    svg::builder::{esc, num},
+    text::{Host, Label, Metrics, Style, decode_entities},
     yaml::parse_yaml,
 };
 
@@ -169,18 +170,18 @@ fn arial_widths() {
 
 #[test]
 fn labels_wrap_at_spaces_and_break_at_br() {
-    let label = layout_label(Some("one two three four"), false, &Metrics, 16.0, 60.0, 0);
+    let label = Label::layout(Some("one two three four"), false, &Metrics, 16.0, 60.0, 0);
     assert!(label.lines.len() > 1);
     assert!(label.widths.iter().all(|&w| w <= 60.0));
     assert_eq!(label.line_height, 24.0);
 
-    let label = layout_label(Some("a<br/>b<BR>c\\nd"), false, &Metrics, 16.0, 400.0, 0);
+    let label = Label::layout(Some("a<br/>b<BR>c\\nd"), false, &Metrics, 16.0, 400.0, 0);
     assert_eq!(label.lines.len(), 4);
 }
 
 #[test]
 fn markdown_labels_read_emphasis() {
-    let label = layout_label(
+    let label = Label::layout(
         Some("plain **bold** _it_ snake_case"),
         true,
         &Metrics,
@@ -206,16 +207,18 @@ fn markdown_labels_read_emphasis() {
 
 #[test]
 fn a_one_span_label_is_one_text_element() {
-    let label = layout_label(Some("Hi"), false, &Metrics, 16.0, 4000.0, 0);
+    let label = Label::layout(Some("Hi"), false, &Metrics, 16.0, 4000.0, 0);
     assert_eq!(
-        LabelSvg(&label, 10.0, 10.0, " class=\"t\"").to_string(),
+        label
+            .svg(Point::new(10.0, 10.0), " class=\"t\"")
+            .to_string(),
         "<text class=\"t\" x=\"10\" y=\"15.6\" text-anchor=\"middle\">Hi</text>"
     );
 }
 
 #[test]
 fn bold_spans_share_their_weight_on_the_element() {
-    let label = layout_label(
+    let label = Label::layout(
         Some("<b>a</b><br>b"),
         false,
         &Metrics,
@@ -223,7 +226,7 @@ fn bold_spans_share_their_weight_on_the_element() {
         4000.0,
         Style::BOLD,
     );
-    let svg = LabelSvg(&label, 0.0, 0.0, "").to_string();
+    let svg = label.svg(Point::new(0.0, 0.0), "").to_string();
     assert!(
         svg.starts_with("<text font-weight=\"var(--_w)\" text-anchor=\"middle\""),
         "{svg}"

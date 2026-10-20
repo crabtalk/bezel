@@ -1,6 +1,8 @@
 //! Pele's `diagrams/railroad/render.ts`.
 
 use crate::config::capped;
+use crate::geom::Point;
+use crate::text::Label;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{collections::HashMap, fmt::Write as _};
@@ -16,11 +18,11 @@ use crate::{
     diagrams::common::fit_width::{tighten, title_room},
     js,
     svg::{
-        builder::{Esc, EscText, LabelSvg, Point, fragment, num},
+        builder::{Esc, EscText, fragment, num},
         root::{Accessible, svg_document},
         theme::{FONT_MONO, RADIUS},
     },
-    text::{Host, Style, decode_entities, layout_label},
+    text::{Host, Style, decode_entities},
 };
 
 const LEAD: f64 = 12.0;
@@ -511,18 +513,18 @@ impl<H: Host> Drawn<'_, H> {
                                 write!(
                                     d,
                                     "M{}{}V{}",
-                                    Point(x, y),
+                                    Point::new(x, y),
                                     self.east_to_south,
                                     num(ky - arc)
                                 )
                             } else {
-                                write!(d, "M{}", Point(rail_in, ky - arc))
+                                write!(d, "M{}", Point::new(rail_in, ky - arc))
                             };
                             d.push_str(&self.south_to_east);
                             if kx > rail_in + arc {
                                 let _ = write!(d, "H{}", num(kx));
                             }
-                            let _ = write!(d, "M{}", Point(kx + kid.width, ky));
+                            let _ = write!(d, "M{}", Point::new(kx + kid.width, ky));
                             if kx > rail_in + arc {
                                 let _ = write!(d, "H{}", num(rail_out - arc));
                             }
@@ -713,8 +715,8 @@ fn draw(
     let a = num(arc);
     let turn = |sweep: u8, dx: &str, dy: &str| format!("a{a},{a} 0 0 {sweep} {dx}{a},{dy}{a}");
 
-    let title = layout_label(
-        model.title.as_deref(),
+    let title = Label::layout(
+        model.titles.title.as_deref(),
         false,
         m.measure,
         base,
@@ -824,10 +826,8 @@ fn draw(
     let _ = write!(
         content,
         "{}",
-        LabelSvg(
-            &title,
-            total_width / 2.0,
-            pad + title.height / 2.0,
+        title.svg(
+            Point::new(total_width / 2.0, pad + title.height / 2.0),
             title_attrs
         )
     );
@@ -847,8 +847,8 @@ fn draw(
             base,
             ctx,
             Accessible {
-                acc_title: model.acc_title.as_deref(),
-                acc_descr: model.acc_descr.as_deref(),
+                acc_title: model.titles.acc_title.as_deref(),
+                acc_descr: model.titles.acc_descr.as_deref(),
             },
             &content,
         ),

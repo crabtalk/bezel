@@ -6,9 +6,10 @@ use serde::Serialize;
 
 use crate::config::Value;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LabelType {
+    #[default]
     Text,
     Markdown,
 }
@@ -122,7 +123,7 @@ impl Direction {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SymbolKind {
     Actor,
@@ -365,6 +366,12 @@ impl GraphStatement {
             children: None,
             metadata: None,
             class_spans: None,
+        }
+    }
+    pub fn with_nodes(kind: StatementKind, nodes: Vec<NodeOccurrence>) -> Self {
+        Self {
+            nodes: Some(nodes),
+            ..Self::new(kind)
         }
     }
 }

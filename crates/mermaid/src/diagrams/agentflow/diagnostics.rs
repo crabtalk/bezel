@@ -25,7 +25,9 @@ pub const EMITTED: [DiagnosticId; 3] = [
     DiagnosticId::ContainmentViolation,
 ];
 
-/// Whether a parser never raises `id`.
-pub fn is_reserved(id: DiagnosticId) -> bool {
-    !EMITTED.contains(&id)
+impl DiagnosticId {
+    /// Whether a parser never raises this.
+    pub fn is_reserved(self) -> bool {
+        !EMITTED.contains(&self)
+    }
 }

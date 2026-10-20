@@ -6,7 +6,10 @@ use super::{
     icons::icon_markup,
     measure::{Host, Style},
 };
-use crate::js::{self, Lazy};
+use crate::{
+    js::{self, Lazy},
+    util::chars::{is_space, is_word},
+};
 
 pub const LINE_HEIGHT: f64 = 1.5;
 
@@ -20,7 +23,6 @@ static RE_BREAK: Lazy = Lazy::new(r"<br\s*\/?>|\\n|\n", "gi");
 static RE_TAG: Lazy = Lazy::new(r"<\/?([a-zA-Z][\w-]*)(?:\s[^<>]*)?\/?>", "y");
 static RE_ICON: Lazy = Lazy::new(r"(fa[bklrs]?):fa-([\w-]+)", "g");
 static RE_MARKUP: Lazy = Lazy::new(r"[<\\\n*_]|fa[bklrs]?:fa-", "");
-static RE_WORD: Lazy = Lazy::new(r"\w", "");
 static RE_CJK: std::sync::LazyLock<crate::js::Regex> =
     std::sync::LazyLock::new(|| crate::js::Regex::new(&format!("[{CJK}]"), ""));
 static RE_PIECE: std::sync::LazyLock<crate::js::Regex> = std::sync::LazyLock::new(|| {
@@ -136,14 +138,6 @@ fn push_icons(line: &mut Vec<Span>, text: &str, style: u8, host: &impl Host) {
     push_text(line, &text[last..], style);
 }
 
-fn is_blank(c: Option<char>) -> bool {
-    c.is_none_or(|c| js::trim(c.encode_utf8(&mut [0; 4])).is_empty())
-}
-
-fn is_word(c: Option<char>) -> bool {
-    c.is_some_and(|c| RE_WORD.test(c.encode_utf8(&mut [0; 4])))
-}
-
 /// Splits inline HTML and, for markdown labels, emphasis markers into styled
 /// spans.
 fn inline(line: &mut Vec<Span>, source: &str, markdown: bool, base: u8, host: &impl Host) {
@@ -196,9 +190,10 @@ fn inline(line: &mut Vec<Span>, source: &str, markdown: bool, base: u8, host: &i
             } else {
                 ch.to_string()
             };
-            let can_open = open && !is_blank(next) && source[i + len..].contains(&marker);
-            let can_close = !open && !is_blank(prev);
-            let wordy = ch == '_' && is_word(prev) && is_word(next);
+            let can_open =
+                open && next.is_some_and(|c| !is_space(c)) && source[i + len..].contains(&marker);
+            let can_close = !open && prev.is_some_and(|c| !is_space(c));
+            let wordy = ch == '_' && prev.is_some_and(is_word) && next.is_some_and(is_word);
             if (can_open || can_close) && !wordy {
                 push_icons(line, &text, style, host);
                 text.clear();
@@ -307,96 +302,98 @@ fn wrap(
     }
 }
 
-/// `raw` laid out at `size` px, wrapped at `max_width`: inline `<b>`/`<i>`,
-/// `<br>` and, for a `markdown` label, `**` and `_` emphasis. `base` is the
-/// [`Style`] the whole label starts in.
-pub fn layout_label(
-    raw: Option<&str>,
-    markdown: bool,
-    measure: &impl Host,
-    size: f64,
-    max_width: f64,
-    base: u8,
-) -> Label {
-    let Some(raw) = raw.filter(|raw| !raw.is_empty()) else {
-        return Label::default();
-    };
-    let line_height = js::round(size * LINE_HEIGHT);
+impl Label {
+    /// `raw` laid out at `size` px, wrapped at `max_width`: inline `<b>`/`<i>`,
+    /// `<br>` and, for a `markdown` label, `**` and `_` emphasis. `base` is the
+    /// [`Style`] the whole label starts in.
+    pub fn layout(
+        raw: Option<&str>,
+        markdown: bool,
+        measure: &impl Host,
+        size: f64,
+        max_width: f64,
+        base: u8,
+    ) -> Self {
+        let Some(raw) = raw.filter(|raw| !raw.is_empty()) else {
+            return Label::default();
+        };
+        let line_height = js::round(size * LINE_HEIGHT);
 
-    if !RE_MARKUP.test(raw) && !raw.contains('&') && !raw.contains('ﬂ') {
-        let text = js::trim(raw);
-        let width = measure.width(text, size, base);
-        if width <= max_width || !(text.contains(' ') || RE_CJK.test(text)) {
-            return Label {
-                lines: vec![vec![Span {
+        if !RE_MARKUP.test(raw) && !raw.contains('&') && !raw.contains('ﬂ') {
+            let text = js::trim(raw);
+            let width = measure.width(text, size, base);
+            if width <= max_width || !(text.contains(' ') || RE_CJK.test(text)) {
+                return Label {
+                    lines: vec![vec![Span {
+                        text: text.to_string(),
+                        style: base,
+                        icon: None,
+                        width,
+                    }]],
+                    widths: vec![width],
+                    width,
+                    height: line_height,
+                    size,
+                    line_height,
+                };
+            }
+            let mut lines = Vec::new();
+            let mut widths = Vec::new();
+            wrap(
+                &[Span {
                     text: text.to_string(),
                     style: base,
                     icon: None,
                     width,
-                }]],
-                widths: vec![width],
-                width,
-                height: line_height,
+                }],
+                measure,
+                size,
+                max_width,
+                &mut lines,
+                &mut widths,
+            );
+            let widest = widths.iter().copied().fold(0.0, f64::max);
+            let height = lines.len() as f64 * line_height;
+            return Label {
+                lines,
+                widths,
+                width: widest,
+                height,
                 size,
                 line_height,
             };
         }
+
+        let source = if markdown {
+            js::trim(&dedent(&raw.replace("\r\n", "\n").replace('\r', "\n"))).to_string()
+        } else {
+            js::trim(raw).to_string()
+        };
         let mut lines = Vec::new();
         let mut widths = Vec::new();
-        wrap(
-            &[Span {
-                text: text.to_string(),
-                style: base,
-                icon: None,
-                width,
-            }],
-            measure,
-            size,
-            max_width,
-            &mut lines,
-            &mut widths,
-        );
-        let widest = widths.iter().copied().fold(0.0, f64::max);
+        for part in RE_BREAK.split_str(&source) {
+            let mut line = Vec::new();
+            inline(&mut line, js::trim(part), markdown, base, measure);
+            let w = measure_spans(&mut line, measure, size);
+            if w > max_width {
+                wrap(&line, measure, size, max_width, &mut lines, &mut widths);
+            } else {
+                lines.push(line);
+                widths.push(w);
+            }
+        }
+        let width = widths
+            .iter()
+            .copied()
+            .fold(0.0, |a, b| if b > a { b } else { a });
         let height = lines.len() as f64 * line_height;
-        return Label {
+        Label {
             lines,
             widths,
-            width: widest,
+            width,
             height,
             size,
             line_height,
-        };
-    }
-
-    let source = if markdown {
-        js::trim(&dedent(&raw.replace("\r\n", "\n").replace('\r', "\n"))).to_string()
-    } else {
-        js::trim(raw).to_string()
-    };
-    let mut lines = Vec::new();
-    let mut widths = Vec::new();
-    for part in RE_BREAK.split_str(&source) {
-        let mut line = Vec::new();
-        inline(&mut line, js::trim(part), markdown, base, measure);
-        let w = measure_spans(&mut line, measure, size);
-        if w > max_width {
-            wrap(&line, measure, size, max_width, &mut lines, &mut widths);
-        } else {
-            lines.push(line);
-            widths.push(w);
         }
-    }
-    let width = widths
-        .iter()
-        .copied()
-        .fold(0.0, |a, b| if b > a { b } else { a });
-    let height = lines.len() as f64 * line_height;
-    Label {
-        lines,
-        widths,
-        width,
-        height,
-        size,
-        line_height,
     }
 }

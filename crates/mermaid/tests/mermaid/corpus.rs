@@ -342,11 +342,11 @@ fn reference_projection(source: &str) -> Result<Value, String> {
     }
     out.insert(
         "accTitle".into(),
-        json!(db.store.acc_title.clone().unwrap_or_default()),
+        json!(db.store.titles.acc_title.clone().unwrap_or_default()),
     );
     out.insert(
         "accDescr".into(),
-        json!(db.store.acc_descr.clone().unwrap_or_default()),
+        json!(db.store.titles.acc_descr.clone().unwrap_or_default()),
     );
     out.insert("vertices".into(), json!(vertices));
     out.insert("edges".into(), model["edges"].clone());

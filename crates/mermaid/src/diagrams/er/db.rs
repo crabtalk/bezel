@@ -1,24 +1,14 @@
 //! Pele's `diagrams/er/db.ts`.
 
+use crate::diagrams::common::db::Titles;
+use crate::diagrams::common::style_class::StyleClass;
 use indexmap::{IndexMap, IndexSet};
 use serde::{Serialize, Serializer};
 
 use super::types::{
-    DocItem, ErAttribute, ErClassDef, ErEntity, ErRelationship, ErSubgraph, LabelType,
-    ParsedAttribute, RelSpec,
+    DocItem, ErAttribute, ErEntity, ErRelationship, ErSubgraph, LabelType, ParsedAttribute, RelSpec,
 };
-use crate::js::{self, Lazy};
-
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
-
-fn label_type(kind: Option<&str>) -> LabelType {
-    match kind {
-        Some("markdown") => LabelType::Markdown,
-        Some("string") => LabelType::String,
-        Some("text") => LabelType::Text,
-        _ => LabelType::Markdown,
-    }
-}
+use crate::js;
 
 /// Pele's `ErDb`, serialized with its lookups as Pele's is.
 #[derive(Clone, Debug, PartialEq)]
@@ -26,11 +16,9 @@ pub struct ErModel {
     pub direction: String,
     pub entities: IndexMap<String, ErEntity>,
     pub relationships: Vec<ErRelationship>,
-    pub classes: IndexMap<String, ErClassDef>,
+    pub classes: IndexMap<String, StyleClass>,
     pub subgraphs: Vec<ErSubgraph>,
-    pub title: Option<String>,
-    pub acc_title: Option<String>,
-    pub acc_descr: Option<String>,
+    pub titles: Titles,
     /// The subgraph of each id: an index into `subgraphs`, the last one
     /// declared with the id.
     subgraph_lookup: IndexMap<String, usize>,
@@ -45,14 +33,10 @@ struct Json<'a> {
     direction: &'a str,
     entities: &'a IndexMap<String, ErEntity>,
     relationships: &'a [ErRelationship],
-    classes: &'a IndexMap<String, ErClassDef>,
+    classes: &'a IndexMap<String, StyleClass>,
     subgraphs: &'a [ErSubgraph],
-    #[serde(skip_serializing_if = "Option::is_none")]
-    title: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    acc_title: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    acc_descr: Option<&'a str>,
+    #[serde(flatten)]
+    titles: &'a Titles,
     subgraph_lookup: IndexMap<&'a str, &'a ErSubgraph>,
     claimed: &'a IndexSet<String>,
 }
@@ -66,9 +50,7 @@ impl Serialize for ErModel {
             relationships: &self.relationships,
             classes: &self.classes,
             subgraphs: &self.subgraphs,
-            title: self.title.as_deref(),
-            acc_title: self.acc_title.as_deref(),
-            acc_descr: self.acc_descr.as_deref(),
+            titles: &self.titles,
             subgraph_lookup: self
                 .subgraph_lookup
                 .iter()
@@ -88,9 +70,7 @@ impl Default for ErModel {
             relationships: Vec::new(),
             classes: IndexMap::new(),
             subgraphs: Vec::new(),
-            title: None,
-            acc_title: None,
-            acc_descr: None,
+            titles: Titles::default(),
             subgraph_lookup: IndexMap::new(),
             claimed: IndexSet::new(),
         }
@@ -170,16 +150,9 @@ impl ErModel {
             let def = self
                 .classes
                 .entry(id.to_string())
-                .or_insert_with(|| ErClassDef {
-                    id: id.to_string(),
-                    styles: Vec::new(),
-                    text_styles: Vec::new(),
-                });
+                .or_insert_with(|| StyleClass::new(id));
             for style in styles {
-                if style.contains("color") {
-                    def.text_styles.push(style.replacen("fill", "bgFill", 1));
-                }
-                def.styles.push(style.clone());
+                def.push(style);
             }
         }
     }
@@ -233,18 +206,10 @@ impl ErModel {
             classes: Vec::new(),
             css_styles: Vec::new(),
             dir,
-            label_type: label_type(None),
+            label_type: LabelType::Markdown,
         });
         self.subgraph_lookup
             .insert(id.clone(), self.subgraphs.len() - 1);
         id
-    }
-
-    pub fn set_acc_title(&mut self, text: &str) {
-        self.acc_title = Some(js::trim_start(text).to_string());
-    }
-
-    pub fn set_acc_description(&mut self, text: &str) {
-        self.acc_descr = Some(RE_INDENT.replace(text, |_| "\n".into()));
     }
 }

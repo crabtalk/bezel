@@ -1,7 +1,9 @@
 //! Pele's `diagrams/architecture/render.ts`.
 
 use crate::config::clamped;
-use crate::svg::builder::{EscText, LabelSvg, TITLE, fragment, icon_element};
+use crate::geom::Point;
+use crate::svg::builder::{EscText, TITLE, fragment, icon_element};
+use crate::svg::edges::Marker;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{
@@ -21,11 +23,11 @@ use crate::{
     js,
     svg::{
         builder::num,
-        edges::{edge_label_svg, marker, marker_trim},
+        edges::edge_label_svg,
         root::{Accessible, svg_document},
         theme::RADIUS,
     },
-    text::{Host, Label, Span, Style, layout_label},
+    text::{Host, Label, Span, Style},
 };
 
 const STUB: f64 = 12.0;
@@ -58,20 +60,7 @@ fn icon_slot<'a>(
         Some(markup) => f.write_str(&markup),
         None => write!(f, "{}", builtin_icon(name)),
     });
-    icon_element(name, x, y, side, markup)
-}
-
-/// The first `units` UTF-16 units of `text`, taking the whole of a pair the
-/// cut would split.
-fn utf16_head(text: &str, units: usize) -> &str {
-    let mut count = 0;
-    for (at, c) in text.char_indices() {
-        if count >= units {
-            return &text[..at];
-        }
-        count += c.len_utf16();
-    }
-    text
+    icon_element(name, Point::new(x, y), side, markup)
 }
 
 /// Cuts a label down to a box, ending what is left with an ellipsis.
@@ -107,7 +96,11 @@ fn fit(label: &Label, max_width: f64, max_lines: f64, measure: &impl Host) -> La
                     while lo < hi {
                         let mid = (lo + hi + 1) >> 1;
                         if rest
-                            + measure.width(utf16_head(&span.text, mid), label.size, span.style)
+                            + measure.width(
+                                &span.text[..js::units_end(&span.text, mid)],
+                                label.size,
+                                span.style,
+                            )
                             + dots
                             <= max_width
                         {
@@ -121,7 +114,10 @@ fn fit(label: &Label, max_width: f64, max_lines: f64, measure: &impl Host) -> La
                     if (0xd800..=0xdbff).contains(&code) {
                         lo -= 1;
                     }
-                    span.text = format!("{}…", js::trim_end(utf16_head(&span.text, lo)));
+                    span.text = format!(
+                        "{}…",
+                        js::trim_end(&span.text[..js::units_end(&span.text, lo)])
+                    );
                     span.width = measure.width(&span.text, label.size, span.style);
                     width = rest + span.width;
                     break;
@@ -388,7 +384,7 @@ fn draw(
         } else {
             node.title.as_deref()
         };
-        let label = layout_label(title, true, measure, size, wrap, 0);
+        let label = Label::layout(title, true, measure, size, wrap, 0);
         box_w[i] = icon_size.max(2.0 * (label.width / 2.0).ceil());
         box_h[i] = icon_size
             + if label.height > 0.0 {
@@ -455,7 +451,7 @@ fn draw(
     for edge in &model.edges {
         let a = index.get(edge.lhs_id.as_str()).copied();
         let b = index.get(edge.rhs_id.as_str()).copied();
-        let label = layout_label(edge.title.as_deref(), true, measure, small, 160.0, 0);
+        let label = Label::layout(edge.title.as_deref(), true, measure, small, 160.0, 0);
         let pair = a.zip(b);
         ends.push(pair);
         let width = label.width;
@@ -507,7 +503,7 @@ fn draw(
         c1[g] = col_at(grid.group_col[g] + grid.group_cols[g] - 1);
         r0[g] = row_at(grid.group_row[g]);
         r1[g] = row_at(grid.group_row[g] + grid.group_rows[g] - 1);
-        let label = layout_label(
+        let label = Label::layout(
             groups[g].title.as_deref(),
             true,
             measure,
@@ -657,7 +653,7 @@ fn draw(
     let mut id = String::new();
     // Vertical runs of the edges, to keep group titles out from under them.
     let mut runs: Vec<f64> = Vec::new();
-    let trim_length = marker_trim("arrow_point");
+    let trim_length = Marker::Arrow.trim();
     for (k, edge) in model.edges.iter().enumerate() {
         let Some((a, b)) = ends[k] else { continue };
         let mut s = port(a, side_index(&edge.lhs_dir), edge.lhs_group);
@@ -708,13 +704,10 @@ fn draw(
             let _ = write!(
                 edges_out,
                 "{}",
-                marker(
-                    "arrow_point",
-                    s.x + s.dx * s.gap,
-                    s.y + s.dy * s.gap,
-                    -s.dx,
-                    -s.dy,
-                    "var(--_l)",
+                Marker::Arrow.draw(
+                    Point::new(s.x + s.dx * s.gap, s.y + s.dy * s.gap),
+                    Point::new(-s.dx, -s.dy),
+                    "var(--_l)"
                 )
             );
         }
@@ -722,13 +715,10 @@ fn draw(
             let _ = write!(
                 edges_out,
                 "{}",
-                marker(
-                    "arrow_point",
-                    e.x + e.dx * e.gap,
-                    e.y + e.dy * e.gap,
-                    -e.dx,
-                    -e.dy,
-                    "var(--_l)",
+                Marker::Arrow.draw(
+                    Point::new(e.x + e.dx * e.gap, e.y + e.dy * e.gap),
+                    Point::new(-e.dx, -e.dy),
+                    "var(--_l)"
                 )
             );
         }
@@ -801,7 +791,11 @@ fn draw(
             max_x = max_x.max(x + w / 2.0);
             min_y = min_y.min(y - label.height / 2.0);
             max_y = max_y.max(y + label.height / 2.0);
-            let _ = write!(labels_out, "{}", edge_label_svg(&id, label, x, y, ""));
+            let _ = write!(
+                labels_out,
+                "{}",
+                edge_label_svg(&id, label, Point::new(x, y), "")
+            );
         }
     }
 
@@ -855,11 +849,9 @@ fn draw(
             let _ = write!(
                 clusters,
                 "{}",
-                LabelSvg(
-                    label,
-                    text_x + label.width / 2.0,
-                    cy,
-                    crate::class!("cluster-label", "fill=\"var(--_m)\""),
+                label.svg(
+                    Point::new(text_x + label.width / 2.0, cy),
+                    crate::class!("cluster-label", "fill=\"var(--_m)\"")
                 )
             );
         }
@@ -906,7 +898,7 @@ fn draw(
                 icon_slot(icon, -glyph / 2.0, (icon_size - glyph) / 2.0, glyph, ctx)
             );
         } else if let Some(text) = node.icon_text.as_deref().filter(|text| !text.is_empty()) {
-            let text = layout_label(Some(text), false, measure, text_size, icon_size - 8.0, 0);
+            let text = Label::layout(Some(text), false, measure, text_size, icon_size - 8.0, 0);
             let line_height = if js::truthy(text.line_height) {
                 text.line_height
             } else {
@@ -916,28 +908,22 @@ fn draw(
             let _ = write!(
                 nodes_out,
                 "{}",
-                LabelSvg(
-                    &fit(&text, icon_size - 8.0, lines, measure),
-                    0.0,
-                    half,
-                    &icon_text_attrs,
-                )
+                fit(&text, icon_size - 8.0, lines, measure)
+                    .svg(Point::new(0.0, half), &icon_text_attrs)
             );
         }
         let _ = write!(
             nodes_out,
             "{}</g>",
-            LabelSvg(
-                &labels[i],
-                0.0,
-                icon_size + LABEL_GAP + labels[i].height / 2.0,
-                crate::class!("label"),
+            labels[i].svg(
+                Point::new(0.0, icon_size + LABEL_GAP + labels[i].height / 2.0),
+                crate::class!("label")
             ),
         );
     }
 
-    let title = layout_label(
-        model.title.as_deref(),
+    let title = Label::layout(
+        model.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -959,7 +945,7 @@ fn draw(
     let _ = write!(
         content,
         "{}",
-        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, TITLE)
+        title.svg(Point::new(width / 2.0, pad + title.height / 2.0), TITLE)
     );
     let any = !(clusters.is_empty()
         && edges_out.is_empty()
@@ -1003,8 +989,8 @@ fn draw(
         size,
         ctx,
         Accessible {
-            acc_title: model.acc_title.as_deref(),
-            acc_descr: model.acc_descr.as_deref(),
+            acc_title: model.titles.acc_title.as_deref(),
+            acc_descr: model.titles.acc_descr.as_deref(),
         },
         &content,
     );

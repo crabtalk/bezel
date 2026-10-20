@@ -1,108 +1,145 @@
-//! Lexer rules that Mermaid's journey and timeline grammars have in common,
-//! ported from the compiled Jison rules: comments, whitespace, and the
-//! `accTitle` and `accDescr` statements. Pele's `diagrams/common/scan.ts`.
+//! The lexer Mermaid's journey and timeline grammars share, ported from the
+//! compiled Jison rules: one token set, comments, whitespace, line breaks,
+//! and the `accTitle` and `accDescr` statements. Pele's
+//! `diagrams/common/scan.ts`.
 
-use crate::util::chars::{code_at, is_space, width_at};
+use crate::{
+    token::{Cursor, Token, grammar},
+    util::chars::is_space,
+};
 
-#[derive(Default)]
-pub struct Tokens {
-    pub types: Vec<i32>,
-    pub texts: Vec<String>,
-    pub starts: Vec<usize>,
+grammar! {
+    /// The journey and timeline lexers' token kinds.
+    pub enum T {
+        End = "$end",
+        /// Never lexed: every text matches some rule.
+        Error = "INVALID",
+        Eof = "EOF",
+        Invalid = "INVALID",
+        Newline = "NEWLINE",
+        Journey = "journey",
+        Timeline = "timeline",
+        TimelineLr = "timeline_lr",
+        TimelineTd = "timeline_td",
+        Title = "title",
+        AccTitle = "acc_title",
+        AccTitleValue = "acc_title_value",
+        AccDescr = "acc_descr",
+        AccDescrValue = "acc_descr_value",
+        AccDescrMultilineValue = "acc_descr_multiline_value",
+        Section = "section",
+        TaskName = "taskName",
+        TaskData = "taskData",
+        Colon = ":",
+        Period = "period",
+        Event = "event",
+    }
+
+    fn got(self, _text, _previous) {
+        match self {
+            Self::End => "1",
+            _ => self.name(),
+        }
+    }
 }
 
-pub fn line_end(src: &str, from: usize) -> usize {
-    src.get(from..)
-        .and_then(|rest| rest.find('\n'))
-        .map_or(src.len(), |at| from + at)
+pub struct Lexer<'s> {
+    pub cur: Cursor<'s, T, ()>,
 }
 
-/// Whether `word`, lowercase ASCII letters, is at `p`; the grammars are
-/// case-insensitive.
-pub fn keyword_at(src: &str, p: usize, word: &str) -> bool {
-    let bytes = src.as_bytes();
-    word.bytes()
-        .enumerate()
-        .all(|(i, w)| bytes.get(p + i).is_some_and(|&c| (c | 32) == w))
-}
+impl<'s> Lexer<'s> {
+    pub fn new(src: &'s str) -> Self {
+        Self {
+            cur: Cursor::new(src, ()),
+        }
+    }
 
-/// Skips comments and whitespace. Stops at a line break that starts a token,
-/// which is a NEWLINE. Jison compiles `\%%` to a single `%`, so one percent
-/// sign starts a comment, and the second comment rule takes any character
-/// before `%%` with it, a line break included.
-pub fn skip_trivia(src: &str, from: usize) -> usize {
-    let n = src.len();
-    let mut p = from;
-    while p < n {
-        let c = code_at(src, p);
-        if c == 37 && code_at(src, p + 1) != 123 {
-            p = line_end(src, p);
-        } else if c != 125 && {
-            let w = width_at(src, p);
-            code_at(src, p + w) == 37 && code_at(src, p + w + 1) == 37
-        } {
-            p = line_end(src, p + width_at(src, p) + 2);
-        } else if c == 10 {
-            return p;
-        } else if is_space(c) {
-            loop {
-                p += width_at(src, p);
-                if !(p < n && is_space(code_at(src, p))) {
-                    break;
-                }
+    /// Skips comments and whitespace, and answers whether a token follows.
+    /// Stops at a line break that starts a token, which is a NEWLINE. Jison
+    /// compiles `\%%` to a single `%`, so one percent sign starts a comment,
+    /// and the second comment rule takes any character before `%%` with it,
+    /// a line break included.
+    pub fn skip_trivia(&mut self) -> bool {
+        let cur = &mut self.cur;
+        while let Some(c) = cur.char_at(cur.p) {
+            let next = cur.p + c.len_utf8();
+            if c == '%' && cur.char_at(next) != Some('{') {
+                cur.p = cur.line_end(cur.p);
+            } else if c != '}' && cur.starts_with("%%", next) {
+                cur.p = cur.line_end(next + 2);
+            } else if c == '\n' {
+                return true;
+            } else if is_space(c) {
+                cur.p = cur.space_end(next);
+            } else if c == '#' {
+                cur.p = cur.line_end(cur.p);
+            } else {
+                return true;
             }
-        } else if c == 35 {
-            p = line_end(src, p);
-        } else {
-            return p;
+        }
+        cur.p < cur.src.len()
+    }
+
+    /// A NEWLINE token of the run of line feeds at the cursor.
+    pub fn newline(&mut self) -> bool {
+        let p = self.cur.p;
+        let end = self.cur.run_end(p, |c| c == '\n');
+        end > p && {
+            self.cur.emit(T::Newline, p, end);
+            true
         }
     }
-    p
-}
 
-fn skip_space(src: &str, from: usize) -> usize {
-    let mut p = from;
-    while is_space(code_at(src, p)) {
-        p += width_at(src, p);
-    }
-    p
-}
-
-/// Lexes an `accTitle` or `accDescr` statement at `p` and answers where it
-/// ends, or `p` if there is none. The token types acc_title,
-/// acc_title_value, acc_descr, acc_descr_value and acc_descr_multiline_value
-/// are numbered consecutively from `first`.
-pub fn accessibility(src: &str, p: usize, out: &mut Tokens, first: i32) -> usize {
-    let descr = keyword_at(src, p, "accdescr");
-    if !descr && !keyword_at(src, p, "acctitle") {
-        return p;
-    }
-    let n = src.len();
-    let mut q = skip_space(src, p + 8);
-    let c = code_at(src, q);
-    let mut emit = |kind: i32, s: usize, e: usize| {
-        out.types.push(kind);
-        out.texts.push(src[s..e].to_string());
-        out.starts.push(s);
-    };
-    if c == 58 {
-        q = skip_space(src, q + 1);
-        let end = line_end(src, q);
-        emit(if descr { first + 2 } else { first }, p, q);
-        emit(if descr { first + 3 } else { first + 1 }, q, end);
-        return end;
-    }
-    if !descr || c != 123 {
-        return p;
-    }
-    q = skip_space(src, q + 1);
-    while code_at(src, q) != 125 {
-        let end = src[q..].find('}').map_or(n, |at| q + at);
-        emit(first + 4, q, end);
-        if q == n {
-            return n;
+    /// An `accTitle` or `accDescr` statement at the cursor.
+    pub fn accessibility(&mut self) -> bool {
+        let cur = &mut self.cur;
+        let p = cur.p;
+        let descr = cur.starts_with_caseless("accdescr", p);
+        if !descr && !cur.starts_with_caseless("acctitle", p) {
+            return false;
         }
-        q = end;
+        let mut q = cur.space_end(p + 8);
+        match cur.char_at(q) {
+            Some(':') => {
+                q = cur.space_end(q + 1);
+                let end = cur.line_end(q);
+                let (keyword, value) = if descr {
+                    (T::AccDescr, T::AccDescrValue)
+                } else {
+                    (T::AccTitle, T::AccTitleValue)
+                };
+                cur.emit(keyword, p, q);
+                cur.emit(value, q, end);
+            }
+            Some('{') if descr => {
+                // An unclosed description gives its text, then an empty
+                // value at the end.
+                let n = cur.src.len();
+                q = cur.space_end(q + 1);
+                while cur.char_at(q) != Some('}') {
+                    let end = cur.src[q..].find('}').map_or(n, |at| q + at);
+                    cur.emit(T::AccDescrMultilineValue, q, end);
+                    if q == n {
+                        return true;
+                    }
+                    q = end;
+                }
+                cur.p = q + 1;
+            }
+            _ => return false,
+        }
+        true
     }
-    q + 1
+
+    /// The tokens, ended. Jison marks its lexer done when a rule runs on
+    /// empty input, so an accessibility value that matches nothing at the
+    /// very end of the text is followed by no EOF token.
+    pub fn finish(mut self) -> Vec<Token<'s, T>> {
+        let n = self.cur.src.len();
+        if self.cur.tokens.last().is_none_or(|last| last.start < n) {
+            self.cur.emit(T::Eof, n, n);
+        }
+        self.cur.emit(T::End, n, n);
+        self.cur.tokens
+    }
 }

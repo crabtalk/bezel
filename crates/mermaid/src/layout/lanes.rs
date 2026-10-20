@@ -8,9 +8,10 @@ use std::collections::HashSet;
 use crate::js::{self, compare};
 
 use super::{
-    compound::{CEdge, CNode, CompoundResult, Dir},
-    layered::{Kind, LEdge, LNode, LayeredOptions, ledge, lnode, orient, rank},
+    compound::{CEdge, CNode},
+    layered::{Kind, LEdge, LNode, LayeredOptions, orient, rank},
 };
+use crate::geom::{Axis, Direction, Point, RoutePoint, Size};
 
 const LANE_HEAD: f64 = 34.0;
 const LANE_PAD: f64 = 24.0;
@@ -31,10 +32,9 @@ const CLOSE: f64 = 3.0;
 
 /// What one placing of the lanes comes to.
 struct Placed {
-    width: f64,
-    height: f64,
-    routed: Vec<u8>,
-    margins: Vec<u8>,
+    size: Size,
+    routed: Vec<bool>,
+    margins: Vec<bool>,
     work: usize,
 }
 
@@ -46,10 +46,10 @@ struct Lanes<'a> {
     flipped: bool,
     lanes: Vec<usize>,
     lane_count: usize,
-    lane_slot: Vec<i32>,
+    lane_slot: Vec<Option<usize>>,
     lane_pads: Vec<f64>,
     end_pad: f64,
-    item_of: Vec<i32>,
+    item_of: Vec<Option<usize>>,
     real: Vec<usize>,
     lnodes: Vec<LNode>,
     ledges: Vec<LEdge>,
@@ -58,7 +58,8 @@ struct Lanes<'a> {
     step: i32,
 }
 
-/// Where the items of one placing are, for routing handoffs.
+/// Where the items of one placing are, for routing handoffs. Points in the
+/// lane frame have `x` across the lanes and `y` along the flow.
 struct Router<'a> {
     c: &'a [f64],
     size: &'a [f64],
@@ -72,7 +73,8 @@ struct Router<'a> {
     head: f64,
     length: f64,
     breadth_total: f64,
-    axis: f64,
+    /// The axis the flow runs along in the drawing.
+    axis: Axis,
 }
 
 impl Router<'_> {
@@ -84,12 +86,18 @@ impl Router<'_> {
         }
     }
 
-    fn px(&self, c: f64, a: f64) -> f64 {
-        if self.sideways { self.flip(a) } else { c }
+    /// The point `c` across the lanes and `a` along the flow, in the drawing.
+    fn point(&self, c: f64, a: f64) -> Point {
+        if self.sideways {
+            Point::new(self.flip(a), c)
+        } else {
+            Point::new(c, self.flip(a))
+        }
     }
 
-    fn py(&self, c: f64, a: f64) -> f64 {
-        if self.sideways { c } else { self.flip(a) }
+    /// [`Router::point`] of a point in the lane frame.
+    fn place(&self, p: Point) -> Point {
+        self.point(p.x, p.y)
     }
 
     fn amid(&self, i: usize) -> f64 {
@@ -97,36 +105,36 @@ impl Router<'_> {
         (self.band_start[r] + self.band_end[r]) / 2.0
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn overlaps(c0: f64, a0: f64, c1: f64, a1: f64, lc: f64, la: f64, cw: f64, ah: f64) -> bool {
-        c1 > lc - cw / 2.0 && c0 < lc + cw / 2.0 && a1 > la - ah / 2.0 && a0 < la + ah / 2.0
+    /// Whether the box from `min` to `max` overlaps the box of `size` centred
+    /// on `center`.
+    fn overlaps(min: Point, max: Point, center: Point, size: Size) -> bool {
+        max.x > center.x - size.w / 2.0
+            && min.x < center.x + size.w / 2.0
+            && max.y > center.y - size.h / 2.0
+            && min.y < center.y + size.h / 2.0
     }
 
+    /// Whether the box from `min` to `max` in the lane frame keeps clear of
+    /// every item but `src` and `dst`, and of every label but `ei`'s.
     #[allow(clippy::too_many_arguments)]
     fn clear(
         &self,
         edges: &[CEdge],
-        labels: &[[f64; 2]],
-        c0: f64,
-        a0: f64,
-        c1: f64,
-        a1: f64,
-        src: i32,
-        dst: i32,
+        labels: &[Point],
+        min: Point,
+        max: Point,
+        src: Option<usize>,
+        dst: Option<usize>,
         ei: usize,
     ) -> bool {
         for i in 0..self.real {
-            if i as i32 != src
-                && i as i32 != dst
+            if Some(i) != src
+                && Some(i) != dst
                 && Self::overlaps(
-                    c0,
-                    a0,
-                    c1,
-                    a1,
-                    self.c[i],
-                    self.amid(i),
-                    self.size[i] + 8.0,
-                    self.depth[i] + 8.0,
+                    min,
+                    max,
+                    Point::new(self.c[i], self.amid(i)),
+                    Size::new(self.size[i] + 8.0, self.depth[i] + 8.0),
                 )
             {
                 return false;
@@ -136,17 +144,17 @@ impl Router<'_> {
             // A step's own loop keeps its label inside the step's box, and
             // has no place here.
             if i != ei
-                && e.label_w > 0.0
+                && e.label.w > 0.0
                 && e.src != e.dst
                 && Self::overlaps(
-                    c0,
-                    a0,
-                    c1,
-                    a1,
-                    labels[i][0],
-                    labels[i][1],
-                    if self.sideways { e.label_h } else { e.label_w },
-                    if self.sideways { e.label_w } else { e.label_h },
+                    min,
+                    max,
+                    labels[i],
+                    if self.sideways {
+                        e.label.turned()
+                    } else {
+                        e.label
+                    },
                 )
             {
                 return false;
@@ -155,20 +163,20 @@ impl Router<'_> {
         true
     }
 
-    /// How many other relations have a stretch inside a box. A stretch's
-    /// whole box counts, including its curve.
-    fn crossings(edges: &[CEdge], x0: f64, y0: f64, x1: f64, y1: f64, ei: usize) -> usize {
+    /// How many other relations have a stretch inside the box from `min` to
+    /// `max`. A stretch's whole box counts, including its curve.
+    fn crossings(edges: &[CEdge], min: Point, max: Point, ei: usize) -> usize {
         let mut count = 0;
         for (i, edge) in edges.iter().enumerate() {
             if i == ei {
                 continue;
             }
-            let route = &edge.route;
-            for j in (3..route.len()).step_by(3) {
-                if route[j - 3].max(route[j]) > x0
-                    && route[j - 3].min(route[j]) < x1
-                    && route[j - 2].max(route[j + 1]) > y0
-                    && route[j - 2].min(route[j + 1]) < y1
+            for pair in edge.route.windows(2) {
+                let (p, q) = (pair[0].at, pair[1].at);
+                if p.x.max(q.x) > min.x
+                    && p.x.min(q.x) < max.x
+                    && p.y.max(q.y) > min.y
+                    && p.y.min(q.y) < max.y
                 {
                     count += 1;
                     break;
@@ -178,17 +186,18 @@ impl Router<'_> {
         count
     }
 
-    fn meets(edges: &[CEdge], x: f64, y: f64, ei: usize) -> usize {
+    /// How many other relations start or end within a pixel of `p`.
+    fn meets(edges: &[CEdge], p: Point, ei: usize) -> usize {
         let mut count = 0;
         for (i, edge) in edges.iter().enumerate() {
-            let route = &edge.route;
-            if i == ei || route.is_empty() {
+            let (Some(first), Some(last)) = (edge.route.first(), edge.route.last()) else {
+                continue;
+            };
+            if i == ei {
                 continue;
             }
-            let last = route.len() - 3;
-            if ((route[0] - x).abs() < 1.0 && (route[1] - y).abs() < 1.0)
-                || ((route[last] - x).abs() < 1.0 && (route[last + 1] - y).abs() < 1.0)
-            {
+            let meets = |q: Point| (q.x - p.x).abs() < 1.0 && (q.y - p.y).abs() < 1.0;
+            if meets(first.at) || meets(last.at) {
                 count += 1;
             }
         }
@@ -198,25 +207,29 @@ impl Router<'_> {
     /// Two relations drawn along one line read as a single path. Those that
     /// leave the same step or arrive at the same step may share a trunk; any
     /// other pair must not.
-    fn retraces(edges: &[CEdge], x0: f64, y0: f64, x1: f64, y1: f64, ei: usize) -> bool {
-        let upright = (x1 - x0).abs() < 0.5;
-        let lo = if upright { y0.min(y1) } else { x0.min(x1) };
-        let hi = if upright { y0.max(y1) } else { x0.max(x1) };
-        let line = if upright { x0 } else { y0 };
-        let (across, along) = if upright { (0, 1) } else { (1, 0) };
+    fn retraces(edges: &[CEdge], from: Point, to: Point, ei: usize) -> bool {
+        let upright = (to.x - from.x).abs() < 0.5;
+        let (across, along) = if upright {
+            (Axis::X, Axis::Y)
+        } else {
+            (Axis::Y, Axis::X)
+        };
+        let lo = from.along(along).min(to.along(along));
+        let hi = from.along(along).max(to.along(along));
+        let line = from.along(across);
         for (i, other) in edges.iter().enumerate() {
             if i == ei || other.src == edges[ei].src || other.dst == edges[ei].dst {
                 continue;
             }
-            let route = &other.route;
-            for j in (3..route.len()).step_by(3) {
-                let u0 = route[j - 3 + across];
-                let u1 = route[j + across];
+            for pair in other.route.windows(2) {
+                let (p, q) = (pair[0].at, pair[1].at);
+                let u0 = p.along(across);
+                let u1 = q.along(across);
                 if (u0 - line).abs() >= NEAR || (u1 - line).abs() >= NEAR {
                     continue;
                 }
-                let v0 = route[j - 3 + along];
-                let v1 = route[j + along];
+                let v0 = p.along(along);
+                let v1 = q.along(along);
                 if hi.min(v0.max(v1)) - lo.max(v0.min(v1)) > 1.0 {
                     return true;
                 }
@@ -225,106 +238,82 @@ impl Router<'_> {
         false
     }
 
-    /// Tries the route through `pts` (across, along pairs) for relation `k`,
+    /// Tries the route through `pts`, in the lane frame, for relation `k`,
     /// and takes it when it keeps `margin` clear of what is in its way.
     #[allow(clippy::too_many_arguments)]
     fn attempt(
         &self,
         edges: &mut [CEdge],
-        labels: &mut [[f64; 2]],
-        routed: &mut [u8],
+        labels: &mut [Point],
+        routed: &mut [bool],
         e: &LEdge,
         k: usize,
         ei: usize,
-        pts: &[f64],
+        pts: &[Point],
         margin: f64,
     ) -> bool {
-        let (a, b) = (e.tail as i32, e.head as i32);
-        for p in (2..pts.len()).step_by(2) {
+        let (a, b) = (Some(e.tail), Some(e.head));
+        for pair in pts.windows(2) {
+            let (p, q) = (pair[0], pair[1]);
             if !self.clear(
                 edges,
                 labels,
-                pts[p - 2].min(pts[p]) - margin,
-                pts[p - 1].min(pts[p + 1]) - margin,
-                pts[p - 2].max(pts[p]) + margin,
-                pts[p - 1].max(pts[p + 1]) + margin,
+                Point::new(p.x.min(q.x) - margin, p.y.min(q.y) - margin),
+                Point::new(p.x.max(q.x) + margin, p.y.max(q.y) + margin),
                 a,
                 b,
                 ei,
             ) {
                 return false;
             }
-            if Self::retraces(
-                edges,
-                self.px(pts[p - 2], pts[p - 1]),
-                self.py(pts[p - 2], pts[p - 1]),
-                self.px(pts[p], pts[p + 1]),
-                self.py(pts[p], pts[p + 1]),
-                ei,
-            ) {
+            if Self::retraces(edges, self.place(p), self.place(q), ei) {
                 return false;
             }
         }
-        let (mut lc, mut la, mut longest) = (0.0, 0.0, -1.0);
-        let (out_w, out_h) = (edges[ei].label_w, edges[ei].label_h);
-        if out_w > 0.0 {
-            let cw = e.label_w;
-            let ah = e.label_h;
-            for p in (2..pts.len()).step_by(2) {
-                let cc = (pts[p - 2] + pts[p]) / 2.0;
-                let ca = (pts[p - 1] + pts[p + 1]) / 2.0;
-                let across = (pts[p] - pts[p - 2]).abs();
-                let along = (pts[p + 1] - pts[p - 1]).abs();
+        let mut at = Point::default();
+        let mut longest = -1.0;
+        let out = edges[ei].label;
+        if out.w > 0.0 {
+            let room = e.label;
+            for pair in pts.windows(2) {
+                let (p, q) = (pair[0], pair[1]);
+                let mid = p.midpoint(q);
+                let across = (q.x - p.x).abs();
+                let along = (q.y - p.y).abs();
                 let run = across + along;
                 if run <= longest
                     || (if across > 0.0 {
-                        across < cw + 8.0
+                        across < room.w + 8.0
                     } else {
-                        along < ah + 8.0
+                        along < room.h + 8.0
                     })
                 {
                     continue;
                 }
-                if cc - cw / 2.0 < 0.0
-                    || cc + cw / 2.0 > self.breadth_total
-                    || ca - ah / 2.0 < 0.0
-                    || ca + ah / 2.0 > self.length
-                {
+                let min = Point::new(mid.x - room.w / 2.0, mid.y - room.h / 2.0);
+                let max = Point::new(mid.x + room.w / 2.0, mid.y + room.h / 2.0);
+                if min.x < 0.0 || max.x > self.breadth_total || min.y < 0.0 || max.y > self.length {
                     continue;
                 }
                 // Include the ends here: the label must clear both shapes it
                 // connects.
-                if !self.clear(
-                    edges,
-                    labels,
-                    cc - cw / 2.0,
-                    ca - ah / 2.0,
-                    cc + cw / 2.0,
-                    ca + ah / 2.0,
-                    -1,
-                    -1,
-                    ei,
-                ) {
+                if !self.clear(edges, labels, min, max, None, None, ei) {
                     continue;
                 }
                 // A label moved onto a handoff must not cover a return path
                 // that keeps its ranked route. A segment's whole box is kept
                 // clear, including its curve.
-                let lx = self.px(cc, ca);
-                let ly = self.py(cc, ca);
+                let l = self.place(mid);
                 if Self::crossings(
                     edges,
-                    lx - out_w / 2.0,
-                    ly - out_h / 2.0,
-                    lx + out_w / 2.0,
-                    ly + out_h / 2.0,
+                    Point::new(l.x - out.w / 2.0, l.y - out.h / 2.0),
+                    Point::new(l.x + out.w / 2.0, l.y + out.h / 2.0),
                     ei,
                 ) > 0
                 {
                     continue;
                 }
-                lc = cc;
-                la = ca;
+                at = mid;
                 longest = run;
             }
             if longest < 0.0 {
@@ -334,51 +323,53 @@ impl Router<'_> {
         // A point short of each corner and one past it keep the turn close to
         // the corner, so that the line stays under its label and the handoff
         // takes little room.
-        let mut way = vec![pts[0], pts[1]];
-        for p in (2..pts.len()).step_by(2) {
-            let dx = pts[p] - pts[p - 2];
-            let dy = pts[p + 1] - pts[p - 1];
+        let mut way = vec![pts[0]];
+        for i in 1..pts.len() {
+            let (p, q) = (pts[i - 1], pts[i]);
+            let dx = q.x - p.x;
+            let dy = q.y - p.y;
             let run = dx.abs() + dy.abs();
-            let first = if p > 2 { TURN } else { 0.0 };
-            let last = if p + 2 < pts.len() { TURN } else { 0.0 };
+            let first = if i > 1 { TURN } else { 0.0 };
+            let last = if i + 1 < pts.len() { TURN } else { 0.0 };
             if run > first + last + 1.0 {
                 if first != 0.0 {
-                    way.extend([
-                        pts[p - 2] + (dx / run) * first,
-                        pts[p - 1] + (dy / run) * first,
-                    ]);
+                    way.push(Point::new(
+                        p.x + (dx / run) * first,
+                        p.y + (dy / run) * first,
+                    ));
                 }
                 if last != 0.0 {
-                    way.extend([pts[p] - (dx / run) * last, pts[p + 1] - (dy / run) * last]);
+                    way.push(Point::new(q.x - (dx / run) * last, q.y - (dy / run) * last));
                 }
             }
-            way.extend([pts[p], pts[p + 1]]);
+            way.push(q);
         }
-        let mut route = Vec::new();
-        for p in (0..way.len()).step_by(2) {
-            let crosswise = if p == 0 {
-                way[0] != way[2]
-            } else {
-                way[p] != way[p - 2]
-            };
-            route.extend([
-                self.px(way[p], way[p + 1]),
-                self.py(way[p], way[p + 1]),
-                if crosswise {
-                    1.0 - self.axis
+        let route = way
+            .iter()
+            .enumerate()
+            .map(|(i, &p)| {
+                let crosswise = if i == 0 {
+                    way[0].x != way[1].x
                 } else {
-                    self.axis
-                },
-            ]);
-        }
+                    p.x != way[i - 1].x
+                };
+                RoutePoint::new(
+                    self.place(p),
+                    if crosswise {
+                        self.axis.other()
+                    } else {
+                        self.axis
+                    },
+                )
+            })
+            .collect();
         let out = &mut edges[ei];
         out.route = route;
-        if out.label_w > 0.0 {
-            out.label_x = self.px(lc, la);
-            out.label_y = self.py(lc, la);
-            labels[ei] = [lc, la];
+        if out.label.w > 0.0 {
+            out.label_at = self.place(at);
+            labels[ei] = at;
         }
-        routed[k] = 1;
+        routed[k] = true;
         true
     }
 }
@@ -418,8 +409,8 @@ impl Lanes<'_> {
         &self,
         nodes: &mut [CNode],
         edges: &mut [CEdge],
-        plain: &[u8],
-        margins: &[u8],
+        plain: &[bool],
+        margins: &[bool],
     ) -> Placed {
         let opt = self.opt;
         let n = nodes.len();
@@ -436,21 +427,21 @@ impl Lanes<'_> {
             .iter()
             .enumerate()
             .map(|(lane, &room)| {
-                if margins[lane] != 0 {
+                if margins[lane] {
                     room.max(MARGIN)
                 } else {
                     room
                 }
             })
             .collect();
-        let mut used = vec![0u8; lane_count];
+        let mut used = vec![false; lane_count];
         // Items: the real ones, then a dummy for every rank an edge passes
         // through.
         let mut dummies = 0i64;
         let mut span = vec![0i32; m];
         for k in 0..m {
             span[k] = (lnodes[ledges[k].head].rank - lnodes[ledges[k].tail].rank).abs();
-            if plain[k] == 0 {
+            if !plain[k] {
                 dummies += span[k] as i64 - 1;
             }
         }
@@ -465,15 +456,15 @@ impl Lanes<'_> {
         for k in 0..real.len() {
             rank_[k] = lnodes[k].rank;
             lane_[k] = self.item_lane[k];
-            size[k] = lnodes[k].w;
-            depth[k] = lnodes[k].h;
+            size[k] = lnodes[k].size.w;
+            depth[k] = lnodes[k].size.h;
             if rank_[k] > max_rank {
                 max_rank = rank_[k];
             }
         }
         let max_rank = max_rank as usize;
-        let mut first_dummy = vec![-1i32; m];
-        let mut label_item = vec![-1i32; m];
+        let mut first_dummy: Vec<Option<usize>> = vec![None; m];
+        let mut label_item: Vec<Option<usize>> = vec![None; m];
         let mut links: Vec<usize> = Vec::new();
         {
             let mut next = real.len();
@@ -481,20 +472,20 @@ impl Lanes<'_> {
                 let e = &ledges[k];
                 let a = if e.reversed { e.head } else { e.tail };
                 let b = if e.reversed { e.tail } else { e.head };
-                if direct || span[k] < 2 || plain[k] != 0 {
+                if direct || span[k] < 2 || plain[k] {
                     links.extend([a, b]);
                     continue;
                 }
                 let ra = rank_[a];
                 let rb = rank_[b];
                 let mut label_rank = -1;
-                if e.label_w > 0.0 {
+                if e.label.w > 0.0 {
                     label_rank = ra + ((rb - ra) >> 1);
                     if step == 2 && (label_rank & 1) == 0 {
                         label_rank -= 1;
                     }
                 }
-                first_dummy[k] = next as i32;
+                first_dummy[k] = Some(next);
                 let mut prev = a;
                 for r in ra + 1..rb {
                     let d = next;
@@ -507,9 +498,9 @@ impl Lanes<'_> {
                             as i32;
                     dummy[d] = true;
                     if r == label_rank {
-                        size[d] = e.label_w;
-                        depth[d] = e.label_h;
-                        label_item[k] = d as i32;
+                        size[d] = e.label.w;
+                        depth[d] = e.label.h;
+                        label_item[k] = Some(d);
                     }
                     links.extend([prev, d]);
                     prev = d;
@@ -688,19 +679,19 @@ impl Lanes<'_> {
         // and straight lines pass, the ranks close up, as far as the label of
         // a handoff between them leaves it a line to sit on.
         let mut sep = vec![opt.rank_sep / step as f64; max_rank + 1];
-        if plain.contains(&1) {
+        if plain.contains(&true) {
             let full = opt.rank_sep / step as f64;
             sep.fill(full / CLOSE);
             for k in 0..m {
                 let e = &ledges[k];
                 let a = if e.reversed { e.head } else { e.tail };
                 let b = if e.reversed { e.tail } else { e.head };
-                if plain[k] != 0 {
-                    if e.label_h <= 0.0 || span[k] > step {
+                if plain[k] {
+                    if e.label.h <= 0.0 || span[k] > step {
                         continue;
                     }
                     let room = full.min(
-                        (e.label_h + 2.0 * TURN - depth[a].min(depth[b]) / 2.0) / span[k] as f64,
+                        (e.label.h + 2.0 * TURN - depth[a].min(depth[b]) / 2.0) / span[k] as f64,
                     );
                     for r in rank_[a]..rank_[b] {
                         if room > sep[r as usize] {
@@ -709,13 +700,13 @@ impl Lanes<'_> {
                     }
                     continue;
                 }
-                let d0 = first_dummy[k];
-                if d0 < 0 || span[k] <= step * e.minlen {
+                let Some(d0) = first_dummy[k].filter(|_| span[k] > step * e.minlen) else {
                     for r in rank_[a]..rank_[b] {
                         sep[r as usize] = full;
                     }
                     continue;
-                }
+                };
+                let d0 = d0 as i32;
                 for d in d0 - 1..d0 + span[k] - 1 {
                     let u = if d < d0 { a } else { d as usize };
                     let v = if d + 1 < d0 + span[k] - 1 {
@@ -756,7 +747,7 @@ impl Lanes<'_> {
             head,
             length,
             breadth_total,
-            axis: if sideways { 1.0 } else { 0.0 },
+            axis: if sideways { Axis::X } else { Axis::Y },
         };
         let axis = router.axis;
 
@@ -764,17 +755,22 @@ impl Lanes<'_> {
             let node = &mut nodes[real[k]];
             let r = rank_[k] as usize;
             let a = (band_start[r] + band_end[r]) / 2.0;
-            node.x = router.px(c[k], a);
-            node.y = router.py(c[k], a);
+            node.center = router.point(c[k], a);
         }
         for k in 0..lanes.len() {
             let lane = &mut nodes[lanes[k]];
             let middle = (lane_start[k] + lane_start[k + 1]) / 2.0;
             let size = lane_start[k + 1] - lane_start[k];
-            lane.x = if sideways { length / 2.0 } else { middle };
-            lane.y = if sideways { middle } else { length / 2.0 };
-            lane.w = if sideways { length } else { size };
-            lane.h = if sideways { size } else { length };
+            lane.center = if sideways {
+                Point::new(length / 2.0, middle)
+            } else {
+                Point::new(middle, length / 2.0)
+            };
+            lane.size = if sideways {
+                Size::new(length, size)
+            } else {
+                Size::new(size, length)
+            };
             lane.pad_top = head;
         }
 
@@ -782,59 +778,66 @@ impl Lanes<'_> {
         let mut depth_of = vec![0usize; n];
         let mut inner: Vec<usize> = Vec::new();
         for i in 0..n {
-            if !nodes[i].is_group || self.lane_slot[i] >= 0 || self.item_of[i] >= 0 {
+            if !nodes[i].is_group || self.lane_slot[i].is_some() || self.item_of[i].is_some() {
                 continue;
             }
             let mut d = 0;
             let mut p = nodes[i].parent;
-            while p >= 0 && d < MAX_HOPS {
+            while let Some(at) = p
+                && d < MAX_HOPS
+            {
                 d += 1;
-                p = nodes[p as usize].parent;
+                p = nodes[at].parent;
             }
             depth_of[i] = d;
             inner.push(i);
         }
         inner.sort_by(|&a, &b| depth_of[b].cmp(&depth_of[a]).then(a.cmp(&b)));
-        let mut bounds = vec![0.0; n * 4];
-        for i in 0..n {
-            bounds[i * 4] = f64::INFINITY;
-            bounds[i * 4 + 1] = f64::INFINITY;
-            bounds[i * 4 + 2] = f64::NEG_INFINITY;
-            bounds[i * 4 + 3] = f64::NEG_INFINITY;
-        }
-        let grow = |bounds: &mut [f64], g: usize, c: &CNode| {
-            if c.x - c.w / 2.0 < bounds[g * 4] {
-                bounds[g * 4] = c.x - c.w / 2.0;
+        // The box around each group's members, as its least and greatest
+        // corners.
+        let mut bounds = vec![
+            (
+                Point::new(f64::INFINITY, f64::INFINITY),
+                Point::new(f64::NEG_INFINITY, f64::NEG_INFINITY)
+            );
+            n
+        ];
+        let grow = |bounds: &mut [(Point, Point)], g: usize, c: &CNode| {
+            let (min, max) = &mut bounds[g];
+            if c.center.x - c.size.w / 2.0 < min.x {
+                min.x = c.center.x - c.size.w / 2.0;
             }
-            if c.y - c.h / 2.0 < bounds[g * 4 + 1] {
-                bounds[g * 4 + 1] = c.y - c.h / 2.0;
+            if c.center.y - c.size.h / 2.0 < min.y {
+                min.y = c.center.y - c.size.h / 2.0;
             }
-            if c.x + c.w / 2.0 > bounds[g * 4 + 2] {
-                bounds[g * 4 + 2] = c.x + c.w / 2.0;
+            if c.center.x + c.size.w / 2.0 > max.x {
+                max.x = c.center.x + c.size.w / 2.0;
             }
-            if c.y + c.h / 2.0 > bounds[g * 4 + 3] {
-                bounds[g * 4 + 3] = c.y + c.h / 2.0;
+            if c.center.y + c.size.h / 2.0 > max.y {
+                max.y = c.center.y + c.size.h / 2.0;
             }
         };
+        // The group around a node inside a lane, if it is not the lane.
+        let inner_group = |c: &CNode| c.parent.filter(|&p| self.lane_slot[p].is_none());
         for &i in real {
-            let p = nodes[i].parent;
-            if p >= 0 && self.lane_slot[p as usize] < 0 {
-                grow(&mut bounds, p as usize, &nodes[i]);
+            if let Some(p) = inner_group(&nodes[i]) {
+                grow(&mut bounds, p, &nodes[i]);
             }
         }
         for &g in &inner {
-            if bounds[g * 4] == f64::INFINITY {
+            let (min, max) = bounds[g];
+            if min.x == f64::INFINITY {
                 continue;
             }
             let c = &mut nodes[g];
-            let w = (bounds[g * 4 + 2] - bounds[g * 4] + 2.0 * c.pad_x).max(c.min_w);
-            c.x = (bounds[g * 4] + bounds[g * 4 + 2]) / 2.0;
-            c.w = w;
-            c.y = (bounds[g * 4 + 1] - c.pad_top + bounds[g * 4 + 3] + c.pad_bottom) / 2.0;
-            c.h = bounds[g * 4 + 3] - bounds[g * 4 + 1] + c.pad_top + c.pad_bottom;
-            let p = c.parent;
-            if p >= 0 && self.lane_slot[p as usize] < 0 {
-                grow(&mut bounds, p as usize, &nodes[g]);
+            let w = (max.x - min.x + 2.0 * c.pad_x).max(c.min_w);
+            c.center = Point::new(
+                (min.x + max.x) / 2.0,
+                (min.y - c.pad_top + max.y + c.pad_bottom) / 2.0,
+            );
+            c.size = Size::new(w, max.y - min.y + c.pad_top + c.pad_bottom);
+            if let Some(p) = inner_group(&nodes[g]) {
+                grow(&mut bounds, p, &nodes[g]);
             }
         }
 
@@ -846,56 +849,38 @@ impl Lanes<'_> {
             let a = if e.reversed { e.head } else { e.tail };
             let b = if e.reversed { e.tail } else { e.head };
             let (ra, rb) = (rank_[a] as usize, rank_[b] as usize);
-            let mut pts: Vec<f64> = vec![
+            let mut pts = vec![Point::new(
                 c[a],
                 band_end[ra] - (band_end[ra] - band_start[ra] - depth[a]) / 2.0,
-            ];
-            let d0 = first_dummy[k];
-            if d0 >= 0 {
-                for d in d0..d0 + span[k] - 1 {
-                    let d = d as usize;
+            )];
+            if let Some(d0) = first_dummy[k] {
+                for d in d0..d0 + span[k] as usize - 1 {
                     let r = rank_[d] as usize;
-                    pts.extend([c[d], band_start[r]]);
+                    pts.push(Point::new(c[d], band_start[r]));
                     if band_end[r] > band_start[r] {
-                        pts.extend([c[d], band_end[r]]);
+                        pts.push(Point::new(c[d], band_end[r]));
                     }
                 }
             }
-            pts.extend([
+            pts.push(Point::new(
                 c[b],
                 band_start[rb] + (band_end[rb] - band_start[rb] - depth[b]) / 2.0,
-            ]);
-            let mut route: Vec<f64> = Vec::new();
-            for p in (0..pts.len()).step_by(2) {
-                route.extend([
-                    router.px(pts[p], pts[p + 1]),
-                    router.py(pts[p], pts[p + 1]),
-                    axis,
-                ]);
-            }
+            ));
+            let mut route: Vec<RoutePoint> = pts
+                .iter()
+                .map(|&p| RoutePoint::new(router.place(p), axis))
+                .collect();
             if e.reversed {
-                let mut i = 0;
-                let mut j = route.len() - 3;
-                while i < j {
-                    for t in 0..2 {
-                        route.swap(i + t, j + t);
-                    }
-                    i += 3;
-                    j -= 3;
-                }
+                route.reverse();
             }
             let out = &mut edges[self.edge_of[k]];
-            let label = label_item[k];
-            if label >= 0 {
-                let label = label as usize;
-                let r = rank_[label] as usize;
-                let mid = (band_start[r] + band_end[r]) / 2.0;
-                out.label_x = router.px(c[label], mid);
-                out.label_y = router.py(c[label], mid);
-            } else {
-                out.label_x = (route[0] + route[route.len() - 3]) / 2.0;
-                out.label_y = (route[1] + route[route.len() - 2]) / 2.0;
-            }
+            out.label_at = match label_item[k] {
+                Some(label) => {
+                    let r = rank_[label] as usize;
+                    router.point(c[label], (band_start[r] + band_end[r]) / 2.0)
+                }
+                None => route[0].at.midpoint(route[route.len() - 1].at),
+            };
             out.route = route;
         }
 
@@ -907,16 +892,15 @@ impl Lanes<'_> {
             }
             let a = &nodes[e.src];
             let b = &nodes[e.dst];
-            let (ax, ay) = border(a, b);
-            let (bx, by) = border(b, a);
-            let flat = if (bx - ax).abs() > (by - ay).abs() {
-                1.0
+            let from = a.border_toward(b);
+            let to = b.border_toward(a);
+            let flat = if (to.x - from.x).abs() > (to.y - from.y).abs() {
+                Axis::X
             } else {
-                0.0
+                Axis::Y
             };
-            e.route = vec![ax, ay, flat, bx, by, flat];
-            e.label_x = (ax + bx) / 2.0;
-            e.label_y = (ay + by) / 2.0;
+            e.route = vec![RoutePoint::new(from, flat), RoutePoint::new(to, flat)];
+            e.label_at = from.midpoint(to);
         }
 
         // A handoff can leave towards the other lane, then arrive along the
@@ -924,17 +908,19 @@ impl Lanes<'_> {
         // not leave through its incoming side and retrace the path past the
         // preceding step. Try the two single-corner routes, keeping the
         // ranked route when a node or another label blocks them.
-        let mut routed = vec![0u8; m];
-        let route_points: usize = edges.iter().map(|edge| edge.route.len() / 3).sum();
+        let mut routed = vec![false; m];
+        let route_points: usize = edges.iter().map(|edge| edge.route.len()).sum();
         let work = m * (real.len() + edges.len() + route_points);
         if work <= ROUTE_BUDGET {
-            let mut labels: Vec<[f64; 2]> = edges
+            let mut labels: Vec<Point> = edges
                 .iter()
                 .map(|e| {
-                    [
-                        if sideways { e.label_y } else { e.label_x },
-                        router.flip(if sideways { e.label_x } else { e.label_y }),
-                    ]
+                    let at = e.label_at;
+                    if sideways {
+                        Point::new(at.y, router.flip(at.x))
+                    } else {
+                        Point::new(at.x, router.flip(at.y))
+                    }
                 })
                 .collect();
             for (k, e) in ledges.iter().enumerate() {
@@ -948,26 +934,20 @@ impl Lanes<'_> {
                 let bc = c[b];
                 let aa = router.amid(a);
                 let ba = router.amid(b);
-                let dc = js::sign(bc - ac);
+                let dc = (bc - ac).signum();
                 let da = js::sign(ba - aa);
                 let first = [
-                    ac + dc * size[a] / 2.0,
-                    aa,
-                    bc,
-                    aa,
-                    bc,
-                    ba - da * depth[b] / 2.0,
+                    Point::new(ac + dc * size[a] / 2.0, aa),
+                    Point::new(bc, aa),
+                    Point::new(bc, ba - da * depth[b] / 2.0),
                 ];
                 if router.attempt(edges, &mut labels, &mut routed, e, k, ei, &first, 2.0) {
                     continue;
                 }
                 let second = [
-                    ac,
-                    aa + da * depth[a] / 2.0,
-                    ac,
-                    ba,
-                    bc - dc * size[b] / 2.0,
-                    ba,
+                    Point::new(ac, aa + da * depth[a] / 2.0),
+                    Point::new(ac, ba),
+                    Point::new(bc - dc * size[b] / 2.0, ba),
                 ];
                 if router.attempt(edges, &mut labels, &mut routed, e, k, ei, &second, 2.0) {
                     continue;
@@ -980,7 +960,7 @@ impl Lanes<'_> {
                 if work > ROUTE_BUDGET / RELAY {
                     continue;
                 }
-                let mut around: Vec<(Vec<f64>, f64, usize)> = Vec::new();
+                let mut around: Vec<([Point; 4], f64, usize)> = Vec::new();
                 let pair = if lane_[a] < lane_[b] {
                     [lane_[b], lane_[a]]
                 } else {
@@ -997,42 +977,25 @@ impl Lanes<'_> {
                         {
                             continue;
                         }
-                        let pts = vec![
-                            ac + js::sign(ch - ac) * size[a] / 2.0,
-                            aa,
-                            ch,
-                            aa,
-                            ch,
-                            ba,
-                            bc + js::sign(ch - bc) * size[b] / 2.0,
-                            ba,
+                        let pts = [
+                            Point::new(ac + (ch - ac).signum() * size[a] / 2.0, aa),
+                            Point::new(ch, aa),
+                            Point::new(ch, ba),
+                            Point::new(bc + (ch - bc).signum() * size[b] / 2.0, ba),
                         ];
-                        let ends = Router::meets(
-                            edges,
-                            router.px(pts[0], pts[1]),
-                            router.py(pts[0], pts[1]),
-                            ei,
-                        ) + Router::meets(
-                            edges,
-                            router.px(pts[6], pts[7]),
-                            router.py(pts[6], pts[7]),
-                            ei,
-                        );
+                        let ends = Router::meets(edges, router.place(pts[0]), ei)
+                            + Router::meets(edges, router.place(pts[3]), ei);
                         let mut cost = ends as f64 * 1e6;
-                        for p in (2..pts.len()).step_by(2) {
-                            let x0 = router.px(pts[p - 2], pts[p - 1]);
-                            let y0 = router.py(pts[p - 2], pts[p - 1]);
-                            let x1 = router.px(pts[p], pts[p + 1]);
-                            let y1 = router.py(pts[p], pts[p + 1]);
+                        for pair in pts.windows(2) {
+                            let p = router.place(pair[0]);
+                            let q = router.place(pair[1]);
                             let crossed = Router::crossings(
                                 edges,
-                                x0.min(x1),
-                                y0.min(y1),
-                                x0.max(x1),
-                                y0.max(y1),
+                                Point::new(p.x.min(q.x), p.y.min(q.y)),
+                                Point::new(p.x.max(q.x), p.y.max(q.y)),
                                 ei,
                             );
-                            cost += crossed as f64 * 1e6 + (x1 - x0).abs() + (y1 - y0).abs();
+                            cost += crossed as f64 * 1e6 + (q.x - p.x).abs() + (q.y - p.y).abs();
                         }
                         around.push((pts, cost, lane));
                     }
@@ -1042,15 +1005,18 @@ impl Lanes<'_> {
                     if !router.attempt(edges, &mut labels, &mut routed, e, k, ei, pts, 1.0) {
                         continue;
                     }
-                    used[*lane] = 1;
+                    used[*lane] = true;
                     break;
                 }
             }
         }
 
         Placed {
-            width: if sideways { length } else { breadth_total },
-            height: if sideways { breadth_total } else { length },
+            size: if sideways {
+                Size::new(length, breadth_total)
+            } else {
+                Size::new(breadth_total, length)
+            },
             routed,
             margins: used,
             work,
@@ -1061,36 +1027,33 @@ impl Lanes<'_> {
 pub fn lane_layout(
     nodes: &mut [CNode],
     edges: &mut [CEdge],
-    dir: Dir,
+    dir: Direction,
     opt: &LayeredOptions,
     lane_pad: Option<f64>,
-) -> CompoundResult {
+) -> Size {
     let lane_pad = lane_pad.unwrap_or(LANE_PAD);
     let n = nodes.len();
     if n == 0 {
-        return CompoundResult {
-            width: 0.0,
-            height: 0.0,
-        };
+        return Size::default();
     }
-    let sideways = dir == Dir::LR || dir == Dir::RL;
-    let flipped = dir == Dir::BT || dir == Dir::RL;
+    let sideways = !dir.is_vertical();
+    let flipped = dir.is_reversed();
 
     // Lanes in the order they were written. The graph lists groups
     // last-declared first.
     let lanes: Vec<usize> = (0..n)
         .rev()
-        .filter(|&i| nodes[i].parent < 0 && nodes[i].is_group)
+        .filter(|&i| nodes[i].parent.is_none() && nodes[i].is_group)
         .collect();
     let lane_count = lanes.len().max(1);
-    let mut lane_slot = vec![-1i32; n];
+    let mut lane_slot = vec![None; n];
     for (k, &id) in lanes.iter().enumerate() {
-        lane_slot[id] = k as i32;
+        lane_slot[id] = Some(k);
     }
     let mut has_child = vec![false; n];
     for node in nodes.iter() {
-        if node.parent >= 0 {
-            has_child[node.parent as usize] = true;
+        if let Some(p) = node.parent {
+            has_child[p] = true;
         }
     }
     // Room a lane keeps around its items, so that the groups drawn around
@@ -1100,23 +1063,23 @@ pub fn lane_layout(
 
     // What gets ranked and placed: nodes, and groups that are empty and so
     // act as nodes.
-    let mut item_of = vec![-1i32; n];
+    let mut item_of = vec![None; n];
     let mut real: Vec<usize> = Vec::new();
     for i in 0..n {
-        if lane_slot[i] >= 0 {
+        if lane_slot[i].is_some() {
             continue;
         }
         if !nodes[i].is_group || !has_child[i] {
-            item_of[i] = real.len() as i32;
+            item_of[i] = Some(real.len());
             real.push(i);
         }
     }
-    let along = |c: &CNode| if sideways { c.w } else { c.h };
-    let cross = |c: &CNode| if sideways { c.h } else { c.w };
+    // Sizes across the flow, then along it.
+    let crosswise = |size: Size| if sideways { size.turned() } else { size };
 
     let mut lnodes: Vec<LNode> = real
         .iter()
-        .map(|&i| lnode(cross(&nodes[i]), along(&nodes[i]), Kind::Node))
+        .map(|&i| LNode::new(crosswise(nodes[i].size), Kind::Node))
         .collect();
     let mut ledges: Vec<LEdge> = Vec::new();
     let mut edge_of: Vec<usize> = Vec::new();
@@ -1124,24 +1087,18 @@ pub fn lane_layout(
     {
         let mut seen = HashSet::new();
         for (ei, e) in edges.iter().enumerate() {
-            let a = item_of[e.src];
-            let b = item_of[e.dst];
-            if a < 0 || b < 0 || a == b {
+            let (Some(a), Some(b)) = (item_of[e.src], item_of[e.dst]) else {
+                continue;
+            };
+            if a == b {
                 continue;
             }
-            let (a, b) = (a as usize, b as usize);
             let key = a.min(b) * real.len() + a.max(b);
-            if e.label_w > 0.0 || seen.contains(&key) {
+            if e.label.w > 0.0 || seen.contains(&key) {
                 step = 2;
             }
             seen.insert(key);
-            ledges.push(ledge(
-                a,
-                b,
-                e.minlen,
-                if sideways { e.label_h } else { e.label_w },
-                if sideways { e.label_w } else { e.label_h },
-            ));
+            ledges.push(LEdge::new(a, b, e.minlen, crosswise(e.label)));
             edge_of.push(ei);
         }
     }
@@ -1155,9 +1112,11 @@ pub fn lane_layout(
             let mut t = i;
             let mut room = lane_pad;
             let mut hops = 0;
-            while nodes[t].parent >= 0 && hops < MAX_HOPS {
-                t = nodes[t].parent as usize;
-                if lane_slot[t] < 0 {
+            while let Some(p) = nodes[t].parent
+                && hops < MAX_HOPS
+            {
+                t = p;
+                if lane_slot[t].is_none() {
                     room += nodes[t]
                         .pad_x
                         .max(nodes[t].pad_top)
@@ -1165,7 +1124,7 @@ pub fn lane_layout(
                 }
                 hops += 1;
             }
-            let lane = 0.max(lane_slot[t]) as usize;
+            let lane = lane_slot[t].unwrap_or(0);
             if room > lane_pads[lane] {
                 lane_pads[lane] = room;
             }
@@ -1194,8 +1153,8 @@ pub fn lane_layout(
         step,
     };
 
-    let mut plain = vec![0u8; m];
-    let mut margins = vec![0u8; lane_count];
+    let mut plain = vec![false; m];
+    let mut margins = vec![false; lane_count];
     let mut placed = layout.place(nodes, edges, &plain, &margins);
     // A handoff that was given a simple route needs no room kept for it
     // through the ranks it passes, so the lanes are laid out again without
@@ -1203,13 +1162,13 @@ pub fn lane_layout(
     // Routing is most of the work, so a large graph is laid out once.
     let mut round = 0;
     while round < ROUNDS && placed.work <= ROUTE_BUDGET / RELAY {
-        let next: Vec<u8> = if round == 0 {
+        let next: Vec<bool> = if round == 0 {
             placed.routed.clone()
         } else {
             plain
                 .iter()
                 .zip(&placed.routed)
-                .map(|(&on, &routed)| on & routed)
+                .map(|(&on, &routed)| on && routed)
                 .collect()
         };
         if next == plain && placed.margins == margins {
@@ -1223,42 +1182,9 @@ pub fn lane_layout(
     if plain
         .iter()
         .zip(&placed.routed)
-        .any(|(&on, &routed)| on != 0 && routed == 0)
+        .any(|(&on, &routed)| on && !routed)
     {
-        placed = layout.place(nodes, edges, &vec![0u8; m], &vec![0u8; lane_count]);
+        placed = layout.place(nodes, edges, &vec![false; m], &vec![false; lane_count]);
     }
-    CompoundResult {
-        width: placed.width,
-        height: placed.height,
-    }
-}
-
-/// The point where the line from one box's center to another's leaves the
-/// first box. When the other center is inside the box, the point is on the
-/// nearest side instead.
-fn border(from: &CNode, to: &CNode) -> (f64, f64) {
-    let dx = to.x - from.x;
-    let dy = to.y - from.y;
-    let hw = (from.w / 2.0).max(0.5);
-    let hh = (from.h / 2.0).max(0.5);
-    if dx.abs() < hw && dy.abs() < hh {
-        let to_side = hw - dx.abs();
-        let to_end = hh - dy.abs();
-        return if to_side < to_end {
-            (from.x + if dx < 0.0 { -hw } else { hw }, to.y)
-        } else {
-            (to.x, from.y + if dy < 0.0 { -hh } else { hh })
-        };
-    }
-    let scale = (if dx != 0.0 {
-        hw / dx.abs()
-    } else {
-        f64::INFINITY
-    })
-    .min(if dy != 0.0 {
-        hh / dy.abs()
-    } else {
-        f64::INFINITY
-    });
-    (from.x + dx * scale, from.y + dy * scale)
+    placed.size
 }

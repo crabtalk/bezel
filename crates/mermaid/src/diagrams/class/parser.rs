@@ -4,7 +4,7 @@ use super::{
     db::ClassModel,
     lexer::tokenize,
     tokens::T,
-    types::{ClassRelation, Relation, RelationEnd},
+    types::{ClassRelation, LineType, Relation, RelationEnd, RelationType},
 };
 use crate::{detect::Kind, error::Error, js, token::Stream};
 
@@ -13,16 +13,31 @@ const NAME_TOKENS: &str = "'UNICODE_TEXT', 'NUM', 'ALPHA', 'MINUS', 'BQUOTE_STR'
 const ALPHANUM: [T; 3] = [T::UnicodeText, T::Alpha, T::Minus];
 const STYLE_PART: [T; 6] = [T::Alpha, T::Colon, T::Brkt, T::Style, T::Pct, T::Label];
 
-/// Mermaid's relationType number for an end marker.
-fn end_type(t: T) -> Option<u8> {
-    match t {
-        T::Aggregation => Some(0),
-        T::Extension => Some(1),
-        T::Composition => Some(2),
-        T::Dependency => Some(3),
-        T::Lollipop => Some(4),
-        _ => None,
+impl T {
+    /// The end marker this token draws.
+    fn relation_type(self) -> Option<RelationType> {
+        match self {
+            Self::Aggregation => Some(RelationType::Aggregation),
+            Self::Extension => Some(RelationType::Extension),
+            Self::Composition => Some(RelationType::Composition),
+            Self::Dependency => Some(RelationType::Dependency),
+            Self::Lollipop => Some(RelationType::Lollipop),
+            _ => None,
+        }
     }
+
+    fn line_type(self) -> Option<LineType> {
+        match self {
+            Self::Line => Some(LineType::Line),
+            Self::DottedLine => Some(LineType::Dotted),
+            _ => None,
+        }
+    }
+}
+
+/// A label without the colon before it.
+fn cleanup_label(label: &str) -> String {
+    js::trim(label.strip_prefix(':').unwrap_or(label)).to_string()
 }
 
 struct Frame {
@@ -80,19 +95,17 @@ impl<'t> Parser<'t, '_> {
         Ok(label)
     }
 
-    fn members(&mut self) -> Parsed<Vec<&'t str>> {
+    /// The members of the class `id`, through the closing brace.
+    fn members(&mut self, id: &str) -> Parsed<()> {
         if !self.s.is(T::Member) {
             return Err(self.s.fail("'STRUCT_STOP', 'MEMBER'"));
         }
-        let mut list = Vec::new();
         while self.s.is(T::Member) {
-            list.push(self.s.take());
+            let member = self.s.take();
+            self.db.add_member(id, member);
         }
         self.s.expect(T::StructStop, "")?;
-        // The grammar collects members last to first, and add_members turns
-        // them back.
-        list.reverse();
-        Ok(list)
+        Ok(())
     }
 
     fn class_statement(&mut self) -> Parsed<String> {
@@ -109,16 +122,13 @@ impl<'t> Parser<'t, '_> {
                 let css = self.alpha_num()?;
                 self.db.set_css_class(&id, css);
                 if self.s.eat(T::StructStart) {
-                    let members = self.members()?;
-                    self.db.add_members(&id, members);
+                    self.members(&id)?;
                 }
             }
             T::StructStart => {
                 self.s.bump();
-                if self.s.eat(T::StructStop) {
-                } else {
-                    let members = self.members()?;
-                    self.db.add_members(&id, members);
+                if !self.s.eat(T::StructStop) {
+                    self.members(&id)?;
                 }
             }
             T::AnnotationStart => {
@@ -126,12 +136,8 @@ impl<'t> Parser<'t, '_> {
                 let annotation = self.alpha_num()?;
                 self.s.expect(T::AnnotationEnd, "")?;
                 self.db.add_annotation(&id, annotation);
-                if self.s.eat(T::StructStart) {
-                    if self.s.eat(T::StructStop) {
-                    } else {
-                        let members = self.members()?;
-                        self.db.add_members(&id, members);
-                    }
+                if self.s.eat(T::StructStart) && !self.s.eat(T::StructStop) {
+                    self.members(&id)?;
                 }
             }
             _ => {}
@@ -211,7 +217,7 @@ impl<'t> Parser<'t, '_> {
     }
 
     fn relation_end(&mut self) -> RelationEnd {
-        let Some(kind) = end_type(self.s.kind()) else {
+        let Some(kind) = self.s.kind().relation_type() else {
             return RelationEnd::None;
         };
         self.s.bump();
@@ -223,23 +229,21 @@ impl<'t> Parser<'t, '_> {
         let t = self.s.kind();
         if t == T::Label {
             let text = self.s.take();
-            let label = self.db.cleanup_label(text);
-            self.db.add_member(&id1, &label);
+            self.db.add_member(&id1, &cleanup_label(text));
             return Ok(());
         }
         let mut title1 = "none";
         if t == T::Str {
             title1 = self.s.take();
-        } else if end_type(t).is_none() && t != T::Line && t != T::DottedLine {
+        } else if t.relation_type().is_none() && t.line_type().is_none() {
             return Ok(());
         }
         let type1 = self.relation_end();
-        let t = self.s.kind();
-        if t != T::Line && t != T::DottedLine {
+        let Some(line_type) = self.s.kind().line_type() else {
             return Err(self.s.fail(
                 "'AGGREGATION', 'EXTENSION', 'COMPOSITION', 'DEPENDENCY', 'LOLLIPOP', 'LINE', 'DOTTED_LINE'",
             ));
-        }
+        };
         self.s.bump();
         let type2 = self.relation_end();
         let title2 = if self.s.is(T::Str) {
@@ -254,7 +258,7 @@ impl<'t> Parser<'t, '_> {
             relation: Relation {
                 type1,
                 type2,
-                line_type: if t == T::Line { 0 } else { 1 },
+                line_type,
             },
             relation_title1: title1.to_string(),
             relation_title2: title2.to_string(),
@@ -262,7 +266,7 @@ impl<'t> Parser<'t, '_> {
         };
         if self.s.is(T::Label) {
             let text = self.s.take();
-            relation.title = Some(self.db.cleanup_label(text));
+            relation.title = Some(cleanup_label(text));
         }
         self.db.add_relation(relation);
         Ok(())
@@ -290,7 +294,7 @@ impl<'t> Parser<'t, '_> {
     fn tooltip(&mut self, id: &str) {
         if self.s.is(T::Str) {
             let tip = self.s.take();
-            self.db.set_tooltip(id, Some(tip));
+            self.db.set_tooltip(id, tip);
         }
     }
 
@@ -307,7 +311,7 @@ impl<'t> Parser<'t, '_> {
         } else {
             self.db.set_link(id, href, None);
         }
-        if tip.is_some() {
+        if let Some(tip) = tip {
             self.db.set_tooltip(id, tip);
         }
         Ok(())
@@ -384,29 +388,30 @@ impl<'t> Parser<'t, '_> {
             }
             T::DirectionTb | T::DirectionBt | T::DirectionRl | T::DirectionLr => {
                 self.s.bump();
-                self.db.set_direction(match t {
+                self.db.direction = match t {
                     T::DirectionTb => "TB",
                     T::DirectionBt => "BT",
                     T::DirectionRl => "RL",
                     _ => "LR",
-                });
+                }
+                .to_string();
                 return Ok(());
             }
             T::AccTitle => {
                 self.s.bump();
                 let text = self.s.expect(T::AccTitleValue, "")?;
-                self.db.set_acc_title(js::trim(text));
+                self.db.titles.set_acc_title(js::trim(text));
                 return Ok(());
             }
             T::AccDescr => {
                 self.s.bump();
                 let text = self.s.expect(T::AccDescrValue, "")?;
-                self.db.set_acc_description(js::trim(text));
+                self.db.titles.set_acc_descr(js::trim(text));
                 return Ok(());
             }
             T::AccDescrMultilineValue => {
                 let text = self.s.take();
-                self.db.set_acc_description(js::trim(text));
+                self.db.titles.set_acc_descr(js::trim(text));
                 return Ok(());
             }
             _ => {}

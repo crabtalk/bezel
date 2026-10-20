@@ -1,18 +1,16 @@
 //! Pele's `diagrams/treeview/model.ts`.
 
+use crate::diagrams::common::db::Titles;
 use serde::Serialize;
 
 use super::{
     box_drawing::{preprocess_box_drawing, remap_error_lines},
-    parser::{TreeViewAst, parse_tree_view},
+    parser::{TreeNodeAst, TreeViewAst, parse_tree_view},
 };
 use crate::{
     Error,
-    js::{self, Lazy},
+    js::{self},
 };
-
-static RE_LEAD: Lazy = Lazy::new(r"^\s+", "g");
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -45,12 +43,8 @@ pub struct TreeNode {
 pub struct TreeViewModel {
     #[serde(rename = "type")]
     pub kind: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_descr: Option<String>,
+    #[serde(flatten)]
+    pub titles: Titles,
     /// A directory named `/` at level -1 that holds the top-level entries.
     pub root: TreeNode,
     pub count: usize,
@@ -122,6 +116,30 @@ impl TreeViewDb {
         self.stack.push(at);
     }
 
+    pub fn populate(&mut self, nodes: Vec<TreeNodeAst>) {
+        for node in nodes {
+            let level = node.indent.map_or(0.0, |indent| indent as f64);
+            let mut name = node.name;
+            let is_directory = name.ends_with('/');
+            if is_directory {
+                name.pop();
+            }
+            self.add_node(
+                level,
+                name,
+                if is_directory {
+                    NodeType::Directory
+                } else {
+                    NodeType::File
+                },
+                node.class_annotation.filter(|class| !class.is_empty()),
+                node.icon_annotation
+                    .map(|icon| if icon.is_empty() { "none".into() } else { icon }),
+                node.desc_annotation.filter(|descr| !descr.is_empty()),
+            );
+        }
+    }
+
     /// The tree under the root. A node's children come after it, so building
     /// from the last node up finds every child built.
     pub fn root(self) -> TreeNode {
@@ -139,30 +157,6 @@ impl TreeViewDb {
             built[at].as_mut().expect("not yet taken").children = children;
         }
         built[0].take().expect("the root")
-    }
-}
-
-pub fn populate(ast: TreeViewAst, db: &mut TreeViewDb) {
-    for node in ast.nodes {
-        let level = node.indent.map_or(0.0, |indent| indent as f64);
-        let mut name = node.name;
-        let is_directory = name.ends_with('/');
-        if is_directory {
-            name.pop();
-        }
-        db.add_node(
-            level,
-            name,
-            if is_directory {
-                NodeType::Directory
-            } else {
-                NodeType::File
-            },
-            node.class_annotation.filter(|class| !class.is_empty()),
-            node.icon_annotation
-                .map(|icon| if icon.is_empty() { "none".into() } else { icon }),
-            node.desc_annotation.filter(|descr| !descr.is_empty()),
-        );
     }
 }
 
@@ -187,31 +181,16 @@ pub fn read_tree_view(source: &str) -> Result<TreeViewAst, Error> {
     })
 }
 
-pub fn build_tree_view(ast: TreeViewAst, title: Option<&str>) -> TreeViewModel {
-    let mut db = TreeViewDb::new();
-    let title = ast
-        .title
-        .clone()
-        .filter(|title| !title.is_empty())
-        .or_else(|| title.map(str::to_string));
-    let acc_title = ast
-        .acc_title
-        .clone()
-        .filter(|text| !text.is_empty())
-        .map(|text| RE_LEAD.replace(&text, |_| String::new()));
-    let acc_descr = ast
-        .acc_descr
-        .clone()
-        .filter(|text| !text.is_empty())
-        .map(|text| RE_INDENT.replace(&text, |_| "\n".into()));
-    populate(ast, &mut db);
-    let count = db.count;
-    TreeViewModel {
-        kind: "treeView",
-        title,
-        acc_title,
-        acc_descr,
-        root: db.root(),
-        count,
+impl TreeViewModel {
+    pub fn new(ast: TreeViewAst, title: Option<&str>) -> Self {
+        let mut db = TreeViewDb::new();
+        db.populate(ast.nodes);
+        let count = db.count;
+        Self {
+            kind: "treeView",
+            titles: ast.header.titles(title),
+            root: db.root(),
+            count,
+        }
     }
 }

@@ -1,13 +1,10 @@
 //! Pele's `diagrams/cynefin/model.ts`.
 
+use crate::diagrams::common::db::Titles;
 use indexmap::IndexMap;
 use serde::Serialize;
 
 use super::parser::{CynefinAst, DomainBlockAst, TransitionAst};
-use crate::js::Lazy;
-
-static RE_LEAD: Lazy = Lazy::new(r"^\s+", "g");
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CynefinItem {
@@ -33,12 +30,8 @@ pub struct CynefinTransition {
 pub struct CynefinModel {
     #[serde(rename = "type")]
     pub kind: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_descr: Option<String>,
+    #[serde(flatten)]
+    pub titles: Titles,
     /// The domains the source declares. All five are drawn either way.
     pub domains: IndexMap<String, CynefinDomain>,
     pub transitions: Vec<CynefinTransition>,
@@ -82,25 +75,16 @@ impl CynefinDb {
     }
 }
 
-pub fn build_cynefin(ast: CynefinAst, title: Option<&str>) -> CynefinModel {
-    let mut db = CynefinDb::default();
-    db.set_domains(ast.domains);
-    db.set_transitions(ast.transitions);
-    CynefinModel {
-        kind: "cynefin",
-        title: ast
-            .title
-            .filter(|title| !title.is_empty())
-            .or_else(|| title.map(str::to_string)),
-        acc_title: ast
-            .acc_title
-            .filter(|text| !text.is_empty())
-            .map(|text| RE_LEAD.replace(&text, |_| String::new())),
-        acc_descr: ast
-            .acc_descr
-            .filter(|text| !text.is_empty())
-            .map(|text| RE_INDENT.replace(&text, |_| "\n".into())),
-        domains: db.domains,
-        transitions: db.transitions,
+impl CynefinModel {
+    pub fn new(ast: CynefinAst, title: Option<&str>) -> Self {
+        let mut db = CynefinDb::default();
+        db.set_domains(ast.domains);
+        db.set_transitions(ast.transitions);
+        Self {
+            kind: "cynefin",
+            titles: ast.header.titles(title),
+            domains: db.domains,
+            transitions: db.transitions,
+        }
     }
 }

@@ -10,7 +10,7 @@ pub mod peg;
 pub mod render;
 pub mod types;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 pub use render::RailroadConfig;
@@ -26,13 +26,12 @@ impl Diagram for Railroad {
         _line_offset: usize,
         _limits: &ParseLimits,
     ) -> Result<Model, Error> {
-        Ok(Model::Railroad(db::parse_railroad(source, title)?))
+        Ok(Model::Railroad(db::RailroadDb::parse(source, title)?))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    match model {
-        Model::Railroad(model) => Ok(render::render_railroad(model, &config.railroad, ctx)),
-        _ => unreachable!("railroad renders a railroad model"),
+impl Render for db::RailroadDb {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_railroad(self, &config.railroad, ctx))
     }
 }

@@ -2,23 +2,26 @@
 //! syntax and the same model. Pele's `diagrams/swimlane`.
 
 use super::{
-    Diagram, Model,
+    Diagram, Model, Render,
     flowchart::{
-        Flowchart,
+        FlowDb, Flowchart,
         graph::{FlowGraph, GraphNode},
         render::{FlowVariant, render_flowchart},
         types::LabelType,
     },
 };
+use serde::Serialize;
+
+use crate::geom::{Direction, Point, Size};
 use crate::{
     Config, Error, ParseLimits, Rendered,
     layout::{
-        compound::{CEdge, CNode, CompoundResult, Dir},
+        compound::{CEdge, CNode},
         lanes::lane_layout,
         layered::LayeredOptions,
     },
     svg::{
-        builder::{EscText, LabelSvg, num},
+        builder::{EscText, num},
         theme::ResolvedStyle,
     },
     text::Label,
@@ -83,10 +86,10 @@ impl FlowVariant for Lanes {
         &self,
         nodes: &mut [CNode],
         edges: &mut [CEdge],
-        dir: Dir,
+        dir: Direction,
         opt: &LayeredOptions,
         tight: bool,
-    ) -> CompoundResult {
+    ) -> Size {
         lane_layout(
             nodes,
             edges,
@@ -110,35 +113,39 @@ impl FlowVariant for Lanes {
         style: &ResolvedStyle,
         classes: &str,
         id: &str,
-        dir: Dir,
+        dir: Direction,
     ) {
         let p = crate::PREFIX;
-        let left = c.x - c.w / 2.0;
-        let top = c.y - c.h / 2.0;
-        let sideways = dir == Dir::LR || dir == Dir::RL;
+        let left = c.center.x - c.size.w / 2.0;
+        let top = c.center.y - c.size.h / 2.0;
+        let sideways = !dir.is_vertical();
         let cx = if sideways {
             left + c.pad_top / 2.0
         } else {
-            c.x
+            c.center.x
         };
-        let cy = if sideways { c.y } else { top + c.pad_top / 2.0 };
+        let cy = if sideways {
+            c.center.y
+        } else {
+            top + c.pad_top / 2.0
+        };
         let attrs = format!(
             " class=\"{p}-cluster-label\" fill=\"var(--_m)\"{}",
             style.text
         );
-        let text = LabelSvg(label, cx, cy, &attrs);
+        let text = label.svg(Point::new(cx, cy), &attrs);
         let _ = write!(
             out,
             "<g class=\"{p}-cluster {p}-lane{classes}\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"none\" stroke=\"var(--_b)\"/><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"var(--_a)\" stroke=\"var(--_b)\"{}/>",
             EscText(id),
             num(left),
             num(top),
-            num(c.w),
-            num(c.h),
+            num(c.size.w),
+            num(c.size.h),
             num(left),
             num(top),
-            num(if sideways { c.pad_top } else { c.w }),
-            num(if sideways { c.h } else { c.pad_top }),
+            num(if sideways { c.pad_top } else { c.size.w }),
+            num(if sideways { c.size.h } else { c.pad_top }),
             style.shape,
         );
         let _ = if sideways && !label.lines.is_empty() {
@@ -165,14 +172,22 @@ impl Diagram for Swimlane {
         line_offset: usize,
         limits: &ParseLimits,
     ) -> Result<Model, Error> {
-        Flowchart.parse(source, config, title, line_offset, limits)
+        let Model::Flowchart(db) = Flowchart.parse(source, config, title, line_offset, limits)?
+        else {
+            unreachable!("a flowchart parses to a flowchart model")
+        };
+        Ok(Model::Swimlane(Box::new(SwimlaneDb(*db))))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Flowchart(db) = model else {
-        unreachable!("swimlane renders a flowchart model")
-    };
-    let section = config.swimlane.as_ref().unwrap_or(&config.flowchart);
-    Ok(render_flowchart(db, section, ctx, Some(&Lanes)))
+/// A flowchart drawn with its top-level subgraphs as lanes.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct SwimlaneDb(pub FlowDb);
+
+impl Render for SwimlaneDb {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        let section = config.swimlane.as_ref().unwrap_or(&config.flowchart);
+        Ok(render_flowchart(&self.0, section, ctx, Some(&Lanes)))
+    }
 }

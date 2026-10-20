@@ -4,17 +4,14 @@ use super::{
     db::C4Model,
     lexer::tokenize,
     tokens::T,
-    types::{C4Attr, C4Named},
+    types::{C4Attr, C4Named, C4Type},
 };
-use crate::{detect::Kind, error::Error, js, token::Stream, util::chars::width_at};
-
-const HEADER: [T; 5] = [
-    T::C4Context,
-    T::C4Container,
-    T::C4Component,
-    T::C4Dynamic,
-    T::C4Deployment,
-];
+use crate::{
+    detect::Kind,
+    error::Error,
+    js,
+    token::{Stream, after_keyword},
+};
 
 const HEADERS: &str = "'direction_tb', 'direction_bt', 'direction_rl', 'direction_lr', 'C4_CONTEXT', 'C4_CONTAINER', 'C4_COMPONENT', 'C4_DYNAMIC', 'C4_DEPLOYMENT'";
 const ATTRIBUTES: &str = "'STR', 'STR_KEY', 'ATTRIBUTE', 'ATTRIBUTE_EMPTY'";
@@ -29,13 +26,6 @@ enum P {
     ItemOrEnd,
     AfterOther,
     AfterDiagram,
-}
-
-fn is_other(t: T) -> bool {
-    matches!(
-        t,
-        T::Title | T::AccDescription | T::AccTitle | T::AccDescr | T::AccDescrMultilineValue
-    )
 }
 
 /// What a diagram statement adds to the model.
@@ -57,55 +47,70 @@ enum Statement {
     UpdateLayoutConfig,
 }
 
-fn statement(t: T) -> Option<Statement> {
-    use Statement::*;
-    Some(match t {
-        T::Person => PersonOrSystem("person"),
-        T::PersonExt => PersonOrSystem("external_person"),
-        T::System => PersonOrSystem("system"),
-        T::SystemDb => PersonOrSystem("system_db"),
-        T::SystemQueue => PersonOrSystem("system_queue"),
-        T::SystemExt => PersonOrSystem("external_system"),
-        T::SystemExtDb => PersonOrSystem("external_system_db"),
-        T::SystemExtQueue => PersonOrSystem("external_system_queue"),
-        T::Container => Container("container"),
-        T::ContainerDb => Container("container_db"),
-        T::ContainerQueue => Container("container_queue"),
-        T::ContainerExt => Container("external_container"),
-        T::ContainerExtDb => Container("external_container_db"),
-        T::ContainerExtQueue => Container("external_container_queue"),
-        T::Component => Component("component"),
-        T::ComponentDb => Component("component_db"),
-        T::ComponentQueue => Component("component_queue"),
-        T::ComponentExt => Component("external_component"),
-        T::ComponentExtDb => Component("external_component_db"),
-        T::ComponentExtQueue => Component("external_component_queue"),
-        T::EnterpriseBoundary => Boundary(Some("ENTERPRISE")),
-        T::SystemBoundary => Boundary(Some("SYSTEM")),
-        T::Boundary => Boundary(None),
-        T::ContainerBoundary => ContainerBoundary,
-        T::Node => DeploymentNode("node"),
-        T::NodeL => DeploymentNode("nodeL"),
-        T::NodeR => DeploymentNode("nodeR"),
-        T::Rel => Rel("rel"),
-        T::Birel => Rel("birel"),
-        T::RelU => Rel("rel_u"),
-        T::RelD => Rel("rel_d"),
-        T::RelL => Rel("rel_l"),
-        T::RelR => Rel("rel_r"),
-        T::RelB => Rel("rel_b"),
-        T::RelIndex => RelIndex,
-        T::UpdateElStyle => UpdateElStyle,
-        T::UpdateRelStyle => UpdateRelStyle,
-        T::UpdateLayoutConfig => UpdateLayoutConfig,
-        _ => return None,
-    })
-}
+impl T {
+    fn c4_type(self) -> Option<C4Type> {
+        Some(match self {
+            T::C4Context => C4Type::Context,
+            T::C4Container => C4Type::Container,
+            T::C4Component => C4Type::Component,
+            T::C4Dynamic => C4Type::Dynamic,
+            T::C4Deployment => C4Type::Deployment,
+            _ => return None,
+        })
+    }
 
-/// `text` past its first `keyword` bytes and the space after them, as
-/// `substring(keyword + 1)` reads it.
-fn after_keyword(text: &str, keyword: usize) -> &str {
-    &text[keyword + width_at(text, keyword)..]
+    /// A statement that adds nothing to the diagram's elements.
+    fn is_other(self) -> bool {
+        matches!(
+            self,
+            T::Title | T::AccDescription | T::AccTitle | T::AccDescr | T::AccDescrMultilineValue
+        )
+    }
+
+    fn statement(self) -> Option<Statement> {
+        use Statement::*;
+        Some(match self {
+            T::Person => PersonOrSystem("person"),
+            T::PersonExt => PersonOrSystem("external_person"),
+            T::System => PersonOrSystem("system"),
+            T::SystemDb => PersonOrSystem("system_db"),
+            T::SystemQueue => PersonOrSystem("system_queue"),
+            T::SystemExt => PersonOrSystem("external_system"),
+            T::SystemExtDb => PersonOrSystem("external_system_db"),
+            T::SystemExtQueue => PersonOrSystem("external_system_queue"),
+            T::Container => Container("container"),
+            T::ContainerDb => Container("container_db"),
+            T::ContainerQueue => Container("container_queue"),
+            T::ContainerExt => Container("external_container"),
+            T::ContainerExtDb => Container("external_container_db"),
+            T::ContainerExtQueue => Container("external_container_queue"),
+            T::Component => Component("component"),
+            T::ComponentDb => Component("component_db"),
+            T::ComponentQueue => Component("component_queue"),
+            T::ComponentExt => Component("external_component"),
+            T::ComponentExtDb => Component("external_component_db"),
+            T::ComponentExtQueue => Component("external_component_queue"),
+            T::EnterpriseBoundary => Boundary(Some("ENTERPRISE")),
+            T::SystemBoundary => Boundary(Some("SYSTEM")),
+            T::Boundary => Boundary(None),
+            T::ContainerBoundary => ContainerBoundary,
+            T::Node => DeploymentNode("node"),
+            T::NodeL => DeploymentNode("nodeL"),
+            T::NodeR => DeploymentNode("nodeR"),
+            T::Rel => Rel("rel"),
+            T::Birel => Rel("birel"),
+            T::RelU => Rel("rel_u"),
+            T::RelD => Rel("rel_d"),
+            T::RelL => Rel("rel_l"),
+            T::RelR => Rel("rel_r"),
+            T::RelB => Rel("rel_b"),
+            T::RelIndex => RelIndex,
+            T::UpdateElStyle => UpdateElStyle,
+            T::UpdateRelStyle => UpdateRelStyle,
+            T::UpdateLayoutConfig => UpdateLayoutConfig,
+            _ => return None,
+        })
+    }
 }
 
 struct Parser<'t, 's> {
@@ -143,9 +148,9 @@ impl Parser<'_, '_> {
 
     fn other(&mut self, t: T, db: &mut C4Model) -> Result<(), Error> {
         match t {
-            T::Title => db.set_title(after_keyword(self.s.take(), 5)),
-            T::AccDescription => db.set_acc_description(after_keyword(self.s.take(), 14)),
-            T::AccDescrMultilineValue => db.set_acc_description(js::trim(self.s.take())),
+            T::Title => db.titles.set_title(after_keyword(self.s.take(), 5)),
+            T::AccDescription => db.titles.set_acc_descr(after_keyword(self.s.take(), 14)),
+            T::AccDescrMultilineValue => db.titles.set_acc_descr(js::trim(self.s.take())),
             T::AccTitle => {
                 self.s.bump();
                 if !self.s.is(T::AccTitleValue) {
@@ -153,14 +158,14 @@ impl Parser<'_, '_> {
                 }
                 // The grammar hands `accTitle:` to setTitle, so it becomes the
                 // visible title.
-                db.set_title(js::trim(self.s.take()));
+                db.titles.set_title(js::trim(self.s.take()));
             }
             _ => {
                 self.s.bump();
                 if !self.s.is(T::AccDescrValue) {
                     return Err(self.s.fail("'acc_descr_value'"));
                 }
-                db.set_acc_description(js::trim(self.s.take()));
+                db.titles.set_acc_descr(js::trim(self.s.take()));
             }
         }
         Ok(())
@@ -210,11 +215,9 @@ impl Parser<'_, '_> {
                 attrs.remove(0);
                 db.add_rel("rel", &attrs);
             }
-            Statement::UpdateElStyle => db.update_el_style("update_el_style", &attrs),
-            Statement::UpdateRelStyle => db.update_rel_style("update_rel_style", &attrs),
-            Statement::UpdateLayoutConfig => {
-                db.update_layout_config("update_layout_config", &attrs)
-            }
+            Statement::UpdateElStyle => db.update_el_style(&attrs),
+            Statement::UpdateRelStyle => db.update_rel_style(&attrs),
+            Statement::UpdateLayoutConfig => db.update_layout_config(&attrs),
         }
         Ok(false)
     }
@@ -229,17 +232,17 @@ pub fn parse_c4(src: &str, db: &mut C4Model) -> Result<(), Error> {
         s: Stream::new(Kind::C4, src, &tokens),
     };
 
-    if !r.s.is_any(&HEADER) {
+    let Some(header) = r.s.kind().c4_type() else {
         return Err(r.s.fail(HEADERS));
-    }
-    let header = r.s.take();
+    };
+    r.s.bump();
     r.s.expect(T::Newline, "")?;
 
     let mut depth = 0usize;
     let mut state = P::Item;
     loop {
         let t = r.s.kind();
-        let diagram = statement(t);
+        let diagram = t.statement();
         if state == P::AfterOther || state == P::AfterDiagram {
             if r.s.eat(T::Newline) {
                 state = P::ItemOrEnd;
@@ -257,7 +260,7 @@ pub fn parse_c4(src: &str, db: &mut C4Model) -> Result<(), Error> {
                 state = P::AfterDiagram;
             }
             continue;
-        } else if is_other(t) && state != P::Diagram {
+        } else if t.is_other() && state != P::Diagram {
             r.other(t, db)?;
             state = P::AfterOther;
             continue;
@@ -279,7 +282,7 @@ pub fn parse_c4(src: &str, db: &mut C4Model) -> Result<(), Error> {
                 return Err(r.s.fail("'NEWLINE', 'EOF'"));
             }
             r.s.expect(T::End, "")?;
-            db.set_c4_type(header);
+            db.c4_type = Some(header);
             return Ok(());
         }
     }

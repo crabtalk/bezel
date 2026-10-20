@@ -12,6 +12,8 @@
 //! JavaScript takes a UTF-16 unit.
 
 use std::fmt::Write as _;
+
+use crate::util::chars::{self, is_line_end, is_space, is_word};
 use std::{
     ops::{Deref, Range},
     sync::OnceLock,
@@ -876,30 +878,6 @@ impl Escape {
     }
 }
 
-/// `\s`: JavaScript's whitespace and line terminators.
-pub(crate) fn is_space(c: char) -> bool {
-    matches!(
-        c,
-        '\t' | '\n' | '\u{b}' | '\u{c}' | '\r' | ' ' | '\u{a0}' | '\u{1680}' | '\u{2000}'
-            ..='\u{200a}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202f}'
-                | '\u{205f}'
-                | '\u{3000}'
-                | '\u{feff}'
-    )
-}
-
-/// `\w`.
-pub(crate) fn is_word(c: char) -> bool {
-    c.is_ascii_alphanumeric() || c == '_'
-}
-
-fn is_line_end(c: char) -> bool {
-    matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}')
-}
-
 impl Item {
     fn matches(self, c: char) -> bool {
         match self {
@@ -953,7 +931,7 @@ type Caps = [Option<usize>];
 
 impl Matcher<'_> {
     fn char_at(&self, at: usize) -> Option<char> {
-        self.text.get(at..)?.chars().next()
+        chars::char_at(self.text, at)
     }
 
     fn char_before(&self, at: usize) -> Option<char> {

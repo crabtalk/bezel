@@ -1,6 +1,7 @@
 //! Pele's `diagrams/agentflow/parser.ts`.
 
 use super::{
+    Agentflow,
     db::{AgentflowDb, destruct_link},
     lexer::tokenize,
     types::{DocItem, FlowText, LabelType, Loc},
@@ -8,7 +9,8 @@ use super::{
 use crate::{
     detect::Kind,
     diagrams::flowchart::{
-        syntax::{Dialect, Reader},
+        store::FlowStore,
+        syntax::{Builder, Dialect, Reader, ShapeData},
         tokens::T,
     },
     error::Error,
@@ -54,143 +56,77 @@ static DIALECT: Dialect = Dialect {
 /// line before parsing.
 static RE_BRACE_TRAIL: Lazy = Lazy::new(r"}[^\S\n]*\n", "g");
 
-/// Shape data, and the first and last of the tokens it was read from.
-struct Data {
-    text: String,
-    from: usize,
-    to: usize,
-}
-
 struct Frame {
     global: bool,
     /// Token index of the `flow` keyword.
     at: usize,
     id: Option<FlowText>,
     title: Option<FlowText>,
-    data: Option<Data>,
+    data: Option<ShapeData>,
     list: Vec<DocItem>,
     collect: bool,
 }
 
-struct Parser<'a> {
-    r: Reader<'a>,
+/// The model being built, and where each token is.
+struct Build<'a> {
     db: &'a mut AgentflowDb,
     locs: &'a [[usize; 4]],
 }
 
-impl Parser<'_> {
+impl Build<'_> {
     /// The span from the start of token `a` to the end of token `b`.
-    fn span(&self, a: usize, b: usize) -> Option<Loc> {
+    fn span(&self, a: usize, b: usize) -> Loc {
         let ([first_line, first_column, ..], [.., last_line, last_column]) =
             (self.locs[a], self.locs[b]);
-        Some(Loc {
+        Loc {
             first_line,
             first_column,
             last_line,
             last_column,
-        })
-    }
-
-    fn shape_data(&mut self) -> Option<Data> {
-        if !self.r.s.is(T::ShapeData) {
-            return None;
         }
-        let from = self.r.s.index();
-        let text = self.r.shape_data();
-        Some(Data {
-            text,
-            from,
-            to: self.r.s.index() - 1,
-        })
     }
 
-    fn add_data(&mut self, id: &str, data: &Data) -> Result<(), Error> {
+    fn add_data(&mut self, id: &str, data: &ShapeData) -> Result<(), Error> {
         let loc = self.span(data.from, data.to);
         self.db.add_metadata(id, &data.text, loc)
     }
+}
 
-    /// [`Parser::add_data`], recorded as an attachment to the vertex.
-    fn attach(&mut self, id: &str, data: &Data) -> Result<(), Error> {
+impl Builder for Build<'_> {
+    type Payload = Agentflow;
+
+    fn store(&mut self) -> &mut FlowStore<Agentflow> {
+        &mut self.db.store
+    }
+
+    /// Recorded as an attachment to the vertex.
+    fn attach(&mut self, id: &str, data: &ShapeData) -> Result<(), Error> {
         self.add_data(id, data)?;
         let loc = self.span(data.from, data.to);
         self.db.extend_vertex_mapping(id, loc);
         Ok(())
     }
 
-    fn vertex(&mut self) -> Result<String, Error> {
-        let from = self.r.s.index();
-        let node = self.r.node()?;
-        self.db.store.add_vertex(&node.id, node.vertex());
-        let loc = self.span(from, self.r.s.index() - 1);
-        self.db
-            .add_vertex_mapping(&node.id, node.shape.is_none(), loc);
-        Ok(node.id)
+    fn vertex_read(&mut self, id: &str, bare: bool, from: usize, to: usize) {
+        let loc = self.span(from, to);
+        self.db.add_vertex_mapping(id, bare, loc);
     }
 
-    fn styled_vertex(&mut self) -> Result<String, Error> {
-        let id = self.vertex()?;
-        if self.r.s.eat(T::StyleSeparator) {
-            let class = self.r.id_string()?;
-            self.db.store.set_class(&id, &class);
-        }
-        Ok(id)
+    fn link_read(&mut self, ends: &[String], from: usize, to: usize) {
+        let loc = self.span(from, to);
+        self.db.add_edge_mapping(ends, loc);
     }
+}
 
-    /// A run of vertices joined by `&`, and the shape data after the last.
-    fn nodes(&mut self) -> Result<(Vec<String>, Option<Data>), Error> {
-        let mut ids = vec![self.styled_vertex()?];
-        loop {
-            let data = self.shape_data();
-            if !self.r.s.eat(T::Space) {
-                return Ok((ids, data));
-            }
-            self.r.s.eat_all(T::Space);
-            if !self.r.s.eat(T::Amp) {
-                if data.is_some() {
-                    return Err(self.r.s.fail("'AMP'"));
-                }
-                return Ok((ids, None));
-            }
-            if !self.r.s.eat(T::Space) {
-                return Err(self.r.s.fail("'SPACE'"));
-            }
-            self.r.s.eat_all(T::Space);
-            let next = self.styled_vertex()?;
-            if let Some(data) = data {
-                self.attach(&ids[ids.len() - 1], &data)?;
-            }
-            ids.push(next);
-        }
-    }
+struct Parser<'a> {
+    r: Reader<'a>,
+    b: Build<'a>,
+}
 
-    /// [`Parser::nodes`], with the shape data attached to the last vertex.
-    fn node(&mut self) -> Result<Vec<String>, Error> {
-        let (ids, data) = self.nodes()?;
-        if let Some(data) = data {
-            self.attach(&ids[ids.len() - 1], &data)?;
-        }
-        Ok(ids)
-    }
-
-    fn vertex_statement(&mut self) -> Result<Vec<String>, Error> {
-        let from = self.r.s.index();
-        let mut stmt = self.node()?;
-        let mut nodes = stmt.clone();
-        while self.r.at_link() {
-            let info = self.r.link()?;
-            let next = self.node()?;
-            self.db.store.add_link(&stmt, &next, Some(&info))?;
-            let loc = self.span(from, self.r.s.index() - 1);
-            self.db.add_edge_mapping(&next, loc);
-            nodes.splice(0..0, next.iter().cloned());
-            stmt = next;
-        }
-        Ok(nodes)
-    }
-
+impl Parser<'_> {
     fn attach_data(&mut self, id: &str, frame: &Frame) -> Result<(), Error> {
         match &frame.data {
-            Some(data) => self.add_data(id, data),
+            Some(data) => self.b.add_data(id, data),
             None => Ok(()),
         }
     }
@@ -208,7 +144,7 @@ impl Parser<'_> {
             title = self.r.text()?;
             self.r.closed(T::Sqe)?;
         }
-        let data = self.shape_data();
+        let data = self.r.shape_data();
         if !self.r.at_separator() {
             return Err(self.r.s.fail(&self.r.separators(&[T::ShapeData])));
         }
@@ -224,29 +160,24 @@ impl Parser<'_> {
     }
 
     fn statement(&mut self) -> Result<DocItem, Error> {
-        if let Some(item) = self.r.statement(&mut self.db.store)? {
-            return Ok(item);
+        if !self.r.s.is(T::Connector) {
+            return self.r.statement(&mut self.b);
         }
-        if self.r.s.is(T::Connector) {
-            let at = self.r.s.index();
-            self.r.s.bump();
-            let frame = self.header(at)?;
-            let sep = self.r.s.index();
-            self.r.s.bump();
-            let id = self
-                .db
-                .add_connector(frame.id.as_ref(), frame.title.as_ref());
-            self.attach_data(&id, &frame)?;
-            let (start, end) = (self.span(frame.at, frame.at), self.span(sep, sep));
-            self.db.add_connector_mapping(frame.id.as_ref(), start, end);
-            return Ok(DocItem::Str(id));
-        }
-        if !self.r.at_vertex() {
-            return Err(self.r.fail_statement());
-        }
-        let nodes = self.vertex_statement()?;
-        self.r.separator()?;
-        Ok(DocItem::List(nodes))
+        let at = self.r.s.index();
+        self.r.s.bump();
+        let frame = self.header(at)?;
+        let sep = self.r.s.index();
+        self.r.s.bump();
+        let id = self
+            .b
+            .db
+            .add_connector(frame.id.as_ref(), frame.title.as_ref());
+        self.attach_data(&id, &frame)?;
+        let (start, end) = (self.b.span(frame.at, frame.at), self.b.span(sep, sep));
+        self.b
+            .db
+            .add_connector_mapping(frame.id.as_ref(), start, end);
+        Ok(DocItem::Str(id))
     }
 
     /// Blocks nest without recursion: each open one keeps the list and
@@ -267,17 +198,20 @@ impl Parser<'_> {
                 let at = self.r.s.index();
                 self.r.s.bump();
                 if frame.global {
-                    self.db.add_global(&list);
+                    self.b.db.add_global(&list);
                     list = frame.list;
                     collect = frame.collect;
                     continue;
                 }
                 let id = self
+                    .b
                     .db
                     .add_sub_graph(frame.id.as_ref(), &list, frame.title.as_ref());
                 self.attach_data(&id, &frame)?;
-                let (start, end) = (self.span(frame.at, frame.at), self.span(at, at));
-                self.db.add_subgraph_mapping(frame.id.as_ref(), start, end);
+                let (start, end) = (self.b.span(frame.at, frame.at), self.b.span(at, at));
+                self.b
+                    .db
+                    .add_subgraph_mapping(frame.id.as_ref(), start, end);
                 list = frame.list;
                 collect = frame.collect;
                 if collect {
@@ -339,10 +273,12 @@ pub fn parse_agentflow(source: &str, db: &mut AgentflowDb, raw: bool) -> Result<
     let lexed = tokenize(&src);
     let mut p = Parser {
         r: Reader::new(&DIALECT, &src, &lexed.tokens),
-        db,
-        locs: &lexed.locs,
+        b: Build {
+            db,
+            locs: &lexed.locs,
+        },
     };
-    p.r.header(&mut p.db.store)?;
+    p.r.header(&mut p.b.db.store)?;
     p.document()?;
     if !p.r.s.is(T::End) {
         return Err(p.r.fail_statement());

@@ -98,10 +98,6 @@ impl Unit {
     }
 }
 
-pub(crate) fn is_valid(date: Date) -> bool {
-    date.is_valid()
-}
-
 fn pad(value: f64, length: usize) -> String {
     let s = js::num_str(value);
     if s.len() >= length {
@@ -209,7 +205,7 @@ fn iso_week(date: Date) -> f64 {
 /// `None` for the week-of-year and time zone name tokens, which need dayjs
 /// plugins Mermaid does not load and so fail there.
 pub(crate) fn format(date: Date, template: &str) -> Option<String> {
-    if !is_valid(date) {
+    if !date.is_valid() {
         return Some("Invalid Date".into());
     }
     let s = if template.is_empty() {
@@ -490,18 +486,6 @@ fn compile(template: &str) -> Option<Vec<Step>> {
     )
 }
 
-/// `text.slice(start)`, `start` in UTF-16 units.
-fn slice_units(text: &str, start: usize) -> &str {
-    let mut units = 0;
-    for (at, c) in text.char_indices() {
-        if units >= start {
-            return &text[at..];
-        }
-        units += c.len_utf16();
-    }
-    ""
-}
-
 fn loose<'z>(input: &str, template: &str, now: Date<'z>) -> Option<Date<'z>> {
     if template == "x" || template == "X" {
         let scale = if template == "X" { 1000.0 } else { 1.0 };
@@ -520,7 +504,10 @@ fn loose<'z>(input: &str, template: &str, now: Date<'z>) -> Option<Date<'z>> {
             }
             Step::Read(re, how) => (re, *how),
         };
-        let found = re.exec(slice_units(&rest, start))?.str(0).to_string();
+        let found = re
+            .exec(&rest[js::units_end(&rest, start)..])?
+            .str(0)
+            .to_string();
         if !read(&mut f, how, &found) {
             return None;
         }
@@ -587,5 +574,5 @@ fn loose<'z>(input: &str, template: &str, now: Date<'z>) -> Option<Date<'z>> {
 /// fields the format leaves out.
 pub(crate) fn parse_strict<'z>(input: &str, template: &str, now: Date<'z>) -> Option<Date<'z>> {
     let date = loose(input, template, now)?;
-    (is_valid(date) && format(date, template).as_deref() == Some(input)).then_some(date)
+    (date.is_valid() && format(date, template).as_deref() == Some(input)).then_some(date)
 }

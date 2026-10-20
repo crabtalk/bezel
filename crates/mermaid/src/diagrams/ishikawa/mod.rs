@@ -7,7 +7,7 @@ pub mod parser;
 pub mod render;
 pub mod types;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
@@ -29,13 +29,8 @@ impl Diagram for Ishikawa {
     }
 }
 
-pub fn render(
-    model: &Model,
-    _config: &Config,
-    ctx: &Ctx<'_, impl Host>,
-) -> Result<Rendered, Error> {
-    match model {
-        Model::Ishikawa(model) => Ok(render::render_ishikawa(model, ctx)),
-        _ => unreachable!("ishikawa renders an ishikawa model"),
+impl Render for db::IshikawaDb {
+    fn render(&self, _config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_ishikawa(self, ctx))
     }
 }

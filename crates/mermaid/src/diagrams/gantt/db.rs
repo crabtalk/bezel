@@ -1,10 +1,11 @@
 //! Pele's `diagrams/gantt/db.ts`.
 
+use crate::diagrams::common::db::Titles;
 use indexmap::{IndexMap, IndexSet};
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 use super::{
-    dates::{Unit, WEEKDAYS, add, add_days, format, is_valid, iso_date, parse_strict},
+    dates::{Unit, WEEKDAYS, add, add_days, format, iso_date, parse_strict},
     types::{GanttTask, RawTask},
 };
 use crate::{
@@ -32,8 +33,6 @@ static RE_UNTIL: Lazy = Lazy::new(r"^until\s+([\d\w- ]+)", "");
 static RE_DURATION: Lazy = Lazy::new(r"^(\d+(?:\.\d+)?)([Mdhmswy]|ms)$", "");
 static RE_TOKEN_SPLIT: Lazy = Lazy::new(r"[\s,]+", "");
 static RE_DIGITS: Lazy = Lazy::new(r"^\d+$", "");
-static RE_LEAD: Lazy = Lazy::new(r"^\s+", "g");
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
 
 /// The one place the current time is read.
 pub fn clock(now: Option<f64>) -> f64 {
@@ -73,11 +72,27 @@ fn time(date: Option<f64>) -> f64 {
     date.unwrap_or(f64::NAN)
 }
 
+/// The day a two-day weekend starts on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Weekend {
+    Friday,
+    Saturday,
+}
+
+impl Weekend {
+    /// The ISO weekday number.
+    fn iso_day(self) -> f64 {
+        match self {
+            Weekend::Friday => 5.0,
+            Weekend::Saturday => 6.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct GanttDb {
-    pub title: Option<String>,
-    pub acc_title: Option<String>,
-    pub acc_descr: Option<String>,
+    pub titles: Titles,
     pub date_format: String,
     pub axis_format: String,
     pub tick_interval: Option<String>,
@@ -90,7 +105,7 @@ pub struct GanttDb {
     /// The day week-based ticks start on, when the chart names one.
     /// Mermaid's default is Sunday.
     pub weekday: Option<String>,
-    pub weekend: String,
+    pub weekend: Weekend,
     pub sections: Vec<String>,
     pub links: IndexMap<String, String>,
     pub tasks: Vec<GanttTask>,
@@ -136,13 +151,13 @@ impl Serialize for GanttDb {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let mut out = s.serialize_struct("GanttDb", 30)?;
         out.serialize_field("type", "gantt")?;
-        if let Some(title) = &self.title {
+        if let Some(title) = &self.titles.title {
             out.serialize_field("title", title)?;
         }
-        if let Some(acc_title) = &self.acc_title {
+        if let Some(acc_title) = &self.titles.acc_title {
             out.serialize_field("accTitle", acc_title)?;
         }
-        if let Some(acc_descr) = &self.acc_descr {
+        if let Some(acc_descr) = &self.titles.acc_descr {
             out.serialize_field("accDescr", acc_descr)?;
         }
         out.serialize_field("dateFormat", &self.date_format)?;
@@ -190,9 +205,7 @@ impl Default for GanttDb {
 impl GanttDb {
     pub fn new() -> Self {
         Self {
-            title: None,
-            acc_title: None,
-            acc_descr: None,
+            titles: Titles::default(),
             date_format: String::new(),
             axis_format: String::new(),
             tick_interval: None,
@@ -203,7 +216,7 @@ impl GanttDb {
             top_axis: false,
             display_mode: String::new(),
             weekday: None,
-            weekend: "saturday".into(),
+            weekend: Weekend::Saturday,
             sections: Vec::new(),
             links: IndexMap::new(),
             tasks: Vec::new(),
@@ -257,22 +270,6 @@ impl GanttDb {
 
     pub fn set_weekday(&mut self, txt: &str) {
         self.weekday = Some(txt.to_string());
-    }
-
-    pub fn set_weekend(&mut self, start_day: &str) {
-        self.weekend = start_day.to_string();
-    }
-
-    pub fn set_diagram_title(&mut self, txt: &str) {
-        self.title = Some(txt.to_string());
-    }
-
-    pub fn set_acc_title(&mut self, txt: &str) {
-        self.acc_title = Some(RE_LEAD.replace(txt, |_| String::new()));
-    }
-
-    pub fn set_acc_description(&mut self, txt: &str) {
-        self.acc_descr = Some(RE_INDENT.replace(txt, |_| "\n".into()));
     }
 
     pub fn add_section(&mut self, txt: &str) {
@@ -374,12 +371,7 @@ impl GanttDb {
 
     /// Callbacks are recognized and never run; the task is only marked
     /// clickable, as in Mermaid.
-    pub fn set_click_event(
-        &mut self,
-        ids: &str,
-        _function_name: &str,
-        _function_args: Option<&str>,
-    ) {
+    pub fn set_click_event(&mut self, ids: &str) {
         self.set_class(ids, "clickable");
     }
 
@@ -403,11 +395,7 @@ impl GanttDb {
         self.work = 0.0;
         self.include_set = self.includes.iter().cloned().collect();
         self.exclude_set = self.excludes.iter().cloned().collect();
-        let weekend_start = match self.weekend.as_str() {
-            "friday" => 5.0,
-            "saturday" => 6.0,
-            _ => f64::NAN,
-        };
+        let weekend_start = self.weekend.iso_day();
         let weekends = self.exclude_set.contains("weekends");
         self.excluded_days = WEEKDAYS
             .iter()
@@ -556,7 +544,7 @@ impl GanttDb {
 
         if (template == "x" || template == "X") && RE_DIGITS.test(text) {
             let date = zone.date(js::number(text));
-            if !is_valid(date) {
+            if !date.is_valid() {
                 return Err(invalid_date(text));
             }
             return Ok(Some(date.time()));
@@ -584,7 +572,7 @@ impl GanttDb {
         // What does not fit the format gets a second chance with the
         // JavaScript date parser, as in Mermaid.
         let date = zone.parse(text);
-        if !is_valid(date) || date.full_year() < -10000.0 || date.full_year() > 10000.0 {
+        if !date.is_valid() || date.full_year() < -10000.0 || date.full_year() > 10000.0 {
             return Err(invalid_date(text));
         }
         Ok(Some(date.time()))
@@ -627,7 +615,7 @@ impl GanttDb {
             return Ok(Some(zone.date(start_time).time()));
         }
         let end = add(zone.date(start_time), value, unit);
-        Ok(Some(if is_valid(end) {
+        Ok(Some(if end.is_valid() {
             end.time()
         } else {
             zone.date(start_time).time()

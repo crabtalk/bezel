@@ -4,6 +4,7 @@
 //! Ports Mermaid's UsecaseModelBuilder, with its messages. Pele's
 //! `diagrams/usecase/db.ts`.
 
+use crate::diagrams::common::db::acc_descr;
 use indexmap::{IndexMap, IndexSet};
 
 use super::{
@@ -15,11 +16,9 @@ use super::{
         UsecaseModel, UsecaseNote,
     },
 };
-use crate::{config::Value, detect::Kind, error::Error, js::Lazy};
+use crate::{config::Value, error::Error};
 
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
-
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct DraftLabel {
     pub text: String,
     pub kind: LabelType,
@@ -44,6 +43,33 @@ impl PropertyValue {
         match self {
             Self::Bool(b) => Some(*b),
             Self::Text(_) => None,
+        }
+    }
+
+    /// The actor type a `type` value names.
+    fn actor_type(&self) -> Option<ActorType> {
+        match self.text()? {
+            "normal" => Some(ActorType::Normal),
+            "hollow" => Some(ActorType::Hollow),
+            "awesome" => Some(ActorType::Awesome),
+            _ => None,
+        }
+    }
+
+    /// The boundary type a `type` value names.
+    fn boundary_type(&self) -> Option<BoundaryType> {
+        match self.text()? {
+            "rect" => Some(BoundaryType::Rect),
+            "package" => Some(BoundaryType::Package),
+            _ => None,
+        }
+    }
+
+    fn animation(&self) -> Option<Animation> {
+        match self.text()? {
+            "fast" => Some(Animation::Fast),
+            "slow" => Some(Animation::Slow),
+            _ => None,
         }
     }
 }
@@ -159,6 +185,50 @@ pub struct DraftMetadata {
     pub statement: Option<usize>,
 }
 
+impl DraftMetadata {
+    /// The only kind of element the keys could belong to, for the error
+    /// message.
+    fn implied_kind(&self) -> Option<SymbolKind> {
+        let mut possible: IndexSet<SymbolKind> = [
+            SymbolKind::Actor,
+            SymbolKind::Usecase,
+            SymbolKind::Boundary,
+            SymbolKind::Edge,
+        ]
+        .into();
+        for property in &self.properties {
+            match property.key.as_str() {
+                "icon" => {
+                    possible.clear();
+                    possible.insert(SymbolKind::Actor);
+                }
+                "animate" | "animation" => {
+                    possible.clear();
+                    possible.insert(SymbolKind::Edge);
+                }
+                "type" => {
+                    possible.clear();
+                    if property.value.boundary_type().is_some() {
+                        possible.insert(SymbolKind::Boundary);
+                    } else if property.value.actor_type().is_some() {
+                        possible.insert(SymbolKind::Actor);
+                    }
+                }
+                "business" => {
+                    possible.shift_remove(&SymbolKind::Boundary);
+                    possible.shift_remove(&SymbolKind::Edge);
+                }
+                _ => return None,
+            }
+        }
+        if possible.len() == 1 {
+            possible.first().copied()
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct DraftClasses {
     pub targets: Vec<(String, Span)>,
@@ -235,52 +305,6 @@ fn push_unique(target: &mut Vec<String>, values: &[String]) {
     }
 }
 
-/// Which kind of element the keys of a metadata block could only belong to,
-/// for the error message.
-fn infer_kind(properties: &[DraftProperty]) -> Option<&'static str> {
-    let mut possible: IndexSet<&'static str> = ["actor", "usecase", "boundary", "edge"].into();
-    for property in properties {
-        let value = property.value.text();
-        match property.key.as_str() {
-            "icon" => {
-                possible.clear();
-                possible.insert("actor");
-            }
-            "animate" | "animation" => {
-                possible.clear();
-                possible.insert("edge");
-            }
-            "type" => {
-                possible.clear();
-                if matches!(value, Some("rect" | "package")) {
-                    possible.insert("boundary");
-                } else if matches!(value, Some("normal" | "hollow" | "awesome")) {
-                    possible.insert("actor");
-                }
-            }
-            "business" => {
-                possible.shift_remove("boundary");
-                possible.shift_remove("edge");
-            }
-            _ => return None,
-        }
-    }
-    if possible.len() == 1 {
-        possible.first().copied()
-    } else {
-        None
-    }
-}
-
-fn actor_type(value: &PropertyValue) -> Option<ActorType> {
-    match value.text()? {
-        "normal" => Some(ActorType::Normal),
-        "hollow" => Some(ActorType::Hollow),
-        "awesome" => Some(ActorType::Awesome),
-        _ => None,
-    }
-}
-
 /// The element a class or style statement names.
 #[derive(Clone, Copy)]
 enum Stylable {
@@ -310,11 +334,7 @@ impl Resolver<'_> {
     }
 
     fn error(&self, message: String, span: Span) -> Error {
-        let (line, column) = self.src.line_column(span[0]);
-        let mut error = Error::semantic(message).of(Kind::Usecase);
-        error.line = line;
-        error.column = column;
-        error
+        self.src.place(Error::semantic(message), span[0])
     }
 
     fn fail(&self, message: &str, span: Span) -> Error {
@@ -477,7 +497,7 @@ impl Resolver<'_> {
             Ok(())
         };
         if key == "type"
-            && let Some(kind) = actor_type(value)
+            && let Some(kind) = value.actor_type()
         {
             clash(state.actor_type.is_some_and(|previous| previous != kind))?;
             state.actor_type = Some(kind);
@@ -828,416 +848,411 @@ impl Resolver<'_> {
     }
 }
 
-pub fn resolve_usecase(
-    src: &Source,
-    drafts: Drafts,
-    header_span: Span,
-    mut statements: Vec<GraphStatement>,
-    title: Option<&str>,
-) -> Result<UsecaseModel, Error> {
-    let mut r = Resolver {
-        src,
-        model: UsecaseModel::empty(),
-        symbols: IndexMap::new(),
-        elements: IndexMap::new(),
-        boundaries: IndexMap::new(),
-        edges: IndexMap::new(),
-        first: IndexMap::new(),
-    };
-
-    enum Declaration<'d> {
-        Element(&'d DraftElement),
-        Boundary(&'d DraftBoundary),
-        Json(&'d DraftJson),
-        Edge(&'d str, Span),
-    }
-    let mut declarations: Vec<(usize, Declaration)> = Vec::new();
-    for relationship in &drafts.relationships {
-        r.mention(
-            &relationship.source.named.id,
-            relationship.source.named.span[0],
-        );
-        r.mention(
-            &relationship.target.named.id,
-            relationship.target.named.span[0],
-        );
-    }
-    for draft in &drafts.elements {
-        r.mention(&draft.named.id, draft.named.span[0]);
-        declarations.push((draft.named.span[0], Declaration::Element(draft)));
-    }
-    for draft in &drafts.boundaries {
-        r.mention(&draft.named.id, draft.named.span[0]);
-        declarations.push((draft.named.span[0], Declaration::Boundary(draft)));
-    }
-    for draft in &drafts.jsons {
-        r.mention(&draft.id, draft.span[0]);
-        declarations.push((draft.span[0], Declaration::Json(draft)));
-    }
-    for relationship in &drafts.relationships {
-        if let (Some(id), Some(id_span)) = (
-            relationship.id.as_deref().filter(|id| !id.is_empty()),
-            relationship.id_span,
-        ) {
-            declarations.push((id_span[0], Declaration::Edge(id, id_span)));
-        }
-    }
-    declarations.sort_by_key(|(offset, _)| *offset);
-    for (_, declaration) in &declarations {
-        match declaration {
-            Declaration::Element(draft) => r.declare_element(draft)?,
-            Declaration::Boundary(draft) => r.declare_boundary(draft)?,
-            Declaration::Json(draft) => r.unique(&draft.id, SymbolKind::Json, draft.span)?,
-            Declaration::Edge(id, span) => r.unique(id, SymbolKind::Edge, *span)?,
-        }
-    }
-
-    for id in r.in_order(r.elements.keys()) {
-        r.publish(&id);
-    }
-    for id in r.in_order(r.boundaries.keys()) {
-        let state = &r.boundaries[&id];
-        r.model.system_boundaries.insert(
-            id.clone(),
-            SystemBoundary {
-                id: id.clone(),
-                label: state.draft.named.label.text.clone(),
-                label_type: state.draft.named.label.kind,
-                kind: BoundaryType::Rect,
-                members: Vec::new(),
-                classes: Vec::new(),
-                styles: Vec::new(),
-            },
-        );
-    }
-    let mut jsons: Vec<&DraftJson> = drafts.jsons.iter().collect();
-    jsons.sort_by_key(|draft| r.first.get(&draft.id).copied().unwrap_or(0));
-    for draft in jsons {
-        r.model.json_nodes.insert(
-            draft.id.clone(),
-            UsecaseJsonNode {
-                id: draft.id.clone(),
-                value: draft.value.clone(),
-                property_order: draft.property_order.clone(),
-                classes: draft.classes.clone(),
-                styles: Vec::new(),
-            },
-        );
-    }
-
-    let mut anonymous = 0;
-    for draft in &drafts.relationships {
-        let (source, target, kind) = (&draft.source, &draft.target, draft.kind);
-        let source_kind = r.endpoint(source)?;
-        let target_kind = r.endpoint(target)?;
-        let related = |kind: SymbolKind| {
-            matches!(
-                kind,
-                SymbolKind::Actor | SymbolKind::Usecase | SymbolKind::Json
-            )
+impl Drafts {
+    /// The model of everything read, or the first disagreement among it.
+    pub fn resolve(
+        self,
+        src: &Source,
+        header_span: Span,
+        mut statements: Vec<GraphStatement>,
+        title: Option<&str>,
+    ) -> Result<UsecaseModel, Error> {
+        let mut r = Resolver {
+            src,
+            model: UsecaseModel::empty(),
+            symbols: IndexMap::new(),
+            elements: IndexMap::new(),
+            boundaries: IndexMap::new(),
+            edges: IndexMap::new(),
+            first: IndexMap::new(),
         };
-        if !related(source_kind) {
-            return Err(r.conflict(
-                &format!(
-                    "Relationship source '{}' cannot be {}",
-                    source.named.id,
-                    source_kind.name()
-                ),
-                source.named.span,
-                r.symbols[&source.named.id].span,
-                None,
-                None,
-            ));
+
+        enum Declaration<'d> {
+            Element(&'d DraftElement),
+            Boundary(&'d DraftBoundary),
+            Json(&'d DraftJson),
+            Edge(&'d str, Span),
         }
-        if !related(target_kind) {
-            return Err(r.conflict(
-                &format!(
-                    "Relationship target '{}' cannot be {}",
-                    target.named.id,
-                    target_kind.name()
-                ),
-                target.named.span,
-                r.symbols[&target.named.id].span,
-                None,
-                None,
-            ));
+        let mut declarations: Vec<(usize, Declaration)> = Vec::new();
+        for relationship in &self.relationships {
+            r.mention(
+                &relationship.source.named.id,
+                relationship.source.named.span[0],
+            );
+            r.mention(
+                &relationship.target.named.id,
+                relationship.target.named.span[0],
+            );
         }
-        if matches!(kind, RelationshipType::Include | RelationshipType::Extend)
-            && (source_kind != SymbolKind::Usecase || target_kind != SymbolKind::Usecase)
-        {
-            return Err(r.fail(
-                &format!("{} relationship requires use-case endpoints", kind.name()),
-                draft.span,
-            ));
+        for draft in &self.elements {
+            r.mention(&draft.named.id, draft.named.span[0]);
+            declarations.push((draft.named.span[0], Declaration::Element(draft)));
         }
-        if kind == RelationshipType::Generalization
-            && (source_kind == SymbolKind::Json || source_kind != target_kind)
-        {
-            return Err(r.fail(
-                "Generalization requires actor-to-actor or use-case-to-use-case endpoints",
-                draft.span,
-            ));
+        for draft in &self.boundaries {
+            r.mention(&draft.named.id, draft.named.span[0]);
+            declarations.push((draft.named.span[0], Declaration::Boundary(draft)));
         }
-        if kind == RelationshipType::Association
-            && (source_kind == SymbolKind::Json || target_kind == SymbolKind::Json)
-            && draft.arrow_type > 2
-        {
-            return Err(r.fail(
-                &format!(
-                    "JSON relationship '{}' to '{}' permits only point, reversed-point, or markerless solid association",
-                    source.named.id, target.named.id
-                ),
-                draft.span,
-            ));
+        for draft in &self.jsons {
+            r.mention(&draft.id, draft.span[0]);
+            declarations.push((draft.span[0], Declaration::Json(draft)));
         }
-        let id = match draft.id.as_deref() {
-            Some(id) => id.to_string(),
-            None => {
-                anonymous += 1;
-                format!("edge-{}", anonymous - 1)
+        for relationship in &self.relationships {
+            if let (Some(id), Some(id_span)) = (
+                relationship.id.as_deref().filter(|id| !id.is_empty()),
+                relationship.id_span,
+            ) {
+                declarations.push((id_span[0], Declaration::Edge(id, id_span)));
             }
-        };
-        let mut relationship = Relationship {
-            id: id.clone(),
-            explicit_id: draft.id.as_deref().is_some_and(|id| !id.is_empty()),
-            source: source.named.id.clone(),
-            target: target.named.id.clone(),
-            kind,
-            arrow_type: draft.arrow_type,
-            label: None,
-            label_type: None,
-            minlen: draft.minlen,
-            classes: Vec::new(),
-            styles: Vec::new(),
-            animate: false,
-            animation: None,
-        };
-        if let Some(label) = &draft.label {
-            relationship.label = Some(label.text.clone());
-            relationship.label_type = Some(label.kind);
         }
-        r.model.relationships.push(relationship);
-        r.edges.insert(id, r.model.relationships.len() - 1);
-    }
+        declarations.sort_by_key(|(offset, _)| *offset);
+        for (_, declaration) in &declarations {
+            match declaration {
+                Declaration::Element(draft) => r.declare_element(draft)?,
+                Declaration::Boundary(draft) => r.declare_boundary(draft)?,
+                Declaration::Json(draft) => r.unique(&draft.id, SymbolKind::Json, draft.span)?,
+                Declaration::Edge(id, span) => r.unique(id, SymbolKind::Edge, *span)?,
+            }
+        }
 
-    // The relationships may have added use cases; put all elements back in
-    // the order of first mention.
-    let declared_actors = std::mem::take(&mut r.model.actors);
-    let declared_use_cases = std::mem::take(&mut r.model.use_cases);
-    for id in r.in_order(r.elements.keys()) {
-        if let Some(actor) = declared_actors.get(&id) {
-            r.model.actors.insert(id, actor.clone());
-        } else if let Some(use_case) = declared_use_cases.get(&id) {
-            r.model.use_cases.insert(id, use_case.clone());
-        } else {
+        for id in r.in_order(r.elements.keys()) {
             r.publish(&id);
         }
-    }
-
-    for metadata in &drafts.metadata {
-        let target = metadata.target.as_str();
-        let Some(origin) = r.symbols.get(target) else {
-            let inferred = infer_kind(&metadata.properties)
-                .map_or(String::new(), |kind| format!(" (metadata implies {kind})"));
-            return Err(r.fail(
-                &format!("Metadata target '{target}' is unresolved{inferred}"),
-                metadata.span,
-            ));
-        };
-        let kind = origin.kind;
-        if kind == SymbolKind::Actor || kind == SymbolKind::Usecase {
-            r.with_element(target, |this, state| {
-                this.element_metadata(state, Some(&metadata.properties), true)
-            })?;
-        } else if kind == SymbolKind::Edge
-            && let Some(at) = metadata.statement
-        {
-            let statement = &mut statements[at];
-            statement.kind = StatementKind::EdgeMetadata;
-            statement.edges = Some(vec![EdgeOccurrence {
-                id: target.to_string(),
-                span: statement.span,
-                label_span: None,
-                id_span: Some(metadata.span),
-                metadata: statement.metadata.clone(),
-            }]);
-            statement.nodes = None;
-        }
-        if kind == SymbolKind::Actor || kind == SymbolKind::Usecase {
-            continue;
-        }
-        let has_boundary = r.boundaries.contains_key(target);
-        let edge = r.edges.get(target).copied();
-        for property in &metadata.properties {
-            let key = property.key.as_str();
-            let value = &property.value;
-            if kind == SymbolKind::Boundary
-                && has_boundary
-                && key == "type"
-                && matches!(value.text(), Some("rect" | "package"))
-            {
-                let state = r.boundaries.get_mut(target).expect("present");
-                state.kind = Some(if value.text() == Some("rect") {
-                    BoundaryType::Rect
-                } else {
-                    BoundaryType::Package
-                });
-            } else if kind == SymbolKind::Edge
-                && let Some(at) = edge
-                && key == "animate"
-                && let Some(animate) = value.bool()
-            {
-                r.model.relationships[at].animate = animate;
-            } else if kind == SymbolKind::Edge
-                && let Some(at) = edge
-                && key == "animation"
-                && matches!(value.text(), Some("fast" | "slow"))
-            {
-                let relationship = &mut r.model.relationships[at];
-                relationship.animation = Some(if value.text() == Some("fast") {
-                    Animation::Fast
-                } else {
-                    Animation::Slow
-                });
-                relationship.animate = true;
-            } else {
-                return Err(r.invalid(target, kind.name(), property));
-            }
-        }
-    }
-    for relationship in &mut r.model.relationships {
-        if relationship.animation.is_some() {
-            relationship.animate = true;
-        }
-    }
-
-    let ids: Vec<String> = r.elements.keys().cloned().collect();
-    for id in ids {
-        let state = &r.elements[&id];
-        if state.kind == ElementKind::Actor {
-            if state.icon.as_deref().is_some_and(|icon| !icon.is_empty())
-                && let Some(kind) = state.actor_type.filter(|&kind| kind != ActorType::Normal)
-            {
-                return Err(r.fail(
-                    &format!(
-                        "Actor '{id}' cannot combine icon with type '{}'",
-                        kind.name()
-                    ),
-                    state.named.span,
-                ));
-            }
-            if state.business == Some(true)
-                && (state.icon.as_deref().is_some_and(|icon| !icon.is_empty())
-                    || state.actor_type == Some(ActorType::Awesome))
-            {
-                return Err(r.fail(
-                    &format!("Business actor '{id}' must use normal or hollow geometry"),
-                    state.named.span,
-                ));
-            }
-        } else if state.shape == Some(UseCaseShape::Rect) && state.business == Some(true) {
-            return Err(r.fail(
-                &format!("Rectangular use case '{id}' cannot be a business use case"),
-                state.named.span,
-            ));
-        }
-        r.publish(&id);
-    }
-
-    let mut elements: Vec<&DraftElement> = drafts.elements.iter().collect();
-    elements.sort_by_key(|draft| draft.named.span[0]);
-    for draft in elements {
-        let Some(parent) = draft
-            .parent
-            .as_ref()
-            .filter(|parent| !parent.named.id.is_empty())
-        else {
-            continue;
-        };
-        let members = &mut r
-            .boundaries
-            .get_mut(&parent.named.id)
-            .expect("a declared boundary")
-            .members;
-        if !members.contains(&draft.named.id) {
-            members.push(draft.named.id.clone());
-        }
-    }
-    for (id, state) in &r.boundaries {
-        let boundary = r
-            .model
-            .system_boundaries
-            .get_mut(id)
-            .expect("a published boundary");
-        boundary.kind = state.kind.unwrap_or(BoundaryType::Rect);
-        boundary.members = state.members.clone();
-        boundary.classes = state.draft.classes.clone();
-    }
-
-    for (n, draft) in drafts.notes.iter().enumerate() {
-        let Some(origin) = r.symbols.get(&draft.target) else {
-            return Err(r.fail(
-                &format!("Note target '{}' is unresolved", draft.target),
-                draft.span,
-            ));
-        };
-        if origin.kind != SymbolKind::Actor && origin.kind != SymbolKind::Usecase {
-            return Err(r.conflict(
-                &format!(
-                    "Note target '{}' must be an actor or use case, not {}",
-                    draft.target,
-                    origin.kind.name()
-                ),
-                draft.span,
-                origin.span,
-                None,
-                None,
-            ));
-        }
-        let id = format!("note-{n}");
-        r.model.notes.insert(
-            id.clone(),
-            UsecaseNote {
-                id,
-                target: draft.target.clone(),
-                label: draft.label.text.clone(),
-                label_type: draft.label.kind,
-            },
-        );
-    }
-
-    for definition in &drafts.class_defs {
-        for id in &definition.ids {
-            r.model.class_defs.insert(
+        for id in r.in_order(r.boundaries.keys()) {
+            let state = &r.boundaries[&id];
+            r.model.system_boundaries.insert(
                 id.clone(),
-                ClassDef {
+                SystemBoundary {
                     id: id.clone(),
-                    styles: definition.styles.clone(),
+                    label: state.draft.named.label.text.clone(),
+                    label_type: state.draft.named.label.kind,
+                    kind: BoundaryType::Rect,
+                    members: Vec::new(),
+                    classes: Vec::new(),
+                    styles: Vec::new(),
                 },
             );
         }
-    }
-    for assignment in &drafts.classes {
-        for (id, span) in &assignment.targets {
-            let target = r.stylable(id, *span)?;
-            let (classes, _) = r.style_lists(id, target);
-            push_unique(classes, &assignment.classes);
+        let mut jsons: Vec<&DraftJson> = self.jsons.iter().collect();
+        jsons.sort_by_key(|draft| r.first.get(&draft.id).copied().unwrap_or(0));
+        for draft in jsons {
+            r.model.json_nodes.insert(
+                draft.id.clone(),
+                UsecaseJsonNode {
+                    id: draft.id.clone(),
+                    value: draft.value.clone(),
+                    property_order: draft.property_order.clone(),
+                    classes: draft.classes.clone(),
+                    styles: Vec::new(),
+                },
+            );
         }
-    }
-    for assignment in &drafts.styles {
-        let target = r.stylable(&assignment.target, assignment.span)?;
-        let (_, styles) = r.style_lists(&assignment.target, target);
-        styles.extend(assignment.styles.iter().cloned());
-    }
 
-    let mut model = r.model;
-    model.direction = drafts.direction.unwrap_or(model.direction);
-    model.title = title.map(str::to_string);
-    model.acc_title = drafts.acc_title;
-    model.acc_descr = RE_INDENT.replace(&drafts.acc_description, |_| "\n".into());
-    model.acc_description = drafts.acc_description;
-    model.source = src.text.clone();
-    model.header_span = header_span;
-    model.statements = statements;
-    Ok(model)
+        let mut anonymous = 0;
+        for draft in &self.relationships {
+            let (source, target, kind) = (&draft.source, &draft.target, draft.kind);
+            let source_kind = r.endpoint(source)?;
+            let target_kind = r.endpoint(target)?;
+            let related = |kind: SymbolKind| {
+                matches!(
+                    kind,
+                    SymbolKind::Actor | SymbolKind::Usecase | SymbolKind::Json
+                )
+            };
+            if !related(source_kind) {
+                return Err(r.conflict(
+                    &format!(
+                        "Relationship source '{}' cannot be {}",
+                        source.named.id,
+                        source_kind.name()
+                    ),
+                    source.named.span,
+                    r.symbols[&source.named.id].span,
+                    None,
+                    None,
+                ));
+            }
+            if !related(target_kind) {
+                return Err(r.conflict(
+                    &format!(
+                        "Relationship target '{}' cannot be {}",
+                        target.named.id,
+                        target_kind.name()
+                    ),
+                    target.named.span,
+                    r.symbols[&target.named.id].span,
+                    None,
+                    None,
+                ));
+            }
+            if matches!(kind, RelationshipType::Include | RelationshipType::Extend)
+                && (source_kind != SymbolKind::Usecase || target_kind != SymbolKind::Usecase)
+            {
+                return Err(r.fail(
+                    &format!("{} relationship requires use-case endpoints", kind.name()),
+                    draft.span,
+                ));
+            }
+            if kind == RelationshipType::Generalization
+                && (source_kind == SymbolKind::Json || source_kind != target_kind)
+            {
+                return Err(r.fail(
+                    "Generalization requires actor-to-actor or use-case-to-use-case endpoints",
+                    draft.span,
+                ));
+            }
+            if kind == RelationshipType::Association
+                && (source_kind == SymbolKind::Json || target_kind == SymbolKind::Json)
+                && draft.arrow_type > 2
+            {
+                return Err(r.fail(
+                    &format!(
+                        "JSON relationship '{}' to '{}' permits only point, reversed-point, or markerless solid association",
+                        source.named.id, target.named.id
+                    ),
+                    draft.span,
+                ));
+            }
+            let id = match draft.id.as_deref() {
+                Some(id) => id.to_string(),
+                None => {
+                    anonymous += 1;
+                    format!("edge-{}", anonymous - 1)
+                }
+            };
+            let mut relationship = Relationship {
+                id: id.clone(),
+                explicit_id: draft.id.as_deref().is_some_and(|id| !id.is_empty()),
+                source: source.named.id.clone(),
+                target: target.named.id.clone(),
+                kind,
+                arrow_type: draft.arrow_type,
+                label: None,
+                label_type: None,
+                minlen: draft.minlen,
+                classes: Vec::new(),
+                styles: Vec::new(),
+                animate: false,
+                animation: None,
+            };
+            if let Some(label) = &draft.label {
+                relationship.label = Some(label.text.clone());
+                relationship.label_type = Some(label.kind);
+            }
+            r.model.relationships.push(relationship);
+            r.edges.insert(id, r.model.relationships.len() - 1);
+        }
+
+        // The relationships may have added use cases; put all elements back in
+        // the order of first mention.
+        let declared_actors = std::mem::take(&mut r.model.actors);
+        let declared_use_cases = std::mem::take(&mut r.model.use_cases);
+        for id in r.in_order(r.elements.keys()) {
+            if let Some(actor) = declared_actors.get(&id) {
+                r.model.actors.insert(id, actor.clone());
+            } else if let Some(use_case) = declared_use_cases.get(&id) {
+                r.model.use_cases.insert(id, use_case.clone());
+            } else {
+                r.publish(&id);
+            }
+        }
+
+        for metadata in &self.metadata {
+            let target = metadata.target.as_str();
+            let Some(origin) = r.symbols.get(target) else {
+                let inferred = metadata.implied_kind().map_or(String::new(), |kind| {
+                    format!(" (metadata implies {})", kind.name())
+                });
+                return Err(r.fail(
+                    &format!("Metadata target '{target}' is unresolved{inferred}"),
+                    metadata.span,
+                ));
+            };
+            let kind = origin.kind;
+            if kind == SymbolKind::Actor || kind == SymbolKind::Usecase {
+                r.with_element(target, |this, state| {
+                    this.element_metadata(state, Some(&metadata.properties), true)
+                })?;
+            } else if kind == SymbolKind::Edge
+                && let Some(at) = metadata.statement
+            {
+                let statement = &mut statements[at];
+                statement.kind = StatementKind::EdgeMetadata;
+                statement.edges = Some(vec![EdgeOccurrence {
+                    id: target.to_string(),
+                    span: statement.span,
+                    label_span: None,
+                    id_span: Some(metadata.span),
+                    metadata: statement.metadata.clone(),
+                }]);
+                statement.nodes = None;
+            }
+            if kind == SymbolKind::Actor || kind == SymbolKind::Usecase {
+                continue;
+            }
+            let has_boundary = r.boundaries.contains_key(target);
+            let edge = r.edges.get(target).copied();
+            for property in &metadata.properties {
+                let key = property.key.as_str();
+                let value = &property.value;
+                if kind == SymbolKind::Boundary
+                    && has_boundary
+                    && key == "type"
+                    && let Some(boundary_type) = value.boundary_type()
+                {
+                    r.boundaries.get_mut(target).expect("present").kind = Some(boundary_type);
+                } else if kind == SymbolKind::Edge
+                    && let Some(at) = edge
+                    && key == "animate"
+                    && let Some(animate) = value.bool()
+                {
+                    r.model.relationships[at].animate = animate;
+                } else if kind == SymbolKind::Edge
+                    && let Some(at) = edge
+                    && key == "animation"
+                    && let Some(animation) = value.animation()
+                {
+                    let relationship = &mut r.model.relationships[at];
+                    relationship.animation = Some(animation);
+                    relationship.animate = true;
+                } else {
+                    return Err(r.invalid(target, kind.name(), property));
+                }
+            }
+        }
+        for relationship in &mut r.model.relationships {
+            if relationship.animation.is_some() {
+                relationship.animate = true;
+            }
+        }
+
+        let ids: Vec<String> = r.elements.keys().cloned().collect();
+        for id in ids {
+            let state = &r.elements[&id];
+            if state.kind == ElementKind::Actor {
+                if state.icon.as_deref().is_some_and(|icon| !icon.is_empty())
+                    && let Some(kind) = state.actor_type.filter(|&kind| kind != ActorType::Normal)
+                {
+                    return Err(r.fail(
+                        &format!(
+                            "Actor '{id}' cannot combine icon with type '{}'",
+                            kind.name()
+                        ),
+                        state.named.span,
+                    ));
+                }
+                if state.business == Some(true)
+                    && (state.icon.as_deref().is_some_and(|icon| !icon.is_empty())
+                        || state.actor_type == Some(ActorType::Awesome))
+                {
+                    return Err(r.fail(
+                        &format!("Business actor '{id}' must use normal or hollow geometry"),
+                        state.named.span,
+                    ));
+                }
+            } else if state.shape == Some(UseCaseShape::Rect) && state.business == Some(true) {
+                return Err(r.fail(
+                    &format!("Rectangular use case '{id}' cannot be a business use case"),
+                    state.named.span,
+                ));
+            }
+            r.publish(&id);
+        }
+
+        let mut elements: Vec<&DraftElement> = self.elements.iter().collect();
+        elements.sort_by_key(|draft| draft.named.span[0]);
+        for draft in elements {
+            let Some(parent) = draft
+                .parent
+                .as_ref()
+                .filter(|parent| !parent.named.id.is_empty())
+            else {
+                continue;
+            };
+            let members = &mut r
+                .boundaries
+                .get_mut(&parent.named.id)
+                .expect("a declared boundary")
+                .members;
+            if !members.contains(&draft.named.id) {
+                members.push(draft.named.id.clone());
+            }
+        }
+        for (id, state) in &r.boundaries {
+            let boundary = r
+                .model
+                .system_boundaries
+                .get_mut(id)
+                .expect("a published boundary");
+            boundary.kind = state.kind.unwrap_or(BoundaryType::Rect);
+            boundary.members = state.members.clone();
+            boundary.classes = state.draft.classes.clone();
+        }
+
+        for (n, draft) in self.notes.iter().enumerate() {
+            let Some(origin) = r.symbols.get(&draft.target) else {
+                return Err(r.fail(
+                    &format!("Note target '{}' is unresolved", draft.target),
+                    draft.span,
+                ));
+            };
+            if origin.kind != SymbolKind::Actor && origin.kind != SymbolKind::Usecase {
+                return Err(r.conflict(
+                    &format!(
+                        "Note target '{}' must be an actor or use case, not {}",
+                        draft.target,
+                        origin.kind.name()
+                    ),
+                    draft.span,
+                    origin.span,
+                    None,
+                    None,
+                ));
+            }
+            let id = format!("note-{n}");
+            r.model.notes.insert(
+                id.clone(),
+                UsecaseNote {
+                    id,
+                    target: draft.target.clone(),
+                    label: draft.label.text.clone(),
+                    label_type: draft.label.kind,
+                },
+            );
+        }
+
+        for definition in &self.class_defs {
+            for id in &definition.ids {
+                r.model.class_defs.insert(
+                    id.clone(),
+                    ClassDef {
+                        id: id.clone(),
+                        styles: definition.styles.clone(),
+                    },
+                );
+            }
+        }
+        for assignment in &self.classes {
+            for (id, span) in &assignment.targets {
+                let target = r.stylable(id, *span)?;
+                let (classes, _) = r.style_lists(id, target);
+                push_unique(classes, &assignment.classes);
+            }
+        }
+        for assignment in &self.styles {
+            let target = r.stylable(&assignment.target, assignment.span)?;
+            let (_, styles) = r.style_lists(&assignment.target, target);
+            styles.extend(assignment.styles.iter().cloned());
+        }
+
+        let mut model = r.model;
+        model.direction = self.direction.unwrap_or(model.direction);
+        model.title = title.map(str::to_string);
+        model.acc_title = self.acc_title;
+        model.acc_descr = acc_descr(&self.acc_description);
+        model.acc_description = self.acc_description;
+        model.source = src.text.clone();
+        model.header_span = header_span;
+        model.statements = statements;
+        Ok(model)
+    }
 }

@@ -1,51 +1,40 @@
 //! Pele's `diagrams/requirement/parser.ts`.
 
 use super::{
-    db::{RequirementModel, relationships, requirement_type, risk_level, verify_type},
+    db::RequirementModel,
     lexer::tokenize,
     tokens::T,
+    types::{Relationship, RequirementType, Risk, VerifyMethod},
 };
 use crate::{detect::Kind, error::Error, js, token::Stream};
 
-const REQUIREMENT_TYPES: [(T, &str); 6] = [
-    (T::Requirement, requirement_type::REQUIREMENT),
-    (
-        T::FunctionalRequirement,
-        requirement_type::FUNCTIONAL_REQUIREMENT,
-    ),
-    (
-        T::InterfaceRequirement,
-        requirement_type::INTERFACE_REQUIREMENT,
-    ),
-    (
-        T::PerformanceRequirement,
-        requirement_type::PERFORMANCE_REQUIREMENT,
-    ),
-    (
-        T::PhysicalRequirement,
-        requirement_type::PHYSICAL_REQUIREMENT,
-    ),
-    (T::DesignConstraint, requirement_type::DESIGN_CONSTRAINT),
+const REQUIREMENT_TYPES: [(T, RequirementType); 6] = [
+    (T::Requirement, RequirementType::Requirement),
+    (T::FunctionalRequirement, RequirementType::Functional),
+    (T::InterfaceRequirement, RequirementType::Interface),
+    (T::PerformanceRequirement, RequirementType::Performance),
+    (T::PhysicalRequirement, RequirementType::Physical),
+    (T::DesignConstraint, RequirementType::DesignConstraint),
 ];
-const RISK_LEVELS: [(T, &str); 3] = [
-    (T::LowRisk, risk_level::LOW_RISK),
-    (T::MedRisk, risk_level::MED_RISK),
-    (T::HighRisk, risk_level::HIGH_RISK),
+const RISK_LEVELS: [(T, Risk); 3] = [
+    (T::LowRisk, Risk::Low),
+    (T::MedRisk, Risk::Medium),
+    (T::HighRisk, Risk::High),
 ];
-const VERIFY_TYPES: [(T, &str); 4] = [
-    (T::VerifyAnalysis, verify_type::VERIFY_ANALYSIS),
-    (T::VerifyDemonstration, verify_type::VERIFY_DEMONSTRATION),
-    (T::VerifyInspection, verify_type::VERIFY_INSPECTION),
-    (T::VerifyTest, verify_type::VERIFY_TEST),
+const VERIFY_TYPES: [(T, VerifyMethod); 4] = [
+    (T::VerifyAnalysis, VerifyMethod::Analysis),
+    (T::VerifyDemonstration, VerifyMethod::Demonstration),
+    (T::VerifyInspection, VerifyMethod::Inspection),
+    (T::VerifyTest, VerifyMethod::Test),
 ];
-const RELATIONSHIPS: [(T, &str); 7] = [
-    (T::Contains, relationships::CONTAINS),
-    (T::Copies, relationships::COPIES),
-    (T::Derives, relationships::DERIVES),
-    (T::Satisfies, relationships::SATISFIES),
-    (T::Verifies, relationships::VERIFIES),
-    (T::Refines, relationships::REFINES),
-    (T::Traces, relationships::TRACES),
+const RELATIONSHIPS: [(T, Relationship); 7] = [
+    (T::Contains, Relationship::Contains),
+    (T::Copies, Relationship::Copies),
+    (T::Derives, Relationship::Derives),
+    (T::Satisfies, Relationship::Satisfies),
+    (T::Verifies, Relationship::Verifies),
+    (T::Refines, Relationship::Refines),
+    (T::Traces, Relationship::Traces),
 ];
 const STRINGS: [T; 2] = [T::Qstring, T::Unqstring];
 const STYLE_PARTS: [T; 5] = [T::Alpha, T::Colon, T::Semicolon, T::Minus, T::Brkt];
@@ -63,6 +52,16 @@ fn kinds<V>(table: &[(T, V)]) -> impl Iterator<Item = T> + '_ {
     table.iter().map(|&(kind, _)| kind)
 }
 
+/// A field of a requirement's or an element's body.
+enum Field<'t> {
+    Id(&'t str),
+    Text(&'t str),
+    Risk(Risk),
+    VerifyMethod(VerifyMethod),
+    Type(&'t str),
+    DocRef(&'t str),
+}
+
 struct Parser<'t, 's> {
     s: Stream<'t, 's, T>,
 }
@@ -70,7 +69,7 @@ struct Parser<'t, 's> {
 impl<'t> Parser<'t, '_> {
     /// The value of the current token if it is one of the keywords in
     /// `table`.
-    fn keyword(&mut self, table: &[(T, &'static str)]) -> Result<&'static str, Error> {
+    fn keyword<V: Copy>(&mut self, table: &[(T, V)]) -> Result<V, Error> {
         let Some(&(_, value)) = table.iter().find(|&&(kind, _)| self.s.is(kind)) else {
             return Err(self.s.fail_expecting(kinds(table)));
         };
@@ -87,11 +86,13 @@ impl<'t> Parser<'t, '_> {
 
     fn directive(&mut self, db: &mut RequirementModel) -> Result<bool, Error> {
         if self.s.eat(T::AccTitle) {
-            db.set_acc_title(js::trim(self.s.expect(T::AccTitleValue, "")?));
+            db.titles
+                .set_acc_title(js::trim(self.s.expect(T::AccTitleValue, "")?));
         } else if self.s.eat(T::AccDescr) {
-            db.set_acc_description(js::trim(self.s.expect(T::AccDescrValue, "")?));
+            db.titles
+                .set_acc_descr(js::trim(self.s.expect(T::AccDescrValue, "")?));
         } else if self.s.is(T::AccDescrMultilineValue) {
-            db.set_acc_description(js::trim(self.s.take()));
+            db.titles.set_acc_descr(js::trim(self.s.take()));
         } else {
             return Ok(false);
         }
@@ -149,7 +150,7 @@ impl<'t> Parser<'t, '_> {
         } else {
             &ELEMENT_FIELDS
         };
-        let mut values: Vec<(T, &str)> = Vec::new();
+        let mut values = Vec::new();
         loop {
             if self.s.eat(T::StructStop) {
                 break;
@@ -165,22 +166,24 @@ impl<'t> Parser<'t, '_> {
             }
             self.s.bump();
             self.s.expect(T::Colonsep, "")?;
-            let value = match field {
-                T::Risk => self.keyword(&RISK_LEVELS)?,
-                T::Verifymthd => self.keyword(&VERIFY_TYPES)?,
-                _ => self.string()?,
-            };
-            values.push((field, value));
+            values.push(match field {
+                T::Id => Field::Id(self.string()?),
+                T::Text => Field::Text(self.string()?),
+                T::Risk => Field::Risk(self.keyword(&RISK_LEVELS)?),
+                T::Verifymthd => Field::VerifyMethod(self.keyword(&VERIFY_TYPES)?),
+                T::Type => Field::Type(self.string()?),
+                _ => Field::DocRef(self.string()?),
+            });
             self.s.expect(T::Newline, "")?;
         }
-        for &(field, value) in values.iter().rev() {
+        for field in values.into_iter().rev() {
             match field {
-                T::Id => db.set_new_req_id(value),
-                T::Text => db.set_new_req_text(value),
-                T::Risk => db.set_new_req_risk(value),
-                T::Verifymthd => db.set_new_req_verify_method(value),
-                T::Type => db.set_new_element_type(value),
-                _ => db.set_new_element_doc_ref(value),
+                Field::Id(id) => db.set_new_req_id(id),
+                Field::Text(text) => db.set_new_req_text(text),
+                Field::Risk(risk) => db.set_new_req_risk(risk),
+                Field::VerifyMethod(method) => db.set_new_req_verify_method(method),
+                Field::Type(kind) => db.set_new_element_type(kind),
+                Field::DocRef(doc_ref) => db.set_new_element_doc_ref(doc_ref),
             }
         }
         Ok(())

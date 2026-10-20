@@ -1,8 +1,9 @@
 //! Pele's `diagrams/sankey/lexer.ts`.
 
 use crate::{
-    token::{Token, grammar},
-    util::chars::{code_at, is_word},
+    js,
+    token::{Cursor, Token, grammar},
+    util::chars::is_word,
 };
 
 grammar! {
@@ -31,6 +32,7 @@ grammar! {
     }
 }
 
+/// Jison's start conditions.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum S {
     Initial,
@@ -39,106 +41,110 @@ enum S {
 }
 
 /// RFC 4180 TEXTDATA: printable ASCII except the double quote and the comma.
-fn is_text_data(c: u32) -> bool {
-    (32..=126).contains(&c) && c != 34 && c != 44
+fn is_text_data(c: char) -> bool {
+    matches!(c, ' '..='~') && !matches!(c, '"' | ',')
 }
 
-/// The end of `word` at `p`, matched as `slice(p, p + word.length)
-/// .toLowerCase() === word` with no word character after it.
-fn keyword(src: &str, p: usize, word: &str) -> Option<usize> {
-    let mut units = 0;
-    let mut end = p;
-    for c in src[p..].chars() {
-        if units >= word.len() {
-            break;
-        }
-        units += c.len_utf16();
-        end += c.len_utf8();
+struct Lexer<'s> {
+    cur: Cursor<'s, T, S>,
+}
+
+impl Lexer<'_> {
+    /// The end of `word`, which is ASCII, at the cursor, matched as
+    /// `slice(p, p + word.length).toLowerCase() === word` with no word
+    /// character after it.
+    fn keyword(&self, word: &str) -> Option<usize> {
+        let p = self.cur.p;
+        let end = p + js::units_end(&self.cur.src[p..], word.len());
+        let matched = self.cur.src[p..end].to_lowercase() == word
+            && !self.cur.char_at(end).is_some_and(is_word);
+        matched.then_some(end)
     }
-    let lower = src[p..end].to_lowercase();
-    (lower == word && !is_word(code_at(src, end))).then_some(end)
+
+    /// The end of the run of TEXTDATA at `from`.
+    fn text_end(&self, mut from: usize) -> usize {
+        while self.cur.char_at(from).is_some_and(is_text_data) {
+            from += 1;
+        }
+        from
+    }
+
+    /// The end of the run of escaped text at `from`: TEXTDATA, commas, line
+    /// breaks and doubled quotes.
+    fn escaped_end(&self, mut from: usize) -> usize {
+        loop {
+            match self.cur.char_at(from) {
+                Some(c) if is_text_data(c) || matches!(c, ',' | '\r' | '\n') => from += 1,
+                Some('"') if self.cur.char_at(from + 1) == Some('"') => from += 2,
+                _ => return from,
+            }
+        }
+    }
+
+    /// Reads one token; `false` when it is empty and the cursor has not moved.
+    fn step(&mut self) -> bool {
+        let p = self.cur.p;
+        let c = self.cur.char_at(p);
+        if self.cur.state == S::Escaped {
+            if c == Some('"') && self.cur.char_at(p + 1) != Some('"') {
+                self.cur.pop();
+                self.cur.emit(T::Dquote, p, p + 1);
+                return true;
+            }
+            let end = self.escaped_end(p);
+            self.cur.emit(T::EscapedText, p, end);
+            return end > p;
+        }
+        if self.cur.state == S::Initial
+            && matches!(c, Some('s' | 'S'))
+            && let Some(end) = self
+                .keyword("sankey-beta")
+                .or_else(|| self.keyword("sankey"))
+        {
+            self.cur.push(S::Csv);
+            self.cur.emit(T::Sankey, p, end);
+            return true;
+        }
+        match c {
+            Some('\n') => self.cur.emit(T::Newline, p, p + 1),
+            Some('\r') if self.cur.char_at(p + 1) == Some('\n') => {
+                self.cur.emit(T::Newline, p, p + 2);
+            }
+            Some(',') => self.cur.emit(T::Comma, p, p + 1),
+            Some('"') => {
+                self.cur.push(S::Escaped);
+                self.cur.emit(T::Dquote, p, p + 1);
+            }
+            _ => {
+                let end = self.text_end(p);
+                self.cur.emit(T::NonEscapedText, p, end);
+                return end > p;
+            }
+        }
+        true
+    }
 }
 
-pub fn tokenize<'s>(src: &'s str) -> Vec<Token<'s, T>> {
+pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
     let n = src.len();
-    let mut tokens = Vec::new();
-    let mut stack = Vec::new();
-    let mut state = S::Initial;
-    let mut p = 0;
-
-    // Answers where the lexer goes on from.
-    let emit = |tokens: &mut Vec<Token<'s, T>>, kind: T, s: usize, e: usize| -> usize {
-        tokens.push(Token::new(kind, &src[s..e], s));
-        e
+    let mut lexer = Lexer {
+        cur: Cursor::new(src, S::Initial),
     };
-
-    while p < n {
-        let c = code_at(src, p);
-        let start = p;
-        let mut q = p;
-        if state == S::Escaped {
-            if c == 34 && code_at(src, p + 1) != 34 {
-                if let Some(previous) = stack.pop() {
-                    state = previous;
-                }
-                p = emit(&mut tokens, T::Dquote, p, p + 1);
-                continue;
-            }
-            while q < n {
-                let d = code_at(src, q);
-                if is_text_data(d) || d == 44 || d == 13 || d == 10 {
-                    q += 1;
-                } else if d == 34 && code_at(src, q + 1) == 34 {
-                    q += 2;
-                } else {
-                    break;
-                }
-            }
-            p = emit(&mut tokens, T::EscapedText, p, q);
-        } else {
-            if state == S::Initial && (c | 32) == 115 {
-                let end = keyword(src, p, "sankey-beta").or_else(|| keyword(src, p, "sankey"));
-                if let Some(end) = end {
-                    stack.push(state);
-                    state = S::Csv;
-                    p = emit(&mut tokens, T::Sankey, p, end);
-                    continue;
-                }
-            }
-            if c == 10 || (c == 13 && code_at(src, p + 1) == 10) {
-                let end = if c == 10 { p + 1 } else { p + 2 };
-                p = emit(&mut tokens, T::Newline, p, end);
-                continue;
-            }
-            if c == 44 {
-                p = emit(&mut tokens, T::Comma, p, p + 1);
-                continue;
-            }
-            if c == 34 {
-                stack.push(state);
-                state = S::Escaped;
-                p = emit(&mut tokens, T::Dquote, p, p + 1);
-                continue;
-            }
-            while q < n && is_text_data(code_at(src, q)) {
-                q += 1;
-            }
-            p = emit(&mut tokens, T::NonEscapedText, p, q);
-        }
+    while lexer.cur.p < n {
         // A character outside the CSV alphabet matches as empty text and is
         // never consumed.
-        if q == start {
-            emit(&mut tokens, T::Stuck, p, p);
-            return tokens;
+        if !lexer.step() {
+            let p = lexer.cur.p;
+            lexer.cur.emit(T::Stuck, p, p);
+            return lexer.cur.tokens;
         }
     }
-
-    let last = if state == S::Escaped {
+    let last = if lexer.cur.state == S::Escaped {
         T::EscapedText
     } else {
         T::Eof
     };
-    emit(&mut tokens, last, n, n);
-    emit(&mut tokens, T::End, n, n);
-    tokens
+    lexer.cur.emit(last, n, n);
+    lexer.cur.emit(T::End, n, n);
+    lexer.cur.tokens
 }

@@ -1,57 +1,43 @@
 //! Pele's `diagrams/treemap/parser.ts`.
 
-use std::sync::LazyLock;
+use crate::util::chars::inner;
 
 use crate::{
     detect::Kind,
     diagrams::common::tokens::{
-        Reader, Table, TokenType, acc_descr, acc_descr_value, acc_title, acc_title_value, title,
-        title_value, tokenize,
+        Header, Reader, TokenType, acc_descr, acc_title, title, token_kinds,
     },
     error::Error,
     js::{self, Lazy},
 };
 
-const ACC_DESCR: i32 = 0;
-const ACC_TITLE: i32 = 1;
-const TITLE: i32 = 2;
-const KEYWORD: i32 = 3;
-const CLASS_DEF: i32 = 4;
-const STYLE_SEPARATOR: i32 = 5;
-const SEPARATOR: i32 = 6;
-const COMMA: i32 = 7;
-const INDENTATION: i32 = 8;
-const ID: i32 = 12;
-const NUMBER: i32 = 13;
-const STRING: i32 = 14;
-
-/// Mermaid's treemap grammar has its own terminals. Every run of spaces or
-/// tabs is an INDENTATION token, since that comes before WS, and line breaks
-/// are hidden, so rows are told apart by their tokens alone and the
-/// indentation of a row is whatever whitespace precedes it.
-pub static TREEMAP_TOKENS: LazyLock<Table> = LazyLock::new(|| {
-    Table::new(vec![
-        acc_descr(),
-        acc_title(),
-        title(),
-        TokenType::regex("TREEMAP_KEYWORD", r"treemap-beta|treemap", None),
-        TokenType::regex(
+token_kinds! {
+    /// Mermaid's treemap grammar has its own terminals. Every run of spaces
+    /// or tabs is an INDENTATION token, since that comes before WS, and line
+    /// breaks are hidden, so rows are told apart by their tokens alone and
+    /// the indentation of a row is whatever whitespace precedes it.
+    enum Token {
+        AccDescr = acc_descr(),
+        AccTitle = acc_title(),
+        Title = title(),
+        Keyword = TokenType::regex("TREEMAP_KEYWORD", r"treemap-beta|treemap", None),
+        ClassDef = TokenType::regex(
             "CLASS_DEF",
             r"classDef\s+([a-zA-Z_][a-zA-Z0-9_]+)(?:\s+([^;\r\n]*))?(?:;)?",
             None,
         ),
-        TokenType::regex("STYLE_SEPARATOR", r":::", None),
-        TokenType::regex("SEPARATOR", r":", None),
-        TokenType::regex("COMMA", r",", None),
-        TokenType::regex("INDENTATION", r"[ \t]{1,}", None),
-        TokenType::regex("WS", r"[ \t]+", None).hidden(),
-        TokenType::regex("ML_COMMENT", r"\%\%[^\n]*", None).hidden(),
-        TokenType::regex("NL", r"\r?\n", None).hidden(),
-        TokenType::regex("ID2", r"[a-zA-Z_][a-zA-Z0-9_]*", None),
-        TokenType::regex("NUMBER2", r"[0-9_\.\,]+", None),
-        TokenType::regex("STRING2", r#""[^"]*"|'[^']*'"#, None),
-    ])
-});
+        StyleSeparator = TokenType::regex("STYLE_SEPARATOR", r":::", None),
+        Separator = TokenType::regex("SEPARATOR", r":", None),
+        Comma = TokenType::regex("COMMA", r",", None),
+        Indentation = TokenType::regex("INDENTATION", r"[ \t]{1,}", None),
+        Ws = TokenType::regex("WS", r"[ \t]+", None).hidden(),
+        Comment = TokenType::regex("ML_COMMENT", r"\%\%[^\n]*", None).hidden(),
+        Newline = TokenType::regex("NL", r"\r?\n", None).hidden(),
+        Id = TokenType::regex("ID2", r"[a-zA-Z_][a-zA-Z0-9_]*", None),
+        Number = TokenType::regex("NUMBER2", r"[0-9_\.\,]+", None),
+        String = TokenType::regex("STRING2", r#""[^"]*"|'[^']*'"#, None),
+    }
+}
 
 static RE_CLASS_DEF: Lazy = Lazy::new(r"classDef\s+([A-Z_a-z]\w+)(?:\s+([^\n\r;]*))?;?", "");
 static RE_COMMA: Lazy = Lazy::new(r",", "g");
@@ -80,39 +66,25 @@ pub enum RowAst {
 
 #[derive(Default)]
 pub struct TreemapAst {
-    pub title: Option<String>,
-    pub acc_title: Option<String>,
-    pub acc_descr: Option<String>,
+    pub header: Header,
     pub rows: Vec<RowAst>,
 }
 
 pub fn parse_treemap(src: &str) -> Result<TreemapAst, Error> {
-    let tokens = tokenize(src, &TREEMAP_TOKENS, Kind::Treemap)?;
-    let mut r = Reader::new(&tokens, &TREEMAP_TOKENS, Kind::Treemap);
-    let kinds = &tokens.kinds;
+    let mut r = Reader::<Token>::new(src, Kind::Treemap)?;
     let mut ast = TreemapAst::default();
 
-    r.expect(KEYWORD)?;
-    while r.kind() != -1 {
-        let kind = r.kind();
-        if kind == ACC_DESCR {
-            ast.acc_descr = Some(acc_descr_value(r.take()));
+    r.expect(Token::Keyword)?;
+    while let Some(kind) = r.kind() {
+        if r.heading(&mut ast.header) {
             continue;
         }
-        if kind == ACC_TITLE {
-            ast.acc_title = Some(acc_title_value(r.take()));
-            continue;
-        }
-        if kind == TITLE {
-            ast.title = Some(title_value(r.take()));
-            continue;
-        }
-        if kind != INDENTATION && kind != STRING && kind != CLASS_DEF {
+        if !matches!(kind, Token::Indentation | Token::String | Token::ClassDef) {
             return Err(r.fail("a node, a class definition, or a title"));
         }
 
-        let indent = (kind == INDENTATION).then(|| js::len(r.take()));
-        if r.kind() == CLASS_DEF {
+        let indent = (kind == Token::Indentation).then(|| r.take().len());
+        if r.at(Token::ClassDef) {
             let text = r.take();
             let m = RE_CLASS_DEF
                 .exec(text)
@@ -124,27 +96,24 @@ pub fn parse_treemap(src: &str) -> Result<TreemapAst, Error> {
             continue;
         }
 
-        let quoted = r.expect(STRING)?;
-        let name = quoted[1..quoted.len() - 1].to_string();
+        let name = inner(r.expect(Token::String)?).to_string();
         // A leaf is a name followed by a colon or comma, with or without
         // whitespace before it.
-        let after = if kinds[r.i] == INDENTATION {
-            r.i + 1
-        } else {
-            r.i
-        };
-        let kind = if kinds[after] == SEPARATOR || kinds[after] == COMMA {
-            r.i = after + 1;
-            r.accept(INDENTATION);
-            let number = r.expect(NUMBER)?;
+        let after = usize::from(r.at(Token::Indentation));
+        let kind = if matches!(r.peek(after), Some(Token::Separator | Token::Comma)) {
+            for _ in 0..=after {
+                r.bump();
+            }
+            r.accept(Token::Indentation);
+            let number = r.expect(Token::Number)?;
             ItemKind::Leaf(js::parse_float(
                 &RE_COMMA.replace(number, |_| String::new()),
             ))
         } else {
             ItemKind::Section
         };
-        let class_selector = if r.accept(STYLE_SEPARATOR) {
-            Some(r.expect(ID)?.to_string())
+        let class_selector = if r.accept(Token::StyleSeparator) {
+            Some(r.expect(Token::Id)?.to_string())
         } else {
             None
         };

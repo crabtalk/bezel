@@ -2,7 +2,13 @@
 
 use std::borrow::Cow;
 
-use crate::{detect::Kind, error::Error};
+use crate::{
+    detect::Kind,
+    error::Error,
+    util::chars::{
+        char_at, code_at, is_line_end, is_space, is_word, starts_with_caseless, width_at,
+    },
+};
 
 /// A grammar's token kinds. Declare one with [`grammar!`].
 pub trait Grammar: Copy + Eq + 'static {
@@ -89,6 +95,158 @@ impl<K: Grammar> Token<'_, K> {
             &format!("Expecting {expected}, got '{got}'"),
             false,
         )
+    }
+}
+
+/// A hand-written lexer's place in `src`, the tokens it has made, and its
+/// stack of Jison start conditions `S`.
+pub struct Cursor<'s, K, S> {
+    pub src: &'s str,
+    /// Byte offset of the next character to read.
+    pub p: usize,
+    pub tokens: Vec<Token<'s, K>>,
+    pub state: S,
+    stack: Vec<S>,
+}
+
+impl<'s, K, S: Copy> Cursor<'s, K, S> {
+    pub fn new(src: &'s str, state: S) -> Self {
+        Self {
+            src,
+            p: 0,
+            tokens: Vec::new(),
+            state,
+            stack: Vec::new(),
+        }
+    }
+
+    /// The character at byte `at`, as `charCodeAt` reads it.
+    pub fn code(&self, at: usize) -> u32 {
+        code_at(self.src, at)
+    }
+
+    /// The character at byte `at`, or `None` past the end.
+    pub fn char_at(&self, at: usize) -> Option<char> {
+        char_at(self.src, at)
+    }
+
+    /// A token of `src[start..end]`; reading goes on from `end`.
+    pub fn emit(&mut self, kind: K, start: usize, end: usize) {
+        self.tokens
+            .push(Token::new(kind, &self.src[start..end], start));
+        self.p = end;
+    }
+
+    /// A token from the cursor to `end`.
+    pub fn emit_to(&mut self, kind: K, end: usize) {
+        self.emit(kind, self.p, end);
+    }
+
+    /// A token at `start` whose text is `text`; reading goes on from `end`.
+    pub fn emit_text(&mut self, kind: K, text: impl Into<Cow<'s, str>>, start: usize, end: usize) {
+        self.tokens.push(Token::new(kind, text, start));
+        self.p = end;
+    }
+
+    /// Enters start condition `state`, as Jison's `begin`.
+    pub fn push(&mut self, state: S) {
+        self.stack.push(self.state);
+        self.state = state;
+    }
+
+    /// Leaves the current start condition, as Jison's `popState`. The first
+    /// one is never left.
+    pub fn pop(&mut self) {
+        if let Some(state) = self.stack.pop() {
+            self.state = state;
+        }
+    }
+
+    pub fn starts_with(&self, word: &str, at: usize) -> bool {
+        self.src
+            .as_bytes()
+            .get(at..)
+            .is_some_and(|rest| rest.starts_with(word.as_bytes()))
+    }
+
+    /// Whether `word`, written in lower case, is at `at`, ASCII letters
+    /// matching in either case.
+    pub fn starts_with_caseless(&self, word: &str, at: usize) -> bool {
+        starts_with_caseless(self.src, at, word)
+    }
+
+    /// Whether `word`, written in lower case, is at `at` in any case, with no
+    /// word character after it.
+    pub fn keyword_caseless(&self, word: &str, at: usize) -> bool {
+        self.starts_with_caseless(word, at) && !is_word(self.code(at + word.len()))
+    }
+
+    /// The end of `word`, in any case, at the cursor, then one whitespace
+    /// character and a nonempty run of characters other than `stops`.
+    pub fn keyword_line(&self, word: &str, stops: &[char]) -> Option<usize> {
+        let after = self.p + word.len();
+        if !self.starts_with_caseless(word, self.p) || !is_space(self.code(after)) {
+            return None;
+        }
+        let from = after + width_at(self.src, after);
+        let end = self.until(from, |c| stops.contains(&c));
+        (end > from).then_some(end)
+    }
+
+    /// Whether `word` is at the cursor with no word character after it.
+    pub fn keyword(&self, word: &str) -> bool {
+        self.starts_with(word, self.p) && !is_word(self.code(self.p + word.len()))
+    }
+
+    /// The end of the run of whitespace at `from`.
+    pub fn space_end(&self, mut from: usize) -> usize {
+        while from < self.src.len() && is_space(self.code(from)) {
+            from += width_at(self.src, from);
+        }
+        from
+    }
+
+    /// The end of the run of word characters at `from`.
+    pub fn word_end(&self, from: usize) -> usize {
+        from + self
+            .src
+            .get(from..)
+            .map_or(0, |rest| rest.bytes().take_while(|&b| is_word(b)).count())
+    }
+
+    /// The end of the run of characters at `from` that `keep` accepts.
+    pub fn run_end(&self, from: usize, keep: impl Fn(char) -> bool) -> usize {
+        self.until(from, |c| !keep(c))
+    }
+
+    /// The first character at or after `from` that `stop` accepts, or the
+    /// end of the source.
+    pub fn until(&self, from: usize, stop: impl FnMut(char) -> bool) -> usize {
+        self.src
+            .get(from..)
+            .and_then(|rest| rest.find(stop))
+            .map_or(self.src.len(), |at| from + at)
+    }
+
+    /// The next line feed at or after `from`, or the end of the source.
+    pub fn line_end(&self, from: usize) -> usize {
+        self.until(from, |c| c == '\n')
+    }
+
+    /// The byte after the character at `at`.
+    pub fn after(&self, at: usize) -> usize {
+        at + width_at(self.src, at)
+    }
+
+    /// The next `ch` at or after `from`, or the end of the source.
+    pub fn find(&self, ch: char, from: usize) -> usize {
+        self.until(from, |c| c == ch)
+    }
+
+    /// The next line terminator, what `.` does not match, at or after `from`,
+    /// or the end of the source.
+    pub fn terminator_end(&self, from: usize) -> usize {
+        self.until(from, is_line_end)
     }
 }
 
@@ -228,4 +386,10 @@ impl<'t, 's, K: Grammar> Stream<'t, 's, K> {
             .and_then(|at| self.tokens.get(at))
             .map(|token| token.kind)
     }
+}
+
+/// A statement token's text past its keyword, `keyword` bytes long, and the
+/// character after it, as `substring(keyword + 1)` reads it.
+pub fn after_keyword(text: &str, keyword: usize) -> &str {
+    text.get(keyword + width_at(text, keyword)..).unwrap_or("")
 }

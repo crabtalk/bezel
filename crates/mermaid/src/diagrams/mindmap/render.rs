@@ -2,7 +2,8 @@
 
 use super::db::{MindmapModel, MindmapNode};
 use crate::config::positive;
-use crate::svg::builder::{EscText, LabelSvg, LeftLabel, fragment};
+use crate::geom::{Point, Side, Size};
+use crate::svg::builder::{EscText, fragment};
 use crate::{Ctx, Host};
 use crate::{
     Rendered,
@@ -14,10 +15,10 @@ use crate::{
     svg::{
         builder::{TITLE, num},
         root::{Accessible, svg_document},
-        shapes::{draw_shape, shape_inset, shape_size},
+        shapes::Shape,
         theme::{SeriesColor, class_names, series_color},
     },
-    text::{Label, Style, icon_markup, layout_label},
+    text::{Label, Style, icon_markup},
 };
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
@@ -159,7 +160,7 @@ fn draw(
                 - 2.0 * TEXT_PAD
                 - if drawn[i] { glyph + ICON_GAP } else { 0.0 },
         ));
-        let label = layout_label(Some(&node.descr), true, measure, size, fit, 0);
+        let label = Label::layout(Some(&node.descr), true, measure, size, fit, 0);
         let tw = label.width
             + if drawn[i] {
                 glyph + if label.width > 0.0 { ICON_GAP } else { 0.0 }
@@ -188,11 +189,11 @@ fn draw(
             h[i] = th + if pill { 6.0 } else { 0.0 };
             anchor[i] = h[i] / 2.0;
         } else {
-            let s = shape_size(shape, tw, th);
-            w[i] = s.w;
-            h[i] = s.h;
+            let s = Shape::named(shape).size(Size::new(tw, th));
+            w[i] = s.size.w;
+            h[i] = s.size.h;
             dy[i] = s.dy;
-            anchor[i] = s.h / 2.0;
+            anchor[i] = s.size.h / 2.0;
         }
         labels.push(label);
     }
@@ -362,7 +363,7 @@ fn draw(
                 + if shape.is_empty() {
                     0.0
                 } else {
-                    shape_inset(shape, w[i], h[i], 3, 0.0)
+                    Shape::named(shape).inset(Size::new(w[i], h[i]), Side::Left, 0.0)
                 };
             let y2 = top + anchor[i];
             let bend = 0f64.max(BEND.min(x2 - x1).min(y2 - y1));
@@ -388,14 +389,14 @@ fn draw(
             }
             let p = parent[i];
             let dir = side[i];
-            let from = if dir > 0.0 { 1 } else { 3 };
+            let from = if dir > 0.0 { Side::Right } else { Side::Left };
             let x1 = x[p]
                 + dir
                     * (w[p] / 2.0
                         - if shapes[p].is_empty() {
                             0.0
                         } else {
-                            shape_inset(shapes[p], w[p], h[p], from, 0.0)
+                            Shape::named(shapes[p]).inset(Size::new(w[p], h[p]), from, 0.0)
                         });
             let y1 = y[p] + anchor[p];
             let near = cx - (dir * w[i]) / 2.0;
@@ -403,7 +404,7 @@ fn draw(
                 + if shape.is_empty() {
                     0.0
                 } else {
-                    dir * shape_inset(shape, w[i], h[i], 4 - from, 0.0)
+                    dir * Shape::named(shape).inset(Size::new(w[i], h[i]), from.opposite(), 0.0)
                 };
             let y2 = top + anchor[i];
             let mid = num((x1 + x2) / 2.0);
@@ -456,13 +457,11 @@ fn draw(
             if i > 0 {
                 stroke.clear();
                 let _ = write!(stroke, " stroke=\"{}\"", paint(color));
-                draw_shape(group, shape, w[i], h[i], &tint, &stroke);
+                Shape::named(shape).draw(group, Size::new(w[i], h[i]), &tint, &stroke);
             } else {
-                draw_shape(
+                Shape::named(shape).draw(
                     group,
-                    shape,
-                    w[i],
-                    h[i],
+                    Size::new(w[i], h[i]),
                     " fill=\"var(--_s)\" stroke=\"var(--_b)\"",
                     " stroke=\"var(--_b)\"",
                 );
@@ -502,15 +501,15 @@ fn draw(
                 write!(
                     f,
                     "{}",
-                    LeftLabel(label, shift - label.width / 2.0, dy[i], label_attrs)
+                    label.left_svg(Point::new(shift - label.width / 2.0, dy[i]), label_attrs)
                 )
             } else {
-                write!(f, "{}", LabelSvg(label, shift, dy[i], label_attrs))
+                write!(f, "{}", label.svg(Point::new(shift, dy[i]), label_attrs))
             })
         );
     }
 
-    let title = layout_label(
+    let title = Label::layout(
         model.title.as_deref(),
         false,
         measure,
@@ -530,7 +529,10 @@ fn draw(
     let _ = write!(
         content,
         "{}<g transform=\"translate({},{})\">{out}</g>",
-        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE),
+        title.svg(
+            Point::new(total_width / 2.0, pad + title.height / 2.0),
+            TITLE
+        ),
         num(pad - min_x + (width - max_x + min_x) / 2.0),
         num(pad + title_height - min_y)
     );

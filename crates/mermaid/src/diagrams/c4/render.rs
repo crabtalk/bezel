@@ -1,6 +1,8 @@
 //! Pele's `diagrams/c4/render.ts`.
 
+use crate::geom::{Point, Size};
 use crate::svg::builder::rewrite;
+use crate::svg::edges::Marker;
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Write as _},
@@ -10,7 +12,7 @@ use super::{
     db::C4Model,
     layout::{HEAD_LEFT, HEAD_TOP, layout_c4},
     route::{C4Box, HEAD, LANE, Lanes, crosses, cyl_ry, queue_rx, route},
-    types::C4Ref,
+    types::{C4Ref, C4Type},
 };
 use crate::{
     Config, Error, Kind, Link, Rendered,
@@ -20,13 +22,13 @@ use crate::{
     },
     js::{self, Lazy, max, min},
     svg::{
-        builder::{EscText, LabelSvg, fragment, num},
-        edges::{ARROW, marker, marker_trim},
+        builder::{EscText, fragment, num},
+        edges::ARROW,
         root::{Accessible, svg_document},
-        shapes::draw_shape,
+        shapes::Shape,
         theme::{RADIUS, ResolvedStyle, resolve_style},
     },
-    text::{Label, Style, layout_label},
+    text::{Label, Style},
     util::url::{linked, sanitize_url},
 };
 use crate::{Ctx, Host};
@@ -228,7 +230,7 @@ fn draw(
 
     // Every line is routed before any label is placed, so that labels can
     // keep off the arrowheads.
-    let trim = marker_trim("arrow_point");
+    let trim = Marker::Arrow.trim();
     let mut lanes = Lanes::default();
     for &at in &layout.order {
         if at != root {
@@ -316,19 +318,19 @@ fn draw(
         let r = &routes[index];
         let style = user_style(None, None, rel.text_color.as_deref());
         let numbered;
-        let text = if db.c4_type.as_deref() == Some("C4Dynamic") {
+        let text = if db.c4_type == Some(C4Type::Dynamic) {
             numbered = format!("{}: {}", index + 1, rel.label);
             &numbered
         } else {
             &rel.label
         };
-        let label = layout_label(Some(text), false, measurer, small, r.room, 0);
+        let label = Label::layout(Some(text), false, measurer, small, r.room, 0);
         let techn_text = rel
             .techn
             .as_deref()
             .filter(|techn| !techn.is_empty())
             .map(|techn| format!("[{techn}]"));
-        let techn = layout_label(
+        let techn = Label::layout(
             techn_text.as_deref(),
             false,
             measurer,
@@ -409,8 +411,8 @@ fn draw(
         });
     }
 
-    let title = layout_label(
-        db.title.as_deref(),
+    let title = Label::layout(
+        db.titles.title.as_deref(),
         false,
         measurer,
         size,
@@ -438,11 +440,9 @@ fn draw(
     let _ = write!(
         content,
         "{}<g transform=\"translate({},{})\">",
-        LabelSvg(
-            &title,
-            width / 2.0,
-            pad + title.height / 2.0,
-            crate::svg::builder::TITLE,
+        title.svg(
+            Point::new(width / 2.0, pad + title.height / 2.0),
+            crate::svg::builder::TITLE
         ),
         num(ox),
         num(oy)
@@ -591,11 +591,9 @@ fn draw(
             ];
             shape_svg.clear();
             {
-                draw_shape(
+                Shape::named(form).draw(
                     &mut shape_svg,
-                    form,
-                    w,
-                    h,
+                    Size::new(w, h),
                     rewrite(
                         &mut shape_attrs,
                         format_args!(
@@ -611,7 +609,11 @@ fn draw(
                 f.write_str(&shape_svg)?;
                 let mut y = dy - node.text_h / 2.0;
                 for (i, (label, attrs)) in labels.iter().zip(&attrs).enumerate() {
-                    write!(f, "{}", LabelSvg(label, dx, y + label.height / 2.0, attrs))?;
+                    write!(
+                        f,
+                        "{}",
+                        label.svg(Point::new(dx, y + label.height / 2.0), attrs)
+                    )?;
                     y += label.height + if i == 2 { 4.0 } else { 0.0 };
                 }
                 Ok(())
@@ -650,14 +652,14 @@ fn draw(
                 let _ = write!(
                     content,
                     "{}",
-                    marker("arrow_point", r.sx, r.sy, r.sdx, r.sdy, &color)
+                    Marker::Arrow.draw(Point::new(r.sx, r.sy), Point::new(r.sdx, r.sdy), &color)
                 );
             }
             if rel.ty != "rel_b" {
                 let _ = write!(
                     content,
                     "{}",
-                    marker("arrow_point", r.ex, r.ey, r.edx, r.edy, &color)
+                    Marker::Arrow.draw(Point::new(r.ex, r.ey), Point::new(r.edx, r.edy), &color)
                 );
             }
             content.push_str("</g>");
@@ -714,11 +716,9 @@ fn draw(
                 write!(
                     f,
                     "{}{}",
-                    LabelSvg(label, cx, top + label.height / 2.0, &style.text),
-                    LabelSvg(
-                        techn,
-                        cx,
-                        top + label.height + techn.height / 2.0,
+                    label.svg(Point::new(cx, top + label.height / 2.0), &style.text),
+                    techn.svg(
+                        Point::new(cx, top + label.height + techn.height / 2.0),
                         techn_attrs
                     )
                 )
@@ -745,8 +745,8 @@ fn draw(
         size,
         ctx,
         Accessible {
-            acc_title: db.acc_title.as_deref(),
-            acc_descr: db.acc_descr.as_deref(),
+            acc_title: db.titles.acc_title.as_deref(),
+            acc_descr: db.titles.acc_descr.as_deref(),
         },
         &content,
     );

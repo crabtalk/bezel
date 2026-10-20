@@ -5,6 +5,7 @@ use super::{
     config::{Map, Value, merge},
     error::Error,
     js::{self, JsValue, Lazy, parse_json},
+    util::chars::{self, is_inline_space, width_at},
     yaml::parse_yaml,
 };
 
@@ -16,7 +17,6 @@ static RE_DIRECTIVE: Lazy = Lazy::new(
 static RE_HTML_TAG: Lazy = Lazy::new(r"<(\w+)([^>]*)>", "g");
 static RE_ATTR: Lazy = Lazy::new(r#"="([^"]*)""#, "g");
 static RE_ENTITY: Lazy = Lazy::new(r"#\w+;", "g");
-static RE_INT: Lazy = Lazy::new(r"^\+?\d+$", "");
 
 pub struct Preprocessed {
     pub text: String,
@@ -37,70 +37,36 @@ pub fn cleanup_comments(text: &str) -> String {
     js::trim_start(&text).to_string()
 }
 
-fn char_at(text: &str, at: usize) -> Option<char> {
-    text.get(at..)?.chars().next()
+/// Byte offsets of the line breaks in the run of whitespace at `from`.
+fn breaks_in_space(text: &str, from: usize) -> impl Iterator<Item = usize> + '_ {
+    text[from..]
+        .char_indices()
+        .take_while(|&(_, c)| chars::is_space(c))
+        .filter(|&(_, c)| matches!(c, '\n' | '\r'))
+        .map(move |(at, _)| from + at)
 }
 
-fn is_line_break(c: Option<char>) -> bool {
-    matches!(c, Some('\n' | '\r'))
-}
-
-fn is_space(c: Option<char>) -> bool {
-    c.is_some_and(js::is_space)
-}
-
-fn step(text: &str, at: usize) -> usize {
-    at + char_at(text, at).map_or(1, char::len_utf8)
-}
-
-struct FrontMatter {
-    indent: String,
-    body: String,
+struct FrontMatter<'t> {
+    indent: &'t str,
+    body: &'t str,
     length: usize,
 }
 
 /// A `---` fenced YAML block at the start of the text, found the way
 /// Mermaid's front matter pattern finds it.
-fn match_front_matter(text: &str) -> Option<FrontMatter> {
-    let mut cursor = 0;
-    while cursor < text.len()
-        && is_space(char_at(text, cursor))
-        && !is_line_break(char_at(text, cursor))
-    {
-        cursor = step(text, cursor);
-    }
-    let indent = &text[..cursor];
-    if !text[cursor..].starts_with("---") {
+fn match_front_matter(text: &str) -> Option<FrontMatter<'_>> {
+    let indent_len = text.len() - text.trim_start_matches(|c: char| is_inline_space(c)).len();
+    let indent = &text[..indent_len];
+    if !text[indent_len..].starts_with("---") {
         return None;
     }
 
-    let mut opening_ends = Vec::new();
-    let mut i = cursor + 3;
-    while i < text.len() && is_space(char_at(text, i)) {
-        if is_line_break(char_at(text, i)) {
-            opening_ends.push(i);
-        }
-        i = step(text, i);
-    }
+    let opening_ends: Vec<usize> = breaks_in_space(text, indent_len + 3).collect();
     let first_opening = *opening_ends.first()?;
 
-    let fence = format!("{indent}---");
-    let closing_end = |i: usize| -> Option<usize> {
-        if !is_line_break(char_at(text, i)) || !text[i + 1..].starts_with(&fence) {
-            return None;
-        }
-        let mut last = None;
-        let mut j = i + 1 + fence.len();
-        while j < text.len() && is_space(char_at(text, j)) {
-            if is_line_break(char_at(text, j)) {
-                last = Some(j);
-            }
-            j = step(text, j);
-        }
-        last
-    };
+    let needle = format!("\n{indent}---");
+    let closing_end = |i: usize| breaks_in_space(text, i + needle.len()).last();
 
-    let needle = format!("\n{fence}");
     let mut last_fence = None;
     let mut found = text.rfind(&needle);
     while let Some(i) = found {
@@ -116,16 +82,15 @@ fn match_front_matter(text: &str) -> Option<FrontMatter> {
     }
     let last_fence = last_fence?;
 
-    let mut opening_end = first_opening;
-    for &candidate in &opening_ends {
-        if candidate < last_fence {
-            opening_end = candidate;
-        }
-    }
+    let opening_end = opening_ends
+        .iter()
+        .copied()
+        .rev()
+        .find(|&end| end < last_fence)
+        .unwrap_or(first_opening);
 
     let body_start = opening_end + 1;
-    let first_at = if body_start > 0 { body_start - 1 } else { 0 };
-    let mut from = first_at;
+    let mut from = opening_end;
     while let Some(found) = text.get(from..).and_then(|rest| rest.find(&needle)) {
         let i = from + found;
         if i > last_fence {
@@ -135,8 +100,8 @@ fn match_front_matter(text: &str) -> Option<FrontMatter> {
             && let Some(end) = closing_end(i)
         {
             return Some(FrontMatter {
-                indent: indent.to_string(),
-                body: text[body_start..i].to_string(),
+                indent,
+                body: &text[body_start..i],
                 length: end + 1,
             });
         }
@@ -200,12 +165,12 @@ pub fn preprocess(source: &str) -> Result<Preprocessed, Error> {
     };
     if let Some(front) = front {
         let body = if front.indent.is_empty() {
-            front.body.clone()
+            front.body.to_string()
         } else {
             front
                 .body
                 .split('\n')
-                .map(|line| line.strip_prefix(front.indent.as_str()).unwrap_or(line))
+                .map(|line| line.strip_prefix(front.indent).unwrap_or(line))
                 .collect::<Vec<_>>()
                 .join("\n")
         };
@@ -228,8 +193,8 @@ pub fn preprocess(source: &str) -> Result<Preprocessed, Error> {
                 }
             }
         }
-        line_offset = text[..front.length.min(text.len())].matches('\n').count();
-        text = text[front.length.min(text.len())..].to_string();
+        line_offset = text[..front.length].matches('\n').count();
+        text = text[front.length..].to_string();
     }
 
     let text = directives(&text, &mut config);
@@ -266,7 +231,7 @@ fn drop_color_semicolons(text: &str, keyword: &str) -> String {
                     hash = Some(j);
                     break;
                 }
-            } else if js::is_space(c) {
+            } else if chars::is_space(c) {
                 after_colon = false;
             }
         }
@@ -280,7 +245,7 @@ fn drop_color_semicolons(text: &str, keyword: &str) -> String {
         if line_end >= text.len() {
             break;
         }
-        let next_line = line_end + char_at(text, line_end).map_or(1, char::len_utf8);
+        let next_line = line_end + width_at(text, line_end);
         match text[next_line..].find(keyword) {
             Some(at) => from = next_line + at,
             None => break,
@@ -301,8 +266,8 @@ pub fn encode_entities(text: &str) -> String {
     let text = drop_color_semicolons(&drop_color_semicolons(text, "style"), "classDef");
     RE_ENTITY.replace(&text, |caps| {
         let s = caps.str(0);
-        let inner = &s[1..s.len() - 1];
-        let open = if RE_INT.test(inner) {
+        let inner = chars::inner(s);
+        let open = if inner.bytes().all(|b| b.is_ascii_digit()) {
             "ﬂ°°"
         } else {
             "ﬂ°"

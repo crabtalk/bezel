@@ -1,77 +1,44 @@
 //! Which diagram a source is, from its first keyword.
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use super::js::Lazy;
 
 /// Every diagram type Mermaid 12.1 registers, by the name Pele gives it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Kind {
-    #[serde(rename = "flowchart")]
     Flowchart,
-    #[serde(rename = "sequence")]
     Sequence,
-    #[serde(rename = "class")]
     Class,
-    #[serde(rename = "state")]
     State,
-    #[serde(rename = "er")]
     Er,
-    #[serde(rename = "pie")]
     Pie,
-    #[serde(rename = "gantt")]
     Gantt,
-    #[serde(rename = "gitGraph")]
     GitGraph,
-    #[serde(rename = "mindmap")]
     Mindmap,
-    #[serde(rename = "timeline")]
     Timeline,
-    #[serde(rename = "journey")]
     Journey,
-    #[serde(rename = "xychart")]
     XyChart,
-    #[serde(rename = "quadrantChart")]
     QuadrantChart,
-    #[serde(rename = "requirement")]
     Requirement,
-    #[serde(rename = "c4")]
     C4,
-    #[serde(rename = "sankey")]
     Sankey,
-    #[serde(rename = "block")]
     Block,
-    #[serde(rename = "packet")]
     Packet,
-    #[serde(rename = "kanban")]
     Kanban,
-    #[serde(rename = "architecture")]
     Architecture,
-    #[serde(rename = "radar")]
     Radar,
-    #[serde(rename = "treemap")]
     Treemap,
-    #[serde(rename = "info")]
     Info,
-    #[serde(rename = "agentflow")]
     Agentflow,
-    #[serde(rename = "usecase")]
     Usecase,
-    #[serde(rename = "railroad")]
     Railroad,
-    #[serde(rename = "treeView")]
     TreeView,
-    #[serde(rename = "venn")]
     Venn,
-    #[serde(rename = "cynefin")]
     Cynefin,
-    #[serde(rename = "wardley")]
     Wardley,
-    #[serde(rename = "swimlane")]
     Swimlane,
-    #[serde(rename = "ishikawa")]
     Ishikawa,
-    #[serde(rename = "eventmodeling")]
     Eventmodeling,
 }
 
@@ -150,6 +117,12 @@ impl Kind {
             Self::Ishikawa => "ishikawa",
             Self::Eventmodeling => "eventmodeling",
         }
+    }
+}
+
+impl Serialize for Kind {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.name())
     }
 }
 

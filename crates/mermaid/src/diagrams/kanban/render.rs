@@ -1,5 +1,6 @@
 //! Pele's `diagrams/kanban/render.ts`.
 
+use crate::geom::Point;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
@@ -11,11 +12,11 @@ use crate::{
     diagrams::common::{fit_width::title_room, icon::icon_svg},
     js,
     svg::{
-        builder::{LabelSvg, LineSvg, TITLE, fragment, num, text_style},
+        builder::{TITLE, fragment, num, text_style},
         root::{Accessible, svg_document},
         theme::{CRITICAL, RADIUS, class_names},
     },
-    text::{Host, Label, Span, Style, icon_markup, layout_label},
+    text::{Host, Label, Span, Style, icon_markup},
     util::url::{link_url, rel_attr, safe_url},
 };
 use std::fmt::{self, Write as _};
@@ -58,7 +59,7 @@ fn fit_label(
     max: f64,
     base: u8,
 ) -> Label {
-    let label = layout_label(raw, markdown, measure, size, max, base);
+    let label = Label::layout(raw, markdown, measure, size, max, base);
     if label.width <= max {
         return label;
     }
@@ -155,7 +156,7 @@ fn text_block<'a>(
             } else {
                 let width = label.widths[i];
                 let cx = x + (if end { -width } else { width }) / 2.0;
-                write!(f, "{}", LineSvg(label, i, cx, cy, attrs))?;
+                write!(f, "{}", label.line_svg(i, Point::new(cx, cy), attrs))?;
             }
         }
         Ok(())
@@ -329,7 +330,7 @@ pub fn render_kanban(
         _ => 0.0,
     };
 
-    let title = layout_label(
+    let title = Label::layout(
         model.title.as_deref(),
         false,
         measure,
@@ -542,7 +543,10 @@ pub fn render_kanban(
     let _ = write!(
         content,
         "{}{out}",
-        LabelSvg(&title, total_width / 2.0, pad + title.height / 2.0, TITLE)
+        title.svg(
+            Point::new(total_width / 2.0, pad + title.height / 2.0),
+            TITLE
+        )
     );
 
     Rendered {

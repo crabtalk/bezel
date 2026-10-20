@@ -1,5 +1,8 @@
 //! Pele's `diagrams/usecase/render.ts`.
 
+use crate::geom::{Direction, Point, RoutePoint, Side, Size};
+use crate::svg::edges::Curve;
+use crate::svg::edges::Marker;
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
@@ -24,17 +27,17 @@ use crate::{
     diagrams::common::fit_width::{runs_across, turn_to_fit},
     js::{self, Lazy},
     layout::{
-        compound::{CEdge, CNode, Dir, cnode, compound_layout, direction, shift_layout},
+        compound::{CEdge, CNode, compound_layout, shift_layout},
         layered::LayeredOptions,
     },
     svg::{
-        builder::{EscText, LabelSvg, LeftLabel, Point, fragment, num},
-        cluster::{Crossings, mark_crossings},
-        edges::{EdgePath, edge_label_svg, marker, marker_trim, route_path},
+        builder::{EscText, fragment, num},
+        cluster::Crossings,
+        edges::{EdgePath, edge_label_svg, route_path},
         root::{Accessible, svg_document},
         theme::{RADIUS, ResolvedStyle, class_names, resolve_style},
     },
-    text::{Host, Label, Style, layout_label},
+    text::{Host, Label, Style},
 };
 
 const NODE_SEP: f64 = 32.0;
@@ -114,18 +117,21 @@ fn text(
 ) -> Label {
     match raw {
         Some(raw) if !raw.is_empty() && !markdown => {
-            layout_label(Some(&literal(raw)), markdown, measure, size, wrap, base)
+            Label::layout(Some(&literal(raw)), markdown, measure, size, wrap, base)
         }
-        _ => layout_label(raw, markdown, measure, size, wrap, base),
+        _ => Label::layout(raw, markdown, measure, size, wrap, base),
     }
 }
 
-/// The point of a node's outline on one of its four sides (0 top, 1 right,
-/// 2 bottom, 3 left), `along` away from the middle of that side. Lines meet
-/// an actor at its figure, not at its label.
-fn anchor(view: &View, c: &CNode, side: usize, along: f64) -> (f64, f64) {
-    let sign = if side == 1 || side == 2 { 1.0 } else { -1.0 };
-    let upright = side == 1 || side == 3;
+/// The point of a node's outline on `side`, `along` away from the middle of
+/// that side. Lines meet an actor at its figure, not at its label.
+fn anchor(view: &View, c: &CNode, side: Side, along: f64) -> Point {
+    let sign = if side == Side::Right || side == Side::Bottom {
+        1.0
+    } else {
+        -1.0
+    };
+    let upright = !side.is_horizontal();
     let mut reach = (if upright { view.w } else { view.h }) / 2.0;
     let mut middle = 0.0;
     if view.kind == ViewKind::Actor {
@@ -140,15 +146,15 @@ fn anchor(view: &View, c: &CNode, side: usize, along: f64) -> (f64, f64) {
         reach *= (1.0 - (along / span).powi(2)).max(0.0).sqrt();
     }
     if upright {
-        (c.x + sign * reach, c.y + middle + along)
+        Point::new(c.center.x + sign * reach, c.center.y + middle + along)
     } else {
-        (c.x + along, c.y + sign * reach)
+        Point::new(c.center.x + along, c.center.y + sign * reach)
     }
 }
 
 /// How much of a side edges may spread over.
-fn side_length(view: &View, side: usize) -> f64 {
-    let upright = side == 1 || side == 3;
+fn side_length(view: &View, side: Side) -> f64 {
+    let upright = !side.is_horizontal();
     if view.kind == ViewKind::Actor {
         return if upright {
             FIGURE_H * 0.5
@@ -174,38 +180,34 @@ struct End {
 /// middle of that side. This spaces them along the side in the order they
 /// fan out, and puts each on the node's outline.
 fn attach_ends(cedges: &mut [CEdge], cnodes: &[CNode], views: &[View]) {
-    let mut sides: IndexMap<usize, Vec<End>> = IndexMap::new();
-    let mut add = |index: usize, edge: usize, route: &[f64], at: usize, next: usize| {
+    let mut sides: IndexMap<(usize, Side), Vec<End>> = IndexMap::new();
+    let mut add = |index: usize, edge: usize, route: &[RoutePoint], at: usize, next: usize| {
         let c = &cnodes[index];
         if c.is_group {
             return;
         }
-        let dx = route[at] - c.x;
-        let dy = route[at + 1] - c.y;
-        let side = if (dy.abs() - c.h / 2.0).abs() < 0.5 {
-            if dy < 0.0 { 0 } else { 2 }
-        } else if (dx.abs() - c.w / 2.0).abs() < 0.5 {
-            if dx < 0.0 { 3 } else { 1 }
-        } else {
+        let Some(side) = c.side_of(route[at].at) else {
             return;
         };
-        sides.entry(index * 4 + side).or_default().push(End {
+        sides.entry((index, side)).or_default().push(End {
             edge,
             at,
-            toward: route[next + (side & 1)],
+            toward: if side.is_horizontal() {
+                route[next].at.x
+            } else {
+                route[next].at.y
+            },
         });
     };
     for (i, e) in cedges.iter().enumerate() {
-        if e.src == e.dst || e.route.len() < 6 {
+        if e.src == e.dst || e.route.len() < 2 {
             continue;
         }
-        let last = e.route.len() - 3;
-        add(e.src, i, &e.route, 0, 3);
-        add(e.dst, i, &e.route, last, last - 3);
+        let last = e.route.len() - 1;
+        add(e.src, i, &e.route, 0, 1);
+        add(e.dst, i, &e.route, last, last - 1);
     }
-    for (key, mut ends) in sides {
-        let index = key >> 2;
-        let side = key & 3;
+    for ((index, side), mut ends) in sides {
         let view = &views[index];
         let step = if ends.len() > 1 {
             PORT_GAP.min(side_length(view, side) / (ends.len() - 1) as f64)
@@ -215,15 +217,12 @@ fn attach_ends(cedges: &mut [CEdge], cnodes: &[CNode], views: &[View]) {
         ends.sort_by(|a, b| js::compare(a.toward - b.toward));
         let count = ends.len() as f64;
         for (i, end) in ends.iter().enumerate() {
-            let (x, y) = anchor(
+            cedges[end.edge].route[end.at].at = anchor(
                 view,
                 &cnodes[index],
                 side,
                 (i as f64 - (count - 1.0) / 2.0) * step,
             );
-            let route = &mut cedges[end.edge].route;
-            route[end.at] = x;
-            route[end.at + 1] = y;
         }
     }
 }
@@ -244,9 +243,9 @@ fn extension(
     write!(
         f,
         "<path class=\"{p}-marker\" d=\"M{}L{}L{}Z\" fill=\"var(--_bg)\" stroke=\"{color}\" stroke-linejoin=\"round\"/>",
-        Point(x, y),
-        Point(bx - dy * half, by + dx * half),
-        Point(bx + dy * half, by - dx * half)
+        Point::new(x, y),
+        Point::new(bx - dy * half, by + dx * half),
+        Point::new(bx + dy * half, by - dx * half)
     )
 }
 
@@ -254,7 +253,7 @@ fn trim(kind: &str) -> f64 {
     if kind == "extension" {
         EXTENSION
     } else {
-        marker_trim(kind)
+        Marker::trim_of(Marker::from_name(kind))
     }
 }
 
@@ -270,7 +269,16 @@ fn mark<'a>(
         if kind == "extension" {
             extension(f, x, y, dx, dy, color)
         } else {
-            write!(f, "{}", marker(kind, x, y, dx, dy, color))
+            write!(
+                f,
+                "{}",
+                Marker::draw_of(
+                    Marker::from_name(kind),
+                    Point::new(x, y),
+                    Point::new(dx, dy),
+                    color
+                )
+            )
         }
     })
 }
@@ -316,8 +324,8 @@ fn figure(out: &mut String, view: &View, host: &impl Host) {
         let _ = write!(
             out,
             "<path class=\"{p}-business\" d=\"M{}L{}\"{line}/>",
-            Point(0.12 * radius, head + 0.99 * radius),
-            Point(0.92 * radius, head - 0.39 * radius)
+            Point::new(0.12 * radius, head + 0.99 * radius),
+            Point::new(0.92 * radius, head - 0.39 * radius)
         );
     }
 }
@@ -337,12 +345,12 @@ pub fn render_usecase(
 /// through that edge it moves into the stretch between them that is nearest
 /// the middle, or the widest if none has room.
 fn title_x(c: &CNode, width: f64, crossings: &Crossings) -> f64 {
-    let xs = crossings.get(&(js::round(c.y - c.h / 2.0) as i64));
+    let xs = crossings.at_top(c);
     let Some(xs) = xs.filter(|_| width != 0.0) else {
-        return c.x;
+        return c.center.x;
     };
-    let left = c.x - c.w / 2.0 + 6.0;
-    let right = c.x + c.w / 2.0 - 6.0;
+    let left = c.center.x - c.size.w / 2.0 + 6.0;
+    let right = c.center.x + c.size.w / 2.0 - 6.0;
     let mut cuts: Vec<f64> = xs
         .iter()
         .copied()
@@ -351,15 +359,15 @@ fn title_x(c: &CNode, width: f64, crossings: &Crossings) -> f64 {
     cuts.sort_by(|a, b| js::compare(a - b));
     cuts.push(right);
     let need = width / 2.0 + 6.0;
-    let mut best = c.x;
+    let mut best = c.center.x;
     let mut best_off = f64::INFINITY;
     let mut widest = 0.0;
     let mut from = left;
     for cut in cuts {
         if cut - from >= 2.0 * need {
-            let x = c.x.max(from + need).min(cut - need);
-            if (x - c.x).abs() < best_off {
-                best_off = (x - c.x).abs();
+            let x = c.center.x.max(from + need).min(cut - need);
+            if (x - c.center.x).abs() < best_off {
+                best_off = (x - c.center.x).abs();
                 best = x;
             }
         } else if best_off == f64::INFINITY && cut - from > widest {
@@ -386,11 +394,11 @@ fn draw(
     let measure = ctx.host;
     let pad = ctx.options.padding.unwrap_or(8.0);
     let root_dir = if turned {
-        Dir::TB
+        Direction::TopToBottom
     } else {
-        direction(Some(model.direction.name()))
+        Direction::from_name(model.direction.name())
     };
-    let sideways = root_dir == Dir::LR || root_dir == Dir::RL;
+    let sideways = !root_dir.is_vertical();
 
     let mut index: HashMap<&str, usize> = HashMap::new();
     let mut views: Vec<View> = Vec::new();
@@ -447,7 +455,7 @@ fn draw(
                 base,
             );
             let title_h = view.label.height;
-            c = cnode(0.0, 0.0, -1);
+            c = CNode::new(Size::default(), None);
             c.is_group = true;
             c.pad_x = GROUP_PAD;
             c.pad_bottom = GROUP_PAD;
@@ -529,17 +537,17 @@ fn draw(
                     view.h = (th + 24.0).max(44.0);
                 }
             }
-            c = cnode(view.w, view.h, -1);
+            c = CNode::new(Size::new(view.w, view.h), None);
         }
         c.seq = views.len() as f64;
         views.push(view);
         cnodes.push(c);
     }
     for (i, node) in graph.nodes.iter().enumerate() {
-        cnodes[i].parent = match &node.parent_id {
-            Some(parent) => index.get(parent.as_str()).map_or(-1, |&at| at as i32),
-            None => -1,
-        };
+        cnodes[i].parent = node
+            .parent_id
+            .as_ref()
+            .and_then(|parent| index.get(parent.as_str()).copied());
     }
 
     let mut cedges: Vec<CEdge> = Vec::new();
@@ -573,7 +581,7 @@ fn draw(
             // box grows to hold it.
             views[src].loops += 1;
             if sideways {
-                cnodes[src].h += 2.0
+                cnodes[src].size.h += 2.0
                     * (LOOP
                         + if label.height > 0.0 {
                             label.height + 8.0
@@ -581,7 +589,7 @@ fn draw(
                             0.0
                         });
             } else {
-                cnodes[src].w += 2.0
+                cnodes[src].size.w += 2.0
                     * (LOOP
                         + if label.width > 0.0 {
                             label.width + 12.0
@@ -597,19 +605,8 @@ fn draw(
             src,
             dst,
             minlen: edge.minlen as i32,
-            label_w: if label.width > 0.0 {
-                label.width + 12.0
-            } else {
-                0.0
-            },
-            label_h: if label.height > 0.0 {
-                label.height + 4.0
-            } else {
-                0.0
-            },
-            route: Vec::new(),
-            label_x: 0.0,
-            label_y: 0.0,
+            label: CEdge::label_room(label),
+            ..CEdge::default()
         });
     }
 
@@ -626,7 +623,7 @@ fn draw(
         },
     );
 
-    let title = layout_label(
+    let title = Label::layout(
         model.title.as_deref(),
         false,
         measure,
@@ -639,18 +636,18 @@ fn draw(
     } else {
         0.0
     };
-    let inner = layout.width.max(title.width);
-    let ox = pad + (inner - layout.width) / 2.0;
+    let inner = layout.w.max(title.width);
+    let ox = pad + (inner - layout.w) / 2.0;
     let oy = pad + title_height;
-    shift_layout(&mut cnodes, &mut cedges, ox, oy);
+    shift_layout(&mut cnodes, &mut cedges, Point::new(ox, oy));
     let width = (inner + 2.0 * pad).ceil();
-    let height = (layout.height + title_height + 2.0 * pad).ceil();
+    let height = (layout.h + title_height + 2.0 * pad).ceil();
 
     // Where edges cross each boundary's top border, so that a title can keep
     // out of their way.
-    let mut crossings: Crossings = HashMap::new();
+    let mut crossings: Crossings = Crossings::new();
     for e in &cedges {
-        mark_crossings(&mut crossings, &e.route);
+        crossings.mark(&e.route);
     }
     attach_ends(&mut cedges, &cnodes, &views);
 
@@ -673,8 +670,8 @@ fn draw(
         let h = view.h;
 
         if view.kind == ViewKind::Boundary {
-            let x = c.x - c.w / 2.0;
-            let y = c.y - c.h / 2.0;
+            let x = c.center.x - c.size.w / 2.0;
+            let y = c.center.y - c.size.h / 2.0;
             let boxed = fragment(|f| {
                 write!(
                     f,
@@ -690,7 +687,7 @@ fn draw(
                 "<g class=\"{p}-cluster {p}-boundary{classes}\" data-id=\"{id}\">"
             );
             let _ = if node.boundary_type == Some(BoundaryType::Package) {
-                let tab_w = (view.label.width + 2.0 * TAB_PAD + 8.0).min(c.w);
+                let tab_w = (view.label.width + 2.0 * TAB_PAD + 8.0).min(c.size.w);
                 let tab_h = view.label.height + 2.0 * TAB_PAD;
                 write!(
                     clusters,
@@ -701,9 +698,10 @@ fn draw(
                     num(tab_h),
                     num(x),
                     num(y + tab_h),
-                    num(c.w),
-                    num(c.h - tab_h),
-                    LabelSvg(&view.label, x + tab_w / 2.0, y + tab_h / 2.0, title_attrs)
+                    num(c.size.w),
+                    num(c.size.h - tab_h),
+                    view.label
+                        .svg(Point::new(x + tab_w / 2.0, y + tab_h / 2.0), title_attrs)
                 )
             } else {
                 write!(
@@ -711,12 +709,13 @@ fn draw(
                     "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\"{boxed}/>{}</g>",
                     num(x),
                     num(y),
-                    num(c.w),
-                    num(c.h),
-                    LabelSvg(
-                        &view.label,
-                        title_x(c, view.label.width, &crossings),
-                        y + 8.0 + view.label.height / 2.0,
+                    num(c.size.w),
+                    num(c.size.h),
+                    view.label.svg(
+                        Point::new(
+                            title_x(c, view.label.width, &crossings),
+                            y + 8.0 + view.label.height / 2.0
+                        ),
                         title_attrs
                     )
                 )
@@ -733,8 +732,8 @@ fn draw(
         let _ = write!(
             nodes_out,
             "<g class=\"{p}-node {p}-{kind}{classes}\" data-id=\"{id}\" transform=\"translate({},{})\">",
-            num(c.x),
-            num(c.y)
+            num(c.center.x),
+            num(c.center.y)
         );
         if view.kind == ViewKind::Actor {
             let top = -h / 2.0;
@@ -759,11 +758,10 @@ fn draw(
             let _ = write!(
                 nodes_out,
                 "</g>{}{}",
-                LabelSvg(&view.stereotype, 0.0, stereotype_y, stereotype_attrs),
-                LabelSvg(
-                    &view.label,
-                    0.0,
-                    h / 2.0 - view.label.height / 2.0,
+                view.stereotype
+                    .svg(Point::new(0.0, stereotype_y), stereotype_attrs),
+                view.label.svg(
+                    Point::new(0.0, h / 2.0 - view.label.height / 2.0),
                     label_attrs
                 )
             );
@@ -777,14 +775,14 @@ fn draw(
                 num(-h / 2.0),
                 num(w),
                 num(h),
-                Point(x0, head_y),
+                Point::new(x0, head_y),
                 num(x0 + w)
             );
             if view.key_w > 0.0 {
                 let _ = write!(
                     nodes_out,
                     "M{}V{}",
-                    Point(x0 + view.key_w, head_y),
+                    Point::new(x0 + view.key_w, head_y),
                     num(h / 2.0)
                 );
             }
@@ -796,7 +794,8 @@ fn draw(
                 nodes_out,
                 "\" fill=\"none\" stroke=\"var(--_b)\"{}/>{}<g font-size=\"{}\">",
                 view.style.line,
-                LabelSvg(&view.label, 0.0, -h / 2.0 + view.head_h / 2.0, title_attrs),
+                view.label
+                    .svg(Point::new(0.0, -h / 2.0 + view.head_h / 2.0), title_attrs),
                 js::Number(small)
             );
             let key_attrs = rewrite(
@@ -813,16 +812,12 @@ fn draw(
                 let _ = write!(
                     nodes_out,
                     "{}{}",
-                    LabelSvg(
-                        key,
-                        x0 + CELL_PAD + key.width / 2.0,
-                        y + row_h / 2.0,
+                    key.svg(
+                        Point::new(x0 + CELL_PAD + key.width / 2.0, y + row_h / 2.0),
                         key_attrs
                     ),
-                    LeftLabel(
-                        value,
-                        x0 + view.key_w + CELL_PAD,
-                        y + row_h / 2.0,
+                    value.left_svg(
+                        Point::new(x0 + view.key_w + CELL_PAD, y + row_h / 2.0),
                         value_attrs
                     )
                 );
@@ -847,8 +842,8 @@ fn draw(
                     let _ = write!(
                         nodes_out,
                         "<path class=\"{p}-business\" d=\"M{}L{}\" fill=\"none\" stroke=\"var(--_b)\"{}/>",
-                        Point(from, arc(from)),
-                        Point(to, -arc(to)),
+                        Point::new(from, arc(from)),
+                        Point::new(to, -arc(to)),
                         view.style.line
                     );
                 }
@@ -858,12 +853,12 @@ fn draw(
                 let _ = write!(
                     nodes_out,
                     "<path d=\"M{}H{}L{}V{}H{}Z\" fill=\"var(--_a)\" stroke=\"var(--_b)\" stroke-linejoin=\"round\"{shape}/><path d=\"M{}V{}H{}\" fill=\"none\" stroke=\"var(--_b)\" stroke-linejoin=\"round\"{}/>",
-                    Point(-r, -b),
+                    Point::new(-r, -b),
                     num(r - FOLD),
-                    Point(r, FOLD - b),
+                    Point::new(r, FOLD - b),
                     num(b),
                     num(-r),
-                    Point(r - FOLD, -b),
+                    Point::new(r - FOLD, -b),
                     num(FOLD - b),
                     num(r),
                     view.style.line
@@ -899,13 +894,9 @@ fn draw(
             let _ = write!(
                 nodes_out,
                 "{}{}",
-                LabelSvg(
-                    &view.stereotype,
-                    0.0,
-                    -view.label.height / 2.0,
-                    stereotype_attrs
-                ),
-                LabelSvg(&view.label, 0.0, label_y, label_attrs)
+                view.stereotype
+                    .svg(Point::new(0.0, -view.label.height / 2.0), stereotype_attrs),
+                view.label.svg(Point::new(0.0, label_y), label_attrs)
             );
         }
         nodes_out.push_str("</g>");
@@ -934,15 +925,12 @@ fn draw(
             let k = loop_seen.get(&src).copied().unwrap_or(0);
             loop_seen.insert(src, k + 1);
             let k = k as f64;
-            let side = if sideways { 2 } else { 1 };
+            let side = if sideways { Side::Bottom } else { Side::Right };
             let spread = (side_length(view, side) / 2.0).min(8.0 + k * 6.0);
             let reach = LOOP + k * 8.0;
-            let (ax, ay) = anchor(view, c, side, -spread);
-            let (bx, by) = anchor(view, c, side, spread);
-            let len = match js::hypot(reach, spread) {
-                len if len == 0.0 || len.is_nan() => 1.0,
-                len => len,
-            };
+            let Point { x: ax, y: ay } = anchor(view, c, side, -spread);
+            let Point { x: bx, y: by } = anchor(view, c, side, spread);
+            let len = js::or_one(js::hypot(reach, spread));
             let ux = if sideways { spread / len } else { reach / len };
             let uy = if sideways { reach / len } else { spread / len };
             let st = trim(start_type);
@@ -952,9 +940,9 @@ fn draw(
             let out = |x: f64, y: f64, sign: f64, far: f64| {
                 let lean = if far != 0.0 { 1.0 } else { 0.0 };
                 if sideways {
-                    Point(x + sign * spread * lean, y + far)
+                    Point::new(x + sign * spread * lean, y + far)
                 } else {
-                    Point(x + far, y + sign * spread * lean)
+                    Point::new(x + far, y + sign * spread * lean)
                 }
             };
             let sx = if sideways { ax - ux * st } else { ax + ux * st };
@@ -964,34 +952,38 @@ fn draw(
             path = EdgePath {
                 d: format!(
                     "M{}C{} {} {}",
-                    Point(sx, sy),
+                    Point::new(sx, sy),
                     out(ax, ay, -1.0, reach),
                     out(bx, by, 1.0, reach),
-                    Point(ex, ey)
+                    Point::new(ex, ey)
                 ),
-                sx: ax,
-                sy: ay,
-                sdx: if sideways { ux } else { -ux },
-                sdy: if sideways { -uy } else { uy },
-                ex: bx,
-                ey: by,
-                edx: -ux,
-                edy: -uy,
+                start: Point::new(ax, ay),
+                start_dir: if sideways {
+                    Point::new(ux, -uy)
+                } else {
+                    Point::new(-ux, uy)
+                },
+                end: Point::new(bx, by),
+                end_dir: Point::new(-ux, -uy),
             };
-            if sideways {
-                cedges[i].label_x = c.x;
-                cedges[i].label_y = ay.max(by) + reach * 0.75 + 6.0 + label.height / 2.0;
+            cedges[i].label_at = if sideways {
+                Point::new(
+                    c.center.x,
+                    ay.max(by) + reach * 0.75 + 6.0 + label.height / 2.0,
+                )
             } else {
-                cedges[i].label_x = ax.max(bx) + reach * 0.75 + 8.0 + label.width / 2.0;
-                cedges[i].label_y = c.y;
-            }
+                Point::new(
+                    ax.max(bx) + reach * 0.75 + 8.0 + label.width / 2.0,
+                    c.center.y,
+                )
+            };
         } else {
-            if cedges[i].route.len() < 6 {
+            if cedges[i].route.len() < 2 {
                 continue;
             }
             path = route_path(
                 &cedges[i].route,
-                None,
+                Curve::Smooth,
                 trim(start_type),
                 trim(end_type),
                 None,
@@ -1024,8 +1016,22 @@ fn draw(
             } else {
                 write!(f, " stroke-dasharray=\"{dashes}\"")
             }),
-            mark(start_type, path.sx, path.sy, path.sdx, path.sdy, &color),
-            mark(end_type, path.ex, path.ey, path.edx, path.edy, &color),
+            mark(
+                start_type,
+                path.start.x,
+                path.start.y,
+                path.start_dir.x,
+                path.start_dir.y,
+                &color
+            ),
+            mark(
+                end_type,
+                path.end.x,
+                path.end.y,
+                path.end_dir.x,
+                path.end_dir.y,
+                &color
+            ),
         );
         if label.width > 0.0 {
             let semantic = matches!(edge.relationship_type, "include" | "extend");
@@ -1037,13 +1043,7 @@ fn draw(
             let _ = write!(
                 labels_out,
                 "{}",
-                edge_label_svg(
-                    &edge.id,
-                    label,
-                    cedges[i].label_x,
-                    cedges[i].label_y,
-                    &label_attrs,
-                )
+                edge_label_svg(&edge.id, label, cedges[i].label_at, &label_attrs)
             );
         }
     }
@@ -1055,7 +1055,10 @@ fn draw(
     let _ = write!(
         content,
         "{}",
-        LabelSvg(&title, width / 2.0, pad + title.height / 2.0, title_attrs)
+        title.svg(
+            Point::new(width / 2.0, pad + title.height / 2.0),
+            title_attrs
+        )
     );
     if !clusters.is_empty() {
         let _ = write!(content, "<g class=\"{p}-clusters\">{clusters}</g>");

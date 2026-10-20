@@ -11,6 +11,8 @@ pub(crate) use re::{Lazy, Regex};
 
 use std::fmt;
 
+use crate::util::chars::is_space;
+
 /// `Math.round`: halves go up, `-2.5` to `-2`.
 pub(crate) fn round(x: f64) -> f64 {
     let floor = x.floor();
@@ -82,11 +84,6 @@ fn scientific(x: f64) -> String {
     format!("{sign}{body}")
 }
 
-/// The JavaScript whitespace `trim` removes.
-pub(crate) fn is_space(c: char) -> bool {
-    re::is_space(c)
-}
-
 pub(crate) fn trim(text: &str) -> &str {
     text.trim_matches(is_space)
 }
@@ -105,6 +102,25 @@ pub(crate) fn len(text: &str) -> usize {
     text.bytes()
         .map(|b| usize::from(b & 0xc0 != 0x80) + usize::from(b >= 0xf0))
         .sum()
+}
+
+/// The byte offset in `text` after its first `units` UTF-16 units, at the
+/// end of the character holding the last of them; the length of `text` when
+/// it is shorter.
+pub(crate) fn units_end(text: &str, units: usize) -> usize {
+    let mut taken = 0;
+    for (at, c) in text.char_indices() {
+        if taken >= units {
+            return at;
+        }
+        taken += c.len_utf16();
+    }
+    text.len()
+}
+
+/// `list.sort()`: strings in order of their UTF-16 code units.
+pub(crate) fn sort_strings(list: &mut [String]) {
+    list.sort_by(|a, b| a.encode_utf16().cmp(b.encode_utf16()));
 }
 
 /// Whether [`len`] of `text` is over `limit`, counted only when its bytes
@@ -247,6 +263,11 @@ pub(crate) fn parse_int(text: &str, radix: u32) -> f64 {
 /// A number's truth in JavaScript: anything but `0` and `NaN`.
 pub(crate) fn truthy(x: f64) -> bool {
     x != 0.0 && !x.is_nan()
+}
+
+/// `x || 1` for a number.
+pub(crate) fn or_one(x: f64) -> f64 {
+    if truthy(x) { x } else { 1.0 }
 }
 
 /// `x | 0`: ECMAScript's `ToInt32`, `0` for `NaN` and the infinities.

@@ -1,5 +1,6 @@
 //! Pele's `diagrams/packet/render.ts`.
 
+use crate::geom::Point;
 use crate::svg::builder::Esc;
 use std::{collections::HashMap, fmt::Write as _};
 
@@ -18,11 +19,11 @@ use crate::{
     },
     js,
     svg::{
-        builder::{LabelSvg, TITLE, fragment, num},
+        builder::{TITLE, fragment, num},
         root::{Accessible, svg_document},
         theme::RADIUS,
     },
-    text::{Label, Style, decode_entities, layout_label},
+    text::{Label, Style, decode_entities},
 };
 
 pub fn render_packet(
@@ -163,8 +164,8 @@ fn draw(
     } else {
         bits_per_row * bit_width - gap
     };
-    let title = layout_label(
-        model.title.as_deref(),
+    let title = Label::layout(
+        model.titles.title.as_deref(),
         false,
         measure,
         size,
@@ -226,7 +227,7 @@ fn draw(
                 let _ = write!(
                     fields,
                     "{}",
-                    LabelSvg(&labels[index][at], x + w / 2.0, y + row_height / 2.0, "")
+                    labels[index][at].svg(Point::new(x + w / 2.0, y + row_height / 2.0), "")
                 );
             } else if let Some((text, text_size)) = fit(&block.label, w - 6.0)
                 && text_size <= row_height
@@ -296,11 +297,9 @@ fn draw(
     let _ = write!(
         content,
         "{}",
-        LabelSvg(
-            &title,
-            total_width / 2.0,
-            total_height - pad - title.height / 2.0,
-            TITLE,
+        title.svg(
+            Point::new(total_width / 2.0, total_height - pad - title.height / 2.0),
+            TITLE
         )
     );
 
@@ -312,8 +311,8 @@ fn draw(
             size,
             ctx,
             Accessible {
-                acc_title: model.acc_title.as_deref(),
-                acc_descr: model.acc_descr.as_deref(),
+                acc_title: model.titles.acc_title.as_deref(),
+                acc_descr: model.titles.acc_descr.as_deref(),
             },
             &content,
         ),

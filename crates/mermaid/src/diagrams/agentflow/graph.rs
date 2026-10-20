@@ -10,7 +10,7 @@ use super::{
     color_slots::assign_color_slots,
     db::AgentflowDb,
     shapes::{normalise_node_shapes, resolve_shape_alias},
-    types::{DiagnosticId, LabelType, Metadata},
+    types::{AgentNode, DiagnosticId, LabelType, Metadata, VertexKind},
 };
 use crate::config::Value;
 
@@ -375,12 +375,9 @@ pub fn build_agent_graph(
         &mut nodes,
         |id| {
             if db.connectors.contains(id) {
-                return Some("connector");
+                return Some(VertexKind::Connector);
             }
-            db.store
-                .nodes
-                .get(id)
-                .map(|vertex| db.vertex_kind(vertex).name())
+            db.store.nodes.get(id).map(AgentNode::vertex_kind)
         },
         &order,
         palette_length,

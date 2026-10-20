@@ -5,6 +5,7 @@
 //! Pele shares between the copies of a space block are entries of
 //! [`BlockModel::class_lists`].
 
+use crate::diagrams::common::style_class::StyleClass;
 use indexmap::{IndexMap, IndexSet};
 use serde::{
     Serialize, Serializer,
@@ -55,14 +56,6 @@ pub struct Block {
     pub spread: Vec<usize>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BlockClassDef {
-    pub id: String,
-    pub styles: Vec<String>,
-    pub text_styles: Vec<String>,
-}
-
 /// Pele's `BlockDb`, which is its model, with its private fields: they are
 /// in the JSON Pele writes for it.
 #[derive(Clone, Debug, PartialEq)]
@@ -70,7 +63,7 @@ pub struct BlockModel {
     pub title: Option<String>,
     pub root: usize,
     pub edges: Vec<usize>,
-    pub classes: IndexMap<String, BlockClassDef>,
+    pub classes: IndexMap<String, StyleClass>,
     /// Mermaid keeps the root in here too, which makes a block called `root`
     /// vanish. Here it stays out.
     pub by_id: IndexMap<String, usize>,

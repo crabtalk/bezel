@@ -9,7 +9,8 @@ use std::{
 
 use indexmap::IndexMap;
 
-use super::{db::sort_strings, types::VennSubset};
+use super::types::VennSubset;
+use crate::js::sort_strings;
 
 const TAU: f64 = PI * 2.0;
 const GRID: i32 = 10;

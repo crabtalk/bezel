@@ -9,7 +9,7 @@ pub use db::{GitCommit, GitModel};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
@@ -24,7 +24,7 @@ impl Diagram for GitGraph {
         _line_offset: usize,
         _limits: &ParseLimits,
     ) -> Result<Model, Error> {
-        db::build_git(parser::parse_git(source)?, &config.git_graph, title).map(Model::GitGraph)
+        GitModel::new(parser::parse_git(source)?, &config.git_graph, title).map(Model::GitGraph)
     }
 }
 
@@ -49,9 +49,8 @@ pub struct GitGraphConfig {
     pub main_branch_order: Option<f64>,
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::GitGraph(model) = model else {
-        unreachable!("gitGraph renders a gitGraph model")
-    };
-    Ok(render::render_git(model, &config.git_graph, ctx))
+impl Render for GitModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_git(self, &config.git_graph, ctx))
+    }
 }

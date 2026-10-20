@@ -2,57 +2,46 @@
 
 use std::sync::LazyLock;
 
-use super::tokens::*;
+use super::tokens::T;
 use crate::{
-    diagrams::common::caseless::word_at,
-    util::chars::{code_after, code_at, is_digit, is_letter, is_space, is_word, width_at},
+    diagrams::common::chart::{ChartRules, ChartState},
+    token::{Cursor, Token},
+    util::chars::{digits_end, is_space},
 };
 
-const S_INITIAL: usize = 0;
-const S_AXIS_DATA: usize = 1;
-const S_AXIS_BAND_DATA: usize = 2;
-const S_DATA: usize = 3;
-const S_DATA_INNER: usize = 4;
-const S_STRING: usize = 5;
-const S_ACC_TITLE: usize = 6;
-const S_ACC_DESCR: usize = 7;
-const S_ACC_DESCR_MULTILINE: usize = 8;
+/// Jison's start conditions.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum S {
+    Initial,
+    AxisData,
+    AxisBandData,
+    Data,
+    DataInner,
+    String,
+    AccTitle,
+    AccDescr,
+    AccDescrMultiline,
+}
 
-/// The token each state gives for the empty rest of the input.
-const AT_END: [u8; 9] = [
-    EOF,
-    EOF,
-    EOF,
-    EOF,
-    EOF,
-    STR,
-    ACC_TITLE_VALUE,
-    ACC_DESCR_VALUE,
-    ACC_DESCR_MULTILINE_VALUE,
-];
-
-const SINGLE: [u8; 128] = {
-    let mut table = [0u8; 128];
-    let pairs: [(u8, u8); 11] = [
-        (b':', COLON),
-        (b'+', PLUS),
-        (b',', COMMA),
-        (b'=', EQUALS),
-        (b'*', MULT),
-        (b'#', BRKT),
-        (b'_', UNDERSCORE),
-        (b'.', DOT),
-        (b'&', AMP),
-        (b'-', MINUS),
-        (b';', SEMI),
-    ];
-    let mut k = 0;
-    while k < pairs.len() {
-        table[pairs[k].0 as usize] = pairs[k].1;
-        k += 1;
+impl S {
+    /// The token the state gives for the empty rest of the input.
+    fn at_end(self) -> T {
+        match self {
+            Self::String => T::Str,
+            Self::AccTitle => T::AccTitleValue,
+            Self::AccDescr => T::AccDescrValue,
+            Self::AccDescrMultiline => T::AccDescrMultilineValue,
+            _ => T::Eof,
+        }
     }
-    table
-};
+}
+
+impl ChartState for S {
+    const ACC_TITLE: Self = Self::AccTitle;
+    const ACC_DESCR: Self = Self::AccDescr;
+    const ACC_DESCR_MULTILINE: Self = Self::AccDescrMultiline;
+    const STRING: Self = Self::String;
+}
 
 /// Mermaid's grammar means to open a markdown string at `"` followed by a
 /// backtick, but its quoting turns the rule into one that matches this text
@@ -65,291 +54,150 @@ static BROKEN_RULE: LazyLock<String> = LazyLock::new(|| {
     )
 });
 
-pub struct Tokens<'s> {
-    pub types: Vec<u8>,
-    pub texts: Vec<&'s str>,
-    pub starts: Vec<usize>,
+struct Lexer<'s> {
+    cur: Cursor<'s, T, S>,
 }
 
-pub fn tokenize<'s>(src: &'s str) -> Tokens<'s> {
-    let n = src.len();
-    let mut tokens = Tokens {
-        types: Vec::new(),
-        texts: Vec::new(),
-        starts: Vec::new(),
-    };
-    let mut stack: Vec<usize> = Vec::new();
-    let mut state = S_INITIAL;
-    let mut p = 0;
+impl Lexer<'_> {
+    fn digit_at(&self, at: usize) -> bool {
+        self.cur.char_at(at).is_some_and(|c| c.is_ascii_digit())
+    }
 
-    // Answers where the lexer goes on from.
-    let emit = |tokens: &mut Tokens<'s>, kind: u8, s: usize, e: usize| -> usize {
-        tokens.types.push(kind);
-        tokens.texts.push(&src[s..e]);
-        tokens.starts.push(s);
-        e
-    };
-    let line_end = |q: usize| -> usize { src[q.min(n)..].find('\n').map_or(n, |e| q + e) };
-    let run = |mut q: usize| -> usize {
-        while q < n && is_space(code_at(src, q)) {
-            q += width_at(src, q);
-        }
-        q
-    };
-    let digits = |mut q: usize| -> usize {
-        while is_digit(code_at(src, q)) {
-            q += 1;
-        }
-        q
-    };
-    let keyword =
-        |p: usize, word: &str| word_at(src, p, word) && !is_word(code_at(src, p + word.len()));
-
-    while p < n {
-        let c = code_at(src, p);
-
-        if state == S_STRING {
-            if c == 34 {
-                p += 1;
-                if let Some(previous) = stack.pop() {
-                    state = previous;
-                }
-            } else {
-                let e = src[p..].find('"').map_or(n, |e| p + e);
-                p = emit(&mut tokens, STR, p, e);
+    /// The end of a number with an optional sign and decimals at `p`.
+    fn number_end(&self, p: usize, c: char) -> Option<usize> {
+        let src = self.cur.src;
+        let q = if matches!(c, '+' | '-') { p + 1 } else { p };
+        if self.digit_at(q) {
+            let end = digits_end(src, q);
+            if self.cur.char_at(end) == Some('.') && self.digit_at(end + 1) {
+                return Some(digits_end(src, end + 1));
             }
-            continue;
+            return Some(end);
         }
-        if state == S_ACC_TITLE || state == S_ACC_DESCR {
-            p = emit(&mut tokens, AT_END[state], p, line_end(p));
-            if let Some(previous) = stack.pop() {
-                state = previous;
-            }
-            continue;
-        }
-        if state == S_ACC_DESCR_MULTILINE {
-            if c == 125 {
-                p += 1;
-                if let Some(previous) = stack.pop() {
-                    state = previous;
-                }
-            } else {
-                let e = src[p..].find('}').map_or(n, |e| p + e);
-                p = emit(&mut tokens, ACC_DESCR_MULTILINE_VALUE, p, e);
-            }
-            continue;
-        }
+        (self.cur.char_at(q) == Some('.') && self.digit_at(q + 1)).then(|| digits_end(src, q + 1))
+    }
 
-        let (next, next_at) = code_after(src, p);
-        if c == 37 && next == 37 {
-            p = line_end(p + 2);
-            continue;
+    /// A `kind` token of `word` at the cursor, entering `state` if any.
+    fn keyword(&mut self, word: &str, bounded: bool, kind: T, state: Option<S>) -> bool {
+        let p = self.cur.p;
+        let found = if bounded {
+            self.cur.keyword_caseless(word, p)
+        } else {
+            self.cur.starts_with_caseless(word, p)
+        };
+        if found {
+            self.cur.emit(kind, p, p + word.len());
+            if let Some(state) = state {
+                self.cur.push(state);
+            }
         }
-        // Mermaid's second comment rule takes any character before `%%` with
-        // it, a line break included.
-        if c != 125 && next == 37 && code_at(src, next_at + 1) == 37 {
-            p = line_end(next_at + 2);
-            continue;
+        found
+    }
+
+    /// Reads one token or skips one piece of text; false where no rule
+    /// matches.
+    fn step(&mut self, c: char) -> bool {
+        if self.cur.value() || self.cur.comment() {
+            return true;
         }
-        if c == 10 || c == 13 {
+        let p = self.cur.p;
+        let state = self.cur.state;
+        if matches!(c, '\n' | '\r') {
             // Only a line break that directly follows an axis or a series ends
             // it; one after spaces is skipped with them, and the state carries
             // on to the next line.
-            if (state == S_AXIS_DATA || state == S_DATA) && (c == 10 || next == 10) {
-                let end = if c == 10 { p + 1 } else { p + 2 };
-                p = emit(&mut tokens, NEWLINE, p, end);
-                if let Some(previous) = stack.pop() {
-                    state = previous;
-                }
-                continue;
-            }
-            let mut e = p + 1;
-            while matches!(code_at(src, e), 10 | 13) {
-                e += 1;
-            }
-            p = emit(&mut tokens, NEWLINE, p, e);
-            continue;
-        }
-
-        match c | 32 {
-            116 => {
-                if keyword(p, "title") {
-                    p = emit(&mut tokens, TITLE, p, p + 5);
-                    continue;
-                }
-            }
-            97 => {
-                if word_at(src, p, "acc") {
-                    let descr = word_at(src, p + 3, "descr");
-                    if descr || word_at(src, p + 3, "title") {
-                        let k = run(p + 8);
-                        let d = code_at(src, k);
-                        if d == 58 {
-                            let end = run(k + 1);
-                            p = emit(
-                                &mut tokens,
-                                if descr { ACC_DESCR } else { ACC_TITLE },
-                                p,
-                                end,
-                            );
-                            stack.push(state);
-                            state = if descr { S_ACC_DESCR } else { S_ACC_TITLE };
-                            continue;
-                        }
-                        if d == 123 && descr {
-                            p = run(k + 1);
-                            stack.push(state);
-                            state = S_ACC_DESCR_MULTILINE;
-                            continue;
-                        }
-                    }
-                }
-            }
-            120 => {
-                if keyword(p, "xychart-beta") {
-                    p = emit(&mut tokens, XYCHART, p, p + 12);
-                    continue;
-                }
-                if keyword(p, "xychart") {
-                    p = emit(&mut tokens, XYCHART, p, p + 7);
-                    continue;
-                }
-                if keyword(p, "x-axis") {
-                    p = emit(&mut tokens, X_AXIS, p, p + 6);
-                    stack.push(state);
-                    state = S_AXIS_DATA;
-                    continue;
-                }
-            }
-            121 => {
-                if keyword(p, "y-axis") {
-                    p = emit(&mut tokens, Y_AXIS, p, p + 6);
-                    stack.push(state);
-                    state = S_AXIS_DATA;
-                    continue;
-                }
-            }
-            118 => {
-                if word_at(src, p, "vertical") {
-                    p = emit(&mut tokens, CHART_ORIENTATION, p, p + 8);
-                    continue;
-                }
-            }
-            104 => {
-                if word_at(src, p, "horizontal") {
-                    p = emit(&mut tokens, CHART_ORIENTATION, p, p + 10);
-                    continue;
-                }
-            }
-            108 => {
-                if keyword(p, "line") {
-                    p = emit(&mut tokens, LINE, p, p + 4);
-                    stack.push(state);
-                    state = S_DATA;
-                    continue;
-                }
-            }
-            98 if keyword(p, "bar") => {
-                p = emit(&mut tokens, BAR, p, p + 3);
-                stack.push(state);
-                state = S_DATA;
-                continue;
-            }
-            _ => {}
-        }
-
-        if c == 91 {
-            if state == S_AXIS_DATA {
-                stack.push(state);
-                state = S_AXIS_BAND_DATA;
-            } else if state == S_DATA {
-                stack.push(state);
-                state = S_DATA_INNER;
-            }
-            p = emit(&mut tokens, SQUARE_BRACES_START, p, p + 1);
-            continue;
-        }
-        if c == 93 {
-            if (state == S_DATA_INNER || state == S_AXIS_BAND_DATA)
-                && let Some(previous) = stack.pop()
+            if matches!(state, S::AxisData | S::Data)
+                && (c == '\n' || self.cur.char_at(p + 1) == Some('\n'))
             {
-                state = previous;
+                let end = if c == '\n' { p + 1 } else { p + 2 };
+                self.cur.emit(T::Newline, p, end);
+                self.cur.pop();
+                return true;
             }
-            p = emit(&mut tokens, SQUARE_BRACES_END, p, p + 1);
-            continue;
+            return self.cur.newlines();
         }
-        if state == S_AXIS_DATA && c == 45 && next == 45 && code_at(src, p + 2) == 62 {
-            p = emit(&mut tokens, ARROW_DELIMITER, p, p + 3);
-            continue;
-        }
-        if state == S_AXIS_DATA || state == S_DATA_INNER {
-            let q = if c == 43 || c == 45 { p + 1 } else { p };
-            let d = code_at(src, q);
-            let mut e = None;
-            if is_digit(d) {
-                let mut end = digits(q + 1);
-                if code_at(src, end) == 46 && is_digit(code_at(src, end + 1)) {
-                    end = digits(end + 2);
-                }
-                e = Some(end);
-            } else if d == 46 && is_digit(code_at(src, q + 1)) {
-                e = Some(digits(q + 2));
+
+        let keyword = match c.to_ascii_lowercase() {
+            't' => self.keyword("title", true, T::Title, None),
+            'a' => self.cur.accessibility(),
+            'x' => {
+                self.keyword("xychart-beta", true, T::Xychart, None)
+                    || self.keyword("xychart", true, T::Xychart, None)
+                    || self.keyword("x-axis", true, T::XAxis, Some(S::AxisData))
             }
-            if let Some(e) = e {
-                p = emit(&mut tokens, NUMBER_WITH_DECIMAL, p, e);
-                continue;
+            'y' => self.keyword("y-axis", true, T::YAxis, Some(S::AxisData)),
+            'v' => self.keyword("vertical", false, T::ChartOrientation, None),
+            'h' => self.keyword("horizontal", false, T::ChartOrientation, None),
+            'l' => self.keyword("line", true, T::Line, Some(S::Data)),
+            'b' => self.keyword("bar", true, T::Bar, Some(S::Data)),
+            _ => false,
+        };
+        if keyword {
+            return true;
+        }
+
+        if c == '[' {
+            match state {
+                S::AxisData => self.cur.push(S::AxisBandData),
+                S::Data => self.cur.push(S::DataInner),
+                _ => {}
             }
+            self.cur.emit(T::SquareBracesStart, p, p + 1);
+            return true;
         }
-        if c == 96 && word_at(src, p, &BROKEN_RULE) {
-            p += BROKEN_RULE.len();
-            if let Some(previous) = stack.pop() {
-                state = previous;
+        if c == ']' {
+            if matches!(state, S::DataInner | S::AxisBandData) {
+                self.cur.pop();
             }
-            continue;
+            self.cur.emit(T::SquareBracesEnd, p, p + 1);
+            return true;
         }
-        if c == 34 {
-            p += 1;
-            stack.push(state);
-            state = S_STRING;
-            continue;
+        if state == S::AxisData && self.cur.starts_with("-->", p) {
+            self.cur.emit(T::ArrowDelimiter, p, p + 3);
+            return true;
         }
-        if is_letter(c) {
-            let mut e = p + 1;
-            while is_letter(code_at(src, e)) {
-                e += 1;
-            }
-            p = emit(&mut tokens, ALPHA, p, e);
-            continue;
+        if matches!(state, S::AxisData | S::DataInner)
+            && let Some(end) = self.number_end(p, c)
+        {
+            self.cur.emit(T::NumberWithDecimal, p, end);
+            return true;
         }
-        if is_digit(c) {
-            let end = digits(p + 1);
-            p = emit(&mut tokens, NUM, p, end);
-            continue;
+        if c == '`' && self.cur.starts_with_caseless(&BROKEN_RULE, p) {
+            self.cur.p += BROKEN_RULE.len();
+            self.cur.pop();
+            return true;
+        }
+        if c == '"' {
+            self.cur.p += 1;
+            self.cur.push(S::String);
+            return true;
         }
         if is_space(c) {
-            p = run(p + width_at(src, p));
-            continue;
+            self.cur.p = self.cur.space_end(p);
+            return true;
         }
-        if c < 128 && SINGLE[c as usize] != 0 {
-            p = emit(&mut tokens, SINGLE[c as usize], p, p + 1);
-            continue;
-        }
-        break;
+        self.cur.word(c)
     }
+}
 
-    if p < n {
-        tokens.types.push(ERROR);
-        tokens.texts.push("");
-        tokens.starts.push(p);
-        return tokens;
+pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
+    let mut lexer = Lexer {
+        cur: Cursor::new(src, S::Initial),
+    };
+    while let Some(c) = lexer.cur.char_at(lexer.cur.p) {
+        if !lexer.step(c) {
+            break;
+        }
+    }
+    let mut cur = lexer.cur;
+    let n = src.len();
+    if cur.p < n {
+        cur.emit(T::Error, cur.p, cur.p);
+        return cur.tokens;
     }
     // Jison tries the rules of the current state once more against the empty
     // rest of the input.
-    tokens.types.push(AT_END[state]);
-    tokens.texts.push("");
-    tokens.starts.push(n);
-    tokens.types.push(END);
-    tokens.texts.push("");
-    tokens.starts.push(n);
-    tokens
+    cur.emit(cur.state.at_end(), n, n);
+    cur.emit(T::End, n, n);
+    cur.tokens
 }

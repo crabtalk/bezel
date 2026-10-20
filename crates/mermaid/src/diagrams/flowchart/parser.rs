@@ -1,9 +1,11 @@
 //! Pele's `diagrams/flowchart/parser.ts`.
 
 use super::{
+    Flowchart,
     db::{FlowDb, destruct_link},
     lexer::tokenize,
-    syntax::{Dialect, Reader},
+    store::FlowStore,
+    syntax::{Builder, Dialect, Reader, ShapeData},
     tokens::T,
     types::{DocItem, FlowText},
 };
@@ -11,6 +13,7 @@ use crate::{
     detect::Kind,
     error::Error,
     js::{self, Lazy},
+    util::chars::is_space,
 };
 
 const NO_TAGS: [T; 21] = [
@@ -49,7 +52,6 @@ static DIALECT: Dialect = Dialect {
 /// Mermaid trims whitespace between a closing brace and the end of its line
 /// before parsing.
 static RE_BRACE_TRAIL: Lazy = Lazy::new(r"}\s*\n", "g");
-static RE_SPACE: Lazy = Lazy::new(r"\s", "");
 
 struct Frame {
     id: Option<String>,
@@ -63,71 +65,19 @@ struct Parser<'a> {
     db: &'a mut FlowDb,
 }
 
+impl Builder for FlowDb {
+    type Payload = Flowchart;
+
+    fn store(&mut self) -> &mut FlowStore<Flowchart> {
+        self
+    }
+
+    fn attach(&mut self, id: &str, data: &ShapeData) -> Result<(), Error> {
+        self.add_metadata(id, &data.text)
+    }
+}
+
 impl Parser<'_> {
-    fn vertex(&mut self) -> Result<String, Error> {
-        let node = self.r.node()?;
-        self.db.add_vertex(&node.id, node.vertex());
-        Ok(node.id)
-    }
-
-    fn styled_vertex(&mut self) -> Result<String, Error> {
-        let id = self.vertex()?;
-        if self.r.s.eat(T::StyleSeparator) {
-            let class = self.r.id_string()?;
-            self.db.set_class(&id, &class);
-        }
-        Ok(id)
-    }
-
-    /// A run of vertices joined by `&`, and the shape data after the last.
-    fn nodes(&mut self) -> Result<(Vec<String>, Option<String>), Error> {
-        let mut ids = vec![self.styled_vertex()?];
-        loop {
-            let data = self.r.s.is(T::ShapeData).then(|| self.r.shape_data());
-            if !self.r.s.eat(T::Space) {
-                return Ok((ids, data));
-            }
-            self.r.s.eat_all(T::Space);
-            if !self.r.s.eat(T::Amp) {
-                if data.is_some() {
-                    return Err(self.r.s.fail("'AMP'"));
-                }
-                return Ok((ids, None));
-            }
-            if !self.r.s.eat(T::Space) {
-                return Err(self.r.s.fail("'SPACE'"));
-            }
-            self.r.s.eat_all(T::Space);
-            let next = self.styled_vertex()?;
-            if let Some(data) = data {
-                self.db.add_metadata(&ids[ids.len() - 1], &data)?;
-            }
-            ids.push(next);
-        }
-    }
-
-    /// [`Parser::nodes`], with the shape data given to the last vertex.
-    fn node(&mut self) -> Result<Vec<String>, Error> {
-        let (ids, data) = self.nodes()?;
-        if let Some(data) = data {
-            self.db.add_metadata(&ids[ids.len() - 1], &data)?;
-        }
-        Ok(ids)
-    }
-
-    fn vertex_statement(&mut self) -> Result<Vec<String>, Error> {
-        let mut stmt = self.node()?;
-        let mut nodes = stmt.clone();
-        while self.r.at_link() {
-            let info = self.r.link()?;
-            let next = self.node()?;
-            self.db.add_link(&stmt, &next, Some(&info))?;
-            nodes.splice(0..0, next.iter().cloned());
-            stmt = next;
-        }
-        Ok(nodes)
-    }
-
     fn subgraph_header(&mut self) -> Result<Frame, Error> {
         self.r.s.bump();
         if self.r.at_separator() {
@@ -151,7 +101,7 @@ impl Parser<'_> {
         }
         self.r.s.bump();
         // Without a bracketed title, an id with whitespace is only a title.
-        let id = (title.is_some() || !RE_SPACE.test(&text.text))
+        let id = (title.is_some() || !text.text.contains(|c: char| is_space(c)))
             .then(|| js::trim(&text.text).to_string());
         Ok(Frame {
             id,
@@ -159,18 +109,6 @@ impl Parser<'_> {
             list: Vec::new(),
             collect: false,
         })
-    }
-
-    fn statement(&mut self) -> Result<DocItem, Error> {
-        if let Some(item) = self.r.statement(self.db)? {
-            return Ok(item);
-        }
-        if !self.r.at_vertex() {
-            return Err(self.r.fail_statement());
-        }
-        let nodes = self.vertex_statement()?;
-        self.r.separator()?;
-        Ok(DocItem::List(nodes))
     }
 
     /// Subgraphs nest without recursion: each open one keeps the list and
@@ -209,7 +147,7 @@ impl Parser<'_> {
                 open.push(frame);
                 collect = true;
             } else {
-                let item = self.statement()?;
+                let item = self.r.statement(self.db)?;
                 if collect && !matches!(&item, DocItem::List(items) if items.is_empty()) {
                     list.push(item);
                 }

@@ -1,10 +1,11 @@
 //! Pele's `diagrams/sequence/actors.ts`.
 
+use crate::geom::Point;
 use std::fmt;
 
 use crate::{
     svg::{
-        builder::{LabelSvg, fragment, num},
+        builder::{fragment, num},
         theme::RADIUS,
     },
     text::Label,
@@ -163,10 +164,8 @@ pub fn draw_actor<'a>(
             return write!(
                 f,
                 "{}",
-                LabelSvg(
-                    label,
-                    cx,
-                    top + GLYPH + GLYPH_GAP + label.height / 2.0,
+                label.svg(
+                    Point::new(cx, top + GLYPH + GLYPH_GAP + label.height / 2.0),
                     &text
                 )
             );
@@ -186,7 +185,7 @@ pub fn draw_actor<'a>(
                 num(top + STACK),
                 num(bw),
                 num(bh),
-                LabelSvg(label, left + bw / 2.0, top + STACK + bh / 2.0, &text)
+                label.svg(Point::new(left + bw / 2.0, top + STACK + bh / 2.0), &text)
             );
         }
         if kind == "queue" {
@@ -198,7 +197,7 @@ pub fn draw_actor<'a>(
             return write!(
                 f,
                 "<path d=\"M{l},{t}H{r}A{CAP},{ry} 0 0 1 {r},{b}H{l}A{CAP},{ry} 0 0 1 {l},{t}Z\"{SHAPE}/><path d=\"M{r},{t}A{CAP},{ry} 0 0 0 {r},{b}\"{LINE}/>{}",
-                LabelSvg(label, cx - CAP / 2.0, top + h / 2.0, &text)
+                label.svg(Point::new(cx - CAP / 2.0, top + h / 2.0), &text)
             );
         }
         write!(
@@ -208,7 +207,7 @@ pub fn draw_actor<'a>(
             num(top),
             num(w),
             num(h),
-            LabelSvg(label, cx, top + h / 2.0, &text)
+            label.svg(Point::new(cx, top + h / 2.0), &text)
         )
     })
 }

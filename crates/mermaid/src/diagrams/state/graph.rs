@@ -6,7 +6,8 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use super::types::{Descr, StateClassDef, StateStmt, Stmt};
+use super::types::{Descr, StateStmt, Stmt};
+use crate::diagrams::common::style_class::StyleClass;
 use crate::{detect::Kind, error::Error, js};
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -87,7 +88,7 @@ fn direction(doc: &[Stmt]) -> String {
 
 struct Builder<'a> {
     states: &'a IndexMap<String, StateStmt>,
-    classes: &'a IndexMap<String, StateClassDef>,
+    classes: &'a IndexMap<String, StyleClass>,
     nodes: Vec<StateNode>,
     edges: Vec<StateEdge>,
     by_id: HashMap<String, usize>,
@@ -189,7 +190,7 @@ impl Builder<'_> {
         }
         let draft = self.drafts.get_mut(id).expect("a draft");
 
-        if let Some(description) = item.description.as_ref().filter(|d| d.truthy()) {
+        if let Some(description) = item.description.as_ref().filter(|d| !d.is_empty()) {
             match &draft.description {
                 Descr::Many(list) => {
                     draft.shape = Some("rectWithTitle".to_string());
@@ -349,7 +350,7 @@ impl Builder<'_> {
 pub fn build_state_graph(
     root_doc: &[Stmt],
     states: &IndexMap<String, StateStmt>,
-    classes: &IndexMap<String, StateClassDef>,
+    classes: &IndexMap<String, StyleClass>,
 ) -> Result<StateGraph, Error> {
     let mut b = Builder {
         states,

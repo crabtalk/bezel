@@ -9,30 +9,15 @@ use serde::{
 use super::{
     members::{ClassMember, MemberType},
     types::{
-        ClassInterface, ClassNode, ClassNote, ClassRelation, NamespaceNode, RelationEnd, StyleClass,
+        ClassInterface, ClassNode, ClassNote, ClassRelation, LineType, NamespaceNode, RelationEnd,
+        RelationType, StyleClass,
     },
 };
-use crate::{
-    js::{self, Lazy},
-    text::decode_entities,
-    util::url::sanitize_url,
-};
-
-pub const LINE: u8 = 0;
-pub const DOTTED_LINE: u8 = 1;
-
-pub const AGGREGATION: u8 = 0;
-pub const EXTENSION: u8 = 1;
-pub const COMPOSITION: u8 = 2;
-pub const DEPENDENCY: u8 = 3;
-pub const LOLLIPOP: u8 = 4;
+use crate::{diagrams::common::db::Titles, js, text::decode_entities, util::url::sanitize_url};
 
 /// Mermaid looks up ids that start with a digit under this prefix, so they
 /// never match a class.
 const DOM_ID_PREFIX: &str = "classId-";
-
-static RE_LEAD: Lazy = Lazy::new(r"^\s+", "g");
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
 
 /// The class name and the generic type of `id`, split at its tildes.
 fn split_name(id: &str) -> (&str, &str) {
@@ -63,9 +48,7 @@ pub struct ClassModel {
     pub namespaces: IndexMap<String, NamespaceNode>,
     pub interfaces: Vec<ClassInterface>,
     pub style_classes: IndexMap<String, StyleClass>,
-    pub title: Option<String>,
-    pub acc_title: Option<String>,
-    pub acc_descr: Option<String>,
+    pub titles: Titles,
     namespace_stack: Vec<String>,
     /// The classes tagged with each CSS class name, by id.
     with_css_class: IndexMap<String, IndexSet<String>>,
@@ -81,9 +64,7 @@ impl Default for ClassModel {
             namespaces: IndexMap::new(),
             interfaces: Vec::new(),
             style_classes: IndexMap::new(),
-            title: None,
-            acc_title: None,
-            acc_descr: None,
+            titles: Titles::default(),
             namespace_stack: Vec::new(),
             with_css_class: IndexMap::new(),
         }
@@ -140,10 +121,11 @@ impl ClassModel {
 
     pub fn add_relation(&mut self, mut relation: ClassRelation) {
         let (type1, type2) = (relation.relation.type1, relation.relation.type2);
-        if type1 == RelationEnd::Type(LOLLIPOP) && type2 == RelationEnd::None {
+        let lollipop = RelationEnd::Type(RelationType::Lollipop);
+        if type1 == lollipop && type2 == RelationEnd::None {
             self.add_class(&relation.id2);
             relation.id1 = self.add_interface(&relation.id1, &relation.id2);
-        } else if type2 == RelationEnd::Type(LOLLIPOP) && type1 == RelationEnd::None {
+        } else if type2 == lollipop && type1 == RelationEnd::None {
             self.add_class(&relation.id1);
             relation.id2 = self.add_interface(&relation.id2, &relation.id1);
         } else {
@@ -176,8 +158,11 @@ impl ClassModel {
     pub fn add_member(&mut self, class_name: &str, member: &str) {
         let node = self.ensure(class_name);
         let text = js::trim(member);
-        if text.starts_with("<<") && text.ends_with(">>") {
-            node.annotations.push(substring(text, 2, js::len(text) - 2));
+        if let Some(annotation) = text
+            .strip_prefix("<<")
+            .and_then(|text| text.strip_suffix(">>"))
+        {
+            node.annotations.push(annotation.to_string());
         } else if text.find(')').is_some_and(|at| at > 0) {
             let parsed = ClassMember::new(text, MemberType::Method);
             if parsed.member_type == MemberType::Method {
@@ -188,13 +173,6 @@ impl ClassModel {
         } else if !text.is_empty() {
             node.members
                 .push(ClassMember::new(text, MemberType::Attribute));
-        }
-    }
-
-    pub fn add_members(&mut self, class_name: &str, mut members: Vec<&str>) {
-        members.reverse();
-        for member in members {
-            self.add_member(class_name, member);
         }
     }
 
@@ -214,10 +192,6 @@ impl ClassModel {
         id
     }
 
-    pub fn cleanup_label(&self, label: &str) -> String {
-        js::trim(label.strip_prefix(':').unwrap_or(label)).to_string()
-    }
-
     pub fn set_css_class(&mut self, ids: &str, class_name: &str) {
         for id in ids.split(',') {
             let key = lookup_id(id);
@@ -235,21 +209,12 @@ impl ClassModel {
 
     pub fn define_class(&mut self, ids: &[&str], style: &[String]) {
         for &id in ids {
-            let style_class =
-                self.style_classes
-                    .entry(id.to_string())
-                    .or_insert_with(|| StyleClass {
-                        id: id.to_string(),
-                        styles: Vec::new(),
-                        text_styles: Vec::new(),
-                    });
+            let style_class = self
+                .style_classes
+                .entry(id.to_string())
+                .or_insert_with(|| StyleClass::new(id));
             for s in style {
-                if s.contains("color") {
-                    style_class
-                        .text_styles
-                        .push(s.replacen("fill", "bgFill", 1));
-                }
-                style_class.styles.push(s.clone());
+                style_class.push(s);
             }
             // Mermaid tests `cssClasses.includes(id)`, which also matches part
             // of a longer name (a classDef named `def` styles every class,
@@ -267,10 +232,7 @@ impl ClassModel {
         }
     }
 
-    pub fn set_tooltip(&mut self, ids: &str, tooltip: Option<&str>) {
-        let Some(tooltip) = tooltip else {
-            return;
-        };
+    pub fn set_tooltip(&mut self, ids: &str, tooltip: &str) {
         for id in ids.split(',') {
             if let Some(node) = self.classes.get_mut(split_name(id).0) {
                 node.tooltip = Some(tooltip.to_string());
@@ -300,18 +262,6 @@ impl ClassModel {
             }
         }
         self.set_css_class(ids, "clickable");
-    }
-
-    pub fn set_direction(&mut self, dir: &str) {
-        self.direction = dir.to_string();
-    }
-
-    pub fn set_acc_title(&mut self, text: &str) {
-        self.acc_title = Some(RE_LEAD.replace(text, |_| String::new()));
-    }
-
-    pub fn set_acc_description(&mut self, text: &str) {
-        self.acc_descr = Some(RE_INDENT.replace(text, |_| "\n".into()));
     }
 
     pub fn add_namespace(&mut self, id: &str, label: Option<&str>) -> String {
@@ -426,13 +376,6 @@ impl ClassModel {
     }
 }
 
-/// `text.substring(from, to)` in UTF-16 units.
-fn substring(text: &str, from: usize, to: usize) -> String {
-    let units: Vec<u16> = text.encode_utf16().collect();
-    let (from, to) = (from.min(units.len()), to.min(units.len()));
-    String::from_utf16_lossy(&units[from.min(to)..from.max(to)])
-}
-
 /// A namespace as `JSON.stringify` writes it: its classes, notes and children
 /// in place.
 struct NamespaceJson<'m> {
@@ -535,8 +478,8 @@ impl Serialize for Tagged<'_> {
 #[derive(Serialize)]
 #[allow(non_snake_case)]
 struct LineTypes {
-    LINE: u8,
-    DOTTED_LINE: u8,
+    LINE: LineType,
+    DOTTED_LINE: LineType,
 }
 
 #[derive(Serialize)]
@@ -553,15 +496,21 @@ impl Serialize for ClassModel {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let mut out = s.serialize_struct("ClassDb", 15)?;
         out.serialize_field("type", "class")?;
-        out.serialize_field("lineType", &LineTypes { LINE, DOTTED_LINE })?;
+        out.serialize_field(
+            "lineType",
+            &LineTypes {
+                LINE: LineType::Line,
+                DOTTED_LINE: LineType::Dotted,
+            },
+        )?;
         out.serialize_field(
             "relationType",
             &RelationTypes {
-                AGGREGATION,
-                EXTENSION,
-                COMPOSITION,
-                DEPENDENCY,
-                LOLLIPOP,
+                AGGREGATION: RelationType::Aggregation as u8,
+                EXTENSION: RelationType::Extension as u8,
+                COMPOSITION: RelationType::Composition as u8,
+                DEPENDENCY: RelationType::Dependency as u8,
+                LOLLIPOP: RelationType::Lollipop as u8,
             },
         )?;
         out.serialize_field("direction", &self.direction)?;
@@ -571,13 +520,13 @@ impl Serialize for ClassModel {
         out.serialize_field("namespaces", &Namespaces(self))?;
         out.serialize_field("interfaces", &self.interfaces)?;
         out.serialize_field("styleClasses", &self.style_classes)?;
-        if let Some(title) = &self.title {
+        if let Some(title) = &self.titles.title {
             out.serialize_field("title", title)?;
         }
-        if let Some(acc_title) = &self.acc_title {
+        if let Some(acc_title) = &self.titles.acc_title {
             out.serialize_field("accTitle", acc_title)?;
         }
-        if let Some(acc_descr) = &self.acc_descr {
+        if let Some(acc_descr) = &self.titles.acc_descr {
             out.serialize_field("accDescr", acc_descr)?;
         }
         out.serialize_field("namespaceStack", &self.namespace_stack)?;

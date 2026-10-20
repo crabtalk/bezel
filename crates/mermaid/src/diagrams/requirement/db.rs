@@ -1,53 +1,20 @@
 //! Pele's `diagrams/requirement/db.ts`.
 
+use crate::diagrams::common::db::Titles;
+use crate::diagrams::common::style_class::StyleClass;
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use super::types::{Relation, Requirement, RequirementClass, RequirementElement};
-use crate::{
-    detect::Kind,
-    error::Error,
-    js::{self, Lazy},
+use super::types::{
+    Relation, Relationship, Requirement, RequirementElement, RequirementType, Risk, VerifyMethod,
+    or_empty,
 };
-
-pub mod requirement_type {
-    pub const REQUIREMENT: &str = "Requirement";
-    pub const FUNCTIONAL_REQUIREMENT: &str = "Functional Requirement";
-    pub const INTERFACE_REQUIREMENT: &str = "Interface Requirement";
-    pub const PERFORMANCE_REQUIREMENT: &str = "Performance Requirement";
-    pub const PHYSICAL_REQUIREMENT: &str = "Physical Requirement";
-    pub const DESIGN_CONSTRAINT: &str = "Design Constraint";
-}
-
-pub mod risk_level {
-    pub const LOW_RISK: &str = "Low";
-    pub const MED_RISK: &str = "Medium";
-    pub const HIGH_RISK: &str = "High";
-}
-
-pub mod verify_type {
-    pub const VERIFY_ANALYSIS: &str = "Analysis";
-    pub const VERIFY_DEMONSTRATION: &str = "Demonstration";
-    pub const VERIFY_INSPECTION: &str = "Inspection";
-    pub const VERIFY_TEST: &str = "Test";
-}
-
-pub mod relationships {
-    pub const CONTAINS: &str = "contains";
-    pub const COPIES: &str = "copies";
-    pub const DERIVES: &str = "derives";
-    pub const SATISFIES: &str = "satisfies";
-    pub const VERIFIES: &str = "verifies";
-    pub const REFINES: &str = "refines";
-    pub const TRACES: &str = "traces";
-}
+use crate::{detect::Kind, error::Error};
 
 /// Applying a class copies its declarations onto each node, so a short text
 /// can ask for hundreds of millions of copies. Past this many the diagram is
 /// refused.
 const MAX_STYLE_COPIES: usize = 1_000_000;
-
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
 
 /// Pele's `RequirementDb`, serialized with the fields it keeps between
 /// statements as Pele's is.
@@ -60,19 +27,17 @@ pub struct RequirementModel {
     pub requirements: IndexMap<String, Requirement>,
     pub elements: IndexMap<String, RequirementElement>,
     pub relations: Vec<Relation>,
-    pub classes: IndexMap<String, RequirementClass>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_descr: Option<String>,
+    pub classes: IndexMap<String, StyleClass>,
+    #[serde(flatten)]
+    pub titles: Titles,
     // The grammar reports a body's fields before the requirement or element
     // they belong to.
     new_id: String,
     new_text: String,
-    new_risk: String,
-    new_verify_method: String,
+    #[serde(serialize_with = "or_empty")]
+    new_risk: Option<Risk>,
+    #[serde(serialize_with = "or_empty")]
+    new_verify_method: Option<VerifyMethod>,
     new_element_type: String,
     new_doc_ref: String,
     style_copies: usize,
@@ -87,13 +52,11 @@ impl Default for RequirementModel {
             elements: IndexMap::new(),
             relations: Vec::new(),
             classes: IndexMap::new(),
-            title: None,
-            acc_title: None,
-            acc_descr: None,
+            titles: Titles::default(),
             new_id: String::new(),
             new_text: String::new(),
-            new_risk: String::new(),
-            new_verify_method: String::new(),
+            new_risk: None,
+            new_verify_method: None,
             new_element_type: String::new(),
             new_doc_ref: String::new(),
             style_copies: 0,
@@ -124,15 +87,15 @@ impl RequirementModel {
         self.direction = dir.to_string();
     }
 
-    pub fn add_requirement(&mut self, name: &str, kind: &str) {
+    pub fn add_requirement(&mut self, name: &str, kind: RequirementType) {
         if !self.requirements.contains_key(name) {
             let requirement = Requirement {
                 name: name.to_string(),
-                kind: kind.to_string(),
+                kind,
                 requirement_id: self.new_id.clone(),
                 text: self.new_text.clone(),
-                risk: self.new_risk.clone(),
-                verify_method: self.new_verify_method.clone(),
+                risk: self.new_risk,
+                verify_method: self.new_verify_method,
                 css_styles: Vec::new(),
                 classes: vec!["default".into()],
             };
@@ -140,8 +103,8 @@ impl RequirementModel {
         }
         self.new_id.clear();
         self.new_text.clear();
-        self.new_risk.clear();
-        self.new_verify_method.clear();
+        self.new_risk = None;
+        self.new_verify_method = None;
     }
 
     pub fn set_new_req_id(&mut self, id: &str) {
@@ -152,12 +115,12 @@ impl RequirementModel {
         self.new_text = text.to_string();
     }
 
-    pub fn set_new_req_risk(&mut self, risk: &str) {
-        self.new_risk = risk.to_string();
+    pub fn set_new_req_risk(&mut self, risk: Risk) {
+        self.new_risk = Some(risk);
     }
 
-    pub fn set_new_req_verify_method(&mut self, verify_method: &str) {
-        self.new_verify_method = verify_method.to_string();
+    pub fn set_new_req_verify_method(&mut self, verify_method: VerifyMethod) {
+        self.new_verify_method = Some(verify_method);
     }
 
     pub fn add_element(&mut self, name: &str) {
@@ -183,9 +146,9 @@ impl RequirementModel {
         self.new_doc_ref = doc_ref.to_string();
     }
 
-    pub fn add_relationship(&mut self, kind: &str, src: &str, dst: &str) {
+    pub fn add_relationship(&mut self, kind: Relationship, src: &str, dst: &str) {
         self.relations.push(Relation {
-            kind: kind.to_string(),
+            kind,
             src: src.to_string(),
             dst: dst.to_string(),
         });
@@ -247,16 +210,9 @@ impl RequirementModel {
             let class = self
                 .classes
                 .entry(id.to_string())
-                .or_insert_with(|| RequirementClass {
-                    id: id.to_string(),
-                    styles: Vec::new(),
-                    text_styles: Vec::new(),
-                });
+                .or_insert_with(|| StyleClass::new(id));
             for s in style {
-                if s.contains("color") {
-                    class.text_styles.push(s.replacen("fill", "bgFill", 1));
-                }
-                class.styles.push(s.clone());
+                class.push(s);
             }
             let split: Vec<String> = style
                 .iter()
@@ -275,13 +231,5 @@ impl RequirementModel {
             }
         }
         Ok(())
-    }
-
-    pub fn set_acc_title(&mut self, text: &str) {
-        self.acc_title = Some(js::trim_start(text).to_string());
-    }
-
-    pub fn set_acc_description(&mut self, text: &str) {
-        self.acc_descr = Some(RE_INDENT.replace(text, |_| "\n".into()));
     }
 }

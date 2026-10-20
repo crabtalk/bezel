@@ -15,7 +15,7 @@ pub use types::{GanttTask, RawTask};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
@@ -32,7 +32,7 @@ impl Diagram for Gantt {
     ) -> Result<Model, Error> {
         let mut db = GanttDb::new();
         if let Some(title) = title.filter(|title| !title.is_empty()) {
-            db.title = Some(title.to_string());
+            db.titles.title = Some(title.to_string());
         }
         if let Some(mode) = &config.gantt.display_mode {
             db.display_mode = mode.clone();
@@ -81,9 +81,8 @@ pub struct GanttConfig {
     pub display_mode: Option<String>,
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Gantt(model) = model else {
-        unreachable!("gantt renders a gantt model")
-    };
-    render::render_gantt(model, &config.gantt, ctx)
+impl Render for GanttDb {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        render::render_gantt(self, &config.gantt, ctx)
+    }
 }

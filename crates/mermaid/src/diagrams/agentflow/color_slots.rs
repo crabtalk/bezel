@@ -6,27 +6,34 @@
 
 use indexmap::IndexMap;
 
-use super::graph::GraphNode;
+use super::{graph::GraphNode, types::VertexKind};
 
-/// Each kind's slot, in the order the kinds were declared.
-pub const KIND_SLOT: [(&str, usize); 7] = [
-    ("tool", 0),
-    ("task", 1),
-    ("decision", 2),
-    ("input", 3),
-    ("refdoc", 4),
-    ("connector", 5),
-    ("action", 6),
+/// The kinds in the order they were declared, which is the order of their
+/// slots.
+const KINDS: [VertexKind; 7] = [
+    VertexKind::Tool,
+    VertexKind::Task,
+    VertexKind::Decision,
+    VertexKind::Input,
+    VertexKind::Refdoc,
+    VertexKind::Connector,
+    VertexKind::Action,
 ];
 
-pub const KIND_COUNT: usize = KIND_SLOT.len();
+pub const KIND_COUNT: usize = KINDS.len();
 
-/// The slot of `kind`, when it is one.
+impl VertexKind {
+    pub fn slot(self) -> usize {
+        KINDS
+            .iter()
+            .position(|&kind| kind == self)
+            .expect("every kind has a slot")
+    }
+}
+
+/// The slot of the kind named `kind`, when it is one.
 pub fn kind_slot(kind: &str) -> Option<usize> {
-    KIND_SLOT
-        .iter()
-        .find(|(name, _)| *name == kind)
-        .map(|&(_, slot)| slot)
+    KINDS.iter().position(|kind_of| kind_of.name() == kind)
 }
 
 /// At least one, so that a palette shorter than the kinds still gives
@@ -46,7 +53,7 @@ pub fn container_slot(n: usize, palette_length: usize) -> usize {
 
 pub fn assign_color_slots(
     nodes: &mut [GraphNode],
-    kind_of: impl Fn(&str) -> Option<&'static str>,
+    kind_of: impl Fn(&str) -> Option<VertexKind>,
     container_order: &IndexMap<String, usize>,
     palette_length: usize,
 ) {
@@ -65,10 +72,8 @@ pub fn assign_color_slots(
             node.color_index = Some(container_slot(n, palette_length));
             continue;
         }
-        if let Some(kind) = kind_of(&node.id)
-            && kind_slot(kind).is_some()
-        {
-            node.kind = Some(kind);
+        if let Some(kind) = kind_of(&node.id) {
+            node.kind = Some(kind.name());
         }
     }
 }

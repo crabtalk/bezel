@@ -9,7 +9,7 @@ pub mod tokens;
 
 pub use db::XyChartModel;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 pub use render::XyChartConfig;
@@ -25,18 +25,15 @@ impl Diagram for XyChart {
         _line_offset: usize,
         _limits: &ParseLimits,
     ) -> Result<Model, Error> {
-        let mut db = XyChartModel {
-            title: title.map(str::to_string),
-            ..XyChartModel::default()
-        };
+        let mut db = XyChartModel::default();
+        db.titles.title = title.map(str::to_string);
         parser::parse_xy_chart(source, &mut db)?;
         Ok(Model::XyChart(db))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::XyChart(model) = model else {
-        unreachable!("xychart renders an xychart model")
-    };
-    render::render_xy_chart(model, &config.xy_chart, ctx)
+impl Render for XyChartModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        render::render_xy_chart(self, &config.xy_chart, ctx)
+    }
 }

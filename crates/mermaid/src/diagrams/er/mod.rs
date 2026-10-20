@@ -12,7 +12,7 @@ pub mod types;
 
 pub use db::ErModel;
 
-use super::{Diagram, Model};
+use super::{Diagram, Model, Render};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
@@ -29,16 +29,15 @@ impl Diagram for Er {
     ) -> Result<Model, Error> {
         let mut db = ErModel::default();
         if let Some(title) = title.filter(|title| !title.is_empty()) {
-            db.title = Some(title.to_string());
+            db.titles.set_title(title);
         }
         parser::parse_er(source, &mut db)?;
         Ok(Model::Er(Box::new(db)))
     }
 }
 
-pub fn render(model: &Model, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
-    let Model::Er(model) = model else {
-        unreachable!("er renders an er model")
-    };
-    Ok(render::render_er(model, config, ctx))
+impl Render for ErModel {
+    fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
+        Ok(render::render_er(self, config, ctx))
+    }
 }

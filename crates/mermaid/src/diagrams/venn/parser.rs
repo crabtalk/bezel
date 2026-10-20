@@ -13,8 +13,7 @@ use crate::{
     detect::Kind,
     error::Error,
     js,
-    token::{Grammar, Token},
-    util::chars::width_at,
+    token::{Grammar, Token, after_keyword},
 };
 
 const STATEMENT: &str = "'EOF', 'NEWLINE', 'TITLE', 'SET', 'UNION', 'TEXT', 'INDENT_TEXT', 'STYLE'";
@@ -190,8 +189,7 @@ pub fn parse_venn(src: &str, db: &mut VennDb) -> Result<(), Error> {
         let text = p.take();
         match statement {
             T::Title => {
-                let title = &text[5 + width_at(&text, 5)..];
-                p.db.set_diagram_title(title.to_string());
+                p.db.title = Some(after_keyword(&text, 5).to_string());
             }
             T::Set => {
                 let id = p.identifier()?;

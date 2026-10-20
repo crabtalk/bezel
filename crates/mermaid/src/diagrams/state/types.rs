@@ -4,6 +4,7 @@ use indexmap::IndexMap;
 use serde::{Serialize, Serializer};
 
 use super::graph::StateGraph;
+use crate::diagrams::common::{db::Titles, style_class::StyleClass};
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct StateNote {
@@ -21,12 +22,9 @@ pub enum Descr {
 }
 
 impl Descr {
-    /// JavaScript's truthiness: an empty text is false, any list true.
-    pub fn truthy(&self) -> bool {
-        match self {
-            Descr::One(text) => !text.is_empty(),
-            Descr::Many(_) => true,
-        }
+    /// An empty text. A list, even an empty one, is not.
+    pub fn is_empty(&self) -> bool {
+        matches!(self, Descr::One(text) if text.is_empty())
     }
 
     /// The texts, one or many.
@@ -183,14 +181,6 @@ pub struct StateRelation {
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct StateClassDef {
-    pub id: String,
-    pub styles: Vec<String>,
-    pub text_styles: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct StateLink {
     pub url: String,
     pub tooltip: String,
@@ -205,14 +195,10 @@ pub struct StateModel {
     pub root_doc: Vec<Stmt>,
     pub states: IndexMap<String, StateStmt>,
     pub relations: Vec<StateRelation>,
-    pub classes: IndexMap<String, StateClassDef>,
+    pub classes: IndexMap<String, StyleClass>,
     pub links: IndexMap<String, StateLink>,
     pub graph: StateGraph,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub acc_descr: Option<String>,
+    #[serde(flatten)]
+    pub titles: Titles,
     pub divider_count: usize,
 }

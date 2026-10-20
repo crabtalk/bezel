@@ -2,6 +2,8 @@
 
 use super::SequenceConfig;
 use crate::config::within;
+use crate::geom::Point;
+use crate::svg::edges::Marker;
 use std::{
     collections::HashSet,
     fmt::{self, Write as _},
@@ -12,7 +14,7 @@ use indexmap::IndexMap;
 use super::{
     actors::{ActorSize, actor_kind, actor_size, draw_actor, is_figure},
     db::SequenceModel,
-    types::{SeqActor, SeqMessageText, line, placement},
+    types::{Placement, SeqActor, SeqMessageText, line},
 };
 use crate::Ctx;
 use crate::{
@@ -24,12 +26,12 @@ use crate::{
     },
     js,
     svg::{
-        builder::{Esc, EscText, LabelSvg, Point, fragment, num},
-        edges::{ARROW, marker},
+        builder::{Esc, EscText, fragment, num},
+        edges::ARROW,
         root::{Accessible, svg_document},
         theme::{RADIUS, class_names, resolve_style},
     },
-    text::{Host, Label, Style, layout_label},
+    text::{Host, Label, Style},
 };
 
 const MSG_PAD: f64 = 12.0;
@@ -229,14 +231,14 @@ fn half(f: &mut fmt::Formatter<'_>, x: f64, y: f64, dir: f64, up: f64, stick: bo
         return write!(
             f,
             "<path class=\"{p}-marker\" d=\"M{}L{bx},{}\"/>",
-            Point(x, y),
+            Point::new(x, y),
             num(y + up * 5.0)
         );
     }
     write!(
         f,
         "<path class=\"{p}-marker\" d=\"M{}L{bx},{}V{}Z\" fill=\"var(--_l)\" stroke=\"none\"/>",
-        Point(x, y),
+        Point::new(x, y),
         num(y + up * 4.5),
         num(y)
     )
@@ -248,14 +250,27 @@ fn head(kind: Head, x: f64, y: f64, dir: f64, up: f64) -> impl fmt::Display {
     fragment(move |f| {
         let p = crate::PREFIX;
         match kind {
-            Head::Arrow => write!(f, "{}", marker("arrow_point", x, y, dir, 0.0, "var(--_l)")),
-            Head::Cross => write!(f, "{}", marker("arrow_cross", x, y, dir, 0.0, "var(--_l)")),
+            Head::Arrow => write!(
+                f,
+                "{}",
+                Marker::Arrow.draw(Point::new(x, y), Point::new(dir, 0.0), "var(--_l)")
+            ),
+            Head::Cross => write!(
+                f,
+                "{}",
+                Marker::draw_of(
+                    Marker::from_name("arrow_cross"),
+                    Point::new(x, y),
+                    Point::new(dir, 0.0),
+                    "var(--_l)"
+                )
+            ),
             Head::Open => write!(
                 f,
                 "<path class=\"{p}-marker\" d=\"M{}L{}L{}\" stroke-linejoin=\"round\"/>",
-                Point(x - dir * ARROW, y - 4.5),
-                Point(x, y),
-                Point(x - dir * ARROW, y + 4.5)
+                Point::new(x - dir * ARROW, y - 4.5),
+                Point::new(x, y),
+                Point::new(x - dir * ARROW, y + 4.5)
             ),
             Head::HalfSolid => half(f, x, y, dir, up, false),
             Head::HalfStick => half(f, x, y, dir, up, true),
@@ -339,10 +354,10 @@ impl<'m> Out<'m> {
             self.crosses,
             "<path class=\"{p}-destroy\" data-id=\"{}\" d=\"M{}L{}M{}L{}\"/>",
             EscText(col.id),
-            Point(cx - 6.0, cy - 6.0),
-            Point(cx + 6.0, cy + 6.0),
-            Point(cx + 6.0, cy - 6.0),
-            Point(cx - 6.0, cy + 6.0)
+            Point::new(cx - 6.0, cy - 6.0),
+            Point::new(cx + 6.0, cy + 6.0),
+            Point::new(cx + 6.0, cy - 6.0),
+            Point::new(cx - 6.0, cy + 6.0)
         );
         cy + 6.0
     }
@@ -429,7 +444,7 @@ fn draw(
     let count = messages.len();
     let numbering = number_messages(messages, conf.show_sequence_numbers == Some(true));
     let text = |raw: Option<&str>, font_size: f64, wrap: bool, width: f64, base: u8| -> Label {
-        let label = layout_label(
+        let label = Label::layout(
             raw,
             false,
             measurer,
@@ -541,9 +556,9 @@ fn draw(
         if m.kind == Some(line::NOTE) {
             let label = text(Some(message), small, m.wrap, wrap_w, 0);
             let w = label.width + 2.0 * note_pad;
-            if m.placement == Some(placement::LEFTOF) {
+            if m.placement == Some(Placement::LeftOf) {
                 need(ai - 1, ai, w + 2.0 * NOTE_GAP + ACT_W);
-            } else if m.placement == Some(placement::RIGHTOF) {
+            } else if m.placement == Some(Placement::RightOf) {
                 need(ai, ai + 1, w + 2.0 * NOTE_GAP + ACT_W);
             } else if a == b {
                 need(ai - 1, ai, w / 2.0 + NOTE_GAP);
@@ -825,9 +840,9 @@ fn draw(
             let b = &cols[view.b];
             let (mut x0, mut x1);
             if view.kind == V::Note {
-                if m.placement == Some(placement::LEFTOF) {
+                if m.placement == Some(Placement::LeftOf) {
                     view.x = a.x - NOTE_GAP - view.w;
-                } else if m.placement == Some(placement::RIGHTOF) {
+                } else if m.placement == Some(Placement::RightOf) {
                     view.x = a.x + NOTE_GAP;
                 } else if view.a == view.b {
                     view.x = a.x - view.w / 2.0;
@@ -938,7 +953,7 @@ fn draw(
                 num(label.height - 4.0)
             );
         }
-        let _ = write!(out, "{}", LabelSvg(label, cx, cy, attrs));
+        let _ = write!(out, "{}", label.svg(Point::new(cx, cy), attrs));
     };
     let badge = |out: &mut String, i: usize, cx: f64, cy: f64, w: f64| {
         let _ = write!(
@@ -1069,9 +1084,9 @@ fn draw(
             let h = view.label.height + 2.0 * 4f64.max(note_pad - 4.0);
             let top = y + 10.0;
             let mut x = view.x;
-            if m.placement == Some(placement::RIGHTOF) {
+            if m.placement == Some(Placement::RightOf) {
                 x += right_edge(a, 0) - a.x;
-            } else if m.placement == Some(placement::LEFTOF) {
+            } else if m.placement == Some(Placement::LeftOf) {
                 x += left_edge(a, 0) - a.x;
             }
             out.extend(x, x + view.w);
@@ -1083,10 +1098,8 @@ fn draw(
                 num(top),
                 num(view.w),
                 num(h),
-                LabelSvg(
-                    &view.label,
-                    x + view.w / 2.0,
-                    top + h / 2.0,
+                view.label.svg(
+                    Point::new(x + view.w / 2.0, top + h / 2.0),
                     crate::class!("label", "stroke=\"none\" fill=\"var(--_fg)\"")
                 )
             );
@@ -1201,9 +1214,9 @@ fn draw(
                         "M{from},{}H{}A6,6 0 0 1 {}V{}A6,6 0 0 1 {}H{to}",
                         num(top),
                         num(reach - 6.0),
-                        Point(reach, top + 6.0),
+                        Point::new(reach, top + 6.0),
                         num(bottom - 6.0),
-                        Point(reach - 6.0, bottom)
+                        Point::new(reach - 6.0, bottom)
                     )
                 };
                 let _ = write!(out.edges, "\"{attrs}/>");
@@ -1220,10 +1233,8 @@ fn draw(
                         out.labels,
                         "<g class=\"{p}-edge-label\" data-id=\"i{}\">{}</g>",
                         EscText(&m.id),
-                        LabelSvg(
-                            label,
-                            reach + 8.0 + label.width / 2.0,
-                            (top + bottom) / 2.0,
+                        label.svg(
+                            Point::new(reach + 8.0 + label.width / 2.0, (top + bottom) / 2.0),
                             ""
                         )
                     );
@@ -1303,7 +1314,7 @@ fn draw(
                     out.edges,
                     "<g class=\"{p}-edge {p}-message\" data-id=\"i{}\"><path d=\"M{}H{}\"{attrs}/>",
                     EscText(&m.id),
-                    Point(from, line_y),
+                    Point::new(from, line_y),
                     num(to)
                 );
                 if st.at_start {
@@ -1409,10 +1420,11 @@ fn draw(
             } else {
                 ""
             },
-            LabelSvg(
-                &run.title,
-                (x0 + x1) / 2.0,
-                box_pad / 2.0 + 2.0 + run.title.height / 2.0,
+            run.title.svg(
+                Point::new(
+                    (x0 + x1) / 2.0,
+                    box_pad / 2.0 + 2.0 + run.title.height / 2.0
+                ),
                 crate::class!("cluster-label", "fill=\"var(--_m)\"")
             )
         );
@@ -1424,7 +1436,7 @@ fn draw(
     let mut min_y = 0.0;
     let mut title_out = String::new();
     let title = text(
-        db.title.as_deref(),
+        db.titles.title.as_deref(),
         size,
         false,
         if tight { title_room(ctx) } else { wrap_w },
@@ -1441,7 +1453,7 @@ fn draw(
         let _ = write!(
             title_out,
             "{}",
-            LabelSvg(&title, cx, min_y + title.height / 2.0, title_attrs)
+            title.svg(Point::new(cx, min_y + title.height / 2.0), title_attrs)
         );
     }
 
@@ -1536,8 +1548,8 @@ fn draw(
         size,
         ctx,
         Accessible {
-            acc_title: db.acc_title.as_deref(),
-            acc_descr: db.acc_descr.as_deref(),
+            acc_title: db.titles.acc_title.as_deref(),
+            acc_descr: db.titles.acc_descr.as_deref(),
         },
         &content,
     );
