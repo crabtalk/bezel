@@ -18,6 +18,7 @@ pub use render::AgentflowConfig;
 
 pub use db::{AgentflowDb, AgentflowDbOptions};
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Agentflow;
 
 impl Diagram for Agentflow {
@@ -44,7 +45,7 @@ impl Diagram for Agentflow {
             max_edges: Some(limits.max_edges),
         });
         if let Some(title) = title.filter(|title| !title.is_empty()) {
-            db.title = Some(title.to_string());
+            db.store.title = Some(title.to_string());
         }
         parser::parse_agentflow(source, &mut db, false)?;
         db.graph = render::agent_graph(&mut db, flow);

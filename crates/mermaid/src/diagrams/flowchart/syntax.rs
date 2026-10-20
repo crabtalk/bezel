@@ -1,8 +1,9 @@
 //! The productions flowchart and agentflow share.
 
 use super::{
+    store::FlowStore,
     tokens::T,
-    types::{DocItem, FlowText, LabelType, LinkInfo, Vertex},
+    types::{DocItem, FlowText, LabelType, LinkInfo, Payload, Vertex},
 };
 use crate::{
     detect::Kind,
@@ -41,26 +42,6 @@ const TEXT: [T; 4] = [T::Text, T::Tagstart, T::Tagend, T::UnicodeText];
 const STYLE_PART: [T; 6] = [T::Num, T::NodeString, T::Colon, T::Space, T::Brkt, T::Style];
 const TEXT_TOKENS: &str = "'UNICODE_TEXT', 'TEXT', 'TAGSTART'";
 
-/// The graph operations the shared productions perform.
-pub trait FlowGraph {
-    fn add_vertex(&mut self, id: &str, vertex: Vertex<'_>) -> Result<(), Error>;
-    fn destruct_link(&self, end: &str, start: Option<&str>) -> LinkInfo;
-    fn update_link_interpolate(
-        &mut self,
-        positions: &[String],
-        interpolate: &str,
-    ) -> Result<(), Error>;
-    fn update_link(&mut self, positions: &[String], style: Vec<String>) -> Result<(), Error>;
-    fn add_class(&mut self, ids: &str, styles: &[String]);
-    fn set_direction(&mut self, dir: &str);
-    fn set_class(&mut self, ids: &str, class_name: &str);
-    fn set_tooltip(&mut self, ids: &str, tooltip: &str);
-    fn set_link(&mut self, ids: &str, link: &str, target: Option<&str>);
-    fn set_click_event(&mut self, ids: &str);
-    fn set_acc_title(&mut self, text: &str);
-    fn set_acc_description(&mut self, text: &str);
-}
-
 /// Where one diagram's grammar departs from the other's.
 pub struct Dialect {
     pub diagram: Kind,
@@ -73,6 +54,8 @@ pub struct Dialect {
     pub no_tags: &'static [T],
     /// The error at a token no statement starts with.
     pub statement_start: &'static str,
+    /// The link a `LINK` token and the `START_LINK` before it, if any, draw.
+    pub destruct_link: fn(&str, Option<&str>) -> LinkInfo,
 }
 
 /// A vertex id and the shape written after it.
@@ -94,23 +77,16 @@ impl Node<'_> {
     }
 }
 
-/// A cursor over a flowchart-family token list, and the graph it fills.
-pub struct Reader<'a, D> {
+/// A cursor over a flowchart-family token list.
+pub struct Reader<'a> {
     pub s: Stream<'a, 'a, T>,
-    pub db: &'a mut D,
     dialect: &'static Dialect,
 }
 
-impl<'a, D: FlowGraph> Reader<'a, D> {
-    pub fn new(
-        dialect: &'static Dialect,
-        src: &'a str,
-        tokens: &'a [Token<'a, T>],
-        db: &'a mut D,
-    ) -> Self {
+impl<'a> Reader<'a> {
+    pub fn new(dialect: &'static Dialect, src: &'a str, tokens: &'a [Token<'a, T>]) -> Self {
         Self {
             s: Stream::new(dialect.diagram, src, tokens),
-            db,
             dialect,
         }
     }
@@ -142,14 +118,14 @@ impl<'a, D: FlowGraph> Reader<'a, D> {
     }
 
     /// The `graph` keyword and its direction, through the end of its line.
-    pub fn header(&mut self) -> Result<(), Error> {
+    pub fn header<P: Payload>(&mut self, store: &mut FlowStore<P>) -> Result<(), Error> {
         while self.s.is_any(self.dialect.blank) {
             self.s.bump();
         }
         self.s
             .expect(T::Graph, &expecting(self.dialect.blank.iter().copied()))?;
         if self.s.eat(T::Nodir) {
-            self.db.set_direction("TB");
+            store.set_direction("TB");
             return Ok(());
         }
         let dir = self.s.expect(T::Dir, "'NODIR'")?;
@@ -163,7 +139,7 @@ impl<'a, D: FlowGraph> Reader<'a, D> {
             return Err(self.s.fail_expecting(line_ends.copied()));
         }
         self.s.bump();
-        self.db.set_direction(dir);
+        store.set_direction(dir);
         Ok(())
     }
 
@@ -321,7 +297,7 @@ impl<'a, D: FlowGraph> Reader<'a, D> {
         let id = self.s.is(T::LinkId).then(|| self.s.take().to_string());
         if self.s.is(T::Link) {
             let end = self.s.take();
-            let mut info = self.db.destruct_link(end, None);
+            let mut info = (self.dialect.destruct_link)(end, None);
             if id.is_some() {
                 info.id = id;
             }
@@ -336,7 +312,7 @@ impl<'a, D: FlowGraph> Reader<'a, D> {
             let start = self.s.take();
             let label = self.edge_text()?;
             let end = self.s.expect(T::Link, "'EDGE_TEXT'")?;
-            let mut info = self.db.destruct_link(end, Some(start));
+            let mut info = (self.dialect.destruct_link)(end, Some(start));
             info.text = Some(label);
             if id.is_some() {
                 info.id = id;
@@ -359,7 +335,7 @@ impl<'a, D: FlowGraph> Reader<'a, D> {
         Ok(styles)
     }
 
-    fn link_style(&mut self) -> Result<(), Error> {
+    fn link_style<P: Payload>(&mut self, store: &mut FlowStore<P>) -> Result<(), Error> {
         self.s.bump();
         self.s.expect(T::Space, "")?;
         let mut positions;
@@ -374,41 +350,46 @@ impl<'a, D: FlowGraph> Reader<'a, D> {
         self.s.expect(T::Space, "")?;
         if !self.s.eat(T::Interpolate) {
             let styles = self.styles()?;
-            return self.db.update_link(&positions, styles);
+            return store.update_link(&positions, styles);
         }
         self.s.expect(T::Space, "")?;
         let interpolate = self.alpha_num()?;
         if self.s.eat(T::Space) {
             let styles = self.styles()?;
-            self.db.update_link_interpolate(&positions, &interpolate)?;
-            self.db.update_link(&positions, styles)
+            store.update_link_interpolate(&positions, &interpolate)?;
+            store.update_link(&positions, styles)
         } else {
-            self.db.update_link_interpolate(&positions, &interpolate)
+            store.update_link_interpolate(&positions, &interpolate)
         }
     }
 
-    fn link_tail(&mut self, id: &str, url: &str) -> Result<(), Error> {
+    fn link_tail<P: Payload>(
+        &mut self,
+        store: &mut FlowStore<P>,
+        id: &str,
+        url: &str,
+    ) -> Result<(), Error> {
         if !self.s.eat(T::Space) {
-            self.db.set_link(id, url, None);
+            store.set_link(id, url, None);
             return Ok(());
         }
         if self.s.is(T::LinkTarget) {
             let target = self.s.take();
-            self.db.set_link(id, url, Some(target));
+            store.set_link(id, url, Some(target));
             return Ok(());
         }
         let tooltip = self.s.expect(T::Str, "'LINK_TARGET'")?;
         if self.s.eat(T::Space) {
             let target = self.s.expect(T::LinkTarget, "")?;
-            self.db.set_link(id, url, Some(target));
+            store.set_link(id, url, Some(target));
         } else {
-            self.db.set_link(id, url, None);
+            store.set_link(id, url, None);
         }
-        self.db.set_tooltip(id, tooltip);
+        store.set_tooltip(id, tooltip);
         Ok(())
     }
 
-    fn click(&mut self) -> Result<(), Error> {
+    fn click<P: Payload>(&mut self, store: &mut FlowStore<P>) -> Result<(), Error> {
         let id = self.s.take();
         match self.s.kind() {
             T::Callbackname => {
@@ -419,19 +400,19 @@ impl<'a, D: FlowGraph> Reader<'a, D> {
                 } else {
                     None
                 };
-                self.db.set_click_event(id);
+                store.set_click_event(id);
                 if let Some(tooltip) = tooltip {
-                    self.db.set_tooltip(id, tooltip);
+                    store.set_tooltip(id, tooltip);
                 }
             }
             T::Href => {
                 self.s.bump();
                 let url = self.s.expect(T::Str, "")?;
-                self.link_tail(id, url)?;
+                self.link_tail(store, id, url)?;
             }
             T::Str => {
                 let url = self.s.take();
-                self.link_tail(id, url)?;
+                self.link_tail(store, id, url)?;
             }
             _ => {
                 self.alpha_num()?;
@@ -440,9 +421,9 @@ impl<'a, D: FlowGraph> Reader<'a, D> {
                 } else {
                     None
                 };
-                self.db.set_click_event(id);
+                store.set_click_event(id);
                 if let Some(tooltip) = tooltip {
-                    self.db.set_tooltip(id, tooltip);
+                    store.set_tooltip(id, tooltip);
                 }
             }
         }
@@ -451,7 +432,10 @@ impl<'a, D: FlowGraph> Reader<'a, D> {
 
     /// A statement both diagrams have, through its separator; `None` at a
     /// token none of them starts with.
-    pub fn statement(&mut self) -> Result<Option<DocItem>, Error> {
+    pub fn statement<P: Payload>(
+        &mut self,
+        store: &mut FlowStore<P>,
+    ) -> Result<Option<DocItem>, Error> {
         let none = DocItem::List(Vec::new());
         let item = match self.s.kind() {
             T::Style => {
@@ -464,12 +448,12 @@ impl<'a, D: FlowGraph> Reader<'a, D> {
                     styles: &styles,
                     ..Vertex::default()
                 };
-                self.db.add_vertex(&id, vertex)?;
+                store.add_vertex(&id, vertex);
                 self.separator()?;
                 none
             }
             T::Linkstyle => {
-                self.link_style()?;
+                self.link_style(store)?;
                 self.separator()?;
                 none
             }
@@ -479,7 +463,7 @@ impl<'a, D: FlowGraph> Reader<'a, D> {
                 let id = self.id_string()?;
                 self.s.expect(T::Space, "")?;
                 let styles = self.styles()?;
-                self.db.add_class(&id, &styles);
+                store.add_class(&id, &styles);
                 self.separator()?;
                 none
             }
@@ -489,12 +473,12 @@ impl<'a, D: FlowGraph> Reader<'a, D> {
                 let ids = self.id_string()?;
                 self.s.expect(T::Space, "")?;
                 let class = self.id_string()?;
-                self.db.set_class(&ids, &class);
+                store.set_class(&ids, &class);
                 self.separator()?;
                 none
             }
             T::Click => {
-                self.click()?;
+                self.click(store)?;
                 self.separator()?;
                 none
             }
@@ -516,18 +500,18 @@ impl<'a, D: FlowGraph> Reader<'a, D> {
             T::AccTitle => {
                 self.s.bump();
                 let value = js::trim(self.s.expect(T::AccTitleValue, "")?).to_string();
-                self.db.set_acc_title(&value);
+                store.set_acc_title(&value);
                 DocItem::Str(value)
             }
             T::AccDescr => {
                 self.s.bump();
                 let value = js::trim(self.s.expect(T::AccDescrValue, "")?).to_string();
-                self.db.set_acc_description(&value);
+                store.set_acc_description(&value);
                 DocItem::Str(value)
             }
             T::AccDescrMultilineValue => {
                 let value = js::trim(self.s.take()).to_string();
-                self.db.set_acc_description(&value);
+                store.set_acc_description(&value);
                 DocItem::Str(value)
             }
             _ => return Ok(None),

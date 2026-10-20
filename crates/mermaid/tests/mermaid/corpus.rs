@@ -337,23 +337,23 @@ fn reference_projection(source: &str) -> Result<Value, String> {
         })
         .unwrap_or_default();
     let mut out = Map::new();
-    if let Some(direction) = &db.direction {
+    if let Some(direction) = &db.store.direction {
         out.insert("direction".into(), json!(direction.trim()));
     }
     out.insert(
         "accTitle".into(),
-        json!(db.acc_title.clone().unwrap_or_default()),
+        json!(db.store.acc_title.clone().unwrap_or_default()),
     );
     out.insert(
         "accDescr".into(),
-        json!(db.acc_descr.clone().unwrap_or_default()),
+        json!(db.store.acc_descr.clone().unwrap_or_default()),
     );
     out.insert("vertices".into(), json!(vertices));
     out.insert("edges".into(), model["edges"].clone());
-    if let Some(style) = &db.default_edge_style {
+    if let Some(style) = &db.store.default_edge_style {
         out.insert("defaultStyle".into(), json!(style));
     }
-    if let Some(interpolate) = &db.default_interpolate {
+    if let Some(interpolate) = &db.store.default_interpolate {
         out.insert("defaultInterpolate".into(), json!(interpolate));
     }
     out.insert("subGraphs".into(), model["subgraphs"].clone());

@@ -7,6 +7,7 @@ pub mod lexer;
 pub mod parser;
 pub mod render;
 pub mod shapes;
+pub mod store;
 pub mod syntax;
 pub mod tokens;
 pub mod types;
@@ -18,8 +19,10 @@ use super::{Diagram, Model};
 use crate::{Config, Error, ParseLimits, Rendered};
 use crate::{Ctx, Host};
 
-pub use db::{FlowDb, FlowDbOptions};
+pub use db::FlowDb;
+pub use store::{FlowStore, StoreOptions};
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Flowchart;
 
 /// Mermaid's `flowchart` config, and a flowchart variant's own section.
@@ -52,7 +55,7 @@ impl Diagram for Flowchart {
     ) -> Result<Model, Error> {
         let flow = &config.flowchart;
         let inherit_dir = flow.inherit_dir == Some(true);
-        let mut db = FlowDb::new(FlowDbOptions {
+        let mut db = FlowDb::new(StoreOptions {
             inherit_dir,
             max_edges: Some(limits.max_edges),
         });

@@ -1,13 +1,17 @@
 //! Pele's `diagrams/flowchart/parser.ts`.
 
 use super::{
-    db::FlowDb,
+    db::{FlowDb, destruct_link},
     lexer::tokenize,
-    syntax::{Dialect, FlowGraph, Reader},
+    syntax::{Dialect, Reader},
     tokens::T,
-    types::{DocItem, FlowText, Vertex},
+    types::{DocItem, FlowText},
 };
-use crate::{detect::Kind, error::Error, js::Lazy};
+use crate::{
+    detect::Kind,
+    error::Error,
+    js::{self, Lazy},
+};
 
 const NO_TAGS: [T; 21] = [
     T::Num,
@@ -39,37 +43,30 @@ static DIALECT: Dialect = Dialect {
     line_ends: &[T::Semi, T::Newline],
     no_tags: &NO_TAGS,
     statement_start: "'SEMI', 'NEWLINE', 'SPACE', 'EOF', 'subgraph', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'STYLE', 'LINKSTYLE', 'CLASSDEF', 'CLASS', 'CLICK', 'NODE_STRING'",
+    destruct_link,
 };
 
 /// Mermaid trims whitespace between a closing brace and the end of its line
 /// before parsing.
 static RE_BRACE_TRAIL: Lazy = Lazy::new(r"}\s*\n", "g");
+static RE_SPACE: Lazy = Lazy::new(r"\s", "");
 
 struct Frame {
-    id: Option<FlowText>,
+    id: Option<String>,
     title: Option<FlowText>,
-    /// The title is the id's own text.
-    same: bool,
     list: Vec<DocItem>,
     collect: bool,
 }
 
 struct Parser<'a> {
-    r: Reader<'a, FlowDb>,
+    r: Reader<'a>,
+    db: &'a mut FlowDb,
 }
 
 impl Parser<'_> {
-    fn add_data(&mut self, id: &str, data: &str) -> Result<(), Error> {
-        let vertex = Vertex {
-            metadata: Some(data),
-            ..Vertex::default()
-        };
-        self.r.db.add_vertex(id, vertex)
-    }
-
     fn vertex(&mut self) -> Result<String, Error> {
         let node = self.r.node()?;
-        self.r.db.add_vertex(&node.id, node.vertex())?;
+        self.db.add_vertex(&node.id, node.vertex());
         Ok(node.id)
     }
 
@@ -77,7 +74,7 @@ impl Parser<'_> {
         let id = self.vertex()?;
         if self.r.s.eat(T::StyleSeparator) {
             let class = self.r.id_string()?;
-            self.r.db.set_class(&id, &class);
+            self.db.set_class(&id, &class);
         }
         Ok(id)
     }
@@ -103,7 +100,7 @@ impl Parser<'_> {
             self.r.s.eat_all(T::Space);
             let next = self.styled_vertex()?;
             if let Some(data) = data {
-                self.add_data(&ids[ids.len() - 1], &data)?;
+                self.db.add_metadata(&ids[ids.len() - 1], &data)?;
             }
             ids.push(next);
         }
@@ -113,7 +110,7 @@ impl Parser<'_> {
     fn node(&mut self) -> Result<Vec<String>, Error> {
         let (ids, data) = self.nodes()?;
         if let Some(data) = data {
-            self.add_data(&ids[ids.len() - 1], &data)?;
+            self.db.add_metadata(&ids[ids.len() - 1], &data)?;
         }
         Ok(ids)
     }
@@ -124,7 +121,7 @@ impl Parser<'_> {
         while self.r.at_link() {
             let info = self.r.link()?;
             let next = self.node()?;
-            self.r.db.add_link(&stmt, &next, Some(&info))?;
+            self.db.add_link(&stmt, &next, Some(&info))?;
             nodes.splice(0..0, next.iter().cloned());
             stmt = next;
         }
@@ -138,13 +135,12 @@ impl Parser<'_> {
             return Ok(Frame {
                 id: None,
                 title: None,
-                same: false,
                 list: Vec::new(),
                 collect: false,
             });
         }
         self.r.s.expect(T::Space, &self.r.separators(&[]))?;
-        let id = self.r.text_no_tags()?;
+        let text = self.r.text_no_tags()?;
         let mut title = None;
         if self.r.s.eat(T::Sqs) {
             title = Some(self.r.text()?);
@@ -154,18 +150,19 @@ impl Parser<'_> {
             return Err(self.r.s.fail(&self.r.separators(&[T::Sqs])));
         }
         self.r.s.bump();
-        let same = title.is_none();
+        // Without a bracketed title, an id with whitespace is only a title.
+        let id = (title.is_some() || !RE_SPACE.test(&text.text))
+            .then(|| js::trim(&text.text).to_string());
         Ok(Frame {
-            title: Some(title.unwrap_or_else(|| id.clone())),
-            id: Some(id),
-            same,
+            id,
+            title: Some(title.unwrap_or(text)),
             list: Vec::new(),
             collect: false,
         })
     }
 
     fn statement(&mut self) -> Result<DocItem, Error> {
-        if let Some(item) = self.r.statement()? {
+        if let Some(item) = self.r.statement(self.db)? {
             return Ok(item);
         }
         if !self.r.at_vertex() {
@@ -192,12 +189,9 @@ impl Parser<'_> {
                     break;
                 };
                 self.r.s.bump();
-                let id = self.r.db.add_sub_graph(
-                    frame.id.as_ref(),
-                    &list,
-                    frame.title.as_ref(),
-                    frame.same,
-                );
+                let (id, _) = self
+                    .db
+                    .add_sub_graph(frame.id, &list, frame.title.as_ref(), |_| true);
                 list = frame.list;
                 collect = frame.collect;
                 if collect {
@@ -236,9 +230,10 @@ pub fn parse_flowchart(source: &str, db: &mut FlowDb) -> Result<(), Error> {
     };
     let tokens = tokenize(&src);
     let mut p = Parser {
-        r: Reader::new(&DIALECT, &src, &tokens, db),
+        r: Reader::new(&DIALECT, &src, &tokens),
+        db,
     };
-    p.r.header()?;
+    p.r.header(p.db)?;
     p.document()?;
     if !p.r.s.is(T::End) {
         return Err(p.r.fail_statement());

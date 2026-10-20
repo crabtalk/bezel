@@ -1,14 +1,14 @@
 //! Pele's `diagrams/agentflow/parser.ts`.
 
 use super::{
-    db::AgentflowDb,
+    db::{AgentflowDb, destruct_link},
     lexer::tokenize,
-    types::{DocItem, FlowText, LabelType, Loc, Vertex},
+    types::{DocItem, FlowText, LabelType, Loc},
 };
 use crate::{
     detect::Kind,
     diagrams::flowchart::{
-        syntax::{Dialect, FlowGraph, Reader},
+        syntax::{Dialect, Reader},
         tokens::T,
     },
     error::Error,
@@ -47,6 +47,7 @@ static DIALECT: Dialect = Dialect {
     line_ends: &[T::Comment, T::Semi, T::Newline],
     no_tags: &NO_TAGS,
     statement_start: "'COMMENT', 'SEMI', 'NEWLINE', 'SPACE', 'EOF', 'flow', 'global', 'connector', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'STYLE', 'LINKSTYLE', 'CLASSDEF', 'CLASS', 'CLICK', 'NODE_STRING'",
+    destruct_link,
 };
 
 /// Mermaid trims spaces and tabs between a closing brace and the end of its
@@ -72,7 +73,8 @@ struct Frame {
 }
 
 struct Parser<'a> {
-    r: Reader<'a, AgentflowDb>,
+    r: Reader<'a>,
+    db: &'a mut AgentflowDb,
     locs: &'a [[usize; 4]],
 }
 
@@ -103,29 +105,24 @@ impl Parser<'_> {
     }
 
     fn add_data(&mut self, id: &str, data: &Data) -> Result<(), Error> {
-        let vertex = Vertex {
-            metadata: Some(&data.text),
-            ..Vertex::default()
-        };
         let loc = self.span(data.from, data.to);
-        self.r.db.add_vertex_at(id, vertex, loc)
+        self.db.add_metadata(id, &data.text, loc)
     }
 
     /// [`Parser::add_data`], recorded as an attachment to the vertex.
     fn attach(&mut self, id: &str, data: &Data) -> Result<(), Error> {
         self.add_data(id, data)?;
         let loc = self.span(data.from, data.to);
-        self.r.db.extend_vertex_mapping(id, loc);
+        self.db.extend_vertex_mapping(id, loc);
         Ok(())
     }
 
     fn vertex(&mut self) -> Result<String, Error> {
         let from = self.r.s.index();
         let node = self.r.node()?;
-        self.r.db.add_vertex(&node.id, node.vertex())?;
+        self.db.store.add_vertex(&node.id, node.vertex());
         let loc = self.span(from, self.r.s.index() - 1);
-        self.r
-            .db
+        self.db
             .add_vertex_mapping(&node.id, node.shape.is_none(), loc);
         Ok(node.id)
     }
@@ -134,7 +131,7 @@ impl Parser<'_> {
         let id = self.vertex()?;
         if self.r.s.eat(T::StyleSeparator) {
             let class = self.r.id_string()?;
-            self.r.db.set_class(&id, &class);
+            self.db.store.set_class(&id, &class);
         }
         Ok(id)
     }
@@ -182,9 +179,9 @@ impl Parser<'_> {
         while self.r.at_link() {
             let info = self.r.link()?;
             let next = self.node()?;
-            self.r.db.add_link(&stmt, &next, Some(&info))?;
+            self.db.store.add_link(&stmt, &next, Some(&info))?;
             let loc = self.span(from, self.r.s.index() - 1);
-            self.r.db.add_edge_mapping(&next, loc);
+            self.db.add_edge_mapping(&next, loc);
             nodes.splice(0..0, next.iter().cloned());
             stmt = next;
         }
@@ -227,7 +224,7 @@ impl Parser<'_> {
     }
 
     fn statement(&mut self) -> Result<DocItem, Error> {
-        if let Some(item) = self.r.statement()? {
+        if let Some(item) = self.r.statement(&mut self.db.store)? {
             return Ok(item);
         }
         if self.r.s.is(T::Connector) {
@@ -237,14 +234,11 @@ impl Parser<'_> {
             let sep = self.r.s.index();
             self.r.s.bump();
             let id = self
-                .r
                 .db
                 .add_connector(frame.id.as_ref(), frame.title.as_ref());
             self.attach_data(&id, &frame)?;
             let (start, end) = (self.span(frame.at, frame.at), self.span(sep, sep));
-            self.r
-                .db
-                .add_connector_mapping(frame.id.as_ref(), start, end);
+            self.db.add_connector_mapping(frame.id.as_ref(), start, end);
             return Ok(DocItem::Str(id));
         }
         if !self.r.at_vertex() {
@@ -273,20 +267,17 @@ impl Parser<'_> {
                 let at = self.r.s.index();
                 self.r.s.bump();
                 if frame.global {
-                    self.r.db.add_global(&list);
+                    self.db.add_global(&list);
                     list = frame.list;
                     collect = frame.collect;
                     continue;
                 }
                 let id = self
-                    .r
                     .db
                     .add_sub_graph(frame.id.as_ref(), &list, frame.title.as_ref());
                 self.attach_data(&id, &frame)?;
                 let (start, end) = (self.span(frame.at, frame.at), self.span(at, at));
-                self.r
-                    .db
-                    .add_subgraph_mapping(frame.id.as_ref(), start, end);
+                self.db.add_subgraph_mapping(frame.id.as_ref(), start, end);
                 list = frame.list;
                 collect = frame.collect;
                 if collect {
@@ -347,10 +338,11 @@ pub fn parse_agentflow(source: &str, db: &mut AgentflowDb, raw: bool) -> Result<
     };
     let lexed = tokenize(&src);
     let mut p = Parser {
-        r: Reader::new(&DIALECT, &src, &lexed.tokens, db),
+        r: Reader::new(&DIALECT, &src, &lexed.tokens),
+        db,
         locs: &lexed.locs,
     };
-    p.r.header()?;
+    p.r.header(&mut p.db.store)?;
     p.document()?;
     if !p.r.s.is(T::End) {
         return Err(p.r.fail_statement());

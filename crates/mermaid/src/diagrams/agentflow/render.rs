@@ -151,7 +151,7 @@ pub fn render_agentflow(
     config: &AgentflowConfig,
     ctx: &Ctx<'_, impl Host>,
 ) -> Rendered {
-    if !runs_across(db.direction.as_deref()) {
+    if !runs_across(db.store.direction.as_deref()) {
         return draw(db, config, ctx, false);
     }
     turn_to_fit(ctx, |down| draw(db, config, ctx, down))
@@ -297,7 +297,7 @@ fn draw(
     let root_dir = if turned {
         Dir::TB
     } else {
-        direction(db.direction.as_deref())
+        direction(db.store.direction.as_deref())
     };
     // The direction of the level a node sits in.
     let flow_of = |cnodes: &[CNode], i: usize| -> Dir {
@@ -430,7 +430,7 @@ fn draw(
     );
 
     let title = layout_label(
-        db.title.as_deref(),
+        db.store.title.as_deref(),
         false,
         measure,
         size,
@@ -821,8 +821,8 @@ fn draw(
         size,
         ctx,
         Accessible {
-            acc_title: db.acc_title.as_deref(),
-            acc_descr: db.acc_descr.as_deref(),
+            acc_title: db.store.acc_title.as_deref(),
+            acc_descr: db.store.acc_descr.as_deref(),
         },
         &content,
     );

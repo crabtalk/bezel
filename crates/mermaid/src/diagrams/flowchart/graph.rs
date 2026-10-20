@@ -67,11 +67,16 @@ pub struct FlowGraph {
 }
 
 fn shape_of(vertex: &FlowNode) -> String {
-    if vertex.img.as_deref().is_some_and(|img| !img.is_empty()) {
+    if vertex.ext.img.as_deref().is_some_and(|img| !img.is_empty()) {
         return "imageSquare".into();
     }
-    if vertex.icon.as_deref().is_some_and(|icon| !icon.is_empty()) {
-        return match vertex.form.as_deref() {
+    if vertex
+        .ext
+        .icon
+        .as_deref()
+        .is_some_and(|icon| !icon.is_empty())
+    {
+        return match vertex.ext.form.as_deref() {
             Some("circle") => "iconCircle",
             Some("square") => "iconSquare",
             Some("rounded") => "iconRounded",
@@ -286,12 +291,12 @@ pub fn build_flow_graph(model: &FlowDb, default_curve: Option<&str>) -> FlowGrap
             link: vertex.link.clone(),
             link_target: vertex.link_target.clone(),
             tooltip: model.tooltips.get(&vertex.id).cloned(),
-            icon: vertex.icon.clone(),
-            pos: vertex.pos.clone(),
-            img: vertex.img.clone(),
-            asset_width: vertex.asset_width,
-            asset_height: vertex.asset_height,
-            constraint: vertex.constraint.clone(),
+            icon: vertex.ext.icon.clone(),
+            pos: vertex.ext.pos.clone(),
+            img: vertex.ext.img.clone(),
+            asset_width: vertex.ext.asset_width,
+            asset_height: vertex.ext.asset_height,
+            constraint: vertex.ext.constraint.clone(),
             is_group,
             shape: if is_group {
                 "rect".into()

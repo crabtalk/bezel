@@ -70,7 +70,7 @@ pub struct AgentGraph {
 fn compiled(db: &AgentflowDb, class_names: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for name in class_names {
-        if let Some(def) = db.classes.get(name) {
+        if let Some(def) = db.store.classes.get(name) {
             out.extend(def.styles.iter().cloned());
             out = out.iter().map(|s| crate::js::trim(s).to_string()).collect();
             out.extend(def.text_styles.iter().cloned());
@@ -91,7 +91,7 @@ pub fn build_agent_graph(
 ) -> AgentGraph {
     let mut nodes: Vec<GraphNode> = Vec::new();
     let mut edges: Vec<GraphEdge> = Vec::new();
-    let count = db.subgraphs.len();
+    let count = db.store.subgraphs.len();
 
     // Everything inside a collapsed flow is hidden, and stands for its
     // outermost collapsed flow. Mermaid walks the whole inside of each
@@ -102,13 +102,13 @@ pub fn build_agent_graph(
     let mut hidden: IndexSet<String> = IndexSet::new();
     let mut owner: IndexMap<String, String> = IndexMap::new();
     let mut walked: IndexSet<String> = IndexSet::new();
-    for sg in &db.subgraphs {
+    for sg in &db.store.subgraphs {
         if !is_collapsed(sg.metadata.as_ref()) || hidden.contains(&sg.id) {
             continue;
         }
         let mut pending = vec![sg.id.clone()];
         while let Some(next) = pending.pop() {
-            let Some(members) = db.subgraph(&next).map(|s| &s.nodes) else {
+            let Some(members) = db.store.subgraph(&next).map(|s| &s.nodes) else {
                 continue;
             };
             for child in members {
@@ -148,6 +148,7 @@ pub fn build_agent_graph(
     }
 
     let position: IndexMap<&str, usize> = db
+        .store
         .subgraphs
         .iter()
         .enumerate()
@@ -159,7 +160,7 @@ pub fn build_agent_graph(
     let mut parent_of: IndexMap<String, String> = IndexMap::new();
     let mut violations: Vec<(String, String)> = Vec::new();
     for i in (0..count).rev() {
-        let sg = &db.subgraphs[i];
+        let sg = &db.store.subgraphs[i];
         if hidden.contains(&sg.id) {
             continue;
         }
@@ -205,14 +206,17 @@ pub fn build_agent_graph(
 
     let mut by_id: IndexMap<String, usize> = IndexMap::new();
     for i in (0..count).rev() {
-        let sg = &db.subgraphs[i];
+        let sg = &db.store.subgraphs[i];
         if hidden.contains(&sg.id) {
             continue;
         }
         let collapsed = is_collapsed(sg.metadata.as_ref());
         let metadata = if collapsed {
             let mut metadata = sg.metadata.clone().unwrap_or_default();
-            metadata.insert("containerType".into(), Value::String(sg.kind.to_string()));
+            metadata.insert(
+                "containerType".into(),
+                Value::String(sg.ext.kind.to_string()),
+            );
             Some(metadata)
         } else {
             sg.metadata.clone()
@@ -242,7 +246,7 @@ pub fn build_agent_graph(
         by_id.insert(sg.id.clone(), nodes.len() - 1);
     }
 
-    for vertex in db.nodes.values() {
+    for vertex in db.store.nodes.values() {
         if hidden.contains(&vertex.id) {
             continue;
         }
@@ -267,8 +271,8 @@ pub fn build_agent_graph(
             dir: vertex.dir.clone(),
             link: vertex.link.clone(),
             link_target: vertex.link_target.clone(),
-            tooltip: db.tooltips.get(&vertex.id).cloned(),
-            metadata: vertex.metadata.clone(),
+            tooltip: db.store.tooltips.get(&vertex.id).cloned(),
+            metadata: vertex.ext.metadata.clone(),
             is_group: false,
             shape: match kind {
                 None | Some("square") => "squareRect".into(),
@@ -280,7 +284,7 @@ pub fn build_agent_graph(
         by_id.insert(vertex.id.clone(), nodes.len() - 1);
     }
 
-    for (index, raw) in db.edges.iter().enumerate() {
+    for (index, raw) in db.store.edges.iter().enumerate() {
         let start = collapsed_into.get(&raw.start).unwrap_or(&raw.start).clone();
         let end = collapsed_into.get(&raw.end).unwrap_or(&raw.end).clone();
         // An edge between two things inside one collapsed flow has nothing
@@ -288,7 +292,7 @@ pub fn build_agent_graph(
         if start == end && raw.start != raw.end {
             continue;
         }
-        let mut styles = db.default_edge_style.clone().unwrap_or_default();
+        let mut styles = db.store.default_edge_style.clone().unwrap_or_default();
         if let Some(style) = &raw.style {
             styles.extend(style.iter().cloned());
         }
@@ -301,6 +305,7 @@ pub fn build_agent_graph(
         let curve = match raw.interpolate.as_ref().filter(|v| v.truthy()) {
             Some(value) => value.as_str().map(str::to_string),
             None => db
+                .store
                 .default_interpolate
                 .clone()
                 .filter(|curve| !curve.is_empty())
@@ -326,7 +331,7 @@ pub fn build_agent_graph(
             animate: raw.animate.clone(),
             animation: raw.animation.clone(),
             curve,
-            metadata: raw.metadata.clone(),
+            metadata: raw.ext.metadata.clone(),
             start,
             end,
         });
@@ -338,7 +343,7 @@ pub fn build_agent_graph(
     // nesting, parents first. `subgraphs` itself is in the order the blocks
     // closed, with a nested flow before its parent.
     let mut children: IndexMap<String, Vec<String>> = IndexMap::new();
-    for sg in &db.subgraphs {
+    for sg in &db.store.subgraphs {
         let Some(parent) = parent_of.get(&sg.id) else {
             continue;
         };
@@ -348,7 +353,7 @@ pub fn build_agent_graph(
             .push(sg.id.clone());
     }
     let mut order: IndexMap<String, usize> = IndexMap::new();
-    for sg in &db.subgraphs {
+    for sg in &db.store.subgraphs {
         if parent_of.contains_key(&sg.id) {
             continue;
         }
@@ -372,7 +377,10 @@ pub fn build_agent_graph(
             if db.connectors.contains(id) {
                 return Some("connector");
             }
-            db.nodes.get(id).map(|vertex| db.vertex_kind(vertex).name())
+            db.store
+                .nodes
+                .get(id)
+                .map(|vertex| db.vertex_kind(vertex).name())
         },
         &order,
         palette_length,

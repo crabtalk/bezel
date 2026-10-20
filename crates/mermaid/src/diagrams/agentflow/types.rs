@@ -1,11 +1,12 @@
 //! What an agentflow is made of. Pele's `diagrams/agentflow/types.ts`.
 
-use indexmap::IndexMap;
 use serde::Serialize;
 
-use crate::config::{Map, Value};
+use crate::{config::Map, detect::Kind};
 
-pub use crate::diagrams::flowchart::types::{DocItem, FlowText, LabelType, LinkInfo, Vertex};
+pub use crate::diagrams::flowchart::types::{
+    DocItem, FlowText, LabelType, LinkInfo, Node, Payload, Vertex,
+};
 
 /// A parsed agentflow: the database the parser fills.
 pub type AgentflowModel = super::db::AgentflowDb;
@@ -56,85 +57,60 @@ pub enum EdgeSemantic {
     Failure,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+impl Payload for super::Agentflow {
+    const KIND: Kind = Kind::Agentflow;
+    /// Mermaid reserves this id and creates no node for it.
+    const RESERVED: &'static [&'static str] = &["connectors"];
+    type Node = NodeExt;
+    type Line = LineExt;
+    type Edge = EdgeExt;
+    type Subgraph = SubgraphExt;
+
+    fn line(info: &LinkInfo) -> LineExt {
+        let edge_semantic = match (info.kind.as_str(), info.stroke.as_str()) {
+            ("arrow_point", "normal") => Some(EdgeSemantic::Sequence),
+            ("arrow_cross", "normal") => Some(EdgeSemantic::Failure),
+            ("arrow_open", "dotted") => Some(EdgeSemantic::Reference),
+            _ => None,
+        };
+        LineExt { edge_semantic }
+    }
+}
+
+pub type AgentNode = Node<super::Agentflow>;
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AgentNode {
-    pub id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
-    pub label_type: LabelType,
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
-    pub styles: Vec<String>,
-    pub classes: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dir: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub props: Option<IndexMap<String, String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub link: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub link_target: Option<String>,
+pub struct NodeExt {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Metadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_connector: Option<bool>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AgentEdge {
-    pub start: String,
-    pub end: String,
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
-    pub kind: Option<String>,
-    pub text: String,
-    pub label_type: LabelType,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub stroke: Option<String>,
+pub struct LineExt {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub edge_semantic: Option<EdgeSemantic>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub length: Option<i32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub style: Option<Vec<String>>,
-    pub classes: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub id: Option<String>,
-    pub is_user_defined_id: bool,
-    /// A curve name, or whatever value the edge's metadata gave `curve`.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub interpolate: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub animate: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub animation: Option<Value>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct EdgeExt {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Metadata>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentClassDef {
-    pub id: String,
-    pub styles: Vec<String>,
-    pub text_styles: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AgentSubgraph {
-    pub id: String,
-    pub nodes: Vec<String>,
-    pub title: String,
-    pub classes: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dir: Option<String>,
-    pub label_type: LabelType,
+pub struct SubgraphExt {
     #[serde(rename = "type")]
     pub kind: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<Metadata>,
+}
+
+impl Default for SubgraphExt {
+    fn default() -> Self {
+        Self { kind: "flow" }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]
