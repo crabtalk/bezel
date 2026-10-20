@@ -129,24 +129,25 @@ pub fn start() {
             appearance::init(AppearanceMode::System, cx);
             gallery::init(cx);
             let bounds = Bounds::centered(None, size(px(1000.0), px(860.0)), cx);
-            let window = cx.open_window(
-                WindowOptions {
-                    window_bounds: Some(WindowBounds::Windowed(bounds)),
-                    ..Default::default()
-                },
-                // No `observe_window` here, unlike the native app: it reconciles
-                // appearance synchronously during init, and on a mismatch that
-                // reaches `reapply_window_background`, which updates the window
-                // still being constructed.
-                move |_, cx| match section.as_deref() {
-                    Some(key) => cx.new(|cx| Gallery::embedded(key, example.as_deref(), cx)),
-                    None => match opening.as_deref() {
-                        Some(key) => cx.new(|cx| Gallery::showing(key, cx)),
-                        None => cx.new(Gallery::new),
+            let window = cx
+                .open_window(
+                    WindowOptions {
+                        window_bounds: Some(WindowBounds::Windowed(bounds)),
+                        ..Default::default()
                     },
-                },
-            )
-            .expect("failed to open the gallery window");
+                    // No `observe_window` here, unlike the native app: it reconciles
+                    // appearance synchronously during init, and on a mismatch that
+                    // reaches `reapply_window_background`, which updates the window
+                    // still being constructed.
+                    move |_, cx| match section.as_deref() {
+                        Some(key) => cx.new(|cx| Gallery::embedded(key, example.as_deref(), cx)),
+                        None => match opening.as_deref() {
+                            Some(key) => cx.new(|cx| Gallery::showing(key, cx)),
+                            None => cx.new(Gallery::new),
+                        },
+                    },
+                )
+                .expect("failed to open the gallery window");
             cx.activate(true);
             // On the web this closure runs once the browser's graphics resolve,
             // after `run_embedded` has returned and the handle is stored.

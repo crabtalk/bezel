@@ -103,9 +103,8 @@ impl Render for Edited {
 #[gpui::test]
 fn an_edited_fence_shows_its_last_diagram_until_the_next_is_drawn(cx: &mut TestAppContext) {
     cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
-    let window = cx.add_window(|_, _| {
-        Edited("```mermaid\nflowchart LR\n  A[Start] --> B[End]\n```\n".into())
-    });
+    let window = cx
+        .add_window(|_, _| Edited("```mermaid\nflowchart LR\n  A[Start] --> B[End]\n```\n".into()));
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.run_until_parked();
     window

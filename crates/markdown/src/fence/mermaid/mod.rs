@@ -164,7 +164,7 @@ fn rasterize(svg: &usvg::Tree, scale: f32) -> Option<Arc<RenderImage>> {
         &mut pixmap.as_mut(),
     );
     let mut pixels = pixmap.take();
-    for pixel in pixels.chunks_exact_mut(4) {
+    for pixel in pixels.as_chunks_mut::<4>().0 {
         gpui::swap_rgba_pa_to_bgra(pixel);
     }
     let buffer = image::RgbaImage::from_raw(size.width(), size.height(), pixels)?;
