@@ -10,12 +10,33 @@ use crate::{
 
 const WORD: u8 = 1;
 const PUNCTUATION: u8 = 2;
-const KEYWORD_LENGTH: [usize; 21] = [
-    0, 12, 5, 14, 3, 9, 2, 2, 2, 2, 2, 4, 3, 4, 8, 5, 5, 7, 6, 4, 5,
+/// Each keyword, in the order of Mermaid's token list, and whether it
+/// ignores case.
+const KEYWORDS: [(&str, T, bool); 20] = [
+    ("actor", T::Actor, false),
+    ("systemBoundary", T::SystemBoundary, false),
+    ("style", T::Style, false),
+    ("end", T::End, false),
+    ("extend", T::Extend, true),
+    ("direction", T::Direction, false),
+    ("TD", T::Td, false),
+    ("TB", T::Tb, false),
+    ("BT", T::Bt, false),
+    ("LR", T::Lr, false),
+    ("RL", T::Rl, false),
+    ("note", T::Note, false),
+    ("for", T::For, false),
+    ("false", T::False, false),
+    ("json", T::Json, false),
+    ("classDef", T::ClassDef, false),
+    ("class", T::Class, false),
+    ("include", T::Include, true),
+    ("true", T::True, false),
+    ("usecase-beta", T::Usecase, false),
 ];
 
 pub struct Tokens {
-    pub types: Vec<usize>,
+    pub types: Vec<T>,
     pub starts: Vec<usize>,
     pub ends: Vec<usize>,
 }
@@ -95,33 +116,18 @@ impl Source {
             .all(|(k, b)| (self.code(at + k) | 32) == u32::from(b))
     }
 
-    /// The keyword that is a prefix of the text at `at`, tried in the order
-    /// of Mermaid's token list.
-    fn keyword_at(&self, at: usize, c: u32) -> usize {
-        let s = |word: &str| self.starts_with(at, word);
-        match c {
-            97 if s("actor") => T::ACTOR,
-            115 if s("systemBoundary") => T::SYSTEM_BOUNDARY,
-            115 if s("style") => T::STYLE,
-            101 if s("end") => T::END,
-            101 | 69 if self.starts_with_no_case(at, "extend") => T::EXTEND,
-            100 if s("direction") => T::DIRECTION,
-            84 if s("TD") => T::TD,
-            84 if s("TB") => T::TB,
-            66 if s("BT") => T::BT,
-            76 if s("LR") => T::LR,
-            82 if s("RL") => T::RL,
-            110 if s("note") => T::NOTE,
-            102 if s("for") => T::FOR,
-            102 if s("false") => T::FALSE,
-            106 if s("json") => T::JSON,
-            99 if s("classDef") => T::CLASS_DEF,
-            99 if s("class") => T::CLASS,
-            105 | 73 if self.starts_with_no_case(at, "include") => T::INCLUDE,
-            116 if s("true") => T::TRUE,
-            117 if s("usecase-beta") => T::USECASE,
-            _ => 0,
-        }
+    /// The keyword that is a prefix of the text at `at`, and its length.
+    fn keyword_at(&self, at: usize) -> Option<(T, usize)> {
+        KEYWORDS
+            .iter()
+            .find(|&&(word, _, ignore_case)| {
+                if ignore_case {
+                    self.starts_with_no_case(at, word)
+                } else {
+                    self.starts_with(at, word)
+                }
+            })
+            .map(|&(word, kind, _)| (kind, word.len()))
     }
 
     /// The line and column of `offset`, both from 1.
@@ -191,7 +197,7 @@ impl Source {
     /// gives way to a longer identifier, and `json id@` and `<<` switch to
     /// modes that read a JSON object and a stereotype.
     pub fn tokenize(&self) -> Result<Tokens, Error> {
-        let mut types: Vec<usize> = Vec::new();
+        let mut types: Vec<T> = Vec::new();
         let mut starts: Vec<usize> = Vec::new();
         let mut ends: Vec<usize> = Vec::new();
         let n = self.len();
@@ -207,12 +213,12 @@ impl Source {
                 i += 1;
                 continue;
             }
-            let mut kind: usize;
+            let mut kind: T;
             let mut end = i + 1;
             let mut fresh = false;
 
             if is_word(c) {
-                kind = 0;
+                let mut line = None;
                 if c == 97 && line_start && self.starts_with(i, "acc") {
                     let descr = self.starts_with(i + 3, "Descr");
                     if descr || self.starts_with(i + 3, "Title") {
@@ -222,11 +228,11 @@ impl Source {
                         }
                         let next = self.code(j);
                         if next == 58 {
-                            kind = if descr {
-                                T::ACC_DESCR_LINE
+                            line = Some(if descr {
+                                T::AccDescrLine
                             } else {
-                                T::ACC_TITLE_LINE
-                            };
+                                T::AccTitleLine
+                            });
                             end = j + 1;
                             while end < n && self.code(end) != 10 && self.code(end) != 13 {
                                 end += 1;
@@ -235,7 +241,7 @@ impl Source {
                             match self.index_of("}", j + 1) {
                                 None => no_brace = true,
                                 Some(close) => {
-                                    kind = T::ACC_DESCR_BLOCK;
+                                    line = Some(T::AccDescrBlock);
                                     end = close + 1;
                                 }
                             }
@@ -260,7 +266,7 @@ impl Source {
                                 j += 1;
                             }
                             if self.code(j) == 123 {
-                                types.push(T::JSON_DECLARATION_START);
+                                types.push(T::JsonDeclarationStart);
                                 starts.push(i);
                                 ends.push(j);
                                 let mut depth = 0i64;
@@ -290,9 +296,9 @@ impl Source {
                                     k += 1;
                                 }
                                 types.push(if k < n {
-                                    T::JSON_OBJECT_LITERAL
+                                    T::JsonObjectLiteral
                                 } else {
-                                    T::UNCLOSED_JSON_OBJECT_LITERAL
+                                    T::UnclosedJsonObjectLiteral
                                 });
                                 starts.push(j);
                                 i = if k < n { k + 1 } else { n };
@@ -303,28 +309,29 @@ impl Source {
                         }
                     }
                 }
-                if kind == 0 {
+                if let Some(line) = line {
+                    kind = line;
+                } else {
                     while end < n && is_word(self.code(end)) {
                         end += 1;
                     }
-                    let keyword = self.keyword_at(i, c);
-                    if keyword != 0 {
+                    if let Some((keyword, length)) = self.keyword_at(i) {
                         // A keyword that is only the start of a longer word
                         // is an identifier.
-                        if keyword == T::USECASE || end - i == KEYWORD_LENGTH[keyword] {
+                        if keyword == T::Usecase || end - i == length {
                             kind = keyword;
-                            end = i + KEYWORD_LENGTH[keyword];
+                            end = i + length;
                         } else {
-                            kind = T::IDENTIFIER;
+                            kind = T::Identifier;
                         }
                     } else if (c == 111 || c == 120)
                         && self.code(i + 1) == 45
                         && self.code(i + 2) == 45
                     {
                         kind = if c == 111 {
-                            T::BACKWARD_CIRCLE
+                            T::BackwardCircle
                         } else {
-                            T::BACKWARD_CROSS
+                            T::BackwardCross
                         };
                         end = i + 3;
                     } else if is_digit(c) {
@@ -335,7 +342,7 @@ impl Source {
                             digits += 1;
                         }
                         if self.code(digits) == 46 && is_digit(self.code(digits + 1)) {
-                            kind = T::NUMBER;
+                            kind = T::Number;
                             end = digits + 2;
                             while is_digit(self.code(end)) {
                                 end += 1;
@@ -344,12 +351,12 @@ impl Source {
                                 end += 1;
                             }
                         } else {
-                            kind = T::IDENTIFIER;
+                            kind = T::Identifier;
                         }
                     } else {
-                        kind = T::IDENTIFIER;
+                        kind = T::Identifier;
                         while self.code(end) == 45 && is_word(self.code(end + 1)) {
-                            kind = T::CSS_IDENTIFIER;
+                            kind = T::CssIdentifier;
                             end += 2;
                             while is_word(self.code(end)) {
                                 end += 1;
@@ -358,10 +365,10 @@ impl Source {
                     }
                 }
             } else if c == 10 {
-                kind = T::NEWLINE;
+                kind = T::Newline;
                 fresh = true;
             } else if c == 13 {
-                kind = T::NEWLINE;
+                kind = T::Newline;
                 fresh = true;
                 if self.code(end) == 10 {
                     end += 1;
@@ -370,13 +377,13 @@ impl Source {
                 if c == 34 && self.code(i + 1) == 96 {
                     let close = self.index_of("`\"", i + 2);
                     kind = if close.is_none() {
-                        T::UNCLOSED_MARKDOWN_STRING
+                        T::UnclosedMarkdownString
                     } else {
-                        T::MARKDOWN_STRING
+                        T::MarkdownString
                     };
                     end = close.map_or(n, |close| close + 2);
                 } else {
-                    kind = T::PLAIN_STRING;
+                    kind = T::PlainString;
                     match self.string_end(i, c) {
                         Some(e) => end = e,
                         None => {
@@ -390,16 +397,16 @@ impl Source {
                 }
             } else if c == 37 {
                 if line_start && self.code(end) == 37 {
-                    kind = T::COMMENT;
+                    kind = T::Comment;
                     while end < n && self.code(end) != 10 && self.code(end) != 13 {
                         end += 1;
                     }
                 } else {
-                    kind = T::PERCENT;
+                    kind = T::Percent;
                 }
             } else if c == 45 {
                 if self.code(end) != 45 {
-                    kind = T::DASH;
+                    kind = T::Dash;
                 } else {
                     while self.code(end) == 45 {
                         end += 1;
@@ -407,29 +414,29 @@ impl Source {
                     let next = self.code(end);
                     let two = end - i == 2;
                     if two && next == 124 && self.code(end + 1) == 62 {
-                        kind = T::GENERALIZATION;
+                        kind = T::Generalization;
                         end += 2;
                     } else if next == 62 {
-                        kind = T::FORWARD_SOLID;
+                        kind = T::ForwardSolid;
                         end += 1;
                     } else if two && (next == 111 || next == 120) {
                         kind = if next == 111 {
-                            T::FORWARD_CIRCLE
+                            T::ForwardCircle
                         } else {
-                            T::FORWARD_CROSS
+                            T::ForwardCross
                         };
                         end += 1;
                     } else {
-                        kind = T::MARKERLESS_SOLID;
+                        kind = T::MarkerlessSolid;
                     }
                 }
             } else if c == 46 {
                 let next = self.code(end);
                 if next == 46 && self.code(end + 1) == 62 {
-                    kind = T::DEPENDENCY_ARROW;
+                    kind = T::DependencyArrow;
                     end += 2;
                 } else if is_digit(next) {
-                    kind = T::NUMBER;
+                    kind = T::Number;
                     while is_digit(self.code(end)) {
                         end += 1;
                     }
@@ -437,11 +444,11 @@ impl Source {
                         end += 1;
                     }
                 } else {
-                    kind = T::DOT;
+                    kind = T::Dot;
                 }
             } else if c == 60 {
                 if self.code(end) == 60 {
-                    types.push(T::STEREOTYPE_START);
+                    types.push(T::StereotypeStart);
                     starts.push(i);
                     ends.push(i + 2);
                     i += 2;
@@ -449,7 +456,7 @@ impl Source {
                         break;
                     }
                     if self.code(i) == 62 && self.code(i + 1) == 62 {
-                        kind = T::STEREOTYPE_END;
+                        kind = T::StereotypeEnd;
                         end = i + 2;
                     } else {
                         let mut close = i;
@@ -466,10 +473,10 @@ impl Source {
                             close += 1;
                         }
                         if found && !crate::js::trim(&self.slice(i, close)).is_empty() {
-                            types.push(T::STEREOTYPE_TEXT);
+                            types.push(T::StereotypeText);
                             starts.push(i);
                             ends.push(close);
-                            kind = T::STEREOTYPE_END;
+                            kind = T::StereotypeEnd;
                             i = close;
                             end = close + 2;
                         } else {
@@ -484,71 +491,71 @@ impl Source {
                                 }
                                 return Err(self.lex_error(i, close - i));
                             }
-                            kind = T::UNCLOSED_STEREOTYPE_TEXT;
+                            kind = T::UnclosedStereotypeText;
                             end = close;
                         }
                     }
                 } else if self.code(end) == 45 && self.code(end + 1) == 45 {
-                    kind = T::BACKWARD_SOLID;
+                    kind = T::BackwardSolid;
                     end += 2;
                     while self.code(end) == 45 {
                         end += 1;
                     }
                 } else {
-                    kind = T::LABEL_PUNCTUATION;
+                    kind = T::LabelPunctuation;
                 }
             } else if c == 58 {
                 if self.code(end) == 58 && self.code(end + 1) == 58 {
-                    kind = T::CLASS_SEPARATOR;
+                    kind = T::ClassSeparator;
                     end += 2;
                 } else {
-                    kind = T::COLON;
+                    kind = T::Colon;
                 }
             } else if c == 64 {
                 if self.code(end) == 123 {
-                    kind = T::METADATA_START;
+                    kind = T::MetadataStart;
                     end += 1;
                 } else {
-                    kind = T::AT;
+                    kind = T::At;
                 }
             } else if c == 123 {
-                kind = T::LBRACE;
+                kind = T::Lbrace;
             } else if c == 125 {
-                kind = T::RBRACE;
+                kind = T::Rbrace;
             } else if c == 91 {
-                kind = T::LBRACKET;
+                kind = T::Lbracket;
             } else if c == 93 {
-                kind = T::RBRACKET;
+                kind = T::Rbracket;
             } else if c == 40 {
-                kind = T::LPAREN;
+                kind = T::Lparen;
             } else if c == 41 {
-                kind = T::RPAREN;
+                kind = T::Rparen;
             } else if c == 44 {
-                kind = T::COMMA;
+                kind = T::Comma;
             } else if c == 35 {
                 while is_hex(self.code(end)) {
                     end += 1;
                 }
                 kind = if end > i + 1 {
-                    T::HASH_COLOR
+                    T::HashColor
                 } else {
-                    T::CSS_PUNCTUATION
+                    T::CssPunctuation
                 };
             } else if c == 92 {
                 if self.code(end) == 44 {
-                    kind = T::CSS_ESCAPED_COMMA;
+                    kind = T::CssEscapedComma;
                     end += 1;
                 } else {
-                    kind = T::LABEL_PUNCTUATION;
+                    kind = T::LabelPunctuation;
                 }
             } else if c < 127 && c > 32 {
                 kind = if (class_of(c) & PUNCTUATION) != 0 {
-                    T::CSS_PUNCTUATION
+                    T::CssPunctuation
                 } else {
-                    T::LABEL_PUNCTUATION
+                    T::LabelPunctuation
                 };
             } else {
-                kind = T::LABEL_SYMBOL;
+                kind = T::LabelSymbol;
                 while end < n {
                     let ch = self.code(end);
                     if (32..127).contains(&ch) || ch == 9 || ch == 10 || ch == 13 {
@@ -566,7 +573,7 @@ impl Source {
         }
 
         for _ in 0..3 {
-            types.push(T::EOF);
+            types.push(T::Eof);
             starts.push(n);
             ends.push(n);
         }

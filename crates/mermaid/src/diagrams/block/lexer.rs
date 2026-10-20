@@ -1,7 +1,10 @@
 //! Pele's `diagrams/block/lexer.ts`.
 
-use super::tokens::*;
-use crate::util::chars::{code_at, is_space, is_word, width_at};
+use super::tokens::T;
+use crate::{
+    token::Token,
+    util::chars::{code_at, is_space, is_word, width_at},
+};
 
 const S_INITIAL: u8 = 0;
 const S_STRING: u8 = 1;
@@ -36,16 +39,10 @@ const ID_STOP: [bool; 128] = {
     table
 };
 
-pub struct Tokens<'s> {
-    pub types: Vec<u8>,
-    pub texts: Vec<&'s str>,
-    pub starts: Vec<usize>,
-}
-
 struct Lexer<'s> {
     src: &'s str,
     n: usize,
-    tokens: Tokens<'s>,
+    tokens: Vec<Token<'s, T>>,
     stack: Vec<u8>,
     state: u8,
     p: usize,
@@ -67,15 +64,13 @@ impl<'s> Lexer<'s> {
         self.src[from..].find(c).map(|e| from + e)
     }
 
-    fn put(&mut self, kind: u8, text: &'s str, end: usize) -> bool {
-        self.tokens.types.push(kind);
-        self.tokens.texts.push(text);
-        self.tokens.starts.push(self.p);
+    fn put(&mut self, kind: T, text: &'s str, end: usize) -> bool {
+        self.tokens.push(Token::new(kind, text, self.p));
         self.p = end;
         true
     }
 
-    fn emit(&mut self, kind: u8, end: usize) -> bool {
+    fn emit(&mut self, kind: T, end: usize) -> bool {
         let text = &self.src[self.p..end];
         self.put(kind, text, end)
     }
@@ -183,7 +178,7 @@ impl<'s> Lexer<'s> {
     fn link(&mut self) -> bool {
         if let Some(e) = self.link_end(self.p) {
             let end = self.ws(e);
-            return self.emit(LINK, end);
+            return self.emit(T::Link, end);
         }
         let q = if self.code(self.p) == 60 {
             self.p + 1
@@ -195,19 +190,19 @@ impl<'s> Lexer<'s> {
         if (a == 45 && (b == 45 || b == 46)) || (a == 61 && b == 61) {
             self.push(S_LLABEL);
             let end = self.ws(q + 2);
-            return self.emit(START_LINK, end);
+            return self.emit(T::StartLink, end);
         }
         false
     }
 
-    fn line_state(&mut self, kind: u8) -> bool {
+    fn line_state(&mut self, kind: T) -> bool {
         let e = self.index_of('\n', self.p).unwrap_or(self.n);
         self.pop();
         self.emit(kind, e)
     }
 
     /// `\w+(,\s*\w+)*`
-    fn id_list(&mut self, kind: u8, next: u8) -> bool {
+    fn id_list(&mut self, kind: T, next: u8) -> bool {
         let mut k = self.word(self.p);
         if k == self.p {
             return false;
@@ -235,13 +230,13 @@ impl<'s> Lexer<'s> {
             98 => {
                 if self.starts_with("block", p) {
                     if self.keyword("block-beta") {
-                        return self.emit(KEY, p + 10);
+                        return self.emit(T::Key, p + 10);
                     }
                     if self.code(p + 5) == 58 {
-                        return self.emit(ID_BLOCK, p + 6);
+                        return self.emit(T::IdBlock, p + 6);
                     }
                     if !is_word(self.code(p + 5)) {
-                        return self.emit(KEY, p + 5);
+                        return self.emit(T::Key, p + 5);
                     }
                 }
             }
@@ -250,11 +245,11 @@ impl<'s> Lexer<'s> {
                     let q = self.ws(p + 7);
                     if q > p + 7 {
                         if self.starts_with("auto", q) && !is_word(self.code(q + 4)) {
-                            return self.put(COLUMNS, "-1", q + 4);
+                            return self.put(T::Columns, "-1", q + 4);
                         }
                         let e = self.digits(q);
                         if e > q {
-                            return self.put(COLUMNS, &src[q..e], e);
+                            return self.put(T::Columns, &src[q..e], e);
                         }
                     }
                 } else if self.starts_with("class", p) {
@@ -263,7 +258,7 @@ impl<'s> Lexer<'s> {
                     let q = self.ws(from);
                     if q > from {
                         self.push(if def { S_CLASSDEF } else { S_CLASS });
-                        return self.emit(if def { CLASSDEF } else { CLASS }, q);
+                        return self.emit(if def { T::Classdef } else { T::Class }, q);
                     }
                 }
             }
@@ -273,33 +268,33 @@ impl<'s> Lexer<'s> {
                     if self.code(p + 5) == 58 {
                         let e = self.digits(p + 6);
                         if e > p + 6 {
-                            return self.put(SPACE_BLOCK, &src[p + 6..e], e);
+                            return self.put(T::SpaceBlock, &src[p + 6..e], e);
                         }
                     }
                     if !is_word(self.code(p + 5)) {
-                        return self.put(SPACE_BLOCK, "1", p + 5);
+                        return self.put(T::SpaceBlock, "1", p + 5);
                     }
                 } else if self.starts_with("style", p) {
                     let q = self.ws(p + 5);
                     if q > p + 5 {
                         self.push(S_STYLE_STMNT);
-                        return self.emit(STYLE, q);
+                        return self.emit(T::Style, q);
                     }
                 }
             }
             100 => {
                 if self.keyword("default") {
-                    return self.emit(DEFAULT, p + 7);
+                    return self.emit(T::Default, p + 7);
                 }
             }
             108 => {
                 if self.keyword("linkStyle") {
-                    return self.emit(LINKSTYLE, p + 9);
+                    return self.emit(T::Linkstyle, p + 9);
                 }
             }
             105 => {
                 if self.keyword("interpolate") {
-                    return self.emit(INTERPOLATE, p + 11);
+                    return self.emit(T::Interpolate, p + 11);
                 }
             }
             97 => {
@@ -308,7 +303,7 @@ impl<'s> Lexer<'s> {
                     if self.code(q) == 58 {
                         self.push(S_ACC_TITLE);
                         let end = self.ws(q + 1);
-                        return self.emit(ACC_TITLE, end);
+                        return self.emit(T::AccTitle, end);
                     }
                 } else if self.starts_with("accDescr", p) {
                     let q = self.ws(p + 8);
@@ -316,7 +311,7 @@ impl<'s> Lexer<'s> {
                     if d == 58 {
                         self.push(S_ACC_DESCR);
                         let end = self.ws(q + 1);
-                        return self.emit(ACC_DESCR, end);
+                        return self.emit(T::AccDescr, end);
                     }
                     if d == 123 {
                         self.push(S_ACC_DESCR_MULTILINE);
@@ -328,13 +323,13 @@ impl<'s> Lexer<'s> {
             101 => {
                 if self.keyword("end") {
                     let end = self.ws(p + 3);
-                    return self.emit(END_KEYWORD, end);
+                    return self.emit(T::EndKeyword, end);
                 }
             }
             45 => {
                 if self.code(p + 1) == 41 {
                     self.push(S_NODE);
-                    return self.emit(NODE_DSTART, p + 2);
+                    return self.emit(T::NodeDstart, p + 2);
                 }
                 return self.link();
             }
@@ -342,7 +337,7 @@ impl<'s> Lexer<'s> {
             60 => {
                 if self.code(p + 1) == 91 {
                     self.push(S_BLOCK_ARROW);
-                    return self.emit(BLOCK_ARROW_START, p + 2);
+                    return self.emit(T::BlockArrowStart, p + 2);
                 }
                 return self.link();
             }
@@ -356,16 +351,16 @@ impl<'s> Lexer<'s> {
                     1
                 };
                 self.push(S_NODE);
-                return self.emit(NODE_DSTART, p + len);
+                return self.emit(T::NodeDstart, p + len);
             }
             41 | 123 => {
                 self.push(S_NODE);
                 let end = if self.code(p + 1) == c { p + 2 } else { p + 1 };
-                return self.emit(NODE_DSTART, end);
+                return self.emit(T::NodeDstart, end);
             }
             62 => {
                 self.push(S_NODE);
-                return self.emit(NODE_DSTART, p + 1);
+                return self.emit(T::NodeDstart, p + 1);
             }
             91 => {
                 let d = self.code(p + 1);
@@ -375,12 +370,12 @@ impl<'s> Lexer<'s> {
                 } else {
                     p + 1
                 };
-                return self.emit(NODE_DSTART, end);
+                return self.emit(T::NodeDstart, end);
             }
             58 => {
                 let e = self.digits(p + 1);
                 if e > p + 1 {
-                    return self.put(SIZE, &src[p + 1..e], e);
+                    return self.put(T::Size, &src[p + 1..e], e);
                 }
                 return false;
             }
@@ -399,7 +394,7 @@ impl<'s> Lexer<'s> {
             }
             q += width_at(src, q);
         }
-        q > p && self.emit(NODE_ID, q)
+        q > p && self.emit(T::NodeId, q)
     }
 
     fn node_end(&mut self, c: u32) -> bool {
@@ -453,7 +448,7 @@ impl<'s> Lexer<'s> {
             return false;
         }
         self.pop();
-        self.emit(NODE_DEND, p + len)
+        self.emit(T::NodeDend, p + len)
     }
 
     fn arrow_dir(&mut self, c: u32) -> bool {
@@ -462,14 +457,14 @@ impl<'s> Lexer<'s> {
             self.pop();
             self.pop();
             let end = self.ws(p + 1);
-            return self.put(BLOCK_ARROW_END, "]>", end);
+            return self.put(T::BlockArrowEnd, "]>", end);
         }
         let from = self.ws(if c == 44 { p + 1 } else { p });
         for dir in DIRECTIONS {
             if self.starts_with(dir, from) {
                 let e = self.ws(from + dir.len());
                 let text = &self.src[if c == 44 { from } else { p }..e];
-                return self.put(DIR, text, e);
+                return self.put(T::Dir, text, e);
             }
         }
         false
@@ -487,7 +482,7 @@ impl<'s> Lexer<'s> {
                     self.p += 1;
                 } else {
                     let e = self.index_of('"', p).unwrap_or(self.n);
-                    self.emit(STR, e);
+                    self.emit(T::Str, e);
                 }
             }
             S_MD_STRING => {
@@ -508,7 +503,7 @@ impl<'s> Lexer<'s> {
                         }
                         q += width_at(src, q);
                     }
-                    self.emit(MD_STR, q);
+                    self.emit(T::MdStr, q);
                 }
             }
             S_NODE => return self.node_end(c),
@@ -532,7 +527,7 @@ impl<'s> Lexer<'s> {
                     if self.code(p + 1) == 96 {
                         self.quote();
                     } else {
-                        self.emit(LINK_LABEL, p + 1);
+                        self.emit(T::LinkLabel, p + 1);
                         self.push(S_STRING);
                     }
                 } else {
@@ -541,11 +536,11 @@ impl<'s> Lexer<'s> {
                     };
                     self.pop();
                     let end = self.ws(e);
-                    self.emit(LINK, end);
+                    self.emit(T::Link, end);
                 }
             }
             S_CLASSDEF => {
-                let mut kind = DEFAULT_CLASSDEF_ID;
+                let mut kind = T::DefaultClassdefId;
                 let mut k = if self.starts_with("DEFAULT", p) {
                     p + 7
                 } else {
@@ -553,7 +548,7 @@ impl<'s> Lexer<'s> {
                 };
                 let mut q = self.ws(k);
                 if k == p || q == k {
-                    kind = CLASSDEF_ID;
+                    kind = T::ClassdefId;
                     k = self.word(p);
                     q = self.ws(k);
                 }
@@ -564,21 +559,21 @@ impl<'s> Lexer<'s> {
                 self.emit(kind, q);
             }
             S_CLASSDEFID => {
-                self.line_state(CLASSDEF_STYLEOPTS);
+                self.line_state(T::ClassdefStyleopts);
             }
-            S_CLASS => return self.id_list(CLASSENTITY_IDS, S_CLASS_STYLE),
+            S_CLASS => return self.id_list(T::ClassentityIds, S_CLASS_STYLE),
             S_CLASS_STYLE => {
-                self.line_state(STYLECLASS);
+                self.line_state(T::Styleclass);
             }
-            S_STYLE_STMNT => return self.id_list(STYLE_ENTITY_IDS, S_STYLE_DEFINITION),
+            S_STYLE_STMNT => return self.id_list(T::StyleEntityIds, S_STYLE_DEFINITION),
             S_STYLE_DEFINITION => {
-                self.line_state(STYLE_DEFINITION_DATA);
+                self.line_state(T::StyleDefinitionData);
             }
             S_ACC_TITLE => {
-                self.line_state(ACC_TITLE_VALUE);
+                self.line_state(T::AccTitleValue);
             }
             S_ACC_DESCR => {
-                self.line_state(ACC_DESCR_VALUE);
+                self.line_state(T::AccDescrValue);
             }
             S_ACC_DESCR_MULTILINE => {
                 if c == 125 {
@@ -586,7 +581,7 @@ impl<'s> Lexer<'s> {
                     self.p += 1;
                 } else {
                     let e = self.index_of('}', p).unwrap_or(self.n);
-                    self.emit(ACC_DESCR_MULTILINE_VALUE, e);
+                    self.emit(T::AccDescrMultilineValue, e);
                 }
             }
             _ => {}
@@ -595,16 +590,12 @@ impl<'s> Lexer<'s> {
     }
 }
 
-pub fn tokenize(src: &str) -> Tokens<'_> {
+pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
     let n = src.len();
     let mut lexer = Lexer {
         src,
         n,
-        tokens: Tokens {
-            types: Vec::new(),
-            texts: Vec::new(),
-            starts: Vec::new(),
-        },
+        tokens: Vec::new(),
         stack: Vec::new(),
         state: S_INITIAL,
         p: 0,
@@ -613,14 +604,14 @@ pub fn tokenize(src: &str) -> Tokens<'_> {
     loop {
         if lexer.p >= n {
             let kind = match lexer.state {
-                S_INITIAL => Some(EOF),
-                S_STRING => Some(STR),
-                S_CLASSDEFID => Some(CLASSDEF_STYLEOPTS),
-                S_CLASS_STYLE => Some(STYLECLASS),
-                S_STYLE_DEFINITION => Some(STYLE_DEFINITION_DATA),
-                S_ACC_TITLE => Some(ACC_TITLE_VALUE),
-                S_ACC_DESCR => Some(ACC_DESCR_VALUE),
-                S_ACC_DESCR_MULTILINE => Some(ACC_DESCR_MULTILINE_VALUE),
+                S_INITIAL => Some(T::Eof),
+                S_STRING => Some(T::Str),
+                S_CLASSDEFID => Some(T::ClassdefStyleopts),
+                S_CLASS_STYLE => Some(T::Styleclass),
+                S_STYLE_DEFINITION => Some(T::StyleDefinitionData),
+                S_ACC_TITLE => Some(T::AccTitleValue),
+                S_ACC_DESCR => Some(T::AccDescrValue),
+                S_ACC_DESCR_MULTILINE => Some(T::AccDescrMultilineValue),
                 _ => None,
             };
             lexer.p = n;
@@ -632,16 +623,12 @@ pub fn tokenize(src: &str) -> Tokens<'_> {
         if !lexer.step() {
             let p = lexer.p;
             let mut tokens = lexer.tokens;
-            tokens.types.push(ERROR);
-            tokens.texts.push("");
-            tokens.starts.push(p);
+            tokens.push(Token::new(T::Error, "", p));
             return tokens;
         }
     }
 
     let mut tokens = lexer.tokens;
-    tokens.types.push(END);
-    tokens.texts.push("");
-    tokens.starts.push(n);
+    tokens.push(Token::new(T::End, "", n));
     tokens
 }

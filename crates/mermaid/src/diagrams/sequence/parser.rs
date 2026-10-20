@@ -7,41 +7,41 @@
 use super::{
     db::SequenceModel,
     lexer::tokenize,
-    tokens::*,
+    tokens::T,
     types::{NoteActor, Participant, SeqStatement, SeqText, line, placement},
 };
-use crate::{detect::Kind, error::Error, js, util::chars::width_at};
+use crate::{detect::Kind, error::Error, js, token::Stream, util::chars::width_at};
 
 const SIGNAL_TOKENS: &str = "'SOLID_OPEN_ARROW', 'DOTTED_OPEN_ARROW', 'SOLID_ARROW', 'DOTTED_ARROW', 'SOLID_CROSS', 'DOTTED_CROSS', 'SOLID_POINT', 'DOTTED_POINT'";
 
-fn signal_of(token: u8) -> Option<i32> {
+fn signal_of(token: T) -> Option<i32> {
     Some(match token {
-        SOLID_OPEN_ARROW => line::SOLID_OPEN,
-        DOTTED_OPEN_ARROW => line::DOTTED_OPEN,
-        SOLID_ARROW => line::SOLID,
-        DOTTED_ARROW => line::DOTTED,
-        BIDIRECTIONAL_SOLID_ARROW => line::BIDIRECTIONAL_SOLID,
-        BIDIRECTIONAL_DOTTED_ARROW => line::BIDIRECTIONAL_DOTTED,
-        SOLID_CROSS => line::SOLID_CROSS,
-        DOTTED_CROSS => line::DOTTED_CROSS,
-        SOLID_POINT => line::SOLID_POINT,
-        DOTTED_POINT => line::DOTTED_POINT,
-        SOLID_ARROW_TOP => line::SOLID_TOP,
-        SOLID_ARROW_BOTTOM => line::SOLID_BOTTOM,
-        STICK_ARROW_TOP => line::STICK_TOP,
-        STICK_ARROW_BOTTOM => line::STICK_BOTTOM,
-        SOLID_ARROW_TOP_DOTTED => line::SOLID_TOP_DOTTED,
-        SOLID_ARROW_BOTTOM_DOTTED => line::SOLID_BOTTOM_DOTTED,
-        STICK_ARROW_TOP_DOTTED => line::STICK_TOP_DOTTED,
-        STICK_ARROW_BOTTOM_DOTTED => line::STICK_BOTTOM_DOTTED,
-        SOLID_ARROW_TOP_REVERSE => line::SOLID_ARROW_TOP_REVERSE,
-        SOLID_ARROW_BOTTOM_REVERSE => line::SOLID_ARROW_BOTTOM_REVERSE,
-        STICK_ARROW_TOP_REVERSE => line::STICK_ARROW_TOP_REVERSE,
-        STICK_ARROW_BOTTOM_REVERSE => line::STICK_ARROW_BOTTOM_REVERSE,
-        SOLID_ARROW_TOP_REVERSE_DOTTED => line::SOLID_ARROW_TOP_REVERSE_DOTTED,
-        SOLID_ARROW_BOTTOM_REVERSE_DOTTED => line::SOLID_ARROW_BOTTOM_REVERSE_DOTTED,
-        STICK_ARROW_TOP_REVERSE_DOTTED => line::STICK_ARROW_TOP_REVERSE_DOTTED,
-        STICK_ARROW_BOTTOM_REVERSE_DOTTED => line::STICK_ARROW_BOTTOM_REVERSE_DOTTED,
+        T::SolidOpenArrow => line::SOLID_OPEN,
+        T::DottedOpenArrow => line::DOTTED_OPEN,
+        T::SolidArrow => line::SOLID,
+        T::DottedArrow => line::DOTTED,
+        T::BidirectionalSolidArrow => line::BIDIRECTIONAL_SOLID,
+        T::BidirectionalDottedArrow => line::BIDIRECTIONAL_DOTTED,
+        T::SolidCross => line::SOLID_CROSS,
+        T::DottedCross => line::DOTTED_CROSS,
+        T::SolidPoint => line::SOLID_POINT,
+        T::DottedPoint => line::DOTTED_POINT,
+        T::SolidArrowTop => line::SOLID_TOP,
+        T::SolidArrowBottom => line::SOLID_BOTTOM,
+        T::StickArrowTop => line::STICK_TOP,
+        T::StickArrowBottom => line::STICK_BOTTOM,
+        T::SolidArrowTopDotted => line::SOLID_TOP_DOTTED,
+        T::SolidArrowBottomDotted => line::SOLID_BOTTOM_DOTTED,
+        T::StickArrowTopDotted => line::STICK_TOP_DOTTED,
+        T::StickArrowBottomDotted => line::STICK_BOTTOM_DOTTED,
+        T::SolidArrowTopReverse => line::SOLID_ARROW_TOP_REVERSE,
+        T::SolidArrowBottomReverse => line::SOLID_ARROW_BOTTOM_REVERSE,
+        T::StickArrowTopReverse => line::STICK_ARROW_TOP_REVERSE,
+        T::StickArrowBottomReverse => line::STICK_ARROW_BOTTOM_REVERSE,
+        T::SolidArrowTopReverseDotted => line::SOLID_ARROW_TOP_REVERSE_DOTTED,
+        T::SolidArrowBottomReverseDotted => line::SOLID_ARROW_BOTTOM_REVERSE_DOTTED,
+        T::StickArrowTopReverseDotted => line::STICK_ARROW_TOP_REVERSE_DOTTED,
+        T::StickArrowBottomReverseDotted => line::STICK_ARROW_BOTTOM_REVERSE_DOTTED,
         _ => return None,
     })
 }
@@ -59,16 +59,16 @@ enum K {
     Critical,
 }
 
-fn block_of(token: u8) -> Option<K> {
+fn block_of(token: T) -> Option<K> {
     Some(match token {
-        LOOP => K::Loop,
-        RECT => K::Rect,
-        OPT => K::Opt,
-        BREAK => K::Break,
-        ALT => K::Alt,
-        PAR | PAR_OVER => K::Par,
-        CRITICAL => K::Critical,
-        BOX => K::Box,
+        T::Loop => K::Loop,
+        T::Rect => K::Rect,
+        T::Opt => K::Opt,
+        T::Break => K::Break,
+        T::Alt => K::Alt,
+        T::Par | T::ParOver => K::Par,
+        T::Critical => K::Critical,
+        T::Box => K::Box,
         _ => return None,
     })
 }
@@ -81,46 +81,18 @@ struct Frame {
     slot: usize,
 }
 
-struct Parser<'s, 'd> {
-    src: &'s str,
-    types: Vec<u8>,
-    texts: Vec<String>,
-    starts: Vec<usize>,
-    i: usize,
+struct Parser<'t, 's, 'd> {
+    s: Stream<'t, 's, T>,
     db: &'d mut SequenceModel,
     list: Vec<Option<SeqStatement>>,
 }
 
-impl Parser<'_, '_> {
-    fn fail(&self, expected: &str) -> Error {
-        let t = self.types[self.i];
-        if t == ERROR {
-            return Error::at(Kind::Sequence, self.src, self.starts[self.i], "", true);
-        }
-        Error::at(
-            Kind::Sequence,
-            self.src,
-            self.starts[self.i],
-            &format!("Expecting {expected}, got '{}'", TOKEN_NAMES[t as usize]),
-            false,
-        )
-    }
-
-    fn expect(&mut self, kind: u8) -> Result<String, Error> {
-        if self.types[self.i] != kind {
-            return Err(self.fail(&format!("'{}'", TOKEN_NAMES[kind as usize])));
-        }
-        self.i += 1;
-        Ok(self.texts[self.i - 1].clone())
-    }
-
+impl Parser<'_, '_, '_> {
     fn actor(&mut self) -> Result<String, Error> {
-        let t = self.types[self.i];
-        if t != ACTOR && t != LINK {
-            return Err(self.fail("'ACTOR'"));
+        if !self.s.is_any(&[T::Actor, T::Link]) {
+            return Err(self.s.fail("'ACTOR'"));
         }
-        self.i += 1;
-        Ok(self.texts[self.i - 1].clone())
+        Ok(self.s.take().to_string())
     }
 
     fn mention(actor: &str) -> SeqStatement {
@@ -133,19 +105,19 @@ impl Parser<'_, '_> {
     }
 
     fn text2(&mut self) -> Result<SeqText, Error> {
-        let text = self.expect(TXT)?;
-        let text = js::trim(&text);
+        let text = self.s.expect(T::Txt, "")?;
+        let text = js::trim(text);
         Ok(self.db.parse_message(&text[1.min(text.len())..]))
     }
 
     /// A `participant`, `actor` or `destroy` statement: the participant, and
     /// whether it was `destroy`.
     fn participant(&mut self) -> Result<(Participant, bool), Error> {
-        let t = self.types[self.i];
-        self.i += 1;
-        if t == DESTROY {
+        let t = self.s.kind();
+        self.s.bump();
+        if t == T::Destroy {
             let actor = self.actor()?;
-            self.expect(NEWLINE)?;
+            self.s.expect(T::Newline, "")?;
             return Ok((
                 Participant {
                     actor,
@@ -163,26 +135,24 @@ impl Parser<'_, '_> {
             description: None,
             config: None,
         };
-        if self.types[self.i] == CONFIG_START && self.types[self.i - 1] == ACTOR {
-            self.i += 1;
-            let content = self.expect(CONFIG_CONTENT)?;
-            self.expect(CONFIG_END)?;
-            node.config = Some(js::trim(&content).to_string());
+        if self.s.is(T::ConfigStart) && self.s.previous() == Some(T::Actor) {
+            self.s.bump();
+            let content = self.s.expect(T::ConfigContent, "")?;
+            self.s.expect(T::ConfigEnd, "")?;
+            node.config = Some(js::trim(content).to_string());
         }
-        node.draw = Some(if t == PARTICIPANT {
+        node.draw = Some(if t == T::Participant {
             "participant"
         } else {
             "actor"
         });
-        if self.types[self.i] == AS {
-            self.i += 1;
-            let alias = self.expect(REST_OF_LINE)?;
-            self.expect(NEWLINE)?;
-            node.description = Some(self.db.parse_message(&alias));
-        } else if self.types[self.i] == NEWLINE {
-            self.i += 1;
+        if self.s.eat(T::As) {
+            let alias = self.s.expect(T::RestOfLine, "")?;
+            self.s.expect(T::Newline, "")?;
+            node.description = Some(self.db.parse_message(alias));
+        } else if self.s.eat(T::Newline) {
         } else {
-            return Err(self.fail("'AS', 'NEWLINE'"));
+            return Err(self.s.fail("'AS', 'NEWLINE'"));
         }
         Ok((node, false))
     }
@@ -198,18 +168,14 @@ impl Parser<'_, '_> {
     }
 
     fn signal(&mut self, from: String) -> Result<(), Error> {
-        let mut central_from = false;
-        if self.types[self.i] == CENTRAL {
-            central_from = true;
-            self.i += 1;
-        }
-        let Some(signal_type) = signal_of(self.types[self.i]) else {
-            return Err(self.fail(SIGNAL_TOKENS));
+        let central_from = self.s.eat(T::Central);
+        let Some(signal_type) = signal_of(self.s.kind()) else {
+            return Err(self.s.fail(SIGNAL_TOKENS));
         };
-        self.i += 1;
-        let mark = self.types[self.i];
-        if mark == CENTRAL || (!central_from && (mark == PLUS || mark == MINUS)) {
-            self.i += 1;
+        self.s.bump();
+        let mark = self.s.kind();
+        if mark == T::Central || (!central_from && (mark == T::Plus || mark == T::Minus)) {
+            self.s.bump();
         }
         let to = self.actor()?;
         let msg = self.text2()?;
@@ -219,7 +185,7 @@ impl Parser<'_, '_> {
         let mut central_connection = None;
         let mut marks = Vec::new();
         if central_from {
-            let dual = mark == CENTRAL;
+            let dual = mark == T::Central;
             activate = Some(dual);
             central_connection = Some(if dual {
                 line::CENTRAL_CONNECTION_DUAL
@@ -230,12 +196,12 @@ impl Parser<'_, '_> {
                 marks.push((to.clone(), line::CENTRAL_CONNECTION));
             }
             marks.push((from.clone(), line::CENTRAL_CONNECTION_REVERSE));
-        } else if mark == PLUS {
+        } else if mark == T::Plus {
             activate = Some(true);
             marks.push((to.clone(), line::ACTIVE_START));
-        } else if mark == MINUS {
+        } else if mark == T::Minus {
             marks.push((from.clone(), line::ACTIVE_END));
-        } else if mark == CENTRAL {
+        } else if mark == T::Central {
             activate = Some(true);
             central_connection = Some(line::CENTRAL_CONNECTION);
             marks.push((to.clone(), line::CENTRAL_CONNECTION));
@@ -256,7 +222,7 @@ impl Parser<'_, '_> {
     }
 
     fn menu(&mut self, make: fn(String, SeqText) -> SeqStatement) -> Result<(), Error> {
-        self.i += 1;
+        self.s.bump();
         let who = self.actor()?;
         let text = self.text2()?;
         self.list.push(Some(Self::mention(&who)));
@@ -265,14 +231,13 @@ impl Parser<'_, '_> {
     }
 
     fn note(&mut self) -> Result<(), Error> {
-        self.i += 1;
-        let t = self.types[self.i];
-        if t == OVER {
-            self.i += 1;
+        self.s.bump();
+        let t = self.s.kind();
+        if t == T::Over {
+            self.s.bump();
             let first = self.actor()?;
             let mut second = None;
-            if self.types[self.i] == COMMA {
-                self.i += 1;
+            if self.s.eat(T::Comma) {
                 second = Some(self.actor()?);
             }
             let text = self.text2()?;
@@ -288,16 +253,16 @@ impl Parser<'_, '_> {
             }));
             return Ok(());
         }
-        if t != LEFT_OF && t != RIGHT_OF {
-            return Err(self.fail("'over', 'left_of', 'right_of'"));
+        if t != T::LeftOf && t != T::RightOf {
+            return Err(self.s.fail("'over', 'left_of', 'right_of'"));
         }
-        self.i += 1;
+        self.s.bump();
         let who = self.actor()?;
         let text = self.text2()?;
         self.list.push(Some(Self::mention(&who)));
         self.list.push(Some(SeqStatement::AddNote {
             actor: NoteActor::One(who),
-            placement: if t == LEFT_OF {
+            placement: if t == T::LeftOf {
                 placement::LEFTOF
             } else {
                 placement::RIGHTOF
@@ -308,27 +273,23 @@ impl Parser<'_, '_> {
     }
 
     fn autonumber(&mut self) -> Result<(), Error> {
-        self.i += 1;
+        self.s.bump();
         let mut index = None;
         let mut step = None;
         let mut visible = true;
-        if self.types[self.i] == NUM {
-            index = Some(js::number(&self.texts[self.i]));
-            self.i += 1;
-            step = Some(if self.types[self.i] == NUM {
-                self.i += 1;
-                js::number(&self.texts[self.i - 1])
+        if self.s.is(T::Num) {
+            index = Some(js::number(self.s.take()));
+            step = Some(if self.s.is(T::Num) {
+                js::number(self.s.take())
             } else {
                 1.0
             });
-        } else if self.types[self.i] == OFF {
-            self.i += 1;
+        } else if self.s.eat(T::Off) {
             visible = false;
         }
-        if self.types[self.i] != NEWLINE {
-            return Err(self.fail("'NEWLINE', 'NUM', 'off'"));
+        if !self.s.eat(T::Newline) {
+            return Err(self.s.fail("'NEWLINE', 'NUM', 'off'"));
         }
-        self.i += 1;
         self.list.push(Some(SeqStatement::SequenceIndex {
             index,
             step,
@@ -378,10 +339,8 @@ impl Parser<'_, '_> {
     }
 
     fn run(&mut self) -> Result<(), Error> {
-        while self.types[self.i] == NEWLINE {
-            self.i += 1;
-        }
-        self.expect(SD)?;
+        self.s.eat_all(T::Newline);
+        self.s.expect(T::Sd, "")?;
 
         let mut stack: Vec<Frame> = Vec::new();
         let mut frame = Frame {
@@ -392,110 +351,117 @@ impl Parser<'_, '_> {
         };
 
         loop {
-            let t = self.types[self.i];
+            let t = self.s.kind();
             if frame.kind == K::Box {
-                if t == PARTICIPANT || t == PARTICIPANT_ACTOR || t == DESTROY {
+                if t == T::Participant || t == T::ParticipantActor || t == T::Destroy {
                     self.push_participant()?;
-                } else if t == NEWLINE {
-                    self.i += 1;
-                } else if t == END {
-                    self.i += 1;
+                } else if t == T::Newline {
+                    self.s.bump();
+                } else if t == T::EndKw {
+                    self.s.bump();
                     let parent = stack.pop().expect("a box is inside a frame");
                     self.close(std::mem::replace(&mut frame, parent));
                 } else {
                     return Err(self
+                        .s
                         .fail("'end', 'NEWLINE', 'participant', 'participant_actor', 'destroy'"));
                 }
                 continue;
             }
             match t {
-                NEWLINE | INVALID => self.i += 1,
-                PARTICIPANT | PARTICIPANT_ACTOR | DESTROY => self.push_participant()?,
-                CREATE => {
-                    self.i += 1;
-                    let next = self.types[self.i];
-                    if next != PARTICIPANT && next != PARTICIPANT_ACTOR && next != DESTROY {
-                        return Err(self.fail("'participant', 'participant_actor', 'destroy'"));
+                T::Newline | T::Invalid => self.s.bump(),
+                T::Participant | T::ParticipantActor | T::Destroy => self.push_participant()?,
+                T::Create => {
+                    self.s.bump();
+                    let next = self.s.kind();
+                    if next != T::Participant && next != T::ParticipantActor && next != T::Destroy {
+                        return Err(self.s.fail("'participant', 'participant_actor', 'destroy'"));
                     }
                     let (node, _) = self.participant()?;
                     self.list.push(Some(SeqStatement::CreateParticipant(node)));
                 }
-                ACTOR => {
+                T::Actor => {
                     let from = self.actor()?;
                     self.signal(from)?;
-                    self.expect(NEWLINE)?;
+                    self.s.expect(T::Newline, "")?;
                 }
-                LINK => {
-                    let next = self.types[self.i + 1];
-                    if next == ACTOR || next == LINK {
+                T::Link => {
+                    let next = self.s.peek(1);
+                    if next == T::Actor || next == T::Link {
                         self.menu(SeqStatement::AddALink)?;
                     } else {
                         let from = self.actor()?;
                         self.signal(from)?;
                     }
-                    self.expect(NEWLINE)?;
+                    self.s.expect(T::Newline, "")?;
                 }
-                LINKS => {
+                T::Links => {
                     self.menu(SeqStatement::AddLinks)?;
-                    self.expect(NEWLINE)?;
+                    self.s.expect(T::Newline, "")?;
                 }
-                PROPERTIES => {
+                T::Properties => {
                     self.menu(SeqStatement::AddProperties)?;
-                    self.expect(NEWLINE)?;
+                    self.s.expect(T::Newline, "")?;
                 }
-                DETAILS => {
+                T::Details => {
                     self.menu(SeqStatement::AddDetails)?;
-                    self.expect(NEWLINE)?;
+                    self.s.expect(T::Newline, "")?;
                 }
-                NOTE => {
+                T::Note => {
                     self.note()?;
-                    self.expect(NEWLINE)?;
+                    self.s.expect(T::Newline, "")?;
                 }
-                AUTONUMBER => self.autonumber()?,
-                ACTIVATE | DEACTIVATE => {
-                    self.i += 1;
+                T::Autonumber => self.autonumber()?,
+                T::Activate | T::Deactivate => {
+                    self.s.bump();
                     let actor = self.actor()?;
-                    self.expect(NEWLINE)?;
+                    self.s.expect(T::Newline, "")?;
                     self.list.push(Some(SeqStatement::Mark {
                         actor,
-                        signal_type: if t == ACTIVATE {
+                        signal_type: if t == T::Activate {
                             line::ACTIVE_START
                         } else {
                             line::ACTIVE_END
                         },
                     }));
                 }
-                TITLE | LEGACY_TITLE => {
-                    let text = &self.texts[self.i];
-                    self.i += 1;
-                    let head = if t == TITLE { 5 } else { 6 };
+                T::Title | T::LegacyTitle => {
+                    let text = self.s.take();
+                    let head = if t == T::Title { 5 } else { 6 };
                     let title = text[head + width_at(text, head)..].to_string();
                     self.db.set_diagram_title(&title);
                 }
-                ACC_TITLE => {
-                    self.i += 1;
-                    let value = self.expect(ACC_TITLE_VALUE)?;
-                    self.db.set_acc_title(js::trim(&value));
+                T::AccTitle => {
+                    self.s.bump();
+                    let value = self.s.expect(T::AccTitleValue, "")?;
+                    self.db.set_acc_title(js::trim(value));
                 }
-                ACC_DESCR => {
-                    self.i += 1;
-                    let value = self.expect(ACC_DESCR_VALUE)?;
-                    self.db.set_acc_description(js::trim(&value));
+                T::AccDescr => {
+                    self.s.bump();
+                    let value = self.s.expect(T::AccDescrValue, "")?;
+                    self.db.set_acc_description(js::trim(value));
                 }
-                ACC_DESCR_MULTILINE_VALUE => {
-                    let value = js::trim(&self.texts[self.i]).to_string();
-                    self.i += 1;
+                T::AccDescrMultilineValue => {
+                    let value = js::trim(self.s.take()).to_string();
                     self.db.set_acc_description(&value);
                 }
-                LOOP | RECT | OPT | BREAK | ALT | PAR | PAR_OVER | CRITICAL | BOX => {
-                    self.i += 1;
-                    let text = self.expect(REST_OF_LINE)?;
+                T::Loop
+                | T::Rect
+                | T::Opt
+                | T::Break
+                | T::Alt
+                | T::Par
+                | T::ParOver
+                | T::Critical
+                | T::Box => {
+                    self.s.bump();
+                    let text = self.s.expect(T::RestOfLine, "")?;
                     let slot = self.list.len();
                     self.list.push(None);
                     let inner = Frame {
                         kind: block_of(t).unwrap_or(K::Top),
-                        text,
-                        start_type: if t == PAR_OVER {
+                        text: text.to_string(),
+                        start_type: if t == T::ParOver {
                             line::PAR_OVER_START
                         } else {
                             line::PAR_START
@@ -504,35 +470,39 @@ impl Parser<'_, '_> {
                     };
                     stack.push(std::mem::replace(&mut frame, inner));
                 }
-                ELSE | AND | OPTION => {
+                T::Else | T::And | T::Option => {
                     let (expected, signal_type) = match t {
-                        ELSE => (K::Alt, line::ALT_ELSE),
-                        AND => (K::Par, line::PAR_AND),
+                        T::Else => (K::Alt, line::ALT_ELSE),
+                        T::And => (K::Par, line::PAR_AND),
                         _ => (K::Critical, line::CRITICAL_OPTION),
                     };
                     if frame.kind != expected {
-                        return Err(self.fail("'end'"));
+                        return Err(self.s.fail("'end'"));
                     }
-                    self.i += 1;
-                    let text = self.expect(REST_OF_LINE)?;
-                    let text = self.db.parse_message(&text);
+                    self.s.bump();
+                    let text = self.s.expect(T::RestOfLine, "")?;
+                    let text = self.db.parse_message(text);
                     self.list.push(Some(section(text, signal_type)));
                 }
-                END => {
+                T::EndKw => {
                     if frame.kind == K::Top {
-                        return Err(self.fail("'NEWLINE', 'EOF'"));
+                        return Err(self.s.fail("'NEWLINE', 'EOF'"));
                     }
-                    self.i += 1;
+                    self.s.bump();
                     let parent = stack.pop().expect("a block is inside a frame");
                     self.close(std::mem::replace(&mut frame, parent));
                 }
-                EOF => {
+                T::End => {
                     if frame.kind != K::Top {
-                        return Err(self.fail("'end'"));
+                        return Err(self.s.fail("'end'"));
                     }
                     return Ok(());
                 }
-                _ => return Err(self.fail("'NEWLINE', 'ACTOR', 'participant', 'note', 'end'")),
+                _ => {
+                    return Err(self
+                        .s
+                        .fail("'NEWLINE', 'ACTOR', 'participant', 'note', 'end'"));
+                }
             }
         }
     }
@@ -549,11 +519,7 @@ fn ending(signal_type: i32) -> SeqStatement {
 pub fn parse_sequence(src: &str, db: &mut SequenceModel) -> Result<(), Error> {
     let tokens = tokenize(src);
     let mut parser = Parser {
-        src,
-        types: tokens.types,
-        texts: tokens.texts,
-        starts: tokens.starts,
-        i: 0,
+        s: Stream::new(Kind::Sequence, src, &tokens),
         db,
         list: Vec::new(),
     };

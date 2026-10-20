@@ -1,26 +1,25 @@
 //! Pele's `diagrams/state/lexer.ts`: the tokens of Mermaid's state grammar,
 //! lexed by hand.
 
-use super::tokens::*;
+use super::tokens::T;
 use crate::{
     js::{self, Lazy},
+    token::Token,
     util::chars::{code_at, is_space, is_word, width_at},
 };
 
 static RE_DIRECTION: Lazy = Lazy::new(r"direction", "gi");
+/// The direction kinds in the order [`Lexer::direction`] numbers them.
+const DIRECTIONS: [T; 4] = [
+    T::DirectionTb,
+    T::DirectionBt,
+    T::DirectionRl,
+    T::DirectionLr,
+];
 static RE_STEREOTYPE: Lazy = Lazy::new(
     r"<<(?:fork|join|choice)>>|\[\[(?:fork|join|choice)\]\]",
     "gi",
 );
-
-pub struct Tokens {
-    pub types: Vec<u8>,
-    pub texts: Vec<String>,
-    pub starts: Vec<usize>,
-    /// Set when lexing stopped on the grammar's own error rather than on
-    /// unrecognized text.
-    pub error: Option<String>,
-}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum S {
@@ -112,13 +111,10 @@ fn skip_units(src: &str, at: usize, units: usize) -> usize {
 struct Lexer<'s> {
     src: &'s str,
     n: usize,
-    types: Vec<u8>,
-    texts: Vec<String>,
-    starts: Vec<usize>,
+    tokens: Vec<Token<'s, T>>,
     stack: Vec<S>,
     state: S,
     p: usize,
-    error: Option<String>,
     next_direction: Finder<'s>,
     next_stereotype: Finder<'s>,
     next_line_end: Finder<'s>,
@@ -141,17 +137,13 @@ impl<'s> Lexer<'s> {
         code_at(self.src, at)
     }
 
-    fn emit(&mut self, kind: u8, s: usize, e: usize) {
-        self.types.push(kind);
-        self.texts.push(self.src[s..e].to_string());
-        self.starts.push(s);
+    fn emit(&mut self, kind: T, s: usize, e: usize) {
+        self.tokens.push(Token::new(kind, &self.src[s..e], s));
         self.p = e;
     }
 
-    fn emit_text(&mut self, kind: u8, text: String, s: usize, e: usize) {
-        self.types.push(kind);
-        self.texts.push(text);
-        self.starts.push(s);
+    fn emit_text(&mut self, kind: T, text: String, s: usize, e: usize) {
+        self.tokens.push(Token::new(kind, text, s));
         self.p = e;
     }
 
@@ -285,7 +277,7 @@ impl<'s> Lexer<'s> {
     fn emit_id(&mut self, s: usize, e: usize) -> bool {
         let at = self.next_percent.at(s);
         if at == -1 || at as usize + 2 > e {
-            self.emit(ID, s, e);
+            self.emit(T::Id, s, e);
             return true;
         }
         let at = at as usize;
@@ -293,20 +285,13 @@ impl<'s> Lexer<'s> {
             self.p = e;
             return false;
         }
-        self.emit(ID, s, at);
+        self.emit(T::Id, s, at);
         true
     }
 
-    fn finish(mut self, kind: u8) -> Tokens {
-        self.types.push(kind);
-        self.texts.push(String::new());
-        self.starts.push(self.p);
-        Tokens {
-            types: self.types,
-            texts: self.texts,
-            starts: self.starts,
-            error: self.error,
-        }
+    fn finish(mut self, kind: T) -> Vec<Token<'s, T>> {
+        self.tokens.push(Token::new(kind, "", self.p));
+        self.tokens
     }
 
     fn is_comment(&self, c: u32) -> bool {
@@ -315,18 +300,15 @@ impl<'s> Lexer<'s> {
     }
 }
 
-pub fn tokenize(src: &str) -> Tokens {
+pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
     let n = src.len();
     let mut lx = Lexer {
         src,
         n,
-        types: Vec::new(),
-        texts: Vec::new(),
-        starts: Vec::new(),
+        tokens: Vec::new(),
         stack: Vec::new(),
         state: S::Initial,
         p: 0,
-        error: None,
         next_direction: Finder::new(src, find_direction),
         next_stereotype: Finder::new(src, find_stereotype),
         next_line_end: Finder::new(src, find_line_end),
@@ -347,19 +329,19 @@ pub fn tokenize(src: &str) -> Tokens {
             // Jison tries the current state's rules once more on the empty
             // remainder.
             match lx.state {
-                S::Initial => lx.emit(NL, n, n),
-                S::AccTitle => lx.emit(ACC_TITLE_VALUE, n, n),
-                S::AccDescr => lx.emit(ACC_DESCR_VALUE, n, n),
-                S::AccDescrMultiline => lx.emit(ACC_DESCR_MULTILINE_VALUE, n, n),
-                S::ClassdefId => lx.emit(CLASSDEF_STYLEOPTS, n, n),
-                S::ClassStyle => lx.emit(STYLECLASS, n, n),
-                S::StyledefStyles => lx.emit(STYLEDEF_STYLEOPTS, n, n),
-                S::StateString => lx.emit(STATE_DESCR, n, n),
-                S::FloatingNote => lx.emit(NOTE_TEXT, n, n),
-                S::StateId | S::FloatingNoteId => lx.emit(ID, n, n),
+                S::Initial => lx.emit(T::Nl, n, n),
+                S::AccTitle => lx.emit(T::AccTitleValue, n, n),
+                S::AccDescr => lx.emit(T::AccDescrValue, n, n),
+                S::AccDescrMultiline => lx.emit(T::AccDescrMultilineValue, n, n),
+                S::ClassdefId => lx.emit(T::ClassdefStyleopts, n, n),
+                S::ClassStyle => lx.emit(T::Styleclass, n, n),
+                S::StyledefStyles => lx.emit(T::StyledefStyleopts, n, n),
+                S::StateString => lx.emit(T::StateDescr, n, n),
+                S::FloatingNote => lx.emit(T::NoteText, n, n),
+                S::StateId | S::FloatingNoteId => lx.emit(T::Id, n, n),
                 _ => {}
             }
-            return lx.finish(END);
+            return lx.finish(T::End);
         }
 
         let c = lx.code(p);
@@ -369,27 +351,27 @@ pub fn tokenize(src: &str) -> Tokens {
                 let lc = c | 32;
                 if root {
                     if lc == 99 && lx.word("click", p) && !is_word(lx.code(p + 5)) {
-                        lx.emit(CLICK, p, p + 5);
+                        lx.emit(T::Click, p, p + 5);
                         continue;
                     }
                     if lc == 104 && lx.word("href", p) && !is_word(lx.code(p + 4)) {
-                        lx.emit(HREF, p, p + 4);
+                        lx.emit(T::Href, p, p + 4);
                         continue;
                     }
                     if c == 34
                         && let Some(close) = src[p + 1..].find('"')
                     {
-                        lx.emit(STRING, p, p + 1 + close + 1);
+                        lx.emit(T::String, p, p + 1 + close + 1);
                         continue;
                     }
                     if lc == 100 && lx.word("default", p) && !is_word(lx.code(p + 7)) {
-                        lx.emit(DEFAULT, p, p + 7);
+                        lx.emit(T::Default, p, p + 7);
                         continue;
                     }
                     let kind = lx.direction(p);
                     if kind != -1 {
                         let end = lx.eol(lx.dir_end[kind as usize]);
-                        lx.emit(DIRECTION_TB + kind as u8, p, end);
+                        lx.emit(DIRECTIONS[kind as usize], p, end);
                         continue;
                     }
                     if c == 10 {
@@ -397,7 +379,7 @@ pub fn tokenize(src: &str) -> Tokens {
                         while lx.code(j) == 10 {
                             j += 1;
                         }
-                        lx.emit(NL, p, j);
+                        lx.emit(T::Nl, p, j);
                         continue;
                     }
                     if is_space(c) {
@@ -420,7 +402,7 @@ pub fn tokenize(src: &str) -> Tokens {
                     if root && lx.word("scale", p) {
                         let e = lx.ws_end(p + 5);
                         if e > p + 5 {
-                            lx.emit(SCALE, p, e);
+                            lx.emit(T::Scale, p, e);
                             lx.push(S::Scale);
                             continue;
                         }
@@ -428,7 +410,7 @@ pub fn tokenize(src: &str) -> Tokens {
                     if lx.word("style", p) {
                         let e = lx.ws_end(p + 5);
                         if e > p + 5 {
-                            lx.emit(STYLE, p, e);
+                            lx.emit(T::Style, p, e);
                             lx.push(S::Style);
                             continue;
                         }
@@ -448,7 +430,7 @@ pub fn tokenize(src: &str) -> Tokens {
                             };
                             let e = lx.ws_end(from);
                             if e > from {
-                                lx.emit(SD, p, e);
+                                lx.emit(T::Sd, p, e);
                                 continue;
                             }
                         }
@@ -459,7 +441,7 @@ pub fn tokenize(src: &str) -> Tokens {
                         let from = if def { p + 8 } else { p + 5 };
                         let e = lx.ws_end(from);
                         if e > from {
-                            lx.emit(if def { CLASSDEF } else { CLASS }, p, e);
+                            lx.emit(if def { T::Classdef } else { T::Class }, p, e);
                             lx.push(if def { S::Classdef } else { S::Class });
                             continue;
                         }
@@ -470,7 +452,7 @@ pub fn tokenize(src: &str) -> Tokens {
                     let d = lx.code(q);
                     if d == 58 {
                         let e = lx.ws_end(q + 1);
-                        lx.emit(if title { ACC_TITLE } else { ACC_DESCR }, p, e);
+                        lx.emit(if title { T::AccTitle } else { T::AccDescr }, p, e);
                         lx.push(if title { S::AccTitle } else { S::AccDescr });
                         continue;
                     }
@@ -482,7 +464,7 @@ pub fn tokenize(src: &str) -> Tokens {
                 }
                 if root {
                     if c == 123 {
-                        lx.emit(STRUCT_START, p, p + 1);
+                        lx.emit(T::StructStart, p, p + 1);
                         lx.push(S::Struct);
                         continue;
                     }
@@ -490,11 +472,11 @@ pub fn tokenize(src: &str) -> Tokens {
                     let kind = lx.direction(p);
                     if kind != -1 {
                         let end = lx.eol(lx.dir_end[kind as usize]);
-                        lx.emit(DIRECTION_TB + kind as u8, p, end);
+                        lx.emit(DIRECTIONS[kind as usize], p, end);
                         continue;
                     }
                     if c == 125 {
-                        lx.emit(STRUCT_STOP, p, p + 1);
+                        lx.emit(T::StructStop, p, p + 1);
                         lx.pop();
                         continue;
                     }
@@ -506,7 +488,7 @@ pub fn tokenize(src: &str) -> Tokens {
                 if lc == 110 && lx.word("note", p) {
                     let e = lx.ws_end(p + 4);
                     if e > p + 4 {
-                        lx.emit(NOTE, p, e);
+                        lx.emit(T::Note, p, e);
                         lx.push(S::Note);
                         continue;
                     }
@@ -516,11 +498,11 @@ pub fn tokenize(src: &str) -> Tokens {
                     && lx.word("hide empty description", p)
                     && !is_word(lx.code(p + 22))
                 {
-                    lx.emit(HIDE_EMPTY, p, p + 22);
+                    lx.emit(T::HideEmpty, p, p + 22);
                     continue;
                 }
                 if c == 91 && lx.code(p + 1) == 42 && lx.code(p + 2) == 93 {
-                    lx.emit(EDGE_STATE, p, p + 3);
+                    lx.emit(T::EdgeState, p, p + 3);
                     continue;
                 }
                 let mut j = p;
@@ -553,27 +535,27 @@ pub fn tokenize(src: &str) -> Tokens {
                     }
                     if j > p + 1 {
                         let text = js::trim(&src[p..j]).to_string();
-                        lx.emit_text(DESCR, text, p, j);
+                        lx.emit_text(T::Descr, text, p, j);
                         continue;
                     }
                     if lx.code(p + 1) == 58 && lx.code(p + 2) == 58 {
-                        lx.emit(STYLE_SEPARATOR, p, p + 3);
+                        lx.emit(T::StyleSeparator, p, p + 3);
                         continue;
                     }
                 } else if c == 45 && lx.code(p + 1) == 45 {
                     if lx.code(p + 2) == 62 {
-                        lx.emit(ARROW, p, p + 3);
+                        lx.emit(T::Arrow, p, p + 3);
                         continue;
                     }
                     if !root {
-                        lx.emit(CONCURRENT, p, p + 2);
+                        lx.emit(T::Concurrent, p, p + 2);
                         continue;
                     }
                 }
                 if !root {
-                    return lx.finish(ERROR);
+                    return lx.finish(T::Error);
                 }
-                lx.emit(INVALID, p, p + width_at(src, p));
+                lx.emit(T::Invalid, p, p + width_at(src, p));
             }
 
             S::State => {
@@ -594,11 +576,11 @@ pub fn tokenize(src: &str) -> Tokens {
                     let at = lx.stereo_at[kind as usize] as usize;
                     let choice = kind == 2 || kind == 5;
                     let token = if choice {
-                        CHOICE
+                        T::Choice
                     } else if kind % 3 == 0 {
-                        FORK
+                        T::Fork
                     } else {
-                        JOIN
+                        T::Join
                     };
                     let text = js::trim(&src[p..at]).to_string();
                     lx.emit_text(token, text, p, at + if choice { 10 } else { 8 });
@@ -614,7 +596,7 @@ pub fn tokenize(src: &str) -> Tokens {
                 if lx.word("as", q) {
                     let e = lx.ws_end(q + 2);
                     if e > q + 2 {
-                        lx.emit(AS, p, e);
+                        lx.emit(T::As, p, e);
                         lx.push(S::StateId);
                         continue;
                     }
@@ -625,7 +607,7 @@ pub fn tokenize(src: &str) -> Tokens {
                     continue;
                 }
                 if c == 123 {
-                    lx.emit(STRUCT_START, p, p + 1);
+                    lx.emit(T::StructStart, p, p + 1);
                     lx.pop();
                     lx.push(S::Struct);
                     continue;
@@ -637,11 +619,12 @@ pub fn tokenize(src: &str) -> Tokens {
                         let brace = lx.next_brace.at(second + 1);
                         if brace != -1 && brace < lx.line_end(second) as i64 {
                             let brace = brace as usize;
-                            lx.error = Some(format!(
+                            let message = format!(
                                 "Error: State name must be a single word. Found: \"{}\"",
                                 js::trim(&src[p..brace + 1])
-                            ));
-                            return lx.finish(ERROR);
+                            );
+                            lx.tokens.push(Token::new(T::Error, message, lx.p));
+                            return lx.tokens;
                         }
                     }
                 }
@@ -653,7 +636,7 @@ pub fn tokenize(src: &str) -> Tokens {
                     }
                     j += width_at(src, j);
                 }
-                lx.emit(COMPOSIT_STATE, p, j);
+                lx.emit(T::CompositState, p, j);
             }
 
             S::StateString => {
@@ -663,7 +646,7 @@ pub fn tokenize(src: &str) -> Tokens {
                     continue;
                 }
                 let close = src[p..].find('"').map_or(n, |k| p + k);
-                lx.emit(STATE_DESCR, p, close);
+                lx.emit(T::StateDescr, p, close);
             }
 
             S::StateId => {
@@ -686,7 +669,7 @@ pub fn tokenize(src: &str) -> Tokens {
                     while j < n && (48..=57).contains(&lx.code(j)) {
                         j += 1;
                     }
-                    lx.emit(WIDTH, p, j);
+                    lx.emit(T::Width, p, j);
                     continue;
                 }
                 let q = lx.ws_end(p);
@@ -695,18 +678,18 @@ pub fn tokenize(src: &str) -> Tokens {
                     lx.pop();
                     continue;
                 }
-                return lx.finish(ERROR);
+                return lx.finish(T::Error);
             }
 
             S::AccTitle => {
                 let e = lx.eol(p);
-                lx.emit(ACC_TITLE_VALUE, p, e);
+                lx.emit(T::AccTitleValue, p, e);
                 lx.pop();
             }
 
             S::AccDescr => {
                 let e = lx.eol(p);
-                lx.emit(ACC_DESCR_VALUE, p, e);
+                lx.emit(T::AccDescrValue, p, e);
                 lx.pop();
             }
 
@@ -717,7 +700,7 @@ pub fn tokenize(src: &str) -> Tokens {
                     continue;
                 }
                 let close = src[p..].find('}').map_or(n, |k| p + k);
-                lx.emit(ACC_DESCR_MULTILINE_VALUE, p, close);
+                lx.emit(T::AccDescrMultilineValue, p, close);
             }
 
             S::Classdef => {
@@ -725,13 +708,13 @@ pub fn tokenize(src: &str) -> Tokens {
                 let j = if is_default { p + 7 } else { lx.word_end(p) };
                 let e = lx.ws_end(j);
                 if j == p || e == j {
-                    return lx.finish(ERROR);
+                    return lx.finish(T::Error);
                 }
                 lx.emit(
                     if is_default {
-                        DEFAULT_CLASSDEF_ID
+                        T::DefaultClassdefId
                     } else {
-                        CLASSDEF_ID
+                        T::ClassdefId
                     },
                     p,
                     e,
@@ -742,14 +725,14 @@ pub fn tokenize(src: &str) -> Tokens {
 
             S::ClassdefId => {
                 let e = lx.eol(p);
-                lx.emit(CLASSDEF_STYLEOPTS, p, e);
+                lx.emit(T::ClassdefStyleopts, p, e);
                 lx.pop();
             }
 
             S::Class => {
                 let mut j = lx.word_end(p);
                 if j == p {
-                    return lx.finish(ERROR);
+                    return lx.finish(T::Error);
                 }
                 while lx.code(j) == 44 {
                     let k = lx.ws_end(j + 1);
@@ -759,14 +742,14 @@ pub fn tokenize(src: &str) -> Tokens {
                     }
                     j = e;
                 }
-                lx.emit(CLASSENTITY_IDS, p, j);
+                lx.emit(T::ClassentityIds, p, j);
                 lx.pop();
                 lx.push(S::ClassStyle);
             }
 
             S::ClassStyle => {
                 let e = lx.eol(p);
-                lx.emit(STYLECLASS, p, e);
+                lx.emit(T::Styleclass, p, e);
                 lx.pop();
             }
 
@@ -777,28 +760,28 @@ pub fn tokenize(src: &str) -> Tokens {
                 }
                 let e = lx.ws_end(j);
                 if j == p || e == j {
-                    return lx.finish(ERROR);
+                    return lx.finish(T::Error);
                 }
-                lx.emit(STYLE_IDS, p, e);
+                lx.emit(T::StyleIds, p, e);
                 lx.pop();
                 lx.push(S::StyledefStyles);
             }
 
             S::StyledefStyles => {
                 let e = lx.eol(p);
-                lx.emit(STYLEDEF_STYLEOPTS, p, e);
+                lx.emit(T::StyledefStyleopts, p, e);
                 lx.pop();
             }
 
             S::Note => {
                 if lx.word("left of", p) && !is_word(lx.code(p + 7)) {
-                    lx.emit(LEFT_OF, p, p + 7);
+                    lx.emit(T::LeftOf, p, p + 7);
                     lx.pop();
                     lx.push(S::NoteId);
                     continue;
                 }
                 if lx.word("right of", p) && !is_word(lx.code(p + 8)) {
-                    lx.emit(RIGHT_OF, p, p + 8);
+                    lx.emit(T::RightOf, p, p + 8);
                     lx.pop();
                     lx.push(S::NoteId);
                     continue;
@@ -809,7 +792,7 @@ pub fn tokenize(src: &str) -> Tokens {
                     lx.push(S::FloatingNote);
                     continue;
                 }
-                return lx.finish(ERROR);
+                return lx.finish(T::Error);
             }
 
             S::NoteId => {
@@ -823,7 +806,7 @@ pub fn tokenize(src: &str) -> Tokens {
                     j += width_at(src, j);
                 }
                 if j == q {
-                    return lx.finish(ERROR);
+                    return lx.finish(T::Error);
                 }
                 if lx.emit_id(p, j) {
                     lx.pop();
@@ -848,7 +831,7 @@ pub fn tokenize(src: &str) -> Tokens {
                         // of the note goes too.
                         let from = skip_units(src, p, 2).min(j);
                         let text = js::trim(&src[from..j]).to_string();
-                        lx.emit_text(NOTE_TEXT, text, p, j);
+                        lx.emit_text(T::NoteText, text, p, j);
                         lx.pop();
                         continue;
                     }
@@ -863,10 +846,10 @@ pub fn tokenize(src: &str) -> Tokens {
                     k = src[e..].find('\n').map(|k| e + k);
                 }
                 if k.is_none() {
-                    return lx.finish(ERROR);
+                    return lx.finish(T::Error);
                 }
                 let text = js::trim(&src[p..e]).to_string();
-                lx.emit_text(NOTE_TEXT, text, p, e + 8);
+                lx.emit_text(T::NoteText, text, p, e + 8);
                 lx.pop();
             }
 
@@ -874,7 +857,7 @@ pub fn tokenize(src: &str) -> Tokens {
                 let q = lx.ws_end(p);
                 if lx.word("as", q) {
                     let e = lx.ws_end(q + 2);
-                    lx.emit(AS, p, e);
+                    lx.emit(T::As, p, e);
                     lx.pop();
                     lx.push(S::FloatingNoteId);
                     continue;
@@ -884,7 +867,7 @@ pub fn tokenize(src: &str) -> Tokens {
                     continue;
                 }
                 let close = src[p..].find('"').map_or(n, |k| p + k);
-                lx.emit(NOTE_TEXT, p, close);
+                lx.emit(T::NoteText, p, close);
             }
 
             S::FloatingNoteId => {

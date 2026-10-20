@@ -2,37 +2,36 @@
 
 use super::{
     db::ErModel,
-    lexer::{Tokens, tokenize},
-    tokens::*,
+    lexer::tokenize,
+    tokens::T,
     types::{Cardinality, DocItem, Identification, ParsedAttribute, RelSpec},
 };
-use crate::{detect::Kind, error::Error, js};
+use crate::{detect::Kind, error::Error, js, token::Stream};
 
-const DIRECTIONS: [&str; 4] = ["TB", "BT", "RL", "LR"];
 const NAME: &str = "'UNICODE_TEXT', 'NUM', 'ENTITY_NAME', 'DECIMAL_NUM', 'ENTITY_ONE'";
 const CARDS: &str = "'ZERO_OR_ONE', 'ZERO_OR_MORE', 'ONE_OR_MORE', 'ONLY_ONE', 'MD_PARENT'";
 const LINE: &str = "'EOF', 'NEWLINE', 'title', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'SUBGRAPH', 'direction_tb', 'direction_bt', 'direction_rl', 'direction_lr', 'CLASSDEF', 'CLASS', 'STYLE', 'UNICODE_TEXT', 'NUM', 'ENTITY_NAME', 'DECIMAL_NUM', 'ENTITY_ONE'";
 
-fn cardinality(t: u8) -> Option<Cardinality> {
+fn cardinality(t: T) -> Option<Cardinality> {
     Some(match t {
-        ZERO_OR_ONE => Cardinality::ZeroOrOne,
-        ZERO_OR_MORE => Cardinality::ZeroOrMore,
-        ONE_OR_MORE => Cardinality::OneOrMore,
-        ONLY_ONE => Cardinality::OnlyOne,
-        MD_PARENT => Cardinality::MdParent,
+        T::ZeroOrOne => Cardinality::ZeroOrOne,
+        T::ZeroOrMore => Cardinality::ZeroOrMore,
+        T::OneOrMore => Cardinality::OneOrMore,
+        T::OnlyOne => Cardinality::OnlyOne,
+        T::MdParent => Cardinality::MdParent,
         _ => return None,
     })
 }
 
-fn is_name(t: u8) -> bool {
+fn is_name(t: T) -> bool {
     matches!(
         t,
-        UNICODE_TEXT | ENTITY_NAME | NUM | DECIMAL_NUM | ENTITY_ONE
+        T::UnicodeText | T::EntityName | T::Num | T::DecimalNum | T::EntityOne
     )
 }
 
-fn is_style_component(t: u8) -> bool {
-    matches!(t, STYLE_TEXT | NUM | COLON | BRKT)
+fn is_style_component(t: T) -> bool {
+    matches!(t, T::StyleText | T::Num | T::Colon | T::Brkt)
 }
 
 /// `text` without its first and last characters, which are quotes.
@@ -50,122 +49,78 @@ struct Frame {
 }
 
 struct Parser<'t, 's> {
-    tokens: &'t Tokens<'s>,
-    src: &'s str,
-    i: usize,
+    s: Stream<'t, 's, T>,
 }
 
-impl<'s> Parser<'_, 's> {
-    fn t(&self) -> u8 {
-        self.tokens.types[self.i]
-    }
-
-    fn text(&self) -> &'s str {
-        self.tokens.texts[self.i]
-    }
-
-    fn fail(&self, expected: &str) -> Error {
-        let t = self.t();
-        let start = self.tokens.starts[self.i];
-        if t == ERROR {
-            return Error::at(Kind::Er, self.src, start, "", true);
-        }
-        let got = if t == CHAR {
-            self.text()
-        } else {
-            TOKEN_NAMES[t as usize]
-        };
-        Error::at(
-            Kind::Er,
-            self.src,
-            start,
-            &format!("Expecting {expected}, got '{got}'"),
-            false,
-        )
-    }
-
-    fn expect(&mut self, kind: u8) -> Result<&'s str, Error> {
-        if self.t() != kind {
-            return Err(self.fail(&format!("'{}'", TOKEN_NAMES[kind as usize])));
-        }
-        self.i += 1;
-        Ok(self.tokens.texts[self.i - 1])
-    }
-
+impl<'t> Parser<'t, '_> {
     fn separator(&mut self) -> Result<(), Error> {
-        if !matches!(self.t(), NEWLINE | SEMI | EOF) {
-            return Err(self.fail("'EOF', 'NEWLINE', 'SEMI'"));
+        if !self.s.is_any(&[T::Newline, T::Semi, T::Eof]) {
+            return Err(self.s.fail("'EOF', 'NEWLINE', 'SEMI'"));
         }
-        self.i += 1;
+        self.s.bump();
         Ok(())
     }
 
-    fn entity_name(&mut self) -> Result<&'s str, Error> {
-        let t = self.t();
+    fn entity_name(&mut self) -> Result<&'t str, Error> {
+        let t = self.s.kind();
         if !is_name(t) {
-            return Err(self.fail(NAME));
+            return Err(self.s.fail(NAME));
         }
-        let text = self.text();
-        self.i += 1;
-        Ok(if t == ENTITY_NAME {
+        let text = self.s.take();
+        Ok(if t == T::EntityName {
             unquote(text)
         } else {
             text
         })
     }
 
-    fn id_list(&mut self) -> Result<Vec<&'s str>, Error> {
+    fn id_list(&mut self) -> Result<Vec<&'t str>, Error> {
         let mut ids = Vec::new();
         loop {
-            if !matches!(self.t(), UNICODE_TEXT | STYLE_TEXT) {
-                return Err(self.fail("'UNICODE_TEXT', 'STYLE_TEXT'"));
+            if !self.s.is_any(&[T::UnicodeText, T::StyleText]) {
+                return Err(self.s.fail("'UNICODE_TEXT', 'STYLE_TEXT'"));
             }
-            ids.push(self.text());
-            self.i += 1;
-            if self.t() != COMMA {
+            ids.push(self.s.take());
+            if !self.s.eat(T::Comma) {
                 return Ok(ids);
             }
-            self.i += 1;
         }
     }
 
     fn styles_opt(&mut self) -> Result<Vec<String>, Error> {
         let mut styles = Vec::new();
         loop {
-            if !is_style_component(self.t()) {
-                return Err(self.fail("'STYLE_TEXT', 'COLON', 'NUM', 'BRKT'"));
+            if !is_style_component(self.s.kind()) {
+                return Err(self.s.fail("'STYLE_TEXT', 'COLON', 'NUM', 'BRKT'"));
             }
-            let mut style = self.text().to_string();
-            self.i += 1;
-            while is_style_component(self.t()) {
-                style.push_str(self.text());
-                self.i += 1;
+            let mut style = self.s.take().to_string();
+            while is_style_component(self.s.kind()) {
+                style.push_str(self.s.take());
             }
             styles.push(style);
-            if self.t() != COMMA {
+            if !self.s.eat(T::Comma) {
                 return Ok(styles);
             }
-            self.i += 1;
         }
     }
 
     fn rel_spec(&mut self) -> Result<RelSpec, Error> {
-        let card_b = cardinality(self.t()).unwrap_or(Cardinality::OnlyOne);
-        self.i += 1;
-        let r = self.t();
-        if r != IDENTIFYING && r != NON_IDENTIFYING {
-            return Err(self.fail("'NON_IDENTIFYING', 'IDENTIFYING'"));
+        let card_b = cardinality(self.s.kind()).unwrap_or(Cardinality::OnlyOne);
+        self.s.bump();
+        let r = self.s.kind();
+        if r != T::Identifying && r != T::NonIdentifying {
+            return Err(self.s.fail("'NON_IDENTIFYING', 'IDENTIFYING'"));
         }
-        let rel_type = if r == IDENTIFYING {
+        let rel_type = if r == T::Identifying {
             Identification::Identifying
         } else {
             Identification::NonIdentifying
         };
-        self.i += 1;
-        let Some(card_a) = cardinality(self.t()) else {
-            return Err(self.fail(CARDS));
+        self.s.bump();
+        let Some(card_a) = cardinality(self.s.kind()) else {
+            return Err(self.s.fail(CARDS));
         };
-        self.i += 1;
+        self.s.bump();
         Ok(RelSpec {
             card_a,
             rel_type,
@@ -173,14 +128,13 @@ impl<'s> Parser<'_, 's> {
         })
     }
 
-    fn role(&mut self) -> Result<&'s str, Error> {
-        let t = self.t();
-        if !matches!(t, WORD | ENTITY_NAME | UNICODE_TEXT) {
-            return Err(self.fail("'UNICODE_TEXT', 'ENTITY_NAME', 'WORD'"));
+    fn role(&mut self) -> Result<&'t str, Error> {
+        let t = self.s.kind();
+        if !matches!(t, T::Word | T::EntityName | T::UnicodeText) {
+            return Err(self.s.fail("'UNICODE_TEXT', 'ENTITY_NAME', 'WORD'"));
         }
-        let text = self.text();
-        self.i += 1;
-        Ok(if t == UNICODE_TEXT {
+        let text = self.s.take();
+        Ok(if t == T::UnicodeText {
             text
         } else {
             unquote(text)
@@ -188,7 +142,7 @@ impl<'s> Parser<'_, 's> {
     }
 
     fn is_char(&self, ch: &str) -> bool {
-        self.t() == CHAR && self.text() == ch
+        self.s.is(T::Char) && self.s.text() == ch
     }
 
     /// The attributes last to first, as Mermaid's right-recursive rule
@@ -196,13 +150,12 @@ impl<'s> Parser<'_, 's> {
     fn attributes(&mut self) -> Result<Vec<ParsedAttribute>, Error> {
         let mut list = Vec::new();
         loop {
-            let mut kind = self.expect(ATTRIBUTE_WORD)?.to_string();
+            let mut kind = self.s.expect(T::AttributeWord, "")?.to_string();
             if self.is_char("?") {
-                kind.push_str(self.text());
-                self.i += 1;
+                kind.push_str(self.s.take());
             }
-            if self.t() != ATTRIBUTE_WORD {
-                return Err(self.fail(if kind.ends_with('?') {
+            if !self.s.is(T::AttributeWord) {
+                return Err(self.s.fail(if kind.ends_with('?') {
                     "'ATTRIBUTE_WORD'"
                 } else {
                     "'ATTRIBUTE_WORD', '?'"
@@ -210,26 +163,24 @@ impl<'s> Parser<'_, 's> {
             }
             let mut attribute = ParsedAttribute {
                 kind,
-                name: self.text().to_string(),
+                name: self.s.text().to_string(),
                 keys: None,
                 comment: None,
             };
-            self.i += 1;
-            if self.t() == ATTRIBUTE_KEY {
-                let mut keys = vec![self.text().to_string()];
-                self.i += 1;
+            self.s.bump();
+            if self.s.is(T::AttributeKey) {
+                let mut keys = vec![self.s.take().to_string()];
                 while self.is_char(",") {
-                    self.i += 1;
-                    keys.push(self.expect(ATTRIBUTE_KEY)?.to_string());
+                    self.s.bump();
+                    keys.push(self.s.expect(T::AttributeKey, "")?.to_string());
                 }
                 attribute.keys = Some(keys);
             }
-            if self.t() == COMMENT {
-                attribute.comment = Some(unquote(self.text()).to_string());
-                self.i += 1;
+            if self.s.is(T::Comment) {
+                attribute.comment = Some(unquote(self.s.take()).to_string());
             }
             list.push(attribute);
-            if self.t() == BLOCK_STOP {
+            if self.s.is(T::BlockStop) {
                 break;
             }
         }
@@ -240,29 +191,26 @@ impl<'s> Parser<'_, 's> {
     /// An optional `{ ... }` block; `None` when there is none or it is
     /// empty.
     fn block(&mut self) -> Result<Option<Vec<ParsedAttribute>>, Error> {
-        if self.t() != BLOCK_START {
+        if !self.s.eat(T::BlockStart) {
             return Ok(None);
         }
-        self.i += 1;
-        if self.t() == BLOCK_STOP {
-            self.i += 1;
+        if self.s.eat(T::BlockStop) {
             return Ok(None);
         }
         let list = self.attributes()?;
-        self.i += 1;
+        self.s.bump();
         Ok(Some(list))
     }
 
-    fn entity_statement(&mut self, db: &mut ErModel) -> Result<Vec<&'s str>, Error> {
+    fn entity_statement(&mut self, db: &mut ErModel) -> Result<Vec<&'t str>, Error> {
         let a = self.entity_name()?;
-        let mut t = self.t();
-        if t == SQS {
-            self.i += 1;
+        let mut t = self.s.kind();
+        if t == T::Sqs {
+            self.s.bump();
             let alias = self.entity_name()?;
-            self.expect(SQE)?;
+            self.s.expect(T::Sqe, "")?;
             let mut classes = None;
-            if self.t() == STYLE_SEPARATOR {
-                self.i += 1;
+            if self.s.eat(T::StyleSeparator) {
                 classes = Some(self.id_list()?);
             }
             let attrs = self.block()?;
@@ -276,20 +224,19 @@ impl<'s> Parser<'_, 's> {
             return Ok(vec![a]);
         }
         let mut classes = None;
-        if t == STYLE_SEPARATOR {
-            self.i += 1;
+        if t == T::StyleSeparator {
+            self.s.bump();
             classes = Some(self.id_list()?);
-            t = self.t();
+            t = self.s.kind();
         }
         if cardinality(t).is_some() {
             let spec = self.rel_spec()?;
             let b = self.entity_name()?;
             let mut classes_b = None;
-            if self.t() == STYLE_SEPARATOR {
-                self.i += 1;
+            if self.s.eat(T::StyleSeparator) {
                 classes_b = Some(self.id_list()?);
             }
-            self.expect(COLON)?;
+            self.s.expect(T::Colon, "")?;
             let label = self.role()?;
             db.add_entity(a, "");
             db.add_entity(b, "");
@@ -317,12 +264,10 @@ impl<'s> Parser<'_, 's> {
 pub fn parse_er(src: &str, db: &mut ErModel) -> Result<(), Error> {
     let tokens = tokenize(src);
     let mut r = Parser {
-        tokens: &tokens,
-        src,
-        i: 0,
+        s: Stream::new(Kind::Er, src, &tokens),
     };
 
-    r.expect(ER_DIAGRAM)?;
+    r.s.expect(T::ErDiagram, "")?;
     // Subgraphs nest on this stack rather than on the call stack; the first
     // frame is the diagram itself.
     let mut frames = vec![Frame {
@@ -333,21 +278,21 @@ pub fn parse_er(src: &str, db: &mut ErModel) -> Result<(), Error> {
     let nested = |frames: &Vec<Frame>| frames.len() > 1;
 
     loop {
-        let t = r.t();
+        let t = r.s.kind();
         match t {
-            NEWLINE => r.i += 1,
-            EOF => {
-                r.i += 1;
+            T::Newline => r.s.bump(),
+            T::Eof => {
+                r.s.bump();
                 if nested(&frames) {
-                    return Err(r.fail(&format!("'END', {LINE}")));
+                    return Err(r.s.fail(&format!("'END', {LINE}")));
                 }
                 return Ok(());
             }
-            END_KW => {
+            T::EndKw => {
                 if !nested(&frames) {
-                    return Err(r.fail(LINE));
+                    return Err(r.s.fail(LINE));
                 }
-                r.i += 1;
+                r.s.bump();
                 let frame = frames.pop().unwrap_or_else(|| unreachable!());
                 let id = db.add_sub_graph(&frame.id, &frame.list, &frame.title);
                 if nested(&frames)
@@ -356,18 +301,17 @@ pub fn parse_er(src: &str, db: &mut ErModel) -> Result<(), Error> {
                     parent.list.push(DocItem::Name(id));
                 }
             }
-            SUBGRAPH => {
-                r.i += 1;
+            T::Subgraph => {
+                r.s.bump();
                 let id = r.entity_name()?;
                 let mut title = id.to_string();
-                if r.t() == SQS {
-                    r.i += 1;
+                if r.s.eat(T::Sqs) {
                     title = r.entity_name()?.to_string();
-                    while is_name(r.t()) {
+                    while is_name(r.s.kind()) {
                         title.push(' ');
                         title.push_str(r.entity_name()?);
                     }
-                    r.expect(SQE)?;
+                    r.s.expect(T::Sqe, "")?;
                 }
                 r.separator()?;
                 frames.push(Frame {
@@ -376,29 +320,36 @@ pub fn parse_er(src: &str, db: &mut ErModel) -> Result<(), Error> {
                     list: Vec::new(),
                 });
             }
-            ACC_TITLE | ACC_DESCR | ACC_DESCR_MULTILINE_VALUE => {
-                let value = if t == ACC_DESCR_MULTILINE_VALUE {
-                    let text = r.text();
-                    r.i += 1;
+            T::AccTitle | T::AccDescr | T::AccDescrMultilineValue => {
+                let value = if t == T::AccDescrMultilineValue {
+                    let text = r.s.take();
                     js::trim(text)
                 } else {
-                    r.i += 1;
-                    js::trim(r.expect(if t == ACC_TITLE {
-                        ACC_TITLE_VALUE
-                    } else {
-                        ACC_DESCR_VALUE
-                    })?)
+                    r.s.bump();
+                    js::trim(r.s.expect(
+                        if t == T::AccTitle {
+                            T::AccTitleValue
+                        } else {
+                            T::AccDescrValue
+                        },
+                        "",
+                    )?)
                 };
-                if t == ACC_TITLE {
+                if t == T::AccTitle {
                     db.set_acc_title(value);
                 } else {
                     db.set_acc_description(value);
                 }
                 push_name(&mut frames, value);
             }
-            DIRECTION_TB | DIRECTION_BT | DIRECTION_RL | DIRECTION_LR => {
-                r.i += 1;
-                let value = DIRECTIONS[(t - DIRECTION_TB) as usize];
+            T::DirectionTb | T::DirectionBt | T::DirectionRl | T::DirectionLr => {
+                r.s.bump();
+                let value = match t {
+                    T::DirectionTb => "TB",
+                    T::DirectionBt => "BT",
+                    T::DirectionRl => "RL",
+                    _ => "LR",
+                };
                 if nested(&frames) {
                     if let Some(frame) = frames.last_mut() {
                         frame.list.push(DocItem::Dir(value));
@@ -407,22 +358,20 @@ pub fn parse_er(src: &str, db: &mut ErModel) -> Result<(), Error> {
                     db.set_direction(value);
                 }
             }
-            CLASSDEF | STYLE => {
-                let keyword = r.text();
-                r.i += 1;
+            T::Classdef | T::Style => {
+                let keyword = r.s.take();
                 let ids = r.id_list()?;
                 let styles = r.styles_opt()?;
                 r.separator()?;
-                if t == CLASSDEF {
+                if t == T::Classdef {
                     db.add_class(&ids, &styles);
                 } else {
                     db.add_css_styles(&ids, &styles);
                 }
                 push_name(&mut frames, keyword);
             }
-            CLASS => {
-                let keyword = r.text();
-                r.i += 1;
+            T::Class => {
+                let keyword = r.s.take();
                 let ids = r.id_list()?;
                 let names = r.id_list()?;
                 db.set_class(&ids, &names);
@@ -430,7 +379,7 @@ pub fn parse_er(src: &str, db: &mut ErModel) -> Result<(), Error> {
             }
             _ => {
                 if !is_name(t) {
-                    return Err(r.fail(&if nested(&frames) {
+                    return Err(r.s.fail(&if nested(&frames) {
                         format!("'END', {LINE}")
                     } else {
                         LINE.to_string()

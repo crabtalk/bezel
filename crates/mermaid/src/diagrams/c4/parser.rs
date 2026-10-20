@@ -3,38 +3,18 @@
 use super::{
     db::C4Model,
     lexer::tokenize,
-    tokens::*,
+    tokens::T,
     types::{C4Attr, C4Named},
 };
-use crate::{detect::Kind, error::Error, js, util::chars::width_at};
+use crate::{detect::Kind, error::Error, js, token::Stream, util::chars::width_at};
 
-/// Mermaid's typeC4Shape for each shape keyword, indexed from `PERSON`.
-const KINDS: [&str; 20] = [
-    "person",
-    "external_person",
-    "system",
-    "system_db",
-    "system_queue",
-    "external_system",
-    "external_system_db",
-    "external_system_queue",
-    "container",
-    "container_db",
-    "container_queue",
-    "external_container",
-    "external_container_db",
-    "external_container_queue",
-    "component",
-    "component_db",
-    "component_queue",
-    "external_component",
-    "external_component_db",
-    "external_component_queue",
+const HEADER: [T; 5] = [
+    T::C4Context,
+    T::C4Container,
+    T::C4Component,
+    T::C4Dynamic,
+    T::C4Deployment,
 ];
-const REL_TYPES: [&str; 8] = [
-    "rel", "birel", "rel_u", "rel_d", "rel_l", "rel_r", "rel_b", "rel",
-];
-const NODE_TYPES: [&str; 3] = ["node", "nodeL", "nodeR"];
 
 const HEADERS: &str = "'direction_tb', 'direction_bt', 'direction_rl', 'direction_lr', 'C4_CONTEXT', 'C4_CONTAINER', 'C4_COMPONENT', 'C4_DYNAMIC', 'C4_DEPLOYMENT'";
 const ATTRIBUTES: &str = "'STR', 'STR_KEY', 'ATTRIBUTE', 'ATTRIBUTE_EMPTY'";
@@ -51,16 +31,75 @@ enum P {
     AfterDiagram,
 }
 
-fn is_other(t: u8) -> bool {
-    t == TITLE
-        || t == ACC_DESCRIPTION
-        || t == ACC_TITLE
-        || t == ACC_DESCR
-        || t == ACC_DESCR_MULTILINE_VALUE
+fn is_other(t: T) -> bool {
+    matches!(
+        t,
+        T::Title | T::AccDescription | T::AccTitle | T::AccDescr | T::AccDescrMultilineValue
+    )
 }
 
-fn is_diagram(t: u8) -> bool {
-    (PERSON..=UPDATE_LAYOUT_CONFIG).contains(&t)
+/// What a diagram statement adds to the model.
+#[derive(Clone, Copy)]
+enum Statement {
+    /// Each element with Mermaid's typeC4Shape for it.
+    PersonOrSystem(&'static str),
+    Container(&'static str),
+    Component(&'static str),
+    /// The type Mermaid inserts as the third attribute, if any.
+    Boundary(Option<&'static str>),
+    ContainerBoundary,
+    DeploymentNode(&'static str),
+    Rel(&'static str),
+    /// Takes a sequence number first, which Mermaid ignores.
+    RelIndex,
+    UpdateElStyle,
+    UpdateRelStyle,
+    UpdateLayoutConfig,
+}
+
+fn statement(t: T) -> Option<Statement> {
+    use Statement::*;
+    Some(match t {
+        T::Person => PersonOrSystem("person"),
+        T::PersonExt => PersonOrSystem("external_person"),
+        T::System => PersonOrSystem("system"),
+        T::SystemDb => PersonOrSystem("system_db"),
+        T::SystemQueue => PersonOrSystem("system_queue"),
+        T::SystemExt => PersonOrSystem("external_system"),
+        T::SystemExtDb => PersonOrSystem("external_system_db"),
+        T::SystemExtQueue => PersonOrSystem("external_system_queue"),
+        T::Container => Container("container"),
+        T::ContainerDb => Container("container_db"),
+        T::ContainerQueue => Container("container_queue"),
+        T::ContainerExt => Container("external_container"),
+        T::ContainerExtDb => Container("external_container_db"),
+        T::ContainerExtQueue => Container("external_container_queue"),
+        T::Component => Component("component"),
+        T::ComponentDb => Component("component_db"),
+        T::ComponentQueue => Component("component_queue"),
+        T::ComponentExt => Component("external_component"),
+        T::ComponentExtDb => Component("external_component_db"),
+        T::ComponentExtQueue => Component("external_component_queue"),
+        T::EnterpriseBoundary => Boundary(Some("ENTERPRISE")),
+        T::SystemBoundary => Boundary(Some("SYSTEM")),
+        T::Boundary => Boundary(None),
+        T::ContainerBoundary => ContainerBoundary,
+        T::Node => DeploymentNode("node"),
+        T::NodeL => DeploymentNode("nodeL"),
+        T::NodeR => DeploymentNode("nodeR"),
+        T::Rel => Rel("rel"),
+        T::Birel => Rel("birel"),
+        T::RelU => Rel("rel_u"),
+        T::RelD => Rel("rel_d"),
+        T::RelL => Rel("rel_l"),
+        T::RelR => Rel("rel_r"),
+        T::RelB => Rel("rel_b"),
+        T::RelIndex => RelIndex,
+        T::UpdateElStyle => UpdateElStyle,
+        T::UpdateRelStyle => UpdateRelStyle,
+        T::UpdateLayoutConfig => UpdateLayoutConfig,
+        _ => return None,
+    })
 }
 
 /// `text` past its first `keyword` bytes and the space after them, as
@@ -69,157 +108,113 @@ fn after_keyword(text: &str, keyword: usize) -> &str {
     &text[keyword + width_at(text, keyword)..]
 }
 
-struct Parser<'a> {
-    src: &'a str,
-    types: Vec<u8>,
-    starts: Vec<usize>,
-    ends: Vec<usize>,
-    i: usize,
+struct Parser<'t, 's> {
+    s: Stream<'t, 's, T>,
 }
 
-impl Parser<'_> {
-    fn ty(&self) -> u8 {
-        self.types.get(self.i).copied().unwrap_or(END)
-    }
-
-    fn text(&self, at: usize) -> &str {
-        &self.src[self.starts[at]..self.ends[at]]
-    }
-
-    fn fail(&self, expected: &str) -> Error {
-        let t = self.ty();
-        let at = self.starts.get(self.i).copied().unwrap_or(self.src.len());
-        if t == ERROR {
-            return Error::at(Kind::C4, self.src, at, "", true);
-        }
-        Error::at(
-            Kind::C4,
-            self.src,
-            at,
-            &format!("Expecting {expected}, got '{}'", TOKEN_NAMES[t as usize]),
-            false,
-        )
-    }
-
-    fn expect(&mut self, ty: u8) -> Result<(), Error> {
-        if self.ty() != ty {
-            return Err(self.fail(&format!("'{}'", TOKEN_NAMES[ty as usize])));
-        }
-        self.i += 1;
-        Ok(())
-    }
-
+impl Parser<'_, '_> {
     fn attributes(&mut self) -> Result<Vec<C4Attr>, Error> {
         let mut attrs = Vec::new();
         loop {
-            let t = self.ty();
-            if t == STR {
-                attrs.push(C4Attr::Str(js::trim(self.text(self.i)).to_string()));
-                self.i += 1;
-            } else if t == ATTRIBUTE_EMPTY {
-                attrs.push(C4Attr::Str(String::new()));
-                self.i += 1;
-            } else if t == STR_KEY {
-                self.i += 1;
-                if self.ty() != STR_VALUE {
-                    return Err(self.fail("'STR_VALUE'"));
+            match self.s.kind() {
+                T::Str => attrs.push(C4Attr::Str(js::trim(self.s.take()).to_string())),
+                T::AttributeEmpty => {
+                    self.s.bump();
+                    attrs.push(C4Attr::Str(String::new()));
                 }
-                attrs.push(C4Attr::Named(C4Named {
-                    key: js::trim(self.text(self.i - 1)).to_string(),
-                    value: js::trim(self.text(self.i)).to_string(),
-                }));
-                self.i += 1;
-            } else {
-                break;
+                T::StrKey => {
+                    let key = js::trim(self.s.take()).to_string();
+                    if !self.s.is(T::StrValue) {
+                        return Err(self.s.fail("'STR_VALUE'"));
+                    }
+                    attrs.push(C4Attr::Named(C4Named {
+                        key,
+                        value: js::trim(self.s.take()).to_string(),
+                    }));
+                }
+                _ => break,
             }
         }
         if attrs.is_empty() {
-            return Err(self.fail(ATTRIBUTES));
+            return Err(self.s.fail(ATTRIBUTES));
         }
         Ok(attrs)
     }
 
-    fn other(&mut self, t: u8, db: &mut C4Model) -> Result<(), Error> {
-        if t == TITLE {
-            db.set_title(after_keyword(self.text(self.i), 5));
-            self.i += 1;
-        } else if t == ACC_DESCRIPTION {
-            db.set_acc_description(after_keyword(self.text(self.i), 14));
-            self.i += 1;
-        } else if t == ACC_DESCR_MULTILINE_VALUE {
-            db.set_acc_description(js::trim(self.text(self.i)));
-            self.i += 1;
-        } else {
-            self.i += 1;
-            if t == ACC_TITLE {
-                if self.ty() != ACC_TITLE_VALUE {
-                    return Err(self.fail("'acc_title_value'"));
+    fn other(&mut self, t: T, db: &mut C4Model) -> Result<(), Error> {
+        match t {
+            T::Title => db.set_title(after_keyword(self.s.take(), 5)),
+            T::AccDescription => db.set_acc_description(after_keyword(self.s.take(), 14)),
+            T::AccDescrMultilineValue => db.set_acc_description(js::trim(self.s.take())),
+            T::AccTitle => {
+                self.s.bump();
+                if !self.s.is(T::AccTitleValue) {
+                    return Err(self.s.fail("'acc_title_value'"));
                 }
                 // The grammar hands `accTitle:` to setTitle, so it becomes the
                 // visible title.
-                db.set_title(js::trim(self.text(self.i)));
-            } else {
-                if self.ty() != ACC_DESCR_VALUE {
-                    return Err(self.fail("'acc_descr_value'"));
-                }
-                db.set_acc_description(js::trim(self.text(self.i)));
+                db.set_title(js::trim(self.s.take()));
             }
-            self.i += 1;
+            _ => {
+                self.s.bump();
+                if !self.s.is(T::AccDescrValue) {
+                    return Err(self.s.fail("'acc_descr_value'"));
+                }
+                db.set_acc_description(js::trim(self.s.take()));
+            }
+        }
+        Ok(())
+    }
+
+    fn open_boundary(&mut self) -> Result<(), Error> {
+        if self.s.eat(T::Lbrace) {
+            self.s.expect(T::Newline, "")?;
+        } else if self.s.eat(T::Newline) {
+            self.s.expect(T::Lbrace, "")?;
+            self.s.eat(T::Newline);
+        } else {
+            return Err(self.s.fail("'NEWLINE', 'LBRACE'"));
         }
         Ok(())
     }
 
     /// True when the statement opens a boundary.
-    fn diagram(&mut self, t: u8, db: &mut C4Model) -> Result<bool, Error> {
-        self.i += 1;
+    fn diagram(&mut self, statement: Statement, db: &mut C4Model) -> Result<bool, Error> {
+        self.s.bump();
         let mut attrs = self.attributes()?;
-        if t <= SYSTEM_EXT_QUEUE {
-            db.add_person_or_system(KINDS[(t - PERSON) as usize], &attrs);
-        } else if t <= CONTAINER_EXT_QUEUE {
-            db.add_container(KINDS[(t - PERSON) as usize], &attrs);
-        } else if t <= COMPONENT_EXT_QUEUE {
-            db.add_component(KINDS[(t - PERSON) as usize], &attrs);
-        } else if t <= NODE_R {
-            let at = attrs.len().min(2);
-            if t == ENTERPRISE_BOUNDARY {
-                attrs.insert(at, C4Attr::Str("ENTERPRISE".into()));
-            } else if t == SYSTEM_BOUNDARY {
-                attrs.insert(at, C4Attr::Str("SYSTEM".into()));
-            } else if t == CONTAINER_BOUNDARY {
-                attrs.insert(at, C4Attr::Str("CONTAINER".into()));
-            }
-            if t >= NODE {
-                db.add_deployment_node(NODE_TYPES[(t - NODE) as usize], &attrs);
-            } else if t == CONTAINER_BOUNDARY {
-                db.add_container_boundary(&attrs);
-            } else {
-                db.add_person_or_system_boundary(&attrs);
-            }
-            if self.ty() == LBRACE {
-                self.i += 1;
-                self.expect(NEWLINE)?;
-            } else if self.ty() == NEWLINE {
-                self.i += 1;
-                self.expect(LBRACE)?;
-                if self.ty() == NEWLINE {
-                    self.i += 1;
+        match statement {
+            Statement::PersonOrSystem(kind) => db.add_person_or_system(kind, &attrs),
+            Statement::Container(kind) => db.add_container(kind, &attrs),
+            Statement::Component(kind) => db.add_component(kind, &attrs),
+            Statement::Boundary(kind) => {
+                if let Some(kind) = kind {
+                    attrs.insert(attrs.len().min(2), C4Attr::Str(kind.into()));
                 }
-            } else {
-                return Err(self.fail("'NEWLINE', 'LBRACE'"));
+                db.add_person_or_system_boundary(&attrs);
+                self.open_boundary()?;
+                return Ok(true);
             }
-            return Ok(true);
-        } else if t <= REL_INDEX {
-            // RelIndex takes a sequence number first, which Mermaid ignores.
-            if t == REL_INDEX {
+            Statement::ContainerBoundary => {
+                attrs.insert(attrs.len().min(2), C4Attr::Str("CONTAINER".into()));
+                db.add_container_boundary(&attrs);
+                self.open_boundary()?;
+                return Ok(true);
+            }
+            Statement::DeploymentNode(kind) => {
+                db.add_deployment_node(kind, &attrs);
+                self.open_boundary()?;
+                return Ok(true);
+            }
+            Statement::Rel(kind) => db.add_rel(kind, &attrs),
+            Statement::RelIndex => {
                 attrs.remove(0);
+                db.add_rel("rel", &attrs);
             }
-            db.add_rel(REL_TYPES[(t - REL) as usize], &attrs);
-        } else if t == UPDATE_EL_STYLE {
-            db.update_el_style("update_el_style", &attrs);
-        } else if t == UPDATE_REL_STYLE {
-            db.update_rel_style("update_rel_style", &attrs);
-        } else {
-            db.update_layout_config("update_layout_config", &attrs);
+            Statement::UpdateElStyle => db.update_el_style("update_el_style", &attrs),
+            Statement::UpdateRelStyle => db.update_rel_style("update_rel_style", &attrs),
+            Statement::UpdateLayoutConfig => {
+                db.update_layout_config("update_layout_config", &attrs)
+            }
         }
         Ok(false)
     }
@@ -231,36 +226,31 @@ impl Parser<'_> {
 pub fn parse_c4(src: &str, db: &mut C4Model) -> Result<(), Error> {
     let tokens = tokenize(src);
     let mut r = Parser {
-        src,
-        types: tokens.types,
-        starts: tokens.starts,
-        ends: tokens.ends,
-        i: 0,
+        s: Stream::new(Kind::C4, src, &tokens),
     };
 
-    let header = r.ty();
-    if !(C4_CONTEXT..=C4_DEPLOYMENT).contains(&header) {
-        return Err(r.fail(HEADERS));
+    if !r.s.is_any(&HEADER) {
+        return Err(r.s.fail(HEADERS));
     }
-    r.i += 1;
-    r.expect(NEWLINE)?;
+    let header = r.s.take();
+    r.s.expect(T::Newline, "")?;
 
     let mut depth = 0usize;
     let mut state = P::Item;
     loop {
-        let t = r.ty();
+        let t = r.s.kind();
+        let diagram = statement(t);
         if state == P::AfterOther || state == P::AfterDiagram {
-            if t == NEWLINE {
-                r.i += 1;
+            if r.s.eat(T::Newline) {
                 state = P::ItemOrEnd;
                 continue;
             }
-            if state == P::AfterOther && is_diagram(t) {
+            if state == P::AfterOther && diagram.is_some() {
                 state = P::Diagram;
                 continue;
             }
-        } else if is_diagram(t) {
-            if r.diagram(t, db)? {
+        } else if let Some(diagram) = diagram {
+            if r.diagram(diagram, db)? {
                 depth += 1;
                 state = P::Diagram;
             } else {
@@ -272,26 +262,24 @@ pub fn parse_c4(src: &str, db: &mut C4Model) -> Result<(), Error> {
             state = P::AfterOther;
             continue;
         } else if state != P::ItemOrEnd {
-            return Err(r.fail(
+            return Err(r.s.fail(
                 "'title', 'accDescription', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'PERSON', 'REL'",
             ));
         }
 
         if depth > 0 {
-            if t != RBRACE {
-                return Err(r.fail("'NEWLINE', 'RBRACE'"));
+            if !r.s.eat(T::Rbrace) {
+                return Err(r.s.fail("'NEWLINE', 'RBRACE'"));
             }
-            r.i += 1;
             db.pop_boundary_parse_stack();
             depth -= 1;
             state = P::AfterDiagram;
         } else {
-            if t != EOF {
-                return Err(r.fail("'NEWLINE', 'EOF'"));
+            if !r.s.eat(T::Eof) {
+                return Err(r.s.fail("'NEWLINE', 'EOF'"));
             }
-            r.i += 1;
-            r.expect(END)?;
-            db.set_c4_type(r.text(0));
+            r.s.expect(T::End, "")?;
+            db.set_c4_type(header);
             return Ok(());
         }
     }

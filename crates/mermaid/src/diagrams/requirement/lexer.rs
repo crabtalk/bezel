@@ -1,8 +1,9 @@
 //! Pele's `diagrams/requirement/lexer.ts`.
 
-use super::tokens::*;
+use super::tokens::{KEYWORDS, T};
 use crate::{
     js::{self, Lazy},
+    token::Token,
     util::chars::{code_at, is_line_end, is_space, is_word, width_at},
 };
 
@@ -18,22 +19,23 @@ static RE_ACC_TITLE: Lazy = Lazy::new(r"accTitle\s*:\s*", "iy");
 static RE_ACC_DESCR: Lazy = Lazy::new(r"accDescr\s*:\s*", "iy");
 static RE_ACC_DESCR_ML: Lazy = Lazy::new(r"accDescr\s*\{\s*", "iy");
 static RE_DIRECTION: Lazy = Lazy::new(r"direction\s+(?:(TB)|(BT)|(RL)|LR)", "gi");
+/// The direction kinds in the order of `RE_DIRECTION`'s alternatives.
+const DIRECTIONS: [T; 4] = [
+    T::DirectionTb,
+    T::DirectionBt,
+    T::DirectionRl,
+    T::DirectionLr,
+];
 
 /// Whether `c` ends an unquoted string: `:,{<>-=` and line breaks.
 fn is_stop(c: u32) -> bool {
     matches!(c, 58 | 44 | 13 | 10 | 123 | 60 | 62 | 45 | 61)
 }
 
-pub struct Tokens<'s> {
-    pub types: Vec<u8>,
-    pub texts: Vec<&'s str>,
-    pub starts: Vec<usize>,
-}
-
 struct Lexer<'s> {
     src: &'s str,
     n: usize,
-    tokens: Tokens<'s>,
+    tokens: Vec<Token<'s, T>>,
     stack: Vec<u8>,
     state: u8,
     p: usize,
@@ -51,10 +53,8 @@ impl<'s> Lexer<'s> {
         code_at(self.src, q)
     }
 
-    fn emit(&mut self, kind: u8, s: usize, e: usize) {
-        self.tokens.types.push(kind);
-        self.tokens.texts.push(&self.src[s..e]);
-        self.tokens.starts.push(s);
+    fn emit(&mut self, kind: T, s: usize, e: usize) {
+        self.tokens.push(Token::new(kind, &self.src[s..e], s));
         self.p = e;
     }
 
@@ -91,13 +91,13 @@ impl<'s> Lexer<'s> {
                 self.dir_seen[k] = j;
             }
         }
-        for k in 0..4 {
+        for (k, kind) in DIRECTIONS.into_iter().enumerate() {
             let Some(j) = self.dir_seen[k].checked_sub(1) else {
                 continue;
             };
             if self.dir_starts[k][j] >= p {
                 let e = self.line_break(self.dir_ends[k][j]);
-                self.emit(DIRECTION_TB + k as u8, p, e);
+                self.emit(kind, p, e);
                 return true;
             }
         }
@@ -125,19 +125,19 @@ impl<'s> Lexer<'s> {
                 q += width_at(self.src, q);
             }
             if q > from {
-                self.emit(TITLE, p, q);
+                self.emit(T::Title, p, q);
                 return true;
             }
         }
         if lower == 97 && (self.c(p + 1) | 32) == 99 && (self.c(p + 2) | 32) == 99 {
             if let Some(e) = RE_ACC_TITLE.match_end(self.src, p) {
                 self.push(ACC_TITLE_STATE);
-                self.emit(ACC_TITLE, p, e);
+                self.emit(T::AccTitle, p, e);
                 return true;
             }
             if let Some(e) = RE_ACC_DESCR.match_end(self.src, p) {
                 self.push(ACC_DESCR_STATE);
-                self.emit(ACC_DESCR, p, e);
+                self.emit(T::AccDescr, p, e);
                 return true;
             }
             if let Some(e) = RE_ACC_DESCR_ML.match_end(self.src, p) {
@@ -162,7 +162,7 @@ impl<'s> Lexer<'s> {
                     break;
                 }
             }
-            self.emit(NEWLINE, p, q);
+            self.emit(T::Newline, p, q);
             return true;
         }
         if is_space(c) {
@@ -186,7 +186,7 @@ impl<'s> Lexer<'s> {
             if q - p <= LONGEST_KEYWORD {
                 let word = self.src[p..q].to_ascii_lowercase();
                 if let Some(&(_, keyword)) = KEYWORDS.iter().find(|(name, _)| *name == word) {
-                    if keyword == STYLE || keyword == CLASSDEF || keyword == CLASS {
+                    if keyword == T::Style || keyword == T::Classdef || keyword == T::Class {
                         self.push(STYLE_STATE);
                     }
                     self.emit(keyword, p, q);
@@ -200,41 +200,40 @@ impl<'s> Lexer<'s> {
                 }
                 q += width_at(self.src, q);
             }
-            self.tokens.types.push(UNQSTRING);
-            self.tokens.texts.push(js::trim(&self.src[p..q]));
-            self.tokens.starts.push(p);
+            self.tokens
+                .push(Token::new(T::Unqstring, js::trim(&self.src[p..q]), p));
             self.p = q;
             return true;
         }
 
         match c {
-            123 => self.emit(STRUCT_START, p, p + 1),
-            125 => self.emit(STRUCT_STOP, p, p + 1),
+            123 => self.emit(T::StructStart, p, p + 1),
+            125 => self.emit(T::StructStop, p, p + 1),
             58 => {
                 if self.c(p + 1) == 58 && self.c(p + 2) == 58 {
-                    self.emit(STYLE_SEPARATOR, p, p + 3);
+                    self.emit(T::StyleSeparator, p, p + 3);
                 } else {
-                    self.emit(COLONSEP, p, p + 1);
+                    self.emit(T::Colonsep, p, p + 1);
                 }
             }
             60 => {
                 if self.c(p + 1) != 45 {
                     return false;
                 }
-                self.emit(END_ARROW_L, p, p + 2);
+                self.emit(T::EndArrowL, p, p + 2);
             }
             45 => {
                 if self.c(p + 1) == 62 {
-                    self.emit(END_ARROW_R, p, p + 2);
+                    self.emit(T::EndArrowR, p, p + 2);
                 } else {
-                    self.emit(LINE, p, p + 1);
+                    self.emit(T::Line, p, p + 1);
                 }
             }
             34 => {
                 self.push(STRING);
                 self.p += 1;
             }
-            44 => self.emit(COMMA, p, p + 1),
+            44 => self.emit(T::Comma, p, p + 1),
             _ => return false,
         }
         true
@@ -247,15 +246,15 @@ impl<'s> Lexer<'s> {
             while q < self.n && is_word(self.c(q)) {
                 q += 1;
             }
-            self.emit(ALPHA, p, q);
+            self.emit(T::Alpha, p, q);
             return true;
         }
         match c {
-            58 => self.emit(COLON, p, p + 1),
-            59 => self.emit(SEMICOLON, p, p + 1),
-            37 => self.emit(PERCENT, p, p + 1),
-            45 => self.emit(MINUS, p, p + 1),
-            35 => self.emit(BRKT, p, p + 1),
+            58 => self.emit(T::Colon, p, p + 1),
+            59 => self.emit(T::Semicolon, p, p + 1),
+            37 => self.emit(T::Percent, p, p + 1),
+            45 => self.emit(T::Minus, p, p + 1),
+            35 => self.emit(T::Brkt, p, p + 1),
             32 => self.p += 1,
             34 => {
                 self.push(STRING);
@@ -265,7 +264,7 @@ impl<'s> Lexer<'s> {
                 self.pop();
                 self.p += 1;
             }
-            44 => self.emit(COMMA, p, p + 1),
+            44 => self.emit(T::Comma, p, p + 1),
             _ => return false,
         }
         true
@@ -275,16 +274,12 @@ impl<'s> Lexer<'s> {
 /// The token stream of Mermaid's requirement lexer. Its rules are tried in
 /// order and the first match wins, so a line that holds a direction
 /// statement anywhere is one token.
-pub fn tokenize(src: &str) -> Tokens<'_> {
+pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
     let n = src.len();
     let mut lx = Lexer {
         src,
         n,
-        tokens: Tokens {
-            types: Vec::new(),
-            texts: Vec::new(),
-            starts: Vec::new(),
-        },
+        tokens: Vec::new(),
         stack: Vec::new(),
         state: INITIAL,
         p: 0,
@@ -321,15 +316,15 @@ pub fn tokenize(src: &str) -> Tokens<'_> {
                     lx.p += 1;
                 } else {
                     let e = src[p..].find('"').map_or(n, |at| p + at);
-                    lx.emit(QSTRING, p, e);
+                    lx.emit(T::Qstring, p, e);
                 }
                 true
             }
             ACC_TITLE_STATE | ACC_DESCR_STATE => {
                 let kind = if lx.state == ACC_TITLE_STATE {
-                    ACC_TITLE_VALUE
+                    T::AccTitleValue
                 } else {
-                    ACC_DESCR_VALUE
+                    T::AccDescrValue
                 };
                 lx.pop();
                 let e = lx.line_break(p);
@@ -342,16 +337,14 @@ pub fn tokenize(src: &str) -> Tokens<'_> {
                     lx.p += 1;
                 } else {
                     let e = src[p..].find('}').map_or(n, |at| p + at);
-                    lx.emit(ACC_DESCR_MULTILINE_VALUE, p, e);
+                    lx.emit(T::AccDescrMultilineValue, p, e);
                 }
                 true
             }
         };
         if !ok {
             let mut tokens = lx.tokens;
-            tokens.types.push(ERROR);
-            tokens.texts.push("");
-            tokens.starts.push(p);
+            tokens.push(Token::new(T::Error, "", p));
             return tokens;
         }
     }
@@ -359,16 +352,16 @@ pub fn tokenize(src: &str) -> Tokens<'_> {
     // At the end of input Jison still tries the rules that can match
     // nothing, once.
     let last = match lx.state {
-        INITIAL => Some(EOF),
-        STRING => Some(QSTRING),
-        ACC_TITLE_STATE => Some(ACC_TITLE_VALUE),
-        ACC_DESCR_STATE => Some(ACC_DESCR_VALUE),
-        ACC_DESCR_MULTILINE => Some(ACC_DESCR_MULTILINE_VALUE),
+        INITIAL => Some(T::Eof),
+        STRING => Some(T::Qstring),
+        ACC_TITLE_STATE => Some(T::AccTitleValue),
+        ACC_DESCR_STATE => Some(T::AccDescrValue),
+        ACC_DESCR_MULTILINE => Some(T::AccDescrMultilineValue),
         _ => None,
     };
     if let Some(last) = last {
         lx.emit(last, n, n);
     }
-    lx.emit(END, n, n);
+    lx.emit(T::End, n, n);
     lx.tokens
 }

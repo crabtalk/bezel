@@ -5,19 +5,13 @@ use serde::Serialize;
 
 use crate::config::{Map, Value};
 
-pub use crate::diagrams::flowchart::types::LabelType;
+pub use crate::diagrams::flowchart::types::{DocItem, FlowText, LabelType, LinkInfo, Vertex};
 
 /// A parsed agentflow: the database the parser fills.
 pub type AgentflowModel = super::db::AgentflowDb;
 
 /// Metadata an element's `@{ … }` blocks gave it.
 pub type Metadata = Map;
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct FlowText {
-    pub text: String,
-    pub kind: LabelType,
-}
 
 /// A source span as Jison reports it: lines start at 1, columns at 0.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -141,24 +135,6 @@ pub struct AgentSubgraph {
     pub kind: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<Metadata>,
-}
-
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct LinkInfo {
-    pub kind: String,
-    pub stroke: String,
-    pub length: Option<i32>,
-    pub edge_semantic: Option<EdgeSemantic>,
-    pub text: Option<FlowText>,
-    pub id: Option<String>,
-}
-
-/// What a statement adds to the block around it.
-#[derive(Clone, Debug, PartialEq)]
-pub enum DocItem {
-    Str(String),
-    List(Vec<String>),
-    Dir(String),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize)]

@@ -1,38 +1,28 @@
 //! Pele's `diagrams/class/parser.ts`.
 
-use std::sync::LazyLock;
-
 use super::{
     db::ClassModel,
-    lexer::{Tokens, tokenize},
-    tokens::*,
+    lexer::tokenize,
+    tokens::T,
     types::{ClassRelation, Relation, RelationEnd},
 };
-use crate::{detect::Kind, error::Error, js};
+use crate::{detect::Kind, error::Error, js, token::Stream};
 
 const NAME_TOKENS: &str = "'UNICODE_TEXT', 'NUM', 'ALPHA', 'MINUS', 'BQUOTE_STR'";
 
-static ALPHANUM: LazyLock<[u8; COUNT]> = LazyLock::new(|| table(&[UNICODE_TEXT, ALPHA, MINUS]));
-static STYLE_PART: LazyLock<[u8; COUNT]> =
-    LazyLock::new(|| table(&[ALPHA, COLON, BRKT, STYLE, PCT, LABEL]));
-/// Mermaid's relationType numbers, plus one so that zero means "not an end
-/// marker".
-static END_TYPE: LazyLock<[u8; COUNT]> = LazyLock::new(|| {
-    let mut t = [0; COUNT];
-    t[AGGREGATION as usize] = 1;
-    t[EXTENSION as usize] = 2;
-    t[COMPOSITION as usize] = 3;
-    t[DEPENDENCY as usize] = 4;
-    t[LOLLIPOP as usize] = 5;
-    t
-});
+const ALPHANUM: [T; 3] = [T::UnicodeText, T::Alpha, T::Minus];
+const STYLE_PART: [T; 6] = [T::Alpha, T::Colon, T::Brkt, T::Style, T::Pct, T::Label];
 
-fn table(kinds: &[u8]) -> [u8; COUNT] {
-    let mut t = [0; COUNT];
-    for &kind in kinds {
-        t[kind as usize] = 1;
+/// Mermaid's relationType number for an end marker.
+fn end_type(t: T) -> Option<u8> {
+    match t {
+        T::Aggregation => Some(0),
+        T::Extension => Some(1),
+        T::Composition => Some(2),
+        T::Dependency => Some(3),
+        T::Lollipop => Some(4),
+        _ => None,
     }
-    t
 }
 
 struct Frame {
@@ -42,106 +32,63 @@ struct Frame {
 }
 
 struct Parser<'t, 's> {
-    tokens: &'t Tokens<'s>,
-    src: &'s str,
+    s: Stream<'t, 's, T>,
     db: &'t mut ClassModel,
-    i: usize,
 }
 
-type Parsed<T> = Result<T, Error>;
+type Parsed<V> = Result<V, Error>;
 
-impl<'s> Parser<'_, 's> {
-    fn ty(&self, i: usize) -> u8 {
-        self.tokens.types[i]
-    }
-
-    fn t(&self) -> u8 {
-        self.ty(self.i)
-    }
-
-    fn text(&self) -> &'s str {
-        self.tokens.texts[self.i]
-    }
-
-    /// The text of the current token, and the parser past it.
-    fn take(&mut self) -> &'s str {
-        let text = self.text();
-        self.i += 1;
-        text
-    }
-
-    fn fail(&self, expected: &str) -> Error {
-        let t = self.t();
-        let start = self.tokens.starts[self.i];
-        if t == ERROR {
-            return Error::at(Kind::Class, self.src, start, "", true);
+impl<'t> Parser<'t, '_> {
+    fn alpha_num(&mut self) -> Parsed<&'t str> {
+        if !self.s.is_any(&ALPHANUM) {
+            return Err(self.s.fail("'UNICODE_TEXT', 'NUM', 'ALPHA', 'MINUS'"));
         }
-        Error::at(
-            Kind::Class,
-            self.src,
-            start,
-            &format!("Expecting {expected}, got '{}'", TOKEN_NAMES[t as usize]),
-            false,
-        )
-    }
-
-    fn expect(&mut self, kind: u8) -> Parsed<&'s str> {
-        if self.t() != kind {
-            return Err(self.fail(&format!("'{}'", TOKEN_NAMES[kind as usize])));
-        }
-        Ok(self.take())
-    }
-
-    fn alpha_num(&mut self) -> Parsed<&'s str> {
-        if ALPHANUM[self.t() as usize] == 0 {
-            return Err(self.fail("'UNICODE_TEXT', 'NUM', 'ALPHA', 'MINUS'"));
-        }
-        Ok(self.take())
+        Ok(self.s.take())
     }
 
     fn name(&mut self, generic: bool) -> Parsed<String> {
         let mut out = String::new();
         loop {
-            if self.t() == BQUOTE_STR {
-                out += self.take();
+            if self.s.is(T::BquoteStr) {
+                out += self.s.take();
                 break;
             }
-            if ALPHANUM[self.t() as usize] == 0 {
-                return Err(self.fail(NAME_TOKENS));
+            if !self.s.is_any(&ALPHANUM) {
+                return Err(self.s.fail(NAME_TOKENS));
             }
-            out += self.take();
-            let t = self.t();
-            if t == DOT {
+            out += self.s.take();
+            let t = self.s.kind();
+            if t == T::Dot {
                 out.push('.');
-                self.i += 1;
-            } else if ALPHANUM[t as usize] == 0 && t != BQUOTE_STR {
+                self.s.bump();
+            } else if !ALPHANUM.contains(&t) && t != T::BquoteStr {
                 break;
             }
         }
-        if generic && self.t() == GENERICTYPE {
+        if generic && self.s.is(T::Generictype) {
             out.push('~');
-            out += self.take();
+            out += self.s.take();
             out.push('~');
         }
         Ok(out)
     }
 
-    fn class_label(&mut self) -> Parsed<&'s str> {
-        self.i += 1;
-        let label = self.expect(STR)?;
-        self.expect(SQE)?;
+    fn class_label(&mut self) -> Parsed<&'t str> {
+        self.s.bump();
+        let label = self.s.expect(T::Str, "")?;
+        self.s.expect(T::Sqe, "")?;
         Ok(label)
     }
 
-    fn members(&mut self) -> Parsed<Vec<&'s str>> {
-        if self.t() != MEMBER {
-            return Err(self.fail("'STRUCT_STOP', 'MEMBER'"));
+    fn members(&mut self) -> Parsed<Vec<&'t str>> {
+        if !self.s.is(T::Member) {
+            return Err(self.s.fail("'STRUCT_STOP', 'MEMBER'"));
         }
         let mut list = Vec::new();
-        while self.t() == MEMBER {
-            list.push(self.take());
+        while self.s.is(T::Member) {
+            list.push(self.s.take());
         }
-        self.expect(STRUCT_STOP)?;
+        self.s.expect(T::StructStop, "")?;
         // The grammar collects members last to first, and add_members turns
         // them back.
         list.reverse();
@@ -149,42 +96,38 @@ impl<'s> Parser<'_, 's> {
     }
 
     fn class_statement(&mut self) -> Parsed<String> {
-        self.i += 1;
+        self.s.bump();
         let id = self.name(true)?;
         self.db.add_class(&id);
-        if self.t() == SQS {
+        if self.s.is(T::Sqs) {
             let label = self.class_label()?;
             self.db.set_class_label(&id, label);
         }
-        match self.t() {
-            STYLE_SEPARATOR => {
-                self.i += 1;
+        match self.s.kind() {
+            T::StyleSeparator => {
+                self.s.bump();
                 let css = self.alpha_num()?;
                 self.db.set_css_class(&id, css);
-                if self.t() == STRUCT_START {
-                    self.i += 1;
+                if self.s.eat(T::StructStart) {
                     let members = self.members()?;
                     self.db.add_members(&id, members);
                 }
             }
-            STRUCT_START => {
-                self.i += 1;
-                if self.t() == STRUCT_STOP {
-                    self.i += 1;
+            T::StructStart => {
+                self.s.bump();
+                if self.s.eat(T::StructStop) {
                 } else {
                     let members = self.members()?;
                     self.db.add_members(&id, members);
                 }
             }
-            ANNOTATION_START => {
-                self.i += 1;
+            T::AnnotationStart => {
+                self.s.bump();
                 let annotation = self.alpha_num()?;
-                self.expect(ANNOTATION_END)?;
+                self.s.expect(T::AnnotationEnd, "")?;
                 self.db.add_annotation(&id, annotation);
-                if self.t() == STRUCT_START {
-                    self.i += 1;
-                    if self.t() == STRUCT_STOP {
-                        self.i += 1;
+                if self.s.eat(T::StructStart) {
+                    if self.s.eat(T::StructStop) {
                     } else {
                         let members = self.members()?;
                         self.db.add_members(&id, members);
@@ -197,14 +140,14 @@ impl<'s> Parser<'_, 's> {
     }
 
     fn note_statement(&mut self) -> Parsed<String> {
-        let t = self.t();
-        self.i += 1;
-        if t == NOTE {
-            let text = self.expect(STR)?;
+        let t = self.s.kind();
+        self.s.bump();
+        if t == T::Note {
+            let text = self.s.expect(T::Str, "")?;
             return Ok(self.db.add_note(text, None));
         }
         let id = self.name(true)?;
-        let text = self.expect(STR)?;
+        let text = self.s.expect(T::Str, "")?;
         Ok(self.db.add_note(text, Some(&id)))
     }
 
@@ -212,18 +155,16 @@ impl<'s> Parser<'_, 's> {
     fn namespace_statement(&mut self) -> Parsed<()> {
         let mut open: Vec<Frame> = Vec::new();
         loop {
-            self.i += 1;
+            self.s.bump();
             let ns = self.name(false)?;
-            let id = if self.t() == SQS {
+            let id = if self.s.is(T::Sqs) {
                 let label = self.class_label()?;
                 self.db.add_namespace(&ns, Some(label))
             } else {
                 self.db.add_namespace(&ns, None)
             };
-            self.expect(STRUCT_START)?;
-            if self.t() == NEWLINE {
-                self.i += 1;
-            }
+            self.s.expect(T::StructStart, "")?;
+            self.s.eat(T::Newline);
             open.push(Frame {
                 id,
                 classes: Vec::new(),
@@ -231,29 +172,28 @@ impl<'s> Parser<'_, 's> {
             });
             let mut item = true;
             while item {
-                let t = self.t();
-                if t == NAMESPACE {
+                let t = self.s.kind();
+                if t == T::Namespace {
                     break;
                 }
-                if t == CLASS {
+                if t == T::Class {
                     let id = self.class_statement()?;
                     open.last_mut().expect("a frame").classes.push(id);
-                } else if t == NOTE || t == NOTE_FOR {
+                } else if t == T::Note || t == T::NoteFor {
                     let id = self.note_statement()?;
                     open.last_mut().expect("a frame").notes.push(id);
                 } else {
-                    return Err(self.fail("'NAMESPACE', 'CLASS', 'NOTE_FOR', 'NOTE'"));
+                    return Err(self.s.fail("'NAMESPACE', 'CLASS', 'NOTE_FOR', 'NOTE'"));
                 }
                 loop {
-                    if self.t() == NEWLINE {
-                        let next = self.ty(self.i + 1);
-                        if next == NAMESPACE || next == CLASS || next == NOTE || next == NOTE_FOR {
-                            self.i += 1;
+                    if self.s.is(T::Newline) {
+                        let next = self.s.peek(1);
+                        self.s.bump();
+                        if matches!(next, T::Namespace | T::Class | T::Note | T::NoteFor) {
                             break;
                         }
-                        self.i += 1;
                     }
-                    self.expect(STRUCT_STOP)?;
+                    self.s.expect(T::StructStop, "")?;
                     let done = open.pop().expect("a frame");
                     self.db
                         .add_classes_to_namespace(&done.id, &done.classes, &done.notes);
@@ -271,39 +211,42 @@ impl<'s> Parser<'_, 's> {
     }
 
     fn relation_end(&mut self) -> RelationEnd {
-        let kind = END_TYPE[self.t() as usize];
-        if kind == 0 {
+        let Some(kind) = end_type(self.s.kind()) else {
             return RelationEnd::None;
-        }
-        self.i += 1;
-        RelationEnd::Type(kind - 1)
+        };
+        self.s.bump();
+        RelationEnd::Type(kind)
     }
 
     fn class_or_relation(&mut self) -> Parsed<()> {
         let id1 = self.name(true)?;
-        let t = self.t();
-        if t == LABEL {
-            let text = self.take();
+        let t = self.s.kind();
+        if t == T::Label {
+            let text = self.s.take();
             let label = self.db.cleanup_label(text);
             self.db.add_member(&id1, &label);
             return Ok(());
         }
         let mut title1 = "none";
-        if t == STR {
-            title1 = self.take();
-        } else if END_TYPE[t as usize] == 0 && t != LINE && t != DOTTED_LINE {
+        if t == T::Str {
+            title1 = self.s.take();
+        } else if end_type(t).is_none() && t != T::Line && t != T::DottedLine {
             return Ok(());
         }
         let type1 = self.relation_end();
-        let t = self.t();
-        if t != LINE && t != DOTTED_LINE {
-            return Err(self.fail(
+        let t = self.s.kind();
+        if t != T::Line && t != T::DottedLine {
+            return Err(self.s.fail(
                 "'AGGREGATION', 'EXTENSION', 'COMPOSITION', 'DEPENDENCY', 'LOLLIPOP', 'LINE', 'DOTTED_LINE'",
             ));
         }
-        self.i += 1;
+        self.s.bump();
         let type2 = self.relation_end();
-        let title2 = if self.t() == STR { self.take() } else { "none" };
+        let title2 = if self.s.is(T::Str) {
+            self.s.take()
+        } else {
+            "none"
+        };
         let id2 = self.name(true)?;
         let mut relation = ClassRelation {
             id1,
@@ -311,14 +254,14 @@ impl<'s> Parser<'_, 's> {
             relation: Relation {
                 type1,
                 type2,
-                line_type: if t == LINE { 0 } else { 1 },
+                line_type: if t == T::Line { 0 } else { 1 },
             },
             relation_title1: title1.to_string(),
             relation_title2: title2.to_string(),
             title: None,
         };
-        if self.t() == LABEL {
-            let text = self.take();
+        if self.s.is(T::Label) {
+            let text = self.s.take();
             relation.title = Some(self.db.cleanup_label(text));
         }
         self.db.add_relation(relation);
@@ -328,39 +271,38 @@ impl<'s> Parser<'_, 's> {
     fn styles(&mut self) -> Parsed<Vec<String>> {
         let mut out = Vec::new();
         loop {
-            if STYLE_PART[self.t() as usize] == 0 {
-                return Err(self.fail(
+            if !self.s.is_any(&STYLE_PART) {
+                return Err(self.s.fail(
                     "'ALPHA', 'NUM', 'COLON', 'UNIT', 'SPACE', 'BRKT', 'STYLE', 'PCT', 'LABEL'",
                 ));
             }
-            let mut s = self.take().to_string();
-            while STYLE_PART[self.t() as usize] == 1 {
-                s += self.take();
+            let mut s = self.s.take().to_string();
+            while self.s.is_any(&STYLE_PART) {
+                s += self.s.take();
             }
             out.push(s);
-            if self.t() != COMMA {
+            if !self.s.eat(T::Comma) {
                 return Ok(out);
             }
-            self.i += 1;
         }
     }
 
     fn tooltip(&mut self, id: &str) {
-        if self.t() == STR {
-            let tip = self.take();
+        if self.s.is(T::Str) {
+            let tip = self.s.take();
             self.db.set_tooltip(id, Some(tip));
         }
     }
 
     fn link_statement(&mut self, id: &str) -> Parsed<()> {
-        let href = self.expect(STR)?;
-        let tip = if self.t() == STR {
-            Some(self.take())
+        let href = self.s.expect(T::Str, "")?;
+        let tip = if self.s.is(T::Str) {
+            Some(self.s.take())
         } else {
             None
         };
-        if self.t() == LINK_TARGET {
-            let target = self.take();
+        if self.s.is(T::LinkTarget) {
+            let target = self.s.take();
             self.db.set_link(id, href, Some(target));
         } else {
             self.db.set_link(id, href, None);
@@ -372,107 +314,104 @@ impl<'s> Parser<'_, 's> {
     }
 
     fn statement(&mut self) -> Parsed<()> {
-        let t = self.t();
+        let t = self.s.kind();
         match t {
-            UNICODE_TEXT | ALPHA | MINUS | BQUOTE_STR => return self.class_or_relation(),
-            NAMESPACE => return self.namespace_statement(),
-            CLASS => return self.class_statement().map(|_| ()),
-            MEMBER => {
-                self.i += 1;
+            T::UnicodeText | T::Alpha | T::Minus | T::BquoteStr => return self.class_or_relation(),
+            T::Namespace => return self.namespace_statement(),
+            T::Class => return self.class_statement().map(|_| ()),
+            T::Member => {
+                self.s.bump();
                 return Ok(());
             }
-            ANNOTATION_START => {
-                self.i += 1;
+            T::AnnotationStart => {
+                self.s.bump();
                 let annotation = self.alpha_num()?;
-                self.expect(ANNOTATION_END)?;
+                self.s.expect(T::AnnotationEnd, "")?;
                 let name = self.name(true)?;
                 self.db.add_annotation(&name, annotation);
                 return Ok(());
             }
-            CALLBACK => {
-                self.i += 1;
+            T::Callback => {
+                self.s.bump();
                 let id = self.name(true)?;
-                self.expect(STR)?;
+                self.s.expect(T::Str, "")?;
                 self.db.set_click_event(&id);
                 self.tooltip(&id);
                 return Ok(());
             }
-            LINK => {
-                self.i += 1;
+            T::Link => {
+                self.s.bump();
                 let id = self.name(true)?;
                 return self.link_statement(&id);
             }
-            CLICK => {
-                self.i += 1;
+            T::Click => {
+                self.s.bump();
                 let id = self.name(true)?;
-                if self.t() == HREF {
-                    self.i += 1;
+                if self.s.eat(T::Href) {
                     return self.link_statement(&id);
                 }
-                self.expect(CALLBACK_NAME)?;
-                if self.t() == CALLBACK_ARGS {
-                    self.i += 1;
-                }
+                self.s.expect(T::CallbackName, "")?;
+                self.s.eat(T::CallbackArgs);
                 self.db.set_click_event(&id);
                 self.tooltip(&id);
                 return Ok(());
             }
-            STYLE => {
-                self.i += 1;
-                let id = self.expect(ALPHA)?;
+            T::Style => {
+                self.s.bump();
+                let id = self.s.expect(T::Alpha, "")?;
                 let styles = self.styles()?;
                 self.db.set_css_style(id, &styles);
                 return Ok(());
             }
-            CSSCLASS => {
-                self.i += 1;
-                let ids = self.expect(STR)?;
-                let name = self.expect(ALPHA)?;
+            T::Cssclass => {
+                self.s.bump();
+                let ids = self.s.expect(T::Str, "")?;
+                let name = self.s.expect(T::Alpha, "")?;
                 self.db.set_css_class(ids, name);
                 return Ok(());
             }
-            NOTE | NOTE_FOR => return self.note_statement().map(|_| ()),
-            CLASSDEF => {
-                self.i += 1;
-                let mut ids = vec![self.expect(ALPHA)?];
-                while self.t() == COMMA {
-                    self.i += 1;
-                    ids.push(self.expect(ALPHA)?);
+            T::Note | T::NoteFor => return self.note_statement().map(|_| ()),
+            T::Classdef => {
+                self.s.bump();
+                let mut ids = vec![self.s.expect(T::Alpha, "")?];
+                while self.s.is(T::Comma) {
+                    self.s.bump();
+                    ids.push(self.s.expect(T::Alpha, "")?);
                 }
                 let styles = self.styles()?;
                 self.db.define_class(&ids, &styles);
                 return Ok(());
             }
-            DIRECTION_TB | DIRECTION_BT | DIRECTION_RL | DIRECTION_LR => {
-                self.i += 1;
+            T::DirectionTb | T::DirectionBt | T::DirectionRl | T::DirectionLr => {
+                self.s.bump();
                 self.db.set_direction(match t {
-                    DIRECTION_TB => "TB",
-                    DIRECTION_BT => "BT",
-                    DIRECTION_RL => "RL",
+                    T::DirectionTb => "TB",
+                    T::DirectionBt => "BT",
+                    T::DirectionRl => "RL",
                     _ => "LR",
                 });
                 return Ok(());
             }
-            ACC_TITLE => {
-                self.i += 1;
-                let text = self.expect(ACC_TITLE_VALUE)?;
+            T::AccTitle => {
+                self.s.bump();
+                let text = self.s.expect(T::AccTitleValue, "")?;
                 self.db.set_acc_title(js::trim(text));
                 return Ok(());
             }
-            ACC_DESCR => {
-                self.i += 1;
-                let text = self.expect(ACC_DESCR_VALUE)?;
+            T::AccDescr => {
+                self.s.bump();
+                let text = self.s.expect(T::AccDescrValue, "")?;
                 self.db.set_acc_description(js::trim(text));
                 return Ok(());
             }
-            ACC_DESCR_MULTILINE_VALUE => {
-                let text = self.take();
+            T::AccDescrMultilineValue => {
+                let text = self.s.take();
                 self.db.set_acc_description(js::trim(text));
                 return Ok(());
             }
             _ => {}
         }
-        Err(self.fail(
+        Err(self.s.fail(
             "'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'NAMESPACE', 'ANNOTATION_START', 'CLASS', 'MEMBER', 'NOTE_FOR', 'NOTE', 'CLASSDEF', 'direction_tb', 'CALLBACK', 'LINK', 'CLICK', 'STYLE', 'CSSCLASS', 'ALPHA', 'MINUS', 'BQUOTE_STR'",
         ))
     }
@@ -481,32 +420,25 @@ impl<'s> Parser<'_, 's> {
 pub fn parse_class_diagram(src: &str, db: &mut ClassModel) -> Result<(), Error> {
     let tokens = tokenize(src);
     let mut parser = Parser {
-        tokens: &tokens,
-        src,
+        s: Stream::new(Kind::Class, src, &tokens),
         db,
-        i: 0,
     };
 
     // Mermaid's grammar also accepts statements with no `classDiagram` line
     // before them.
-    let header = parser.t() == CLASS_DIAGRAM;
+    let header = parser.s.eat(T::ClassDiagram);
     if header {
-        parser.i += 1;
-        parser.expect(NEWLINE)?;
+        parser.s.expect(T::Newline, "")?;
     }
     loop {
         parser.statement()?;
-        if parser.t() != NEWLINE {
-            break;
-        }
-        parser.i += 1;
-        if parser.t() == EOF || parser.t() == END {
+        if !parser.s.eat(T::Newline) || parser.s.is_any(&[T::Eof, T::End]) {
             break;
         }
     }
     if header {
-        parser.expect(EOF)?;
+        parser.s.expect(T::Eof, "")?;
     }
-    parser.expect(END)?;
+    parser.s.expect(T::End, "")?;
     Ok(())
 }

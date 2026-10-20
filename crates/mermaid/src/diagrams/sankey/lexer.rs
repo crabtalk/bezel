@@ -1,39 +1,41 @@
 //! Pele's `diagrams/sankey/lexer.ts`.
 
-use crate::util::chars::{code_at, is_word};
+use crate::{
+    token::{Token, grammar},
+    util::chars::{code_at, is_word},
+};
 
-pub const END: u8 = 0;
-/// Not a Jison token: the reference lexer would return the same empty token
-/// forever from here.
-pub const STUCK: u8 = 1;
-pub const SANKEY: u8 = 2;
-pub const NEWLINE: u8 = 3;
-pub const COMMA: u8 = 4;
-pub const DQUOTE: u8 = 5;
-pub const NON_ESCAPED_TEXT: u8 = 6;
-pub const ESCAPED_TEXT: u8 = 7;
-pub const EOF: u8 = 8;
+grammar! {
+    /// The sankey lexer's token kinds.
+    pub enum T {
+        End = "$end",
+        /// Never lexed: every text matches some rule.
+        Error = "INVALID",
+        /// Not a Jison token: the reference lexer would return the same empty
+        /// token forever from here.
+        Stuck = "STUCK",
+        Sankey = "SANKEY",
+        Newline = "NEWLINE",
+        Comma = "COMMA",
+        Dquote = "DQUOTE",
+        NonEscapedText = "NON_ESCAPED_TEXT",
+        EscapedText = "ESCAPED_TEXT",
+        Eof = "EOF",
+    }
 
-pub const TOKEN_NAMES: [&str; 9] = [
-    "$end",
-    "STUCK",
-    "SANKEY",
-    "NEWLINE",
-    "COMMA",
-    "DQUOTE",
-    "NON_ESCAPED_TEXT",
-    "ESCAPED_TEXT",
-    "EOF",
-];
+    fn got(self, _text, previous) {
+        match self {
+            Self::Stuck => previous.map_or("undefined", Self::name),
+            _ => self.name(),
+        }
+    }
+}
 
-const INITIAL: u8 = 0;
-const CSV: u8 = 1;
-const ESCAPED: u8 = 2;
-
-pub struct Tokens<'s> {
-    pub types: Vec<u8>,
-    pub texts: Vec<&'s str>,
-    pub starts: Vec<usize>,
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum S {
+    Initial,
+    Csv,
+    Escaped,
 }
 
 /// RFC 4180 TEXTDATA: printable ASCII except the double quote and the comma.
@@ -57,22 +59,16 @@ fn keyword(src: &str, p: usize, word: &str) -> Option<usize> {
     (lower == word && !is_word(code_at(src, end))).then_some(end)
 }
 
-pub fn tokenize<'s>(src: &'s str) -> Tokens<'s> {
+pub fn tokenize<'s>(src: &'s str) -> Vec<Token<'s, T>> {
     let n = src.len();
-    let mut tokens = Tokens {
-        types: Vec::new(),
-        texts: Vec::new(),
-        starts: Vec::new(),
-    };
-    let mut stack: Vec<u8> = Vec::new();
-    let mut state = INITIAL;
+    let mut tokens = Vec::new();
+    let mut stack = Vec::new();
+    let mut state = S::Initial;
     let mut p = 0;
 
     // Answers where the lexer goes on from.
-    let emit = |tokens: &mut Tokens<'s>, kind: u8, s: usize, e: usize| -> usize {
-        tokens.types.push(kind);
-        tokens.texts.push(&src[s..e]);
-        tokens.starts.push(s);
+    let emit = |tokens: &mut Vec<Token<'s, T>>, kind: T, s: usize, e: usize| -> usize {
+        tokens.push(Token::new(kind, &src[s..e], s));
         e
     };
 
@@ -80,12 +76,12 @@ pub fn tokenize<'s>(src: &'s str) -> Tokens<'s> {
         let c = code_at(src, p);
         let start = p;
         let mut q = p;
-        if state == ESCAPED {
+        if state == S::Escaped {
             if c == 34 && code_at(src, p + 1) != 34 {
                 if let Some(previous) = stack.pop() {
                     state = previous;
                 }
-                p = emit(&mut tokens, DQUOTE, p, p + 1);
+                p = emit(&mut tokens, T::Dquote, p, p + 1);
                 continue;
             }
             while q < n {
@@ -98,47 +94,51 @@ pub fn tokenize<'s>(src: &'s str) -> Tokens<'s> {
                     break;
                 }
             }
-            p = emit(&mut tokens, ESCAPED_TEXT, p, q);
+            p = emit(&mut tokens, T::EscapedText, p, q);
         } else {
-            if state == INITIAL && (c | 32) == 115 {
+            if state == S::Initial && (c | 32) == 115 {
                 let end = keyword(src, p, "sankey-beta").or_else(|| keyword(src, p, "sankey"));
                 if let Some(end) = end {
                     stack.push(state);
-                    state = CSV;
-                    p = emit(&mut tokens, SANKEY, p, end);
+                    state = S::Csv;
+                    p = emit(&mut tokens, T::Sankey, p, end);
                     continue;
                 }
             }
             if c == 10 || (c == 13 && code_at(src, p + 1) == 10) {
                 let end = if c == 10 { p + 1 } else { p + 2 };
-                p = emit(&mut tokens, NEWLINE, p, end);
+                p = emit(&mut tokens, T::Newline, p, end);
                 continue;
             }
             if c == 44 {
-                p = emit(&mut tokens, COMMA, p, p + 1);
+                p = emit(&mut tokens, T::Comma, p, p + 1);
                 continue;
             }
             if c == 34 {
                 stack.push(state);
-                state = ESCAPED;
-                p = emit(&mut tokens, DQUOTE, p, p + 1);
+                state = S::Escaped;
+                p = emit(&mut tokens, T::Dquote, p, p + 1);
                 continue;
             }
             while q < n && is_text_data(code_at(src, q)) {
                 q += 1;
             }
-            p = emit(&mut tokens, NON_ESCAPED_TEXT, p, q);
+            p = emit(&mut tokens, T::NonEscapedText, p, q);
         }
         // A character outside the CSV alphabet matches as empty text and is
         // never consumed.
         if q == start {
-            emit(&mut tokens, STUCK, p, p);
+            emit(&mut tokens, T::Stuck, p, p);
             return tokens;
         }
     }
 
-    let last = if state == ESCAPED { ESCAPED_TEXT } else { EOF };
+    let last = if state == S::Escaped {
+        T::EscapedText
+    } else {
+        T::Eof
+    };
     emit(&mut tokens, last, n, n);
-    emit(&mut tokens, END, n, n);
+    emit(&mut tokens, T::End, n, n);
     tokens
 }

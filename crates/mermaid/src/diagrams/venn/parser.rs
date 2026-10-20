@@ -3,87 +3,109 @@
 //! indented `text` continues a set, and the statements are what tell the
 //! model so. Pele's `diagrams/venn/parser.ts`.
 
+use std::borrow::Cow;
+
 use super::{
     db::VennDb,
-    lexer::{
-        BRACKET_LABEL, COLON, COMMA, EOF, ERROR, IDENTIFIER, INDENT_TEXT, IndentHost, NEWLINE,
-        NUMERIC, RGBACOLOR, SET, STRING, STYLE, TEXT, TITLE, TOKEN_NAMES, UNION, VENN, VennLexer,
-    },
+    lexer::{IndentHost, T, VennLexer},
 };
-use crate::{detect::Kind, error::Error, js, util::chars::width_at};
+use crate::{
+    detect::Kind,
+    error::Error,
+    js,
+    token::{Grammar, Token},
+    util::chars::width_at,
+};
 
 const STATEMENT: &str = "'EOF', 'NEWLINE', 'TITLE', 'SET', 'UNION', 'TEXT', 'INDENT_TEXT', 'STYLE'";
 const VALUE: &str = "'NUMERIC', 'IDENTIFIER', 'STRING', 'HEXCOLOR', 'RGBCOLOR', 'RGBACOLOR'";
+const STATEMENTS: [T; 7] = [
+    T::Newline,
+    T::Title,
+    T::Set,
+    T::Union,
+    T::Text,
+    T::IndentText,
+    T::Style,
+];
+const VALUE_PARTS: [T; 5] = [
+    T::Identifier,
+    T::Numeric,
+    T::Hexcolor,
+    T::Rgbcolor,
+    T::Rgbacolor,
+];
 
 struct Parser<'s, 'd> {
     src: &'s str,
     lexer: VennLexer<'s>,
     db: &'d mut VennDb,
-    kind: i32,
+    /// The token read ahead and not yet taken.
+    peeked: Option<Token<'s, T>>,
 }
 
 impl<'s> Parser<'s, '_> {
-    fn peek(&mut self) -> i32 {
-        if self.kind == -1 {
-            self.kind = self.lexer.next(self.db);
-        }
-        self.kind
+    fn token(&mut self) -> &Token<'s, T> {
+        self.peeked
+            .get_or_insert_with(|| self.lexer.next(&mut *self.db))
+    }
+
+    fn peek(&mut self) -> T {
+        self.token().kind
     }
 
     fn fail(&mut self, expected: &str) -> Error {
-        if self.peek() == ERROR {
-            return Error::at(Kind::Venn, self.src, self.lexer.start, "", true);
-        }
-        Error::at(
-            Kind::Venn,
-            self.src,
-            self.lexer.start,
-            &format!(
-                "Expecting {expected}, got '{}'",
-                TOKEN_NAMES[self.kind as usize]
-            ),
-            false,
-        )
+        let src = self.src;
+        self.token().error(Kind::Venn, src, expected, None)
     }
 
-    fn take(&mut self) -> &'s str {
-        self.kind = -1;
-        self.lexer.text
+    fn take(&mut self) -> Cow<'s, str> {
+        let token = match self.peeked.take() {
+            Some(token) => token,
+            None => self.lexer.next(&mut *self.db),
+        };
+        token.text
     }
 
-    fn expect(&mut self, wanted: i32) -> Result<&'s str, Error> {
-        if self.peek() != wanted {
-            return Err(self.fail(&format!("'{}'", TOKEN_NAMES[wanted as usize])));
+    fn expect(&mut self, kind: T) -> Result<Cow<'s, str>, Error> {
+        if self.peek() != kind {
+            return Err(self.fail(&format!("'{}'", kind.name())));
         }
         Ok(self.take())
     }
 
+    fn eat(&mut self, kind: T) -> bool {
+        let found = self.peek() == kind;
+        if found {
+            self.peeked = None;
+        }
+        found
+    }
+
     fn identifier(&mut self) -> Result<String, Error> {
-        if self.peek() != IDENTIFIER && self.kind != STRING {
+        if !matches!(self.peek(), T::Identifier | T::String) {
             return Err(self.fail("'IDENTIFIER', 'STRING'"));
         }
-        Ok(self.take().to_string())
+        Ok(self.take().into_owned())
     }
 
     fn identifiers(&mut self) -> Result<Vec<String>, Error> {
         let mut list = vec![self.identifier()?];
-        while self.peek() == COMMA {
-            self.take();
+        while self.eat(T::Comma) {
             list.push(self.identifier()?);
         }
         Ok(list)
     }
 
     fn subset(&mut self, ids: &[String], union: bool) -> Result<(), Error> {
-        let label = if self.peek() == BRACKET_LABEL {
+        let label = if self.peek() == T::BracketLabel {
             Some(self.take())
         } else {
             None
         };
         let mut size = None;
-        if self.peek() == COLON {
-            self.take();
-            size = Some(js::parse_float(self.expect(NUMERIC)?));
+        if self.eat(T::Colon) {
+            size = Some(js::parse_float(&self.expect(T::Numeric)?));
         }
         if union {
             if ids.len() < 2 {
@@ -91,7 +113,7 @@ impl<'s> Parser<'s, '_> {
             }
             self.db.validate_union_identifiers(ids)?;
         }
-        self.db.add_subset_data(ids, label, size);
+        self.db.add_subset_data(ids, label.as_deref(), size);
         self.db.set_indent_mode(true);
         Ok(())
     }
@@ -100,11 +122,11 @@ impl<'s> Parser<'s, '_> {
     /// number may carry. `sets` is `None` for an indented text.
     fn text(&mut self, sets: Option<Vec<String>>) -> Result<(), Error> {
         let kind = self.peek();
-        if kind != IDENTIFIER && kind != STRING && kind != NUMERIC {
+        if !matches!(kind, T::Identifier | T::String | T::Numeric) {
             return Err(self.fail("'NUMERIC', 'IDENTIFIER', 'STRING'"));
         }
         let id = self.take();
-        let label = if kind != NUMERIC && self.peek() == BRACKET_LABEL {
+        let label = if kind != T::Numeric && self.peek() == T::BracketLabel {
             Some(self.take())
         } else {
             None
@@ -116,7 +138,7 @@ impl<'s> Parser<'s, '_> {
                 None => return Err(Error::semantic("text requires set").of(Kind::Venn)),
             },
         };
-        self.db.add_text_data(&sets, id, label);
+        self.db.add_text_data(&sets, &id, label.as_deref());
         Ok(())
     }
 
@@ -124,13 +146,13 @@ impl<'s> Parser<'s, '_> {
         let ids = self.identifiers()?;
         let mut styles: Vec<(String, String)> = Vec::new();
         loop {
-            let key = self.expect(IDENTIFIER)?.to_string();
-            self.expect(COLON)?;
-            let value = if self.peek() == STRING {
-                self.take().to_string()
+            let key = self.expect(T::Identifier)?.into_owned();
+            self.expect(T::Colon)?;
+            let value = if self.peek() == T::String {
+                self.take().into_owned()
             } else {
-                let mut parts: Vec<&str> = Vec::new();
-                while self.peek() == IDENTIFIER || (NUMERIC..=RGBACOLOR).contains(&self.kind) {
+                let mut parts: Vec<Cow<str>> = Vec::new();
+                while VALUE_PARTS.contains(&self.peek()) {
                     parts.push(self.take());
                 }
                 if parts.is_empty() {
@@ -139,10 +161,9 @@ impl<'s> Parser<'s, '_> {
                 parts.join(" ")
             };
             styles.push((key, value));
-            if self.peek() != COMMA {
+            if !self.eat(T::Comma) {
                 break;
             }
-            self.take();
         }
         self.db.add_style_data(&ids, styles);
         Ok(())
@@ -154,41 +175,38 @@ pub fn parse_venn(src: &str, db: &mut VennDb) -> Result<(), Error> {
         src,
         lexer: VennLexer::new(src),
         db,
-        kind: -1,
+        peeked: None,
     };
-    while p.peek() == NEWLINE {
-        p.take();
-    }
-    p.expect(VENN)?;
+    while p.eat(T::Newline) {}
+    p.expect(T::Venn)?;
     loop {
         let statement = p.peek();
-        if statement == EOF {
+        if statement == T::Eof {
             return Ok(());
         }
-        if !(NEWLINE..=STYLE).contains(&statement) || statement == VENN {
+        if !STATEMENTS.contains(&statement) {
             return Err(p.fail(STATEMENT));
         }
-        p.take();
+        let text = p.take();
         match statement {
-            TITLE => {
-                let text = p.lexer.text;
-                let title = &text[5 + width_at(text, 5)..];
+            T::Title => {
+                let title = &text[5 + width_at(&text, 5)..];
                 p.db.set_diagram_title(title.to_string());
             }
-            SET => {
+            T::Set => {
                 let id = p.identifier()?;
                 p.subset(&[id], false)?;
             }
-            UNION => {
+            T::Union => {
                 let ids = p.identifiers()?;
                 p.subset(&ids, true)?;
             }
-            TEXT => {
+            T::Text => {
                 let ids = p.identifiers()?;
                 p.text(Some(ids))?;
             }
-            INDENT_TEXT => p.text(None)?,
-            STYLE => p.style()?,
+            T::IndentText => p.text(None)?,
+            T::Style => p.style()?,
             _ => {}
         }
     }

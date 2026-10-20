@@ -2,171 +2,141 @@
 
 use super::{
     db::{RequirementModel, relationships, requirement_type, risk_level, verify_type},
-    lexer::{Tokens, tokenize},
-    tokens::*,
+    lexer::tokenize,
+    tokens::T,
 };
-use crate::{detect::Kind, error::Error, js};
+use crate::{detect::Kind, error::Error, js, token::Stream};
 
-/// What the keyword tokens stand for, from REQUIREMENT to TRACES in token
-/// order.
-const VALUES: [&str; 21] = [
-    requirement_type::REQUIREMENT,
-    requirement_type::FUNCTIONAL_REQUIREMENT,
-    requirement_type::INTERFACE_REQUIREMENT,
-    requirement_type::PERFORMANCE_REQUIREMENT,
-    requirement_type::PHYSICAL_REQUIREMENT,
-    requirement_type::DESIGN_CONSTRAINT,
-    risk_level::LOW_RISK,
-    risk_level::MED_RISK,
-    risk_level::HIGH_RISK,
-    verify_type::VERIFY_ANALYSIS,
-    verify_type::VERIFY_DEMONSTRATION,
-    verify_type::VERIFY_INSPECTION,
-    verify_type::VERIFY_TEST,
-    "",
-    relationships::CONTAINS,
-    relationships::COPIES,
-    relationships::DERIVES,
-    relationships::SATISFIES,
-    relationships::VERIFIES,
-    relationships::REFINES,
-    relationships::TRACES,
+const REQUIREMENT_TYPES: [(T, &str); 6] = [
+    (T::Requirement, requirement_type::REQUIREMENT),
+    (
+        T::FunctionalRequirement,
+        requirement_type::FUNCTIONAL_REQUIREMENT,
+    ),
+    (
+        T::InterfaceRequirement,
+        requirement_type::INTERFACE_REQUIREMENT,
+    ),
+    (
+        T::PerformanceRequirement,
+        requirement_type::PERFORMANCE_REQUIREMENT,
+    ),
+    (
+        T::PhysicalRequirement,
+        requirement_type::PHYSICAL_REQUIREMENT,
+    ),
+    (T::DesignConstraint, requirement_type::DESIGN_CONSTRAINT),
+];
+const RISK_LEVELS: [(T, &str); 3] = [
+    (T::LowRisk, risk_level::LOW_RISK),
+    (T::MedRisk, risk_level::MED_RISK),
+    (T::HighRisk, risk_level::HIGH_RISK),
+];
+const VERIFY_TYPES: [(T, &str); 4] = [
+    (T::VerifyAnalysis, verify_type::VERIFY_ANALYSIS),
+    (T::VerifyDemonstration, verify_type::VERIFY_DEMONSTRATION),
+    (T::VerifyInspection, verify_type::VERIFY_INSPECTION),
+    (T::VerifyTest, verify_type::VERIFY_TEST),
+];
+const RELATIONSHIPS: [(T, &str); 7] = [
+    (T::Contains, relationships::CONTAINS),
+    (T::Copies, relationships::COPIES),
+    (T::Derives, relationships::DERIVES),
+    (T::Satisfies, relationships::SATISFIES),
+    (T::Verifies, relationships::VERIFIES),
+    (T::Refines, relationships::REFINES),
+    (T::Traces, relationships::TRACES),
+];
+const STRINGS: [T; 2] = [T::Qstring, T::Unqstring];
+const STYLE_PARTS: [T; 5] = [T::Alpha, T::Colon, T::Semicolon, T::Minus, T::Brkt];
+const REQUIREMENT_FIELDS: [T; 4] = [T::Id, T::Text, T::Risk, T::Verifymthd];
+const ELEMENT_FIELDS: [T; 2] = [T::Type, T::Docref];
+const DIRECTIVES: [T; 3] = [T::AccTitle, T::AccDescr, T::AccDescrMultilineValue];
+const DIRECTIONS: [(T, &str); 4] = [
+    (T::DirectionTb, "TB"),
+    (T::DirectionBt, "BT"),
+    (T::DirectionRl, "RL"),
+    (T::DirectionLr, "LR"),
 ];
 
-fn is_style_part(t: u8) -> bool {
-    matches!(t, ALPHA | COLON | BRKT | MINUS | SEMICOLON)
+fn kinds<V>(table: &[(T, V)]) -> impl Iterator<Item = T> + '_ {
+    table.iter().map(|&(kind, _)| kind)
 }
 
 struct Parser<'t, 's> {
-    tokens: &'t Tokens<'s>,
-    src: &'s str,
-    i: usize,
+    s: Stream<'t, 's, T>,
 }
 
-impl<'s> Parser<'_, 's> {
-    fn t(&self) -> u8 {
-        self.tokens.types[self.i]
+impl<'t> Parser<'t, '_> {
+    /// The value of the current token if it is one of the keywords in
+    /// `table`.
+    fn keyword(&mut self, table: &[(T, &'static str)]) -> Result<&'static str, Error> {
+        let Some(&(_, value)) = table.iter().find(|&&(kind, _)| self.s.is(kind)) else {
+            return Err(self.s.fail_expecting(kinds(table)));
+        };
+        self.s.bump();
+        Ok(value)
     }
 
-    fn text(&self) -> &'s str {
-        self.tokens.texts[self.i]
-    }
-
-    /// Fails with Jison's wording, naming the token types `from` to `to` and
-    /// any others as expected.
-    fn fail(&self, from: u8, to: u8, others: &[u8]) -> Error {
-        let t = self.t();
-        let start = self.tokens.starts[self.i];
-        if t == ERROR {
-            return Error::at(Kind::Requirement, self.src, start, "", true);
+    fn string(&mut self) -> Result<&'t str, Error> {
+        if !self.s.is_any(&STRINGS) {
+            return Err(self.s.fail_expecting(STRINGS));
         }
-        let expected = (from..=to)
-            .chain(others.iter().copied())
-            .map(|kind| format!("'{}'", TOKEN_NAMES[kind as usize]))
-            .collect::<Vec<_>>()
-            .join(", ");
-        Error::at(
-            Kind::Requirement,
-            self.src,
-            start,
-            &format!("Expecting {expected}, got '{}'", TOKEN_NAMES[t as usize]),
-            false,
-        )
-    }
-
-    fn expect(&mut self, kind: u8) -> Result<&'s str, Error> {
-        if self.t() != kind {
-            return Err(self.fail(kind, kind, &[]));
-        }
-        self.i += 1;
-        Ok(self.tokens.texts[self.i - 1])
-    }
-
-    /// The value of the next token if it is a keyword in the given range of
-    /// token types.
-    fn keyword(&mut self, from: u8, to: u8) -> Result<&'static str, Error> {
-        let t = self.t();
-        if t < from || t > to {
-            return Err(self.fail(from, to, &[]));
-        }
-        self.i += 1;
-        Ok(VALUES[(t - REQUIREMENT) as usize])
-    }
-
-    fn string(&mut self) -> Result<&'s str, Error> {
-        let t = self.t();
-        if t != UNQSTRING && t != QSTRING {
-            return Err(self.fail(QSTRING, UNQSTRING, &[]));
-        }
-        self.i += 1;
-        Ok(self.tokens.texts[self.i - 1])
+        Ok(self.s.take())
     }
 
     fn directive(&mut self, db: &mut RequirementModel) -> Result<bool, Error> {
-        let t = self.t();
-        if t == ACC_TITLE {
-            self.i += 1;
-            db.set_acc_title(js::trim(self.expect(ACC_TITLE_VALUE)?));
-        } else if t == ACC_DESCR {
-            self.i += 1;
-            db.set_acc_description(js::trim(self.expect(ACC_DESCR_VALUE)?));
-        } else if t == ACC_DESCR_MULTILINE_VALUE {
-            db.set_acc_description(js::trim(self.text()));
-            self.i += 1;
+        if self.s.eat(T::AccTitle) {
+            db.set_acc_title(js::trim(self.s.expect(T::AccTitleValue, "")?));
+        } else if self.s.eat(T::AccDescr) {
+            db.set_acc_description(js::trim(self.s.expect(T::AccDescrValue, "")?));
+        } else if self.s.is(T::AccDescrMultilineValue) {
+            db.set_acc_description(js::trim(self.s.take()));
         } else {
             return Ok(false);
         }
         Ok(true)
     }
 
-    fn id_list(&mut self) -> Result<Vec<&'s str>, Error> {
+    fn id_list(&mut self) -> Result<Vec<&'t str>, Error> {
         let mut list = Vec::new();
         loop {
-            let t = self.t();
-            if t != ALPHA && t != UNQSTRING && t != QSTRING {
-                return Err(self.fail(QSTRING, UNQSTRING, &[ALPHA]));
+            if !self.s.is_any(&STRINGS) && !self.s.is(T::Alpha) {
+                return Err(self.s.fail_expecting(STRINGS.into_iter().chain([T::Alpha])));
             }
-            list.push(self.text());
-            self.i += 1;
-            if self.t() != COMMA {
+            list.push(self.s.take());
+            if !self.s.eat(T::Comma) {
                 return Ok(list);
             }
-            self.i += 1;
         }
     }
 
     fn styles_opt(&mut self) -> Result<Vec<String>, Error> {
         let mut styles = Vec::new();
         loop {
-            if !is_style_part(self.t()) {
-                return Err(self.fail(ALPHA, SEMICOLON, &[MINUS, BRKT]));
+            if !self.s.is_any(&STYLE_PARTS) {
+                return Err(self.s.fail_expecting(STYLE_PARTS));
             }
-            let mut style = self.text().to_string();
-            self.i += 1;
-            while is_style_part(self.t()) {
-                style.push_str(self.text());
-                self.i += 1;
+            let mut style = self.s.take().to_string();
+            while self.s.is_any(&STYLE_PARTS) {
+                style.push_str(self.s.take());
             }
             styles.push(style);
-            if self.t() != COMMA {
+            if !self.s.eat(T::Comma) {
                 return Ok(styles);
             }
-            self.i += 1;
         }
     }
 
-    fn class_list(&mut self) -> Result<Option<Vec<&'s str>>, Error> {
+    fn class_list(&mut self) -> Result<Option<Vec<&'t str>>, Error> {
         let mut classes = None;
-        if self.t() == STYLE_SEPARATOR {
-            self.i += 1;
+        if self.s.eat(T::StyleSeparator) {
             classes = Some(self.id_list()?);
-            self.expect(STRUCT_START)?;
-        } else if self.t() == STRUCT_START {
-            self.i += 1;
-        } else {
-            return Err(self.fail(STRUCT_START, STRUCT_START, &[STYLE_SEPARATOR]));
+            self.s.expect(T::StructStart, "")?;
+        } else if !self.s.eat(T::StructStart) {
+            return Err(self.s.fail_expecting([T::StructStart, T::StyleSeparator]));
         }
-        self.expect(NEWLINE)?;
+        self.s.expect(T::Newline, "")?;
         Ok(classes)
     }
 
@@ -174,49 +144,42 @@ impl<'s> Parser<'_, 's> {
     /// so Mermaid applies the fields last to first and the first of two
     /// repeated fields wins.
     fn body(&mut self, db: &mut RequirementModel, requirement: bool) -> Result<(), Error> {
-        let mut fields: Vec<u8> = Vec::new();
-        let mut values: Vec<&str> = Vec::new();
+        let fields: &[T] = if requirement {
+            &REQUIREMENT_FIELDS
+        } else {
+            &ELEMENT_FIELDS
+        };
+        let mut values: Vec<(T, &str)> = Vec::new();
         loop {
-            let t = self.t();
-            if t == STRUCT_STOP {
-                self.i += 1;
+            if self.s.eat(T::StructStop) {
                 break;
             }
-            if t == NEWLINE {
-                self.i += 1;
+            if self.s.eat(T::Newline) {
                 continue;
             }
-            let wrong = if requirement {
-                !(ID..=VERIFYMTHD).contains(&t)
-            } else {
-                t != TYPE && t != DOCREF
-            };
-            if wrong {
-                return Err(if requirement {
-                    self.fail(ID, VERIFYMTHD, &[NEWLINE, STRUCT_STOP])
-                } else {
-                    self.fail(TYPE, DOCREF, &[NEWLINE, STRUCT_STOP])
-                });
+            let field = self.s.kind();
+            if !fields.contains(&field) {
+                return Err(self
+                    .s
+                    .fail_expecting(fields.iter().copied().chain([T::Newline, T::StructStop])));
             }
-            self.i += 1;
-            self.expect(COLONSEP)?;
-            values.push(if t == RISK {
-                self.keyword(LOW_RISK, HIGH_RISK)?
-            } else if t == VERIFYMTHD {
-                self.keyword(VERIFY_ANALYSIS, VERIFY_TEST)?
-            } else {
-                self.string()?
-            });
-            fields.push(t);
-            self.expect(NEWLINE)?;
+            self.s.bump();
+            self.s.expect(T::Colonsep, "")?;
+            let value = match field {
+                T::Risk => self.keyword(&RISK_LEVELS)?,
+                T::Verifymthd => self.keyword(&VERIFY_TYPES)?,
+                _ => self.string()?,
+            };
+            values.push((field, value));
+            self.s.expect(T::Newline, "")?;
         }
-        for (&field, &value) in fields.iter().zip(&values).rev() {
+        for &(field, value) in values.iter().rev() {
             match field {
-                ID => db.set_new_req_id(value),
-                TEXT => db.set_new_req_text(value),
-                RISK => db.set_new_req_risk(value),
-                VERIFYMTHD => db.set_new_req_verify_method(value),
-                TYPE => db.set_new_element_type(value),
+                T::Id => db.set_new_req_id(value),
+                T::Text => db.set_new_req_text(value),
+                T::Risk => db.set_new_req_risk(value),
+                T::Verifymthd => db.set_new_req_verify_method(value),
+                T::Type => db.set_new_element_type(value),
                 _ => db.set_new_element_doc_ref(value),
             }
         }
@@ -227,41 +190,30 @@ impl<'s> Parser<'_, 's> {
 pub fn parse_requirement(src: &str, db: &mut RequirementModel) -> Result<(), Error> {
     let tokens = tokenize(src);
     let mut r = Parser {
-        tokens: &tokens,
-        src,
-        i: 0,
+        s: Stream::new(Kind::Requirement, src, &tokens),
     };
 
     while r.directive(db)? {
-        if r.t() == NEWLINE {
-            r.i += 1;
-        }
+        r.s.eat(T::Newline);
     }
-    if r.t() != RD {
-        return Err(r.fail(RD, RD, &[ACC_TITLE, ACC_DESCR, ACC_DESCR_MULTILINE_VALUE]));
+    if !r.s.eat(T::Rd) {
+        return Err(r.s.fail_expecting([T::Rd].into_iter().chain(DIRECTIVES)));
     }
-    r.i += 1;
-    r.expect(NEWLINE)?;
+    r.s.expect(T::Newline, "")?;
 
     loop {
-        let t = r.t();
-        if t == EOF {
+        let t = r.s.kind();
+        if t == T::Eof {
             return Ok(());
         }
-        if t == NEWLINE {
-            r.i += 1;
-        } else if r.directive(db)? {
+        if r.s.eat(T::Newline) || r.directive(db)? {
             continue;
-        } else if (DIRECTION_TB..=DIRECTION_LR).contains(&t) {
-            r.i += 1;
-            db.set_direction(match t {
-                DIRECTION_TB => "TB",
-                DIRECTION_BT => "BT",
-                DIRECTION_RL => "RL",
-                _ => "LR",
-            });
-        } else if (REQUIREMENT..=DESIGN_CONSTRAINT).contains(&t) {
-            let kind = r.keyword(REQUIREMENT, DESIGN_CONSTRAINT)?;
+        }
+        if let Some(&(_, direction)) = DIRECTIONS.iter().find(|&&(kind, _)| kind == t) {
+            r.s.bump();
+            db.set_direction(direction);
+        } else if kinds(&REQUIREMENT_TYPES).any(|kind| kind == t) {
+            let kind = r.keyword(&REQUIREMENT_TYPES)?;
             let name = r.string()?;
             let classes = r.class_list()?;
             r.body(db, true)?;
@@ -269,8 +221,7 @@ pub fn parse_requirement(src: &str, db: &mut RequirementModel) -> Result<(), Err
             if let Some(classes) = classes {
                 db.set_class(&[name], &classes)?;
             }
-        } else if t == ELEMENT {
-            r.i += 1;
+        } else if r.s.eat(T::Element) {
             let name = r.string()?;
             let classes = r.class_list()?;
             r.body(db, false)?;
@@ -278,67 +229,54 @@ pub fn parse_requirement(src: &str, db: &mut RequirementModel) -> Result<(), Err
             if let Some(classes) = classes {
                 db.set_class(&[name], &classes)?;
             }
-        } else if t == STYLE {
-            r.i += 1;
+        } else if r.s.eat(T::Style) {
             let ids = r.id_list()?;
             let styles = r.styles_opt()?;
             db.set_css_style(&ids, &styles)?;
-        } else if t == CLASSDEF {
-            r.i += 1;
+        } else if r.s.eat(T::Classdef) {
             let ids = r.id_list()?;
             let styles = r.styles_opt()?;
             db.define_class(&ids, &styles)?;
-        } else if t == CLASS {
-            r.i += 1;
+        } else if r.s.eat(T::Class) {
             let ids = r.id_list()?;
             let names = r.id_list()?;
             db.set_class(&ids, &names)?;
-        } else if t == UNQSTRING || t == QSTRING {
-            let id = r.text();
-            r.i += 1;
-            let next = r.t();
-            if next == STYLE_SEPARATOR {
-                r.i += 1;
+        } else if r.s.is_any(&STRINGS) {
+            let id = r.s.take();
+            let next = r.s.kind();
+            if r.s.eat(T::StyleSeparator) {
                 let names = r.id_list()?;
                 db.set_class(&[id], &names)?;
-            } else if next == END_ARROW_L || next == LINE {
-                r.i += 1;
-                let relationship = r.keyword(CONTAINS, TRACES)?;
-                r.expect(if next == LINE { END_ARROW_R } else { LINE })?;
+            } else if r.s.eat(T::EndArrowL) || r.s.eat(T::Line) {
+                let relationship = r.keyword(&RELATIONSHIPS)?;
+                r.s.expect(
+                    if next == T::Line {
+                        T::EndArrowR
+                    } else {
+                        T::Line
+                    },
+                    "",
+                )?;
                 let other = r.string()?;
-                if next == LINE {
+                if next == T::Line {
                     db.add_relationship(relationship, id, other);
                 } else {
                     db.add_relationship(relationship, other, id);
                 }
             } else {
-                return Err(r.fail(STYLE_SEPARATOR, STYLE_SEPARATOR, &[END_ARROW_L, LINE]));
+                return Err(r
+                    .s
+                    .fail_expecting([T::StyleSeparator, T::EndArrowL, T::Line]));
             }
         } else {
-            return Err(r.fail(
-                NEWLINE,
-                EOF,
-                &[
-                    ACC_TITLE,
-                    ACC_DESCR,
-                    ACC_DESCR_MULTILINE_VALUE,
-                    DIRECTION_TB,
-                    DIRECTION_BT,
-                    DIRECTION_RL,
-                    DIRECTION_LR,
-                    REQUIREMENT,
-                    FUNCTIONAL_REQUIREMENT,
-                    INTERFACE_REQUIREMENT,
-                    PERFORMANCE_REQUIREMENT,
-                    PHYSICAL_REQUIREMENT,
-                    DESIGN_CONSTRAINT,
-                    ELEMENT,
-                    CLASSDEF,
-                    CLASS,
-                    STYLE,
-                    UNQSTRING,
-                    QSTRING,
-                ],
+            return Err(r.s.fail_expecting(
+                [T::Newline, T::Eof]
+                    .into_iter()
+                    .chain(DIRECTIVES)
+                    .chain(kinds(&DIRECTIONS))
+                    .chain(kinds(&REQUIREMENT_TYPES))
+                    .chain([T::Element, T::Classdef, T::Class, T::Style])
+                    .chain(STRINGS.into_iter().rev()),
             ));
         }
     }

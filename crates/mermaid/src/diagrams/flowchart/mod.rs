@@ -7,6 +7,7 @@ pub mod lexer;
 pub mod parser;
 pub mod render;
 pub mod shapes;
+pub mod syntax;
 pub mod tokens;
 pub mod types;
 

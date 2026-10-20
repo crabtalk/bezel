@@ -1,8 +1,9 @@
 //! Pele's `diagrams/sequence/lexer.ts`.
 
-use super::tokens::*;
+use super::tokens::T;
 use crate::{
     js,
+    token::Token,
     util::chars::{code_at, is_digit, is_space, is_word, width_at},
 };
 
@@ -61,17 +62,10 @@ const CLASS: [u8; 128] = {
     table
 };
 
-#[derive(Default)]
-pub struct Tokens {
-    pub types: Vec<u8>,
-    pub texts: Vec<String>,
-    pub starts: Vec<usize>,
-}
-
 struct Lexer<'s> {
     src: &'s str,
     n: usize,
-    out: Tokens,
+    out: Vec<Token<'s, T>>,
     stack: Vec<u8>,
     state: u8,
     p: usize,
@@ -88,17 +82,13 @@ impl<'s> Lexer<'s> {
         q + width_at(self.src, q)
     }
 
-    fn emit(&mut self, kind: u8, s: usize, e: usize) {
-        self.out.types.push(kind);
-        self.out.texts.push(self.src[s..e].to_string());
-        self.out.starts.push(s);
+    fn emit(&mut self, kind: T, s: usize, e: usize) {
+        self.out.push(Token::new(kind, &self.src[s..e], s));
         self.p = e;
     }
 
-    fn emit_text(&mut self, kind: u8, s: usize, e: usize, text: String) {
-        self.out.types.push(kind);
-        self.out.texts.push(text);
-        self.out.starts.push(s);
+    fn emit_text(&mut self, kind: T, s: usize, e: usize, text: String) {
+        self.out.push(Token::new(kind, text, s));
         self.p = e;
     }
 
@@ -180,12 +170,12 @@ impl<'s> Lexer<'s> {
         q
     }
 
-    fn begin(&mut self, kind: u8, len: usize, next: u8) {
+    fn begin(&mut self, kind: T, len: usize, next: u8) {
         self.emit(kind, self.p, self.p + len);
         self.push(next);
     }
 
-    fn keyword(&mut self, lit: &str, kind: u8, next: Option<u8>) -> bool {
+    fn keyword(&mut self, lit: &str, kind: T, next: Option<u8>) -> bool {
         if !self.word(lit) {
             return false;
         }
@@ -198,7 +188,7 @@ impl<'s> Lexer<'s> {
 
     /// The actor menu keywords count only when spaces and the start of a name
     /// follow.
-    fn menu(&mut self, lit: &str, kind: u8) -> bool {
+    fn menu(&mut self, lit: &str, kind: T) -> bool {
         if !self.ci(self.p, lit) {
             return false;
         }
@@ -256,7 +246,7 @@ impl<'s> Lexer<'s> {
             q = r;
         }
         let text = js::trim(&self.src[p..q]).to_string();
-        self.emit_text(ACTOR, p, q, text);
+        self.emit_text(T::Actor, p, q, text);
     }
 
     fn number(&mut self) -> bool {
@@ -274,13 +264,13 @@ impl<'s> Lexer<'s> {
             };
             let after = self.c(r);
             if after == 32 || after == 10 {
-                self.emit(NUM, p, r);
+                self.emit(T::Num, p, r);
                 return true;
             }
         }
         let after = self.c(q);
         if whole && (after == 32 || after == 10) {
-            self.emit(NUM, p, q);
+            self.emit(T::Num, p, q);
             return true;
         }
         false
@@ -292,47 +282,47 @@ impl<'s> Lexer<'s> {
         let e = self.c(p + 2);
         if d == 62 {
             if e == 62 {
-                self.emit(SOLID_ARROW, p, p + 3);
+                self.emit(T::SolidArrow, p, p + 3);
             } else {
-                self.emit(SOLID_OPEN_ARROW, p, p + 2);
+                self.emit(T::SolidOpenArrow, p, p + 2);
             }
         } else if d == 120 || d == 88 {
-            self.emit(SOLID_CROSS, p, p + 2);
+            self.emit(T::SolidCross, p, p + 2);
         } else if d == 41 {
-            self.emit(SOLID_POINT, p, p + 2);
+            self.emit(T::SolidPoint, p, p + 2);
         } else if d == 124 && e == 92 {
-            self.emit(SOLID_ARROW_TOP, p, p + 3);
+            self.emit(T::SolidArrowTop, p, p + 3);
         } else if d == 124 && e == 47 {
-            self.emit(SOLID_ARROW_BOTTOM, p, p + 3);
+            self.emit(T::SolidArrowBottom, p, p + 3);
         } else if d == 92 && e == 92 {
-            self.emit(STICK_ARROW_TOP, p, p + 3);
+            self.emit(T::StickArrowTop, p, p + 3);
         } else if d == 47 && e == 47 {
-            self.emit(STICK_ARROW_BOTTOM, p, p + 3);
+            self.emit(T::StickArrowBottom, p, p + 3);
         } else if d == 45 {
             let f = self.c(p + 3);
             if e == 62 {
                 if f == 62 {
-                    self.emit(DOTTED_ARROW, p, p + 4);
+                    self.emit(T::DottedArrow, p, p + 4);
                 } else {
-                    self.emit(DOTTED_OPEN_ARROW, p, p + 3);
+                    self.emit(T::DottedOpenArrow, p, p + 3);
                 }
             } else if e == 120 || e == 88 {
-                self.emit(DOTTED_CROSS, p, p + 3);
+                self.emit(T::DottedCross, p, p + 3);
             } else if e == 41 {
-                self.emit(DOTTED_POINT, p, p + 3);
+                self.emit(T::DottedPoint, p, p + 3);
             } else if e == 124 && f == 92 {
-                self.emit(SOLID_ARROW_TOP_DOTTED, p, p + 4);
+                self.emit(T::SolidArrowTopDotted, p, p + 4);
             } else if e == 124 && f == 47 {
-                self.emit(SOLID_ARROW_BOTTOM_DOTTED, p, p + 4);
+                self.emit(T::SolidArrowBottomDotted, p, p + 4);
             } else if e == 92 && f == 92 {
-                self.emit(STICK_ARROW_TOP_DOTTED, p, p + 4);
+                self.emit(T::StickArrowTopDotted, p, p + 4);
             } else if e == 47 && f == 47 {
-                self.emit(STICK_ARROW_BOTTOM_DOTTED, p, p + 4);
+                self.emit(T::StickArrowBottomDotted, p, p + 4);
             } else {
-                self.emit(MINUS, p, p + 1);
+                self.emit(T::Minus, p, p + 1);
             }
         } else {
-            self.emit(MINUS, p, p + 1);
+            self.emit(T::Minus, p, p + 1);
         }
     }
 
@@ -346,17 +336,17 @@ impl<'s> Lexer<'s> {
         let top = c == 47;
         let kind = if d == 124 {
             match (dotted, top) {
-                (true, true) => SOLID_ARROW_TOP_REVERSE_DOTTED,
-                (true, false) => SOLID_ARROW_BOTTOM_REVERSE_DOTTED,
-                (false, true) => SOLID_ARROW_TOP_REVERSE,
-                (false, false) => SOLID_ARROW_BOTTOM_REVERSE,
+                (true, true) => T::SolidArrowTopReverseDotted,
+                (true, false) => T::SolidArrowBottomReverseDotted,
+                (false, true) => T::SolidArrowTopReverse,
+                (false, false) => T::SolidArrowBottomReverse,
             }
         } else {
             match (dotted, top) {
-                (true, true) => STICK_ARROW_TOP_REVERSE_DOTTED,
-                (true, false) => STICK_ARROW_BOTTOM_REVERSE_DOTTED,
-                (false, true) => STICK_ARROW_TOP_REVERSE,
-                (false, false) => STICK_ARROW_BOTTOM_REVERSE,
+                (true, true) => T::StickArrowTopReverseDotted,
+                (true, false) => T::StickArrowBottomReverseDotted,
+                (false, true) => T::StickArrowTopReverse,
+                (false, false) => T::StickArrowBottomReverse,
             }
         };
         self.emit(kind, p, p + if dotted { 4 } else { 3 });
@@ -380,7 +370,7 @@ impl<'s> Lexer<'s> {
             return false;
         }
         let end = self.line_run(next);
-        self.emit(if legacy { LEGACY_TITLE } else { TITLE }, self.p, end);
+        self.emit(if legacy { T::LegacyTitle } else { T::Title }, self.p, end);
         true
     }
 
@@ -393,7 +383,7 @@ impl<'s> Lexer<'s> {
         let c = self.c(q);
         if c == 58 {
             let end = self.skip_ws(q + 1);
-            self.emit(if descr { ACC_DESCR } else { ACC_TITLE }, self.p, end);
+            self.emit(if descr { T::AccDescr } else { T::AccTitle }, self.p, end);
             self.push(if descr { S_ACC_DESCR } else { S_ACC_TITLE });
             return true;
         }
@@ -408,49 +398,53 @@ impl<'s> Lexer<'s> {
     fn keywords(&mut self, c: u32) -> bool {
         match c | 32 {
             97 => {
-                self.keyword("actor", PARTICIPANT_ACTOR, Some(S_ID))
-                    || self.keyword("alt", ALT, Some(S_LINE))
-                    || self.keyword("and", AND, Some(S_LINE))
-                    || self.keyword("activate", ACTIVATE, Some(S_ID))
+                self.keyword("actor", T::ParticipantActor, Some(S_ID))
+                    || self.keyword("alt", T::Alt, Some(S_LINE))
+                    || self.keyword("and", T::And, Some(S_LINE))
+                    || self.keyword("activate", T::Activate, Some(S_ID))
                     || self.acc()
-                    || self.keyword("autonumber", AUTONUMBER, None)
+                    || self.keyword("autonumber", T::Autonumber, None)
             }
             98 => {
-                self.keyword("box", BOX, Some(S_LINE)) || self.keyword("break", BREAK, Some(S_LINE))
+                self.keyword("box", T::Box, Some(S_LINE))
+                    || self.keyword("break", T::Break, Some(S_LINE))
             }
             99 => {
-                self.keyword("create", CREATE, None)
-                    || self.keyword("critical", CRITICAL, Some(S_LINE))
+                self.keyword("create", T::Create, None)
+                    || self.keyword("critical", T::Critical, Some(S_LINE))
             }
             100 => {
-                self.keyword("destroy", DESTROY, Some(S_ID))
-                    || self.menu("details", DETAILS)
-                    || self.keyword("deactivate", DEACTIVATE, Some(S_ID))
+                self.keyword("destroy", T::Destroy, Some(S_ID))
+                    || self.menu("details", T::Details)
+                    || self.keyword("deactivate", T::Deactivate, Some(S_ID))
             }
-            101 => self.keyword("else", ELSE, Some(S_LINE)) || self.keyword("end", END, None),
+            101 => {
+                self.keyword("else", T::Else, Some(S_LINE)) || self.keyword("end", T::EndKw, None)
+            }
             108 => {
-                self.keyword("loop", LOOP, Some(S_LINE))
-                    || self.keyword("left of", LEFT_OF, None)
-                    || self.menu("links", LINKS)
-                    || self.menu("link", LINK)
+                self.keyword("loop", T::Loop, Some(S_LINE))
+                    || self.keyword("left of", T::LeftOf, None)
+                    || self.menu("links", T::Links)
+                    || self.menu("link", T::Link)
             }
-            110 => self.keyword("note", NOTE, None),
+            110 => self.keyword("note", T::Note, None),
             111 => {
-                self.keyword("opt", OPT, Some(S_LINE))
-                    || self.keyword("option", OPTION, Some(S_LINE))
-                    || self.keyword("over", OVER, None)
-                    || self.keyword("off", OFF, None)
+                self.keyword("opt", T::Opt, Some(S_LINE))
+                    || self.keyword("option", T::Option, Some(S_LINE))
+                    || self.keyword("over", T::Over, None)
+                    || self.keyword("off", T::Off, None)
             }
             112 => {
-                self.keyword("participant", PARTICIPANT, Some(S_ID))
-                    || self.keyword("par", PAR, Some(S_LINE))
-                    || self.keyword("par_over", PAR_OVER, Some(S_LINE))
-                    || self.menu("properties", PROPERTIES)
+                self.keyword("participant", T::Participant, Some(S_ID))
+                    || self.keyword("par", T::Par, Some(S_LINE))
+                    || self.keyword("par_over", T::ParOver, Some(S_LINE))
+                    || self.menu("properties", T::Properties)
             }
             114 => {
-                self.keyword("rect", RECT, Some(S_LINE)) || self.keyword("right of", RIGHT_OF, None)
+                self.keyword("rect", T::Rect, Some(S_LINE))
+                    || self.keyword("right of", T::RightOf, None)
             }
-            115 => self.keyword("sequencediagram", SD, None),
+            115 => self.keyword("sequencediagram", T::Sd, None),
             116 => self.title(),
             _ => false,
         }
@@ -464,7 +458,7 @@ impl<'s> Lexer<'s> {
             while self.c(q) == 10 {
                 q += 1;
             }
-            self.emit(NEWLINE, p, q);
+            self.emit(T::Newline, p, q);
             return;
         }
         if is_space(c) {
@@ -490,27 +484,27 @@ impl<'s> Lexer<'s> {
             return;
         }
         if c == 44 {
-            self.emit(COMMA, p, p + 1);
+            self.emit(T::Comma, p, p + 1);
         } else if c == 59 {
-            self.emit(NEWLINE, p, p + 1);
+            self.emit(T::Newline, p, p + 1);
         } else if self.has(p, C_ACTOR_START) {
             self.actor();
         } else if c == 45 {
             self.dash();
         } else if c == 60 && self.src[p..].starts_with("<<->>") {
-            self.emit(BIDIRECTIONAL_SOLID_ARROW, p, p + 5);
+            self.emit(T::BidirectionalSolidArrow, p, p + 5);
         } else if c == 60 && self.src[p..].starts_with("<<-->>") {
-            self.emit(BIDIRECTIONAL_DOTTED_ARROW, p, p + 6);
+            self.emit(T::BidirectionalDottedArrow, p, p + 6);
         } else if (c == 47 || c == 92) && self.reverse(c) {
         } else if c == 58 {
             let end = self.line_run(p + 1);
-            self.emit(TXT, p, end);
+            self.emit(T::Txt, p, end);
         } else if c == 43 {
-            self.emit(PLUS, p, p + 1);
+            self.emit(T::Plus, p, p + 1);
         } else if c == 40 && self.c(p + 1) == 41 {
-            self.emit(CENTRAL, p, p + 2);
+            self.emit(T::Central, p, p + 2);
         } else {
-            self.emit(INVALID, p, p + 1);
+            self.emit(T::Invalid, p, p + 1);
         }
     }
 
@@ -528,7 +522,7 @@ impl<'s> Lexer<'s> {
             return true;
         }
         if c == 64 && self.c(p + 1) == 123 {
-            self.begin(CONFIG_START, 2, S_CONFIG);
+            self.begin(T::ConfigStart, 2, S_CONFIG);
             return true;
         }
         let mut a = p;
@@ -538,11 +532,11 @@ impl<'s> Lexer<'s> {
         if a > p {
             let w = self.skip_ws(a);
             if self.c(w) == 64 && self.c(w + 1) == 123 {
-                self.emit(ACTOR, p, a);
+                self.emit(T::Actor, p, a);
                 return true;
             }
             if w > a && self.ci(w, "as") && is_space(self.c(w + 2)) {
-                self.emit(ACTOR, p, a);
+                self.emit(T::Actor, p, a);
                 self.push(S_ALIAS);
                 return true;
             }
@@ -564,21 +558,21 @@ impl<'s> Lexer<'s> {
             }
             if cut > p {
                 let text = js::trim(&self.src[p..cut]).to_string();
-                self.emit_text(ACTOR, p, cut, text);
+                self.emit_text(T::Actor, p, cut, text);
                 self.pop();
                 return true;
             }
         }
         if self.c(b) == 60 {
             let e = self.eol(p);
-            self.emit(INVALID, p, e);
+            self.emit(T::Invalid, p, e);
             self.pop();
             return true;
         }
         if c != 10 {
             let e = self.eol(p);
             let text = js::trim(&self.src[p..e]).to_string();
-            self.emit_text(INVALID, p, e, text);
+            self.emit_text(T::Invalid, p, e, text);
             self.pop();
             return true;
         }
@@ -604,9 +598,9 @@ impl<'s> Lexer<'s> {
                 self.pop();
                 self.pop();
                 if self.word("as") {
-                    self.begin(AS, 2, S_LINE);
+                    self.begin(T::As, 2, S_LINE);
                 } else {
-                    self.emit(NEWLINE, p, p);
+                    self.emit(T::Newline, p, p);
                 }
                 true
             }
@@ -620,18 +614,18 @@ impl<'s> Lexer<'s> {
                     return true;
                 }
                 let end = self.line_run(p);
-                self.emit(REST_OF_LINE, p, end);
+                self.emit(T::RestOfLine, p, end);
                 self.pop();
                 true
             }
             S_CONFIG => {
                 if self.c(p) != 125 {
                     let q = self.src[p..].find('}').map_or(self.n, |at| p + at);
-                    self.emit(CONFIG_CONTENT, p, q);
+                    self.emit(T::ConfigContent, p, q);
                 } else {
                     let w = self.skip_ws(p + 1);
                     let alias = w > p + 1 && self.ci(w, "as") && is_space(self.c(w + 2));
-                    self.emit(CONFIG_END, p, p + 1);
+                    self.emit(T::ConfigEnd, p, p + 1);
                     self.pop();
                     if alias {
                         self.push(S_ALIAS);
@@ -643,9 +637,9 @@ impl<'s> Lexer<'s> {
             }
             S_ACC_TITLE | S_ACC_DESCR => {
                 let kind = if self.state == S_ACC_TITLE {
-                    ACC_TITLE_VALUE
+                    T::AccTitleValue
                 } else {
-                    ACC_DESCR_VALUE
+                    T::AccDescrValue
                 };
                 let e = self.eol(p);
                 self.emit(kind, p, e);
@@ -658,7 +652,7 @@ impl<'s> Lexer<'s> {
                     self.pop();
                 } else {
                     let q = self.src[p..].find('}').map_or(self.n, |at| p + at);
-                    self.emit(ACC_DESCR_MULTILINE_VALUE, p, q);
+                    self.emit(T::AccDescrMultilineValue, p, q);
                 }
                 true
             }
@@ -666,12 +660,12 @@ impl<'s> Lexer<'s> {
     }
 }
 
-pub fn tokenize(src: &str) -> Tokens {
+pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
     let n = src.len();
     let mut lx = Lexer {
         src,
         n,
-        out: Tokens::default(),
+        out: Vec::new(),
         stack: Vec::new(),
         state: S_INITIAL,
         p: 0,
@@ -679,9 +673,7 @@ pub fn tokenize(src: &str) -> Tokens {
     };
     while lx.p < n {
         if !lx.step() {
-            lx.out.types.push(ERROR);
-            lx.out.texts.push(String::new());
-            lx.out.starts.push(lx.p);
+            lx.out.push(Token::new(T::Error, "", lx.p));
             return lx.out;
         }
     }
@@ -689,18 +681,16 @@ pub fn tokenize(src: &str) -> Tokens {
     // Mermaid's lexer tries its rules once more on the empty remainder before
     // reporting the end.
     let at_end = match lx.state {
-        S_INITIAL | S_ALIAS => Some(NEWLINE),
-        S_LINE => Some(REST_OF_LINE),
-        S_ACC_TITLE => Some(ACC_TITLE_VALUE),
-        S_ACC_DESCR => Some(ACC_DESCR_VALUE),
-        S_ACC_DESCR_MULTILINE => Some(ACC_DESCR_MULTILINE_VALUE),
+        S_INITIAL | S_ALIAS => Some(T::Newline),
+        S_LINE => Some(T::RestOfLine),
+        S_ACC_TITLE => Some(T::AccTitleValue),
+        S_ACC_DESCR => Some(T::AccDescrValue),
+        S_ACC_DESCR_MULTILINE => Some(T::AccDescrMultilineValue),
         _ => None,
     };
     if let Some(kind) = at_end {
         lx.emit(kind, n, n);
     }
-    lx.out.types.push(EOF);
-    lx.out.texts.push(String::new());
-    lx.out.starts.push(n);
+    lx.out.push(Token::new(T::End, "", n));
     lx.out
 }

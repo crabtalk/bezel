@@ -61,6 +61,19 @@ impl Error {
         Self::new(message, Code::Limit)
     }
 
+    /// A syntax error saying `message` at byte `offset` of `src`.
+    pub fn syntax_at(kind: Kind, src: &str, offset: usize, message: impl Into<String>) -> Self {
+        let place = Place::locate(src, offset);
+        Self {
+            message: message.into(),
+            code: Code::Syntax,
+            kind: Some(kind),
+            line: place.line,
+            column: place.column,
+            snippet: place.snippet,
+        }
+    }
+
     /// A parse error at byte `offset` of `src`, in Jison's words: `lexical`
     /// for text no token matches.
     pub fn at(kind: Kind, src: &str, offset: usize, detail: &str, lexical: bool) -> Self {

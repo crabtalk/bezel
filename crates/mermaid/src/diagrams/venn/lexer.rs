@@ -1,57 +1,42 @@
 //! Pele's `diagrams/venn/lexer.ts`.
 
-use crate::util::chars::{code_at, is_digit, is_hex, is_space, is_word, width_at};
+use crate::{
+    token::{Token, grammar},
+    util::chars::{code_at, is_digit, is_hex, is_space, is_word, width_at},
+};
 
-pub const END: i32 = 0;
-pub const ERROR: i32 = 1;
-pub const EOF: i32 = 2;
-pub const NEWLINE: i32 = 3;
-pub const VENN: i32 = 4;
-pub const TITLE: i32 = 5;
-pub const SET: i32 = 6;
-pub const UNION: i32 = 7;
-pub const TEXT: i32 = 8;
-pub const INDENT_TEXT: i32 = 9;
-pub const STYLE: i32 = 10;
-pub const BRACKET_LABEL: i32 = 11;
-pub const NUMERIC: i32 = 12;
-pub const HEXCOLOR: i32 = 13;
-pub const RGBCOLOR: i32 = 14;
-pub const RGBACOLOR: i32 = 15;
-pub const IDENTIFIER: i32 = 16;
-pub const STRING: i32 = 17;
-pub const COMMA: i32 = 18;
-pub const COLON: i32 = 19;
+grammar! {
+    /// The venn lexer's token kinds.
+    pub enum T {
+        End = "$end",
+        Error = "INVALID",
+        Eof = "EOF",
+        Newline = "NEWLINE",
+        Venn = "VENN",
+        Title = "TITLE",
+        Set = "SET",
+        Union = "UNION",
+        Text = "TEXT",
+        IndentText = "INDENT_TEXT",
+        Style = "STYLE",
+        BracketLabel = "BRACKET_LABEL",
+        Numeric = "NUMERIC",
+        Hexcolor = "HEXCOLOR",
+        Rgbcolor = "RGBCOLOR",
+        Rgbacolor = "RGBACOLOR",
+        Identifier = "IDENTIFIER",
+        String = "STRING",
+        Comma = "COMMA",
+        Colon = "COLON",
+    }
+}
 
-pub const TOKEN_NAMES: [&str; 20] = [
-    "$end",
-    "INVALID",
-    "EOF",
-    "NEWLINE",
-    "VENN",
-    "TITLE",
-    "SET",
-    "UNION",
-    "TEXT",
-    "INDENT_TEXT",
-    "STYLE",
-    "BRACKET_LABEL",
-    "NUMERIC",
-    "HEXCOLOR",
-    "RGBCOLOR",
-    "RGBACOLOR",
-    "IDENTIFIER",
-    "STRING",
-    "COMMA",
-    "COLON",
-];
-
-const KEYWORDS: [(&str, i32); 5] = [
-    ("venn-beta", VENN),
-    ("set", SET),
-    ("union", UNION),
-    ("text", TEXT),
-    ("style", STYLE),
+const KEYWORDS: [(&str, T); 5] = [
+    ("venn-beta", T::Venn),
+    ("set", T::Set),
+    ("union", T::Union),
+    ("text", T::Text),
+    ("style", T::Style),
 ];
 
 /// The part of the model the lexer talks to: an indented `text` line is a
@@ -66,9 +51,9 @@ pub trait IndentHost {
 /// does: every rule ignores case, the first rule that matches wins, and a
 /// keyword must end at a word boundary.
 pub struct VennLexer<'s> {
-    /// The text and position of the token `next` returned last.
-    pub text: &'s str,
-    pub start: usize,
+    /// The text and position of the token being read.
+    text: &'s str,
+    start: usize,
     src: &'s str,
     at: usize,
     line_start: bool,
@@ -132,7 +117,12 @@ impl<'s> VennLexer<'s> {
             .map_or(self.src.len(), |end| from + end)
     }
 
-    pub fn next(&mut self, host: &mut dyn IndentHost) -> i32 {
+    pub fn next(&mut self, host: &mut dyn IndentHost) -> Token<'s, T> {
+        let kind = self.scan(host);
+        Token::new(kind, self.text, self.start)
+    }
+
+    fn scan(&mut self, host: &mut dyn IndentHost) -> T {
         let src = self.src;
         let n = src.len();
         loop {
@@ -141,10 +131,10 @@ impl<'s> VennLexer<'s> {
             self.text = "";
             if i >= n {
                 if self.ended {
-                    return END;
+                    return T::End;
                 }
                 self.ended = true;
-                return EOF;
+                return T::Eof;
             }
             let c = code_at(src, i);
             let w = width_at(src, i);
@@ -170,7 +160,7 @@ impl<'s> VennLexer<'s> {
                         self.at = j + 4;
                         self.line_start = false;
                         self.text = &src[i..j];
-                        return INDENT_TEXT;
+                        return T::IndentText;
                     }
                     continue;
                 }
@@ -185,7 +175,7 @@ impl<'s> VennLexer<'s> {
                     i += 1;
                 }
                 self.line_start = true;
-                return self.token(NEWLINE, i);
+                return self.token(T::Newline, i);
             }
             if c == 37 && code_at(src, i + 1) == 37 {
                 self.at = self.line_end(i);
@@ -212,7 +202,7 @@ impl<'s> VennLexer<'s> {
                         end += width_at(src, end);
                     }
                     if end > body {
-                        return self.token(TITLE, end);
+                        return self.token(T::Title, end);
                     }
                 }
                 for (word, kind) in KEYWORDS {
@@ -229,35 +219,35 @@ impl<'s> VennLexer<'s> {
                         None
                     };
                     if let Some(end) = end {
-                        return self.token(if alpha { RGBACOLOR } else { RGBCOLOR }, end);
+                        return self.token(if alpha { T::Rgbacolor } else { T::Rgbcolor }, end);
                     }
                 }
                 i += 1;
                 while is_word(code_at(src, i)) || code_at(src, i) == 45 {
                     i += 1;
                 }
-                return self.token(IDENTIFIER, i);
+                return self.token(T::Identifier, i);
             }
             if c == 91 {
                 if code_at(src, i + 1) == 34 {
                     let quote = src[i + 2..].find('"').map(|q| i + 2 + q);
                     let Some(quote) = quote.filter(|&q| code_at(src, q + 1) == 93) else {
-                        return ERROR;
+                        return T::Error;
                     };
                     self.at = quote + 2;
                     self.text = &src[i + 2..quote];
-                    return BRACKET_LABEL;
+                    return T::BracketLabel;
                 }
                 let mut end = i + 1;
                 while end < n && !matches!(code_at(src, end), 93 | 34) {
                     end += width_at(src, end);
                 }
                 if end == i + 1 || code_at(src, end) != 93 {
-                    return ERROR;
+                    return T::Error;
                 }
                 self.at = end + 1;
                 self.text = crate::js::trim(&src[i + 1..end]);
-                return BRACKET_LABEL;
+                return T::BracketLabel;
             }
             if is_digit(c) || c == 46 || c == 43 || c == 45 {
                 if c == 43 || c == 45 {
@@ -280,9 +270,9 @@ impl<'s> VennLexer<'s> {
                         i += 1;
                     }
                 } else {
-                    return ERROR;
+                    return T::Error;
                 }
-                return self.token(NUMERIC, i);
+                return self.token(T::Numeric, i);
             }
             if c == 35 {
                 let mut end = i + 1;
@@ -290,28 +280,28 @@ impl<'s> VennLexer<'s> {
                     end += 1;
                 }
                 return if end >= i + 4 {
-                    self.token(HEXCOLOR, end)
+                    self.token(T::Hexcolor, end)
                 } else {
-                    ERROR
+                    T::Error
                 };
             }
             if c == 34 {
                 return match src[i + 1..].find('"') {
-                    Some(quote) => self.token(STRING, i + 1 + quote + 1),
-                    None => ERROR,
+                    Some(quote) => self.token(T::String, i + 1 + quote + 1),
+                    None => T::Error,
                 };
             }
             if c == 44 {
-                return self.token(COMMA, i + 1);
+                return self.token(T::Comma, i + 1);
             }
             if c == 58 {
-                return self.token(COLON, i + 1);
+                return self.token(T::Colon, i + 1);
             }
-            return ERROR;
+            return T::Error;
         }
     }
 
-    fn token(&mut self, kind: i32, end: usize) -> i32 {
+    fn token(&mut self, kind: T, end: usize) -> T {
         self.text = &self.src[self.at..end];
         self.at = end;
         kind

@@ -6,10 +6,10 @@ use super::{
         edge_str_to_thickness, type_str_to_type,
     },
     lexer::tokenize,
-    tokens::*,
+    tokens::T,
     types::{Block, BlockModel, Statement},
 };
-use crate::{Error, Kind, js};
+use crate::{Error, detect::Kind, js, token::Stream};
 
 const STATEMENT_START: &str = "'NODE_ID', 'COLUMNS', 'SPACE_BLOCK', 'BLOCK_DIAGRAM_KEY', 'id-block', 'classDef', 'class', 'style'";
 
@@ -35,48 +35,18 @@ fn close_document(mut list: Vec<Statement>) -> Vec<Statement> {
     list
 }
 
-struct Parser<'s, 'm> {
-    src: &'s str,
-    types: Vec<u8>,
-    texts: Vec<&'s str>,
-    starts: Vec<usize>,
-    i: usize,
+struct Parser<'t, 's, 'm> {
+    s: Stream<'t, 's, T>,
     db: &'m mut BlockModel,
 }
 
-impl Parser<'_, '_> {
-    fn fail(&self, expected: &str) -> Error {
-        let t = self.types[self.i];
-        if t == ERROR {
-            return Error::at(Kind::Block, self.src, self.starts[self.i], "", true);
-        }
-        Error::at(
-            Kind::Block,
-            self.src,
-            self.starts[self.i],
-            &format!(
-                "Expecting {expected}, got '{}'",
-                TOKEN_NAMES[usize::from(t)]
-            ),
-            false,
-        )
-    }
-
-    fn expect(&mut self, kind: u8) -> Result<String, Error> {
-        if self.types[self.i] != kind {
-            return Err(self.fail(&format!("'{}'", TOKEN_NAMES[usize::from(kind)])));
-        }
-        self.i += 1;
-        Ok(self.texts[self.i - 1].to_string())
-    }
-
+impl Parser<'_, '_, '_> {
     fn node(&mut self) -> Result<NodeInfo, Error> {
-        let id = self.expect(NODE_ID)?;
-        if self.types[self.i] == NODE_DSTART {
-            let open = self.texts[self.i];
-            self.i += 1;
-            let label = self.expect(STR)?;
-            let close = self.expect(NODE_DEND)?;
+        let id = self.s.expect(T::NodeId, "")?.to_string();
+        if self.s.is(T::NodeDstart) {
+            let open = self.s.take();
+            let label = self.s.expect(T::Str, "")?.to_string();
+            let close = self.s.expect(T::NodeDend, "")?;
             return Ok(NodeInfo {
                 id,
                 label: Some(label),
@@ -84,16 +54,14 @@ impl Parser<'_, '_> {
                 directions: None,
             });
         }
-        if self.types[self.i] == BLOCK_ARROW_START {
-            let open = self.texts[self.i];
-            self.i += 1;
-            let label = self.expect(STR)?;
-            let mut directions = vec![self.expect(DIR)?];
-            while self.types[self.i] == DIR {
-                directions.push(self.texts[self.i].to_string());
-                self.i += 1;
+        if self.s.is(T::BlockArrowStart) {
+            let open = self.s.take();
+            let label = self.s.expect(T::Str, "")?.to_string();
+            let mut directions = vec![self.s.expect(T::Dir, "")?.to_string()];
+            while self.s.is(T::Dir) {
+                directions.push(self.s.take().to_string());
             }
-            let close = self.expect(BLOCK_ARROW_END)?;
+            let close = self.s.expect(T::BlockArrowEnd, "")?;
             return Ok(NodeInfo {
                 id,
                 label: Some(label),
@@ -111,9 +79,8 @@ impl Parser<'_, '_> {
 
     fn node_statement(&mut self) -> Result<Statement, Error> {
         let first = self.node()?;
-        let size = if self.types[self.i] == SIZE {
-            self.i += 1;
-            js::parse_int(self.texts[self.i - 1], 10)
+        let size = if self.s.is(T::Size) {
+            js::parse_int(self.s.take(), 10)
         } else {
             1.0
         };
@@ -126,15 +93,15 @@ impl Parser<'_, '_> {
             ..Block::default()
         };
         let mut chain: Option<Vec<usize>> = None;
-        while self.types[self.i] == LINK || self.types[self.i] == START_LINK {
+        while self.s.is_any(&[T::Link, T::StartLink]) {
             let mut label = String::new();
-            self.i += 1;
-            if self.types[self.i - 1] == START_LINK {
-                self.expect(LINK_LABEL)?;
-                label = self.expect(STR)?;
-                self.expect(LINK)?;
-            }
-            let link = self.texts[self.i - 1];
+            let link = if self.s.eat(T::StartLink) {
+                self.s.expect(T::LinkLabel, "")?;
+                label = self.s.expect(T::Str, "")?.to_string();
+                self.s.expect(T::Link, "")?
+            } else {
+                self.s.take()
+            };
             let to = self.node()?;
             // Mermaid keeps only the last link of `A --> B --> C` and loses
             // its start. Here every link counts.
@@ -182,29 +149,27 @@ impl Parser<'_, '_> {
     }
 
     fn run(&mut self) -> Result<(), Error> {
-        self.expect(KEY)?;
+        self.s.expect(T::Key, "")?;
         // Composites nest without recursion: each open one keeps the
         // statement list of its parent.
         let mut open: Vec<Frame> = Vec::new();
         let mut list: Vec<Statement> = Vec::new();
         loop {
-            match self.types[self.i] {
-                NODE_ID => {
+            match self.s.kind() {
+                T::NodeId => {
                     let statement = self.node_statement()?;
                     list.push(statement);
                 }
-                COLUMNS => {
-                    let columns = js::parse_int(self.texts[self.i], 10);
-                    self.i += 1;
+                T::Columns => {
+                    let columns = js::parse_int(self.s.take(), 10);
                     list.push(Statement::One(self.db.alloc(Block {
                         kind: Some("column-setting".into()),
                         columns: Some(columns),
                         ..Block::default()
                     })));
                 }
-                SPACE_BLOCK => {
-                    let width = js::parse_int(self.texts[self.i], 10);
-                    self.i += 1;
+                T::SpaceBlock => {
+                    let width = js::parse_int(self.s.take(), 10);
                     let id = self.db.generate_id();
                     list.push(Statement::One(self.db.alloc(Block {
                         id: Some(id),
@@ -215,17 +180,17 @@ impl Parser<'_, '_> {
                         ..Block::default()
                     })));
                 }
-                KEY => {
-                    self.i += 1;
+                T::Key => {
+                    self.s.bump();
                     open.push(Frame {
                         list: std::mem::take(&mut list),
                         header: None,
                     });
                 }
-                ID_BLOCK => {
-                    self.i += 1;
-                    if self.types[self.i] != NODE_ID {
-                        return Err(self.fail("'NODE_ID'"));
+                T::IdBlock => {
+                    self.s.bump();
+                    if !self.s.is(T::NodeId) {
+                        return Err(self.s.fail("'NODE_ID'"));
                     }
                     let header = self.node_statement()?;
                     open.push(Frame {
@@ -233,11 +198,11 @@ impl Parser<'_, '_> {
                         header: Some(header),
                     });
                 }
-                END_KEYWORD => {
+                T::EndKeyword => {
                     let Some(frame) = open.pop().filter(|_| !list.is_empty()) else {
-                        return Err(self.fail(STATEMENT_START));
+                        return Err(self.s.fail(STATEMENT_START));
                     };
-                    self.i += 1;
+                    self.s.bump();
                     let id = self.db.generate_id();
                     let children = close_document(std::mem::take(&mut list));
                     list = frame.list;
@@ -264,10 +229,10 @@ impl Parser<'_, '_> {
                     };
                     list.push(Statement::One(composite));
                 }
-                CLASSDEF => {
-                    self.i += 1;
-                    let id = js::trim(&self.expect(CLASSDEF_ID)?).to_string();
-                    let css = js::trim(&self.expect(CLASSDEF_STYLEOPTS)?).to_string();
+                T::Classdef => {
+                    self.s.bump();
+                    let id = js::trim(self.s.expect(T::ClassdefId, "")?).to_string();
+                    let css = js::trim(self.s.expect(T::ClassdefStyleopts, "")?).to_string();
                     list.push(Statement::One(self.db.alloc(Block {
                         kind: Some("classDef".into()),
                         id: Some(id),
@@ -275,10 +240,10 @@ impl Parser<'_, '_> {
                         ..Block::default()
                     })));
                 }
-                CLASS => {
-                    self.i += 1;
-                    let id = js::trim(&self.expect(CLASSENTITY_IDS)?).to_string();
-                    let class = js::trim(&self.expect(STYLECLASS)?).to_string();
+                T::Class => {
+                    self.s.bump();
+                    let id = js::trim(self.s.expect(T::ClassentityIds, "")?).to_string();
+                    let class = js::trim(self.s.expect(T::Styleclass, "")?).to_string();
                     list.push(Statement::One(self.db.alloc(Block {
                         kind: Some("applyClass".into()),
                         id: Some(id),
@@ -286,10 +251,10 @@ impl Parser<'_, '_> {
                         ..Block::default()
                     })));
                 }
-                STYLE => {
-                    self.i += 1;
-                    let id = js::trim(&self.expect(STYLE_ENTITY_IDS)?).to_string();
-                    let styles = js::trim(&self.expect(STYLE_DEFINITION_DATA)?).to_string();
+                T::Style => {
+                    self.s.bump();
+                    let id = js::trim(self.s.expect(T::StyleEntityIds, "")?).to_string();
+                    let styles = js::trim(self.s.expect(T::StyleDefinitionData, "")?).to_string();
                     list.push(Statement::One(self.db.alloc(Block {
                         kind: Some("applyStyles".into()),
                         id: Some(id),
@@ -297,17 +262,17 @@ impl Parser<'_, '_> {
                         ..Block::default()
                     })));
                 }
-                EOF => {
+                T::Eof => {
                     if !open.is_empty() {
-                        return Err(self.fail(&format!("{STATEMENT_START}, 'end'")));
+                        return Err(self.s.fail(&format!("{STATEMENT_START}, 'end'")));
                     }
                     if list.is_empty() {
-                        return Err(self.fail(STATEMENT_START));
+                        return Err(self.s.fail(STATEMENT_START));
                     }
                     return self.db.set_hierarchy(close_document(list));
                 }
                 _ => {
-                    return Err(self.fail(&if list.is_empty() {
+                    return Err(self.s.fail(&if list.is_empty() {
                         STATEMENT_START.to_string()
                     } else if !open.is_empty() {
                         format!("{STATEMENT_START}, 'end'")
@@ -323,11 +288,7 @@ impl Parser<'_, '_> {
 pub fn parse_block(src: &str, db: &mut BlockModel) -> Result<(), Error> {
     let tokens = tokenize(src);
     Parser {
-        src,
-        types: tokens.types,
-        texts: tokens.texts,
-        starts: tokens.starts,
-        i: 0,
+        s: Stream::new(Kind::Block, src, &tokens),
         db,
     }
     .run()

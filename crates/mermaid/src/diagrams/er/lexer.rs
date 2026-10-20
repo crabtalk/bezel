@@ -1,8 +1,9 @@
 //! Pele's `diagrams/er/lexer.ts`.
 
-use super::tokens::*;
+use super::tokens::T;
 use crate::{
     js::Lazy,
+    token::Token,
     util::chars::{NONE, code_at, is_digit, is_space, is_word, width_at},
 };
 
@@ -22,11 +23,11 @@ const CLASS_TABLE: [u8; 128] = class_table();
 static RE_ACC_TITLE: Lazy = Lazy::new(r"accTitle\s*:\s*", "iy");
 static RE_ACC_DESCR: Lazy = Lazy::new(r"accDescr\s*:\s*", "iy");
 static RE_ACC_DESCR_ML: Lazy = Lazy::new(r"accDescr\s*\{\s*", "iy");
-static RE_DIRECTION: [Lazy; 4] = [
-    Lazy::new(r".*direction\s+TB[^\n]*", "iy"),
-    Lazy::new(r".*direction\s+BT[^\n]*", "iy"),
-    Lazy::new(r".*direction\s+RL[^\n]*", "iy"),
-    Lazy::new(r".*direction\s+LR[^\n]*", "iy"),
+static RE_DIRECTION: [(T, Lazy); 4] = [
+    (T::DirectionTb, Lazy::new(r".*direction\s+TB[^\n]*", "iy")),
+    (T::DirectionBt, Lazy::new(r".*direction\s+BT[^\n]*", "iy")),
+    (T::DirectionRl, Lazy::new(r".*direction\s+RL[^\n]*", "iy")),
+    (T::DirectionLr, Lazy::new(r".*direction\s+LR[^\n]*", "iy")),
 ];
 static RE_DIR_WORD: Lazy = Lazy::new(r"direction", "gi");
 
@@ -57,12 +58,6 @@ const fn class_table() -> [u8; 128] {
     table
 }
 
-pub struct Tokens<'s> {
-    pub types: Vec<u8>,
-    pub texts: Vec<&'s str>,
-    pub starts: Vec<usize>,
-}
-
 fn class_has(c: u32, kind: u8) -> bool {
     c < 128 && CLASS_TABLE[c as usize] & kind != 0
 }
@@ -85,7 +80,7 @@ fn is_attr(c: u32, kind: u8) -> bool {
 struct Lexer<'s> {
     src: &'s str,
     n: usize,
-    tokens: Tokens<'s>,
+    tokens: Vec<Token<'s, T>>,
     state: u8,
     p: usize,
     dir_next: Option<usize>,
@@ -104,15 +99,13 @@ impl<'s> Lexer<'s> {
         code_at(self.src, q)
     }
 
-    fn emit(&mut self, kind: u8, s: usize, e: usize) {
-        self.tokens.types.push(kind);
-        self.tokens.texts.push(&self.src[s..e]);
-        self.tokens.starts.push(s);
+    fn emit(&mut self, kind: T, s: usize, e: usize) {
+        self.tokens.push(Token::new(kind, &self.src[s..e], s));
         self.p = e;
     }
 
     /// A one-character token at `p`.
-    fn emit_char(&mut self, kind: u8) {
+    fn emit_char(&mut self, kind: T) {
         let p = self.p;
         self.emit(kind, p, p + width_at(self.src, p));
     }
@@ -188,9 +181,9 @@ impl<'s> Lexer<'s> {
         if self.dir_next.is_some_and(|next| next >= line_end) {
             return false;
         }
-        for (i, re) in RE_DIRECTION.iter().enumerate() {
+        for (kind, re) in &RE_DIRECTION {
             if let Some(e) = self.at(re, p) {
-                self.emit(DIRECTION_TB + i as u8, p, e);
+                self.emit(*kind, p, e);
                 return true;
             }
         }
@@ -201,27 +194,27 @@ impl<'s> Lexer<'s> {
     fn quoted(&mut self) {
         let p = self.p;
         let Some(e) = self.src[p + 1..].find('"').map(|at| p + 1 + at) else {
-            self.emit_char(CHAR);
+            self.emit_char(T::Char);
             return;
         };
         let name = e > p + 1
             && !self.src.as_bytes()[p + 1..e]
                 .iter()
                 .any(|&c| matches!(c, 37 | 92 | 13 | 10 | 11 | 8));
-        self.emit(if name { ENTITY_NAME } else { WORD }, p, e + 1);
+        self.emit(if name { T::EntityName } else { T::Word }, p, e + 1);
     }
 
     fn number(&mut self, c: u32) {
         let p = self.p;
         let d = self.c(p + 1);
         if d == 43 && (c == 49 || c == 48) {
-            self.emit(if c == 49 { ONE_OR_MORE } else { ZERO_OR_MORE }, p, p + 2);
+            self.emit(if c == 49 { T::OneOrMore } else { T::ZeroOrMore }, p, p + 2);
             return;
         }
         let q = self.digits(p + 1);
         if self.c(q) == 46 && is_digit(self.c(q + 1)) {
             let e = self.digits(q + 2);
-            self.emit(DECIMAL_NUM, p, e);
+            self.emit(T::DecimalNum, p, e);
             return;
         }
         if c == 49 {
@@ -229,22 +222,22 @@ impl<'s> Lexer<'s> {
                 let r = self.skip_spaces(p + 1 + width_at(self.src, p + 1));
                 let f = self.c(r);
                 if is_word(f) || f == 34 || f == 39 {
-                    self.emit(ONLY_ONE, p, p + 1);
+                    self.emit(T::OnlyOne, p, p + 1);
                     return;
                 }
             } else if d == 45 || d == 46 {
                 let f = self.c(p + 2);
                 if f == 45 || f == 46 {
-                    self.emit(ONLY_ONE, p, p + 1);
+                    self.emit(T::OnlyOne, p, p + 1);
                     return;
                 }
             }
             if !is_word(d) {
-                self.emit(ENTITY_ONE, p, p + 1);
+                self.emit(T::EntityOne, p, p + 1);
                 return;
             }
         }
-        self.emit(NUM, p, q);
+        self.emit(T::Num, p, q);
     }
 
     fn keyword(&mut self, lc: u32) -> bool {
@@ -253,10 +246,10 @@ impl<'s> Lexer<'s> {
         match lc {
             101 => {
                 if self.kwb("erdiagram") {
-                    self.emit(ER_DIAGRAM, p, p + 9);
+                    self.emit(T::ErDiagram, p, p + 9);
                 } else if self.kwb("end") {
                     let e = self.skip_spaces(p + 3);
-                    self.emit(END_KW, p, e);
+                    self.emit(T::EndKw, p, e);
                 } else {
                     return false;
                 }
@@ -265,9 +258,9 @@ impl<'s> Lexer<'s> {
             115 => {
                 if self.kwb("style") {
                     self.state = STYLE_STATE;
-                    self.emit(STYLE, p, p + 5);
+                    self.emit(T::Style, p, p + 5);
                 } else if self.kwb("subgraph") {
-                    self.emit(SUBGRAPH, p, p + 8);
+                    self.emit(T::Subgraph, p, p + 8);
                 } else {
                     return false;
                 }
@@ -276,9 +269,9 @@ impl<'s> Lexer<'s> {
             99 => {
                 if self.kwb("classdef") {
                     self.state = STYLE_STATE;
-                    self.emit(CLASSDEF, p, p + 8);
+                    self.emit(T::Classdef, p, p + 8);
                 } else if self.kwb("class") {
-                    self.emit(CLASS, p, p + 5);
+                    self.emit(T::Class, p, p + 5);
                 } else {
                     return false;
                 }
@@ -286,19 +279,19 @@ impl<'s> Lexer<'s> {
             }
             111 => {
                 if self.kwb("one or zero") {
-                    self.emit(ZERO_OR_ONE, p, p + 11);
+                    self.emit(T::ZeroOrOne, p, p + 11);
                 } else if self.kwb("one or more") || self.kwb("one or many") {
-                    self.emit(ONE_OR_MORE, p, p + 11);
+                    self.emit(T::OneOrMore, p, p + 11);
                 } else if self.kwb("one") {
-                    self.emit(ONLY_ONE, p, p + 3);
+                    self.emit(T::OnlyOne, p, p + 3);
                 } else if self.kwb("only one") {
-                    self.emit(ONLY_ONE, p, p + 8);
+                    self.emit(T::OnlyOne, p, p + 8);
                 } else if d == 124 {
-                    self.emit(ZERO_OR_ONE, p, p + 2);
+                    self.emit(T::ZeroOrOne, p, p + 2);
                 } else if d == 123 {
-                    self.emit(ZERO_OR_MORE, p, p + 2);
+                    self.emit(T::ZeroOrMore, p, p + 2);
                 } else if self.kwb("optionally to") {
-                    self.emit(NON_IDENTIFYING, p, p + 13);
+                    self.emit(T::NonIdentifying, p, p + 13);
                 } else {
                     return false;
                 }
@@ -306,9 +299,9 @@ impl<'s> Lexer<'s> {
             }
             122 => {
                 if self.kwb("zero or one") {
-                    self.emit(ZERO_OR_ONE, p, p + 11);
+                    self.emit(T::ZeroOrOne, p, p + 11);
                 } else if self.kwb("zero or more") || self.kwb("zero or many") {
-                    self.emit(ZERO_OR_MORE, p, p + 12);
+                    self.emit(T::ZeroOrMore, p, p + 12);
                 } else {
                     return false;
                 }
@@ -316,11 +309,11 @@ impl<'s> Lexer<'s> {
             }
             109 => {
                 if self.kw("many(0)") {
-                    self.emit(ZERO_OR_MORE, p, p + 7);
+                    self.emit(T::ZeroOrMore, p, p + 7);
                 } else if self.kw("many(1)") {
-                    self.emit(ONE_OR_MORE, p, p + 7);
+                    self.emit(T::OneOrMore, p, p + 7);
                 } else if self.kwb("many") {
-                    self.emit(ZERO_OR_MORE, p, p + 4);
+                    self.emit(T::ZeroOrMore, p, p + 4);
                 } else {
                     return false;
                 }
@@ -330,23 +323,23 @@ impl<'s> Lexer<'s> {
                 if !self.kwb("to") {
                     return false;
                 }
-                self.emit(IDENTIFYING, p, p + 2);
+                self.emit(T::Identifying, p, p + 2);
                 true
             }
             117 => {
                 if d != 46 && d != 45 && d != 124 {
                     return false;
                 }
-                self.emit(MD_PARENT, p, p + 1);
+                self.emit(T::MdParent, p, p + 1);
                 true
             }
             124 => {
                 if self.lower(p + 1) == 111 && !is_word(self.c(p + 2)) {
-                    self.emit(ZERO_OR_ONE, p, p + 2);
+                    self.emit(T::ZeroOrOne, p, p + 2);
                 } else if d == 124 {
-                    self.emit(ONLY_ONE, p, p + 2);
+                    self.emit(T::OnlyOne, p, p + 2);
                 } else if d == 123 {
-                    self.emit(ONE_OR_MORE, p, p + 2);
+                    self.emit(T::OneOrMore, p, p + 2);
                 } else {
                     return false;
                 }
@@ -354,9 +347,9 @@ impl<'s> Lexer<'s> {
             }
             125 => {
                 if self.lower(p + 1) == 111 && !is_word(self.c(p + 2)) {
-                    self.emit(ZERO_OR_MORE, p, p + 2);
+                    self.emit(T::ZeroOrMore, p, p + 2);
                 } else if d == 124 {
-                    self.emit(ONE_OR_MORE, p, p + 2);
+                    self.emit(T::OneOrMore, p, p + 2);
                 } else {
                     return false;
                 }
@@ -366,14 +359,14 @@ impl<'s> Lexer<'s> {
                 if d != 46 && d != 45 {
                     return false;
                 }
-                self.emit(NON_IDENTIFYING, p, p + 2);
+                self.emit(T::NonIdentifying, p, p + 2);
                 true
             }
             45 => {
                 if d == 45 {
-                    self.emit(IDENTIFYING, p, p + 2);
+                    self.emit(T::Identifying, p, p + 2);
                 } else if d == 46 {
-                    self.emit(NON_IDENTIFYING, p, p + 2);
+                    self.emit(T::NonIdentifying, p, p + 2);
                 } else {
                     return false;
                 }
@@ -388,12 +381,12 @@ impl<'s> Lexer<'s> {
         if (c == 97 || c == 65) && self.kw("acc") {
             if let Some(e) = self.at(&RE_ACC_TITLE, p) {
                 self.state = ACC_TITLE_STATE;
-                self.emit(ACC_TITLE, p, e);
+                self.emit(T::AccTitle, p, e);
                 return;
             }
             if let Some(e) = self.at(&RE_ACC_DESCR, p) {
                 self.state = ACC_DESCR_STATE;
-                self.emit(ACC_DESCR, p, e);
+                self.emit(T::AccDescr, p, e);
                 return;
             }
             if let Some(e) = self.at(&RE_ACC_DESCR_ML, p) {
@@ -420,7 +413,7 @@ impl<'s> Lexer<'s> {
                 while self.c(e) == 10 {
                     e += 1;
                 }
-                self.emit(NEWLINE, p, e);
+                self.emit(T::Newline, p, e);
                 return;
             }
             34 => {
@@ -429,31 +422,31 @@ impl<'s> Lexer<'s> {
             }
             123 => {
                 self.state = BLOCK;
-                self.emit(BLOCK_START, p, p + 1);
+                self.emit(T::BlockStart, p, p + 1);
                 return;
             }
             35 => {
-                self.emit(BRKT, p, p + 1);
+                self.emit(T::Brkt, p, p + 1);
                 return;
             }
             44 => {
-                self.emit(COMMA, p, p + 1);
+                self.emit(T::Comma, p, p + 1);
                 return;
             }
             58 => {
                 if self.c(p + 1) == 58 && self.c(p + 2) == 58 {
-                    self.emit(STYLE_SEPARATOR, p, p + 3);
+                    self.emit(T::StyleSeparator, p, p + 3);
                 } else {
-                    self.emit(COLON, p, p + 1);
+                    self.emit(T::Colon, p, p + 1);
                 }
                 return;
             }
             91 => {
-                self.emit(SQS, p, p + 1);
+                self.emit(T::Sqs, p, p + 1);
                 return;
             }
             93 => {
-                self.emit(SQE, p, p + 1);
+                self.emit(T::Sqe, p, p + 1);
                 return;
             }
             _ => {}
@@ -470,10 +463,10 @@ impl<'s> Lexer<'s> {
             while is_run(self.c(e), TEXT) {
                 e += width_at(self.src, e);
             }
-            self.emit(UNICODE_TEXT, p, e);
+            self.emit(T::UnicodeText, p, e);
             return;
         }
-        self.emit_char(CHAR);
+        self.emit_char(T::Char);
     }
 
     /// Mermaid's generic type rule: a run of non-space characters holding a
@@ -514,7 +507,7 @@ impl<'s> Lexer<'s> {
         while e < n && !is_space(self.c(e)) {
             e += width_at(self.src, e);
         }
-        self.emit(ATTRIBUTE_WORD, p, e);
+        self.emit(T::AttributeWord, p, e);
         true
     }
 
@@ -529,7 +522,7 @@ impl<'s> Lexer<'s> {
             && (self.c(p + 1) | 32) == 107
             && !is_word(self.c(p + 2))
         {
-            self.emit(ATTRIBUTE_KEY, p, p + 2);
+            self.emit(T::AttributeKey, p, p + 2);
             return;
         }
         if self.generic() {
@@ -540,7 +533,7 @@ impl<'s> Lexer<'s> {
             while e < self.n && is_attr(self.c(e), ATTR_REST) {
                 e += width_at(self.src, e);
             }
-            self.emit(ATTRIBUTE_WORD, p, e);
+            self.emit(T::AttributeWord, p, e);
             return;
         }
         if c == 96 {
@@ -550,15 +543,15 @@ impl<'s> Lexer<'s> {
         }
         if c == 34 {
             if let Some(e) = self.src[p + 1..].find('"') {
-                self.emit(COMMENT, p, p + 1 + e + 1);
+                self.emit(T::Comment, p, p + 1 + e + 1);
                 return;
             }
         } else if c == 125 {
             self.state = INITIAL;
-            self.emit(BLOCK_STOP, p, p + 1);
+            self.emit(T::BlockStop, p, p + 1);
             return;
         }
-        self.emit_char(CHAR);
+        self.emit_char(T::Char);
     }
 
     /// Answers whether lexing goes on: false after an unrecognised character.
@@ -570,43 +563,37 @@ impl<'s> Lexer<'s> {
                 e += 1;
             }
             self.state = INITIAL;
-            self.emit(NEWLINE, p, e);
+            self.emit(T::Newline, p, e);
         } else if is_space(c) {
             self.p = self.skip_spaces(p);
         } else if c == 58 {
-            self.emit(COLON, p, p + 1);
+            self.emit(T::Colon, p, p + 1);
         } else if c == 44 {
-            self.emit(COMMA, p, p + 1);
+            self.emit(T::Comma, p, p + 1);
         } else if c == 35 {
-            self.emit(BRKT, p, p + 1);
+            self.emit(T::Brkt, p, p + 1);
         } else if c == 59 {
-            self.emit(SEMI, p, p + 1);
+            self.emit(T::Semi, p, p + 1);
         } else if is_run(c, STYLE_CLASS) {
             let mut e = p + width_at(self.src, p);
             while is_run(self.c(e), STYLE_CLASS) {
                 e += width_at(self.src, e);
             }
-            self.emit(STYLE_TEXT, p, e);
+            self.emit(T::StyleText, p, e);
         } else {
-            self.tokens.types.push(ERROR);
-            self.tokens.texts.push("");
-            self.tokens.starts.push(p);
+            self.tokens.push(Token::new(T::Error, "", p));
             return false;
         }
         true
     }
 }
 
-pub fn tokenize(src: &str) -> Tokens<'_> {
+pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
     let n = src.len();
     let mut lx = Lexer {
         src,
         n,
-        tokens: Tokens {
-            types: Vec::new(),
-            texts: Vec::new(),
-            starts: Vec::new(),
-        },
+        tokens: Vec::new(),
         state: INITIAL,
         p: 0,
         dir_next: None,
@@ -632,15 +619,15 @@ pub fn tokenize(src: &str) -> Tokens<'_> {
                     lx.p += 1;
                 } else {
                     let e = src[p..].find('`').map_or(n, |at| p + at);
-                    lx.emit(ATTRIBUTE_WORD, p, e);
+                    lx.emit(T::AttributeWord, p, e);
                 }
             }
             ACC_TITLE_STATE | ACC_DESCR_STATE => {
                 let e = src[p..].find('\n').map_or(n, |at| p + at);
                 let kind = if lx.state == ACC_TITLE_STATE {
-                    ACC_TITLE_VALUE
+                    T::AccTitleValue
                 } else {
-                    ACC_DESCR_VALUE
+                    T::AccDescrValue
                 };
                 lx.emit(kind, p, e);
                 lx.state = INITIAL;
@@ -651,7 +638,7 @@ pub fn tokenize(src: &str) -> Tokens<'_> {
                     lx.p += 1;
                 } else {
                     let e = src[p..].find('}').map_or(n, |at| p + at);
-                    lx.emit(ACC_DESCR_MULTILINE_VALUE, p, e);
+                    lx.emit(T::AccDescrMultilineValue, p, e);
                 }
             }
             _ => {
@@ -666,20 +653,16 @@ pub fn tokenize(src: &str) -> Tokens<'_> {
     // description states yield an empty value, and the block and style
     // states yield nothing.
     let last = match lx.state {
-        INITIAL => Some(EOF),
-        ACC_TITLE_STATE => Some(ACC_TITLE_VALUE),
-        ACC_DESCR_STATE => Some(ACC_DESCR_VALUE),
-        ACC_DESCR_MULTILINE => Some(ACC_DESCR_MULTILINE_VALUE),
+        INITIAL => Some(T::Eof),
+        ACC_TITLE_STATE => Some(T::AccTitleValue),
+        ACC_DESCR_STATE => Some(T::AccDescrValue),
+        ACC_DESCR_MULTILINE => Some(T::AccDescrMultilineValue),
         _ => None,
     };
     let mut tokens = lx.tokens;
     if let Some(last) = last {
-        tokens.types.push(last);
-        tokens.texts.push("");
-        tokens.starts.push(n);
+        tokens.push(Token::new(last, "", n));
     }
-    tokens.types.push(END);
-    tokens.texts.push("");
-    tokens.starts.push(n);
+    tokens.push(Token::new(T::End, "", n));
     tokens
 }

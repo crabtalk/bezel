@@ -6,8 +6,10 @@ use serde::{Serialize, Serializer, ser::SerializeMap};
 
 use super::{
     shapes::is_valid_shape,
+    syntax::FlowGraph,
     types::{
         DocItem, FlowClassDef, FlowEdge, FlowNode, FlowSubgraph, FlowText, LabelType, LinkInfo,
+        Vertex,
     },
 };
 use crate::{
@@ -176,169 +178,6 @@ impl FlowDb {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_vertex(
-        &mut self,
-        id: &str,
-        text_obj: Option<&FlowText>,
-        kind: Option<&str>,
-        style: Option<&[String]>,
-        classes: Option<&[String]>,
-        dir: Option<&str>,
-        props: Option<IndexMap<String, String>>,
-        metadata: Option<&str>,
-    ) -> Result<(), Error> {
-        if id.is_empty() || js::trim(id).is_empty() {
-            return Ok(());
-        }
-
-        let mut doc: Option<Map> = None;
-        if let Some(metadata) = metadata {
-            let yaml = if metadata.contains('\n') {
-                format!("{metadata}\n")
-            } else {
-                format!("{{\n{metadata}\n}}")
-            };
-            let parsed = parse_yaml(&yaml).map_err(|error| {
-                Error::syntax(format!(
-                    "Metadata of \"{id}\" is not valid YAML. {}",
-                    error.0
-                ))
-                .of(Kind::Flowchart)
-            })?;
-            if let Value::Object(map) = parsed {
-                doc = Some(map);
-            }
-        }
-
-        if let Some(&at) = self.subgraph_lookup.get(id)
-            && let Some(doc) = &doc
-        {
-            let subgraph = &mut self.subgraphs[at];
-            let mut merged = subgraph.metadata.take().unwrap_or_default();
-            for (key, value) in doc.iter() {
-                merged.insert(key.clone(), value.clone());
-            }
-            subgraph.metadata = Some(merged);
-            return Ok(());
-        }
-
-        if let Some(&at) = self.edge_by_id.get(id) {
-            let edge = &mut self.edges[at];
-            if let Some(doc) = &doc {
-                if let Some(value) = doc.get("animate") {
-                    edge.animate = Some(value.clone());
-                }
-                if let Some(value) = doc.get("animation") {
-                    edge.animation = Some(value.clone());
-                }
-                if let Some(value) = doc.get("curve") {
-                    edge.interpolate = Some(value.clone());
-                }
-            }
-            return Ok(());
-        }
-
-        let vertex = self
-            .nodes
-            .entry(id.to_string())
-            .or_insert_with(|| FlowNode {
-                id: id.to_string(),
-                text: None,
-                label_type: LabelType::Text,
-                kind: None,
-                styles: Vec::new(),
-                classes: Vec::new(),
-                dir: None,
-                props: None,
-                link: None,
-                link_target: None,
-                icon: None,
-                form: None,
-                pos: None,
-                img: None,
-                constraint: None,
-                asset_width: None,
-                asset_height: None,
-            });
-
-        if let Some(text_obj) = text_obj {
-            vertex.label_type = text_obj.kind;
-            vertex.text = Some(unquote(js::trim(&text_obj.text)).to_string());
-        } else if vertex.text.is_none() {
-            vertex.text = Some(id.to_string());
-        }
-        if let Some(kind) = kind {
-            vertex.kind = Some(kind.to_string());
-        }
-        if let Some(style) = style {
-            vertex.styles.extend(style.iter().cloned());
-        }
-        if let Some(classes) = classes {
-            vertex.classes.extend(classes.iter().cloned());
-        }
-        if let Some(dir) = dir {
-            vertex.dir = Some(dir.to_string());
-        }
-        let props = props.unwrap_or_default();
-        match &mut vertex.props {
-            None => vertex.props = Some(props),
-            Some(existing) => existing.extend(props),
-        }
-
-        let Some(doc) = doc else {
-            return Ok(());
-        };
-
-        if let Some(shape) = doc.get("shape").filter(|v| v.truthy()) {
-            let shape = shape.to_js_string();
-            if shape != shape.to_lowercase() || shape.contains('_') {
-                return Err(Error::semantic(format!(
-                    "No such shape: {shape}. Shape names should be lowercase."
-                ))
-                .of(Kind::Flowchart));
-            }
-            if !is_valid_shape(&shape) {
-                return Err(Error::semantic(format!("No such shape: {shape}.")).of(Kind::Flowchart));
-            }
-            vertex.kind = Some(shape);
-        }
-        let label = doc.get("label").and_then(Value::as_str);
-        let blank_label = label.is_none_or(|label| js::trim(label).is_empty());
-        if let Some(value) = doc.get("label").filter(|v| v.truthy()) {
-            vertex.text = Some(value.to_js_string());
-            vertex.label_type = label_type(doc.get("labelType").and_then(Value::as_str));
-        }
-        if let Some(icon) = doc.get("icon").filter(|v| v.truthy()) {
-            vertex.icon = Some(icon.to_js_string());
-            if blank_label && vertex.text.as_deref() == Some(id) {
-                vertex.text = Some(String::new());
-            }
-        }
-        if let Some(form) = doc.get("form").filter(|v| v.truthy()) {
-            vertex.form = Some(form.to_js_string());
-        }
-        if let Some(pos) = doc.get("pos").filter(|v| v.truthy()) {
-            vertex.pos = Some(pos.to_js_string());
-        }
-        if let Some(img) = doc.get("img").filter(|v| v.truthy()) {
-            vertex.img = Some(img.to_js_string());
-            if blank_label && vertex.text.as_deref() == Some(id) {
-                vertex.text = Some(String::new());
-            }
-        }
-        if let Some(constraint) = doc.get("constraint").filter(|v| v.truthy()) {
-            vertex.constraint = Some(constraint.to_js_string());
-        }
-        if let Some(w) = doc.get("w").filter(|v| v.truthy()) {
-            vertex.asset_width = Some(w.to_number());
-        }
-        if let Some(h) = doc.get("h").filter(|v| v.truthy()) {
-            vertex.asset_height = Some(h.to_number());
-        }
-        Ok(())
-    }
-
     pub fn add_single_link(
         &mut self,
         start: &str,
@@ -424,50 +263,6 @@ impl FlowDb {
         Ok(())
     }
 
-    pub fn update_link_interpolate(
-        &mut self,
-        positions: &[String],
-        interpolate: &str,
-    ) -> Result<(), Error> {
-        for pos in positions {
-            if pos == "default" {
-                self.default_interpolate = Some(interpolate.to_string());
-            } else {
-                let at = self.edge_at(pos)?;
-                self.edges[at].interpolate = Some(Value::String(interpolate.to_string()));
-            }
-        }
-        Ok(())
-    }
-
-    /// Every position gets the one list of styles, which the first edge
-    /// position gives a `fill:none` when it sets no fill.
-    pub fn update_link(
-        &mut self,
-        positions: &[String],
-        mut style: Vec<String>,
-    ) -> Result<(), Error> {
-        let mut edges = Vec::new();
-        let mut default = false;
-        for pos in positions {
-            if pos == "default" {
-                default = true;
-                continue;
-            }
-            edges.push(self.edge_at(pos)?);
-            if !style.is_empty() && !style.iter().any(|s| s.starts_with("fill")) {
-                style.push("fill:none".into());
-            }
-        }
-        if default {
-            self.default_edge_style = Some(style.clone());
-        }
-        for at in edges {
-            self.edges[at].style = Some(style.clone());
-        }
-        Ok(())
-    }
-
     fn edge_at(&self, pos: &str) -> Result<usize, Error> {
         let index = js::number(pos);
         if index >= 0.0 && index.fract() == 0.0 && (index as usize) < self.edges.len() {
@@ -478,99 +273,6 @@ impl FlowDb {
             self.edges.len() as i64 - 1
         ))
         .of(Kind::Flowchart))
-    }
-
-    pub fn add_class(&mut self, ids: &str, styles: &[String]) {
-        let joined = styles
-            .join(",")
-            .replace("\\,", "§§§")
-            .replace(',', ";")
-            .replace("§§§", ",");
-        let style: Vec<&str> = joined.split(';').collect();
-        for id in ids.split(',') {
-            let class = self
-                .classes
-                .entry(id.to_string())
-                .or_insert_with(|| FlowClassDef {
-                    id: id.to_string(),
-                    styles: Vec::new(),
-                    text_styles: Vec::new(),
-                });
-            for s in &style {
-                if s.contains("color") {
-                    class.text_styles.push(s.replacen("fill", "bgFill", 1));
-                }
-                class.styles.push(s.to_string());
-            }
-        }
-    }
-
-    pub fn set_direction(&mut self, dir: &str) {
-        let mut d = js::trim(dir);
-        if d.contains('<') {
-            d = "RL";
-        }
-        if d.contains('^') {
-            d = "BT";
-        }
-        if d.contains('>') {
-            d = "LR";
-        }
-        if d.contains('v') {
-            d = "TB";
-        }
-        if d == "TD" {
-            d = "TB";
-        }
-        self.direction = Some(d.to_string());
-    }
-
-    pub fn set_class(&mut self, ids: &str, class_name: &str) {
-        for id in ids.split(',') {
-            if let Some(node) = self.nodes.get_mut(id) {
-                node.classes.push(class_name.to_string());
-            }
-            if let Some(&at) = self.edge_by_id.get(id) {
-                self.edges[at].classes.push(class_name.to_string());
-            }
-            if let Some(&at) = self.subgraph_lookup.get(id) {
-                self.subgraphs[at].classes.push(class_name.to_string());
-            }
-        }
-    }
-
-    pub fn set_tooltip(&mut self, ids: &str, tooltip: Option<&str>) {
-        let Some(tooltip) = tooltip else {
-            return;
-        };
-        for id in ids.split(',') {
-            self.tooltips.insert(id.to_string(), tooltip.to_string());
-        }
-    }
-
-    pub fn set_link(&mut self, ids: &str, link: &str, target: Option<&str>) {
-        let url = js::trim(link);
-        for id in ids.split(',') {
-            if let Some(vertex) = self.nodes.get_mut(id) {
-                vertex.link = (!url.is_empty()).then(|| safe_url(url));
-                vertex.link_target = target.map(str::to_string);
-            }
-        }
-        self.set_class(ids, "clickable");
-    }
-
-    /// Callbacks are never executed; the node is only marked clickable, as
-    /// in Mermaid's strict mode.
-    pub fn set_click_event(&mut self, ids: &str) {
-        self.set_class(ids, "clickable");
-    }
-
-    pub fn set_acc_title(&mut self, text: &str) {
-        self.acc_title = Some(RE_LEAD.replace(text, |_| String::new()));
-    }
-
-    pub fn set_acc_description(&mut self, text: &str) {
-        self.acc_descr = Some(RE_INDENT.replace(text, |_| "\n".into()));
     }
 
     /// `same` when the title is the id's own text, as it is for a subgraph
@@ -644,7 +346,156 @@ impl FlowDb {
         id
     }
 
-    pub fn destruct_link(&self, end: &str, start: Option<&str>) -> LinkInfo {
+    pub fn subgraph(&self, id: &str) -> Option<&FlowSubgraph> {
+        self.subgraph_lookup.get(id).map(|&at| &self.subgraphs[at])
+    }
+}
+
+impl FlowGraph for FlowDb {
+    fn add_vertex(&mut self, id: &str, vertex: Vertex<'_>) -> Result<(), Error> {
+        if id.is_empty() || js::trim(id).is_empty() {
+            return Ok(());
+        }
+
+        let mut doc: Option<Map> = None;
+        if let Some(metadata) = vertex.metadata {
+            let yaml = if metadata.contains('\n') {
+                format!("{metadata}\n")
+            } else {
+                format!("{{\n{metadata}\n}}")
+            };
+            let parsed = parse_yaml(&yaml).map_err(|error| {
+                Error::syntax(format!(
+                    "Metadata of \"{id}\" is not valid YAML. {}",
+                    error.0
+                ))
+                .of(Kind::Flowchart)
+            })?;
+            if let Value::Object(map) = parsed {
+                doc = Some(map);
+            }
+        }
+
+        if let Some(&at) = self.subgraph_lookup.get(id)
+            && let Some(doc) = &doc
+        {
+            let subgraph = &mut self.subgraphs[at];
+            let mut merged = subgraph.metadata.take().unwrap_or_default();
+            for (key, value) in doc.iter() {
+                merged.insert(key.clone(), value.clone());
+            }
+            subgraph.metadata = Some(merged);
+            return Ok(());
+        }
+
+        if let Some(&at) = self.edge_by_id.get(id) {
+            let edge = &mut self.edges[at];
+            if let Some(doc) = &doc {
+                if let Some(value) = doc.get("animate") {
+                    edge.animate = Some(value.clone());
+                }
+                if let Some(value) = doc.get("animation") {
+                    edge.animation = Some(value.clone());
+                }
+                if let Some(value) = doc.get("curve") {
+                    edge.interpolate = Some(value.clone());
+                }
+            }
+            return Ok(());
+        }
+
+        let node = self
+            .nodes
+            .entry(id.to_string())
+            .or_insert_with(|| FlowNode {
+                id: id.to_string(),
+                text: None,
+                label_type: LabelType::Text,
+                kind: None,
+                styles: Vec::new(),
+                classes: Vec::new(),
+                dir: None,
+                props: None,
+                link: None,
+                link_target: None,
+                icon: None,
+                form: None,
+                pos: None,
+                img: None,
+                constraint: None,
+                asset_width: None,
+                asset_height: None,
+            });
+
+        if let Some(label) = vertex.label {
+            node.label_type = label.kind;
+            node.text = Some(unquote(js::trim(&label.text)).to_string());
+        } else if node.text.is_none() {
+            node.text = Some(id.to_string());
+        }
+        if let Some(shape) = vertex.shape {
+            node.kind = Some(shape.to_string());
+        }
+        node.styles.extend_from_slice(vertex.styles);
+        let props = node.props.get_or_insert_default();
+        if let Some((field, value)) = vertex.prop {
+            props.insert(field.to_string(), value.to_string());
+        }
+
+        let Some(doc) = doc else {
+            return Ok(());
+        };
+
+        if let Some(shape) = doc.get("shape").filter(|v| v.truthy()) {
+            let shape = shape.to_js_string();
+            if shape != shape.to_lowercase() || shape.contains('_') {
+                return Err(Error::semantic(format!(
+                    "No such shape: {shape}. Shape names should be lowercase."
+                ))
+                .of(Kind::Flowchart));
+            }
+            if !is_valid_shape(&shape) {
+                return Err(Error::semantic(format!("No such shape: {shape}.")).of(Kind::Flowchart));
+            }
+            node.kind = Some(shape);
+        }
+        let label = doc.get("label").and_then(Value::as_str);
+        let blank_label = label.is_none_or(|label| js::trim(label).is_empty());
+        if let Some(value) = doc.get("label").filter(|v| v.truthy()) {
+            node.text = Some(value.to_js_string());
+            node.label_type = label_type(doc.get("labelType").and_then(Value::as_str));
+        }
+        if let Some(icon) = doc.get("icon").filter(|v| v.truthy()) {
+            node.icon = Some(icon.to_js_string());
+            if blank_label && node.text.as_deref() == Some(id) {
+                node.text = Some(String::new());
+            }
+        }
+        if let Some(form) = doc.get("form").filter(|v| v.truthy()) {
+            node.form = Some(form.to_js_string());
+        }
+        if let Some(pos) = doc.get("pos").filter(|v| v.truthy()) {
+            node.pos = Some(pos.to_js_string());
+        }
+        if let Some(img) = doc.get("img").filter(|v| v.truthy()) {
+            node.img = Some(img.to_js_string());
+            if blank_label && node.text.as_deref() == Some(id) {
+                node.text = Some(String::new());
+            }
+        }
+        if let Some(constraint) = doc.get("constraint").filter(|v| v.truthy()) {
+            node.constraint = Some(constraint.to_js_string());
+        }
+        if let Some(w) = doc.get("w").filter(|v| v.truthy()) {
+            node.asset_width = Some(w.to_number());
+        }
+        if let Some(h) = doc.get("h").filter(|v| v.truthy()) {
+            node.asset_height = Some(h.to_number());
+        }
+        Ok(())
+    }
+
+    fn destruct_link(&self, end: &str, start: Option<&str>) -> LinkInfo {
         let info = destruct_end_link(end);
         let Some(start) = start.filter(|start| !start.is_empty()) else {
             return info;
@@ -673,8 +524,134 @@ impl FlowDb {
         start_info
     }
 
-    pub fn subgraph(&self, id: &str) -> Option<&FlowSubgraph> {
-        self.subgraph_lookup.get(id).map(|&at| &self.subgraphs[at])
+    fn update_link_interpolate(
+        &mut self,
+        positions: &[String],
+        interpolate: &str,
+    ) -> Result<(), Error> {
+        for pos in positions {
+            if pos == "default" {
+                self.default_interpolate = Some(interpolate.to_string());
+            } else {
+                let at = self.edge_at(pos)?;
+                self.edges[at].interpolate = Some(Value::String(interpolate.to_string()));
+            }
+        }
+        Ok(())
+    }
+
+    /// Every position gets the one list of styles, which the first edge
+    /// position gives a `fill:none` when it sets no fill.
+    fn update_link(&mut self, positions: &[String], mut style: Vec<String>) -> Result<(), Error> {
+        let mut edges = Vec::new();
+        let mut default = false;
+        for pos in positions {
+            if pos == "default" {
+                default = true;
+                continue;
+            }
+            edges.push(self.edge_at(pos)?);
+            if !style.is_empty() && !style.iter().any(|s| s.starts_with("fill")) {
+                style.push("fill:none".into());
+            }
+        }
+        if default {
+            self.default_edge_style = Some(style.clone());
+        }
+        for at in edges {
+            self.edges[at].style = Some(style.clone());
+        }
+        Ok(())
+    }
+
+    fn add_class(&mut self, ids: &str, styles: &[String]) {
+        let joined = styles
+            .join(",")
+            .replace("\\,", "§§§")
+            .replace(',', ";")
+            .replace("§§§", ",");
+        let style: Vec<&str> = joined.split(';').collect();
+        for id in ids.split(',') {
+            let class = self
+                .classes
+                .entry(id.to_string())
+                .or_insert_with(|| FlowClassDef {
+                    id: id.to_string(),
+                    styles: Vec::new(),
+                    text_styles: Vec::new(),
+                });
+            for s in &style {
+                if s.contains("color") {
+                    class.text_styles.push(s.replacen("fill", "bgFill", 1));
+                }
+                class.styles.push(s.to_string());
+            }
+        }
+    }
+
+    fn set_direction(&mut self, dir: &str) {
+        let mut d = js::trim(dir);
+        if d.contains('<') {
+            d = "RL";
+        }
+        if d.contains('^') {
+            d = "BT";
+        }
+        if d.contains('>') {
+            d = "LR";
+        }
+        if d.contains('v') {
+            d = "TB";
+        }
+        if d == "TD" {
+            d = "TB";
+        }
+        self.direction = Some(d.to_string());
+    }
+
+    fn set_class(&mut self, ids: &str, class_name: &str) {
+        for id in ids.split(',') {
+            if let Some(node) = self.nodes.get_mut(id) {
+                node.classes.push(class_name.to_string());
+            }
+            if let Some(&at) = self.edge_by_id.get(id) {
+                self.edges[at].classes.push(class_name.to_string());
+            }
+            if let Some(&at) = self.subgraph_lookup.get(id) {
+                self.subgraphs[at].classes.push(class_name.to_string());
+            }
+        }
+    }
+
+    fn set_tooltip(&mut self, ids: &str, tooltip: &str) {
+        for id in ids.split(',') {
+            self.tooltips.insert(id.to_string(), tooltip.to_string());
+        }
+    }
+
+    fn set_link(&mut self, ids: &str, link: &str, target: Option<&str>) {
+        let url = js::trim(link);
+        for id in ids.split(',') {
+            if let Some(vertex) = self.nodes.get_mut(id) {
+                vertex.link = (!url.is_empty()).then(|| safe_url(url));
+                vertex.link_target = target.map(str::to_string);
+            }
+        }
+        self.set_class(ids, "clickable");
+    }
+
+    /// Callbacks are never executed; the node is only marked clickable, as
+    /// in Mermaid's strict mode.
+    fn set_click_event(&mut self, ids: &str) {
+        self.set_class(ids, "clickable");
+    }
+
+    fn set_acc_title(&mut self, text: &str) {
+        self.acc_title = Some(RE_LEAD.replace(text, |_| String::new()));
+    }
+
+    fn set_acc_description(&mut self, text: &str) {
+        self.acc_descr = Some(RE_INDENT.replace(text, |_| "\n".into()));
     }
 }
 

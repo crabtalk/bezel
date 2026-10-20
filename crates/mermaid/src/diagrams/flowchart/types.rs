@@ -22,6 +22,19 @@ pub struct FlowText {
     pub kind: LabelType,
 }
 
+/// What a statement says about a vertex; `None` and empty fields say
+/// nothing.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Vertex<'a> {
+    pub label: Option<&'a FlowText>,
+    pub shape: Option<&'a str>,
+    pub styles: &'a [String],
+    /// One `field: value` pair for the vertex's props.
+    pub prop: Option<(&'a str, &'a str)>,
+    /// The text of its `@{ … }` blocks.
+    pub metadata: Option<&'a str>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FlowNode {

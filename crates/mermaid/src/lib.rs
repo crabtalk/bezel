@@ -21,6 +21,7 @@ pub mod layout;
 pub mod preprocess;
 pub mod svg;
 pub mod text;
+mod token;
 pub mod util;
 pub mod yaml;
 

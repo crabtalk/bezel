@@ -11,9 +11,10 @@ use super::{
         AgentClassDef, AgentEdge, AgentNode, AgentSubgraph, Diagnostic, DiagnosticId, DocItem,
         EdgeSemantic, ElementMapping, ElementPosition, FlowText, LabelType, LinkInfo, Loc,
         Metadata, SemanticConnector, SemanticEdge, SemanticModel, SemanticSubgraph, SemanticVertex,
-        Severity, StatementType, VertexKind,
+        Severity, StatementType, Vertex, VertexKind,
     },
 };
+use crate::diagrams::flowchart::syntax::FlowGraph;
 use crate::{
     config::{Map, Value},
     detect::Kind,
@@ -419,17 +420,12 @@ impl AgentflowDb {
         error
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_vertex(
+    /// [`FlowGraph::add_vertex`], with `metadata_loc` where
+    /// `vertex.metadata` was written.
+    pub fn add_vertex_at(
         &mut self,
         id: &str,
-        text_obj: Option<&FlowText>,
-        kind: Option<&str>,
-        style: Option<&[String]>,
-        classes: Option<&[String]>,
-        dir: Option<&str>,
-        props: Option<IndexMap<String, String>>,
-        metadata: Option<&str>,
+        vertex: Vertex<'_>,
         metadata_loc: Option<Loc>,
     ) -> Result<(), Error> {
         if id.is_empty() || js::trim(id).is_empty() {
@@ -438,7 +434,7 @@ impl AgentflowDb {
 
         let mut doc: Option<Value> = None;
         let mut authored_shape: Option<String> = None;
-        if let Some(metadata) = metadata {
+        if let Some(metadata) = vertex.metadata {
             let mut parsed = self.metadata(id, metadata, metadata_loc)?;
             if let Value::Object(fields) = &mut parsed
                 && let Some(Value::String(shape)) = fields.get("shape")
@@ -494,7 +490,7 @@ impl AgentflowDb {
             return Ok(());
         }
 
-        let vertex = self
+        let node = self
             .nodes
             .entry(id.to_string())
             .or_insert_with(|| AgentNode {
@@ -512,34 +508,25 @@ impl AgentflowDb {
                 is_connector: None,
             });
 
-        if let Some(text_obj) = text_obj {
-            vertex.label_type = text_obj.kind;
-            vertex.text = Some(unquote(js::trim(&text_obj.text)).to_string());
-        } else if vertex.text.is_none() {
-            vertex.text = Some(id.to_string());
+        if let Some(label) = vertex.label {
+            node.label_type = label.kind;
+            node.text = Some(unquote(js::trim(&label.text)).to_string());
+        } else if node.text.is_none() {
+            node.text = Some(id.to_string());
         }
-        if let Some(kind) = kind {
-            vertex.kind = Some(kind.to_string());
+        if let Some(shape) = vertex.shape {
+            node.kind = Some(shape.to_string());
         }
-        if let Some(style) = style {
-            vertex.styles.extend(style.iter().cloned());
-        }
-        if let Some(classes) = classes {
-            vertex.classes.extend(classes.iter().cloned());
-        }
-        if let Some(dir) = dir {
-            vertex.dir = Some(dir.to_string());
-        }
-        let props = props.unwrap_or_default();
-        match &mut vertex.props {
-            None => vertex.props = Some(props),
-            Some(existing) => existing.extend(props),
+        node.styles.extend_from_slice(vertex.styles);
+        let props = node.props.get_or_insert_default();
+        if let Some((field, value)) = vertex.prop {
+            props.insert(field.to_string(), value.to_string());
         }
 
         let Some(doc) = doc else {
             return Ok(());
         };
-        vertex.metadata = Some(merge(vertex.metadata.take(), &doc));
+        node.metadata = Some(merge(node.metadata.take(), &doc));
         let Value::Object(fields) = doc else {
             return Ok(());
         };
@@ -609,9 +596,7 @@ impl AgentflowDb {
             edge.length = info
                 .length
                 .map(|length| if length > 10 { 10 } else { length });
-            if info.edge_semantic.is_some() {
-                edge.edge_semantic = info.edge_semantic;
-            }
+            edge.edge_semantic = edge_semantic(&info.kind, &info.stroke);
         }
         let pair = format!("{start}\0{end}");
         let existing = self.pair_count.get(&pair).copied().unwrap_or(0);
@@ -664,50 +649,6 @@ impl AgentflowDb {
         Ok(())
     }
 
-    pub fn update_link_interpolate(
-        &mut self,
-        positions: &[String],
-        interpolate: &str,
-    ) -> Result<(), Error> {
-        for pos in positions {
-            if pos == "default" {
-                self.default_interpolate = Some(interpolate.to_string());
-            } else {
-                let at = self.edge_at(pos)?;
-                self.edges[at].interpolate = Some(Value::String(interpolate.to_string()));
-            }
-        }
-        Ok(())
-    }
-
-    /// Every position gets the one list of styles, which the first edge
-    /// position gives a `fill:none` when it sets no fill.
-    pub fn update_link(
-        &mut self,
-        positions: &[String],
-        mut style: Vec<String>,
-    ) -> Result<(), Error> {
-        let mut edges = Vec::new();
-        let mut default = false;
-        for pos in positions {
-            if pos == "default" {
-                default = true;
-                continue;
-            }
-            edges.push(self.edge_at(pos)?);
-            if !style.is_empty() && !style.iter().any(|s| s.starts_with("fill")) {
-                style.push("fill:none".into());
-            }
-        }
-        if default {
-            self.default_edge_style = Some(style.clone());
-        }
-        for at in edges {
-            self.edges[at].style = Some(style.clone());
-        }
-        Ok(())
-    }
-
     /// Mermaid checks the bounds only for a numeric index and crashes on the
     /// strings its own parser passes.
     fn edge_at(&self, pos: &str) -> Result<usize, Error> {
@@ -720,99 +661,6 @@ impl AgentflowDb {
             self.edges.len() as i64 - 1
         ))
         .of(Kind::Agentflow))
-    }
-
-    pub fn add_class(&mut self, ids: &str, styles: &[String]) {
-        let joined = styles
-            .join(",")
-            .replace("\\,", "§§§")
-            .replace(',', ";")
-            .replace("§§§", ",");
-        let style: Vec<&str> = joined.split(';').collect();
-        for id in ids.split(',') {
-            let class = self
-                .classes
-                .entry(id.to_string())
-                .or_insert_with(|| AgentClassDef {
-                    id: id.to_string(),
-                    styles: Vec::new(),
-                    text_styles: Vec::new(),
-                });
-            for s in &style {
-                if s.contains("color") {
-                    class.text_styles.push(s.replacen("fill", "bgFill", 1));
-                }
-                class.styles.push(s.to_string());
-            }
-        }
-    }
-
-    pub fn set_direction(&mut self, dir: &str) {
-        let mut d = js::trim(dir);
-        if d.contains('<') {
-            d = "RL";
-        }
-        if d.contains('^') {
-            d = "BT";
-        }
-        if d.contains('>') {
-            d = "LR";
-        }
-        if d.contains('v') {
-            d = "TB";
-        }
-        if d == "TD" {
-            d = "TB";
-        }
-        self.direction = Some(d.to_string());
-    }
-
-    pub fn set_class(&mut self, ids: &str, class_name: &str) {
-        for id in ids.split(',') {
-            if let Some(node) = self.nodes.get_mut(id) {
-                node.classes.push(class_name.to_string());
-            }
-            if let Some(&at) = self.edge_by_id.get(id) {
-                self.edges[at].classes.push(class_name.to_string());
-            }
-            if let Some(&at) = self.subgraph_lookup.get(id) {
-                self.subgraphs[at].classes.push(class_name.to_string());
-            }
-        }
-    }
-
-    pub fn set_tooltip(&mut self, ids: &str, tooltip: Option<&str>) {
-        let Some(tooltip) = tooltip else {
-            return;
-        };
-        for id in ids.split(',') {
-            self.tooltips.insert(id.to_string(), tooltip.to_string());
-        }
-    }
-
-    pub fn set_link(&mut self, ids: &str, link: &str, target: Option<&str>) {
-        let url = js::trim(link);
-        for id in ids.split(',') {
-            if let Some(vertex) = self.nodes.get_mut(id) {
-                vertex.link = (!url.is_empty()).then(|| safe_url(url));
-                vertex.link_target = target.map(str::to_string);
-            }
-        }
-        self.set_class(ids, "clickable");
-    }
-
-    /// Callbacks are never executed; the node is only marked clickable, as
-    /// in Mermaid's strict mode.
-    pub fn set_click_event(&mut self, ids: &str) {
-        self.set_class(ids, "clickable");
-    }
-
-    pub fn set_acc_title(&mut self, text: &str) {
-        self.acc_title = Some(RE_LEAD.replace(text, |_| String::new()));
-    }
-
-    pub fn set_acc_description(&mut self, text: &str) {
-        self.acc_descr = Some(RE_INDENT.replace(text, |_| "\n".into()));
     }
 
     pub fn add_sub_graph(
@@ -966,28 +814,6 @@ impl AgentflowDb {
             connector.text = Some(title.to_string());
         }
         id
-    }
-
-    pub fn destruct_link(&self, end: &str, start: Option<&str>) -> LinkInfo {
-        let mut info = destruct_end_link(end);
-        if let Some(start) = start.filter(|start| !start.is_empty()) {
-            // The first half of a split arrow only says whether the line is
-            // dotted.
-            let stroke = if start.contains('.') {
-                "dotted"
-            } else {
-                "normal"
-            };
-            if stroke != info.stroke {
-                return LinkInfo {
-                    kind: "INVALID".into(),
-                    stroke: "INVALID".into(),
-                    ..LinkInfo::default()
-                };
-            }
-        }
-        info.edge_semantic = edge_semantic(&info.kind, &info.stroke);
-        info
     }
 
     pub fn subgraph(&self, id: &str) -> Option<&AgentSubgraph> {
@@ -1268,6 +1094,163 @@ impl ShapeSink for AgentflowDb {
 
     fn shape_unsupported(&mut self, message: String, node_id: &str) {
         self.emit_warning(DiagnosticId::ShapeUnsupported, message, node_id);
+    }
+}
+
+impl FlowGraph for AgentflowDb {
+    fn add_vertex(&mut self, id: &str, vertex: Vertex<'_>) -> Result<(), Error> {
+        self.add_vertex_at(id, vertex, None)
+    }
+
+    fn destruct_link(&self, end: &str, start: Option<&str>) -> LinkInfo {
+        let info = destruct_end_link(end);
+        if let Some(start) = start.filter(|start| !start.is_empty()) {
+            // The first half of a split arrow only says whether the line is
+            // dotted.
+            let stroke = if start.contains('.') {
+                "dotted"
+            } else {
+                "normal"
+            };
+            if stroke != info.stroke {
+                return LinkInfo {
+                    kind: "INVALID".into(),
+                    stroke: "INVALID".into(),
+                    ..LinkInfo::default()
+                };
+            }
+        }
+        info
+    }
+
+    fn update_link_interpolate(
+        &mut self,
+        positions: &[String],
+        interpolate: &str,
+    ) -> Result<(), Error> {
+        for pos in positions {
+            if pos == "default" {
+                self.default_interpolate = Some(interpolate.to_string());
+            } else {
+                let at = self.edge_at(pos)?;
+                self.edges[at].interpolate = Some(Value::String(interpolate.to_string()));
+            }
+        }
+        Ok(())
+    }
+
+    /// Every position gets the one list of styles, which the first edge
+    /// position gives a `fill:none` when it sets no fill.
+    fn update_link(&mut self, positions: &[String], mut style: Vec<String>) -> Result<(), Error> {
+        let mut edges = Vec::new();
+        let mut default = false;
+        for pos in positions {
+            if pos == "default" {
+                default = true;
+                continue;
+            }
+            edges.push(self.edge_at(pos)?);
+            if !style.is_empty() && !style.iter().any(|s| s.starts_with("fill")) {
+                style.push("fill:none".into());
+            }
+        }
+        if default {
+            self.default_edge_style = Some(style.clone());
+        }
+        for at in edges {
+            self.edges[at].style = Some(style.clone());
+        }
+        Ok(())
+    }
+
+    fn add_class(&mut self, ids: &str, styles: &[String]) {
+        let joined = styles
+            .join(",")
+            .replace("\\,", "§§§")
+            .replace(',', ";")
+            .replace("§§§", ",");
+        let style: Vec<&str> = joined.split(';').collect();
+        for id in ids.split(',') {
+            let class = self
+                .classes
+                .entry(id.to_string())
+                .or_insert_with(|| AgentClassDef {
+                    id: id.to_string(),
+                    styles: Vec::new(),
+                    text_styles: Vec::new(),
+                });
+            for s in &style {
+                if s.contains("color") {
+                    class.text_styles.push(s.replacen("fill", "bgFill", 1));
+                }
+                class.styles.push(s.to_string());
+            }
+        }
+    }
+
+    fn set_direction(&mut self, dir: &str) {
+        let mut d = js::trim(dir);
+        if d.contains('<') {
+            d = "RL";
+        }
+        if d.contains('^') {
+            d = "BT";
+        }
+        if d.contains('>') {
+            d = "LR";
+        }
+        if d.contains('v') {
+            d = "TB";
+        }
+        if d == "TD" {
+            d = "TB";
+        }
+        self.direction = Some(d.to_string());
+    }
+
+    fn set_class(&mut self, ids: &str, class_name: &str) {
+        for id in ids.split(',') {
+            if let Some(node) = self.nodes.get_mut(id) {
+                node.classes.push(class_name.to_string());
+            }
+            if let Some(&at) = self.edge_by_id.get(id) {
+                self.edges[at].classes.push(class_name.to_string());
+            }
+            if let Some(&at) = self.subgraph_lookup.get(id) {
+                self.subgraphs[at].classes.push(class_name.to_string());
+            }
+        }
+    }
+
+    fn set_tooltip(&mut self, ids: &str, tooltip: &str) {
+        for id in ids.split(',') {
+            self.tooltips.insert(id.to_string(), tooltip.to_string());
+        }
+    }
+
+    fn set_link(&mut self, ids: &str, link: &str, target: Option<&str>) {
+        let url = js::trim(link);
+        for id in ids.split(',') {
+            if let Some(vertex) = self.nodes.get_mut(id) {
+                vertex.link = (!url.is_empty()).then(|| safe_url(url));
+                vertex.link_target = target.map(str::to_string);
+            }
+        }
+        self.set_class(ids, "clickable");
+    }
+
+    /// Callbacks are never executed; the node is only marked clickable, as
+    /// in Mermaid's strict mode.
+    fn set_click_event(&mut self, ids: &str) {
+        self.set_class(ids, "clickable");
+    }
+
+    fn set_acc_title(&mut self, text: &str) {
+        self.acc_title = Some(RE_LEAD.replace(text, |_| String::new()));
+    }
+
+    fn set_acc_description(&mut self, text: &str) {
+        self.acc_descr = Some(RE_INDENT.replace(text, |_| "\n".into()));
     }
 }
 
