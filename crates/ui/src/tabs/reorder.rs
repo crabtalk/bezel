@@ -3,8 +3,9 @@
 use std::{cell::RefCell, rc::Rc, time::Instant};
 
 use gpui::{
-    App, Axis, Bounds, Div, ElementId, IntoElement, Pixels, Point, RenderOnce, ScrollHandle,
-    Stateful, Window, canvas, div, prelude::*, px, relative, size, transparent_black,
+    App, Axis, Bounds, Corners, Div, ElementId, IntoElement, Pixels, Point, RenderOnce,
+    ScrollHandle, Stateful, Window, canvas, div, fill, prelude::*, px, relative, size,
+    transparent_black,
 };
 use motion::TAB_SLIDE;
 use theme::Theme;
@@ -37,11 +38,8 @@ impl<Id> Clone for Reorder<Id> {
 /// The front tab's pill on a [`Track`], drawn under the tabs so it can slide
 /// from the tab that was in front to the one that is.
 struct Pill<Id> {
-    /// Each tab's box at the last paint, and the row's top left, in the
-    /// window's coordinates. Both scroll together, so their difference is a
-    /// place in the row.
+    /// Each tab's box as laid out this frame, in the window's coordinates.
     places: Vec<(Id, Bounds<Pixels>)>,
-    origin: Option<Point<Pixels>>,
     /// The tab the pill stands under, and the box it was last drawn in.
     active: Option<Id>,
     drawn: Option<Bounds<Pixels>>,
@@ -53,7 +51,6 @@ impl<Id> Default for Pill<Id> {
     fn default() -> Self {
         Self {
             places: Vec::new(),
-            origin: None,
             active: None,
             drawn: None,
             from: None,
@@ -62,19 +59,26 @@ impl<Id> Default for Pill<Id> {
 }
 
 impl<Id: Clone + PartialEq> Pill<Id> {
-    /// The box the pill is drawn in this frame, in the row's coordinates, and
-    /// whether it is still sliding.
-    fn place(&mut self, active: Option<&Id>, cx: &App) -> (Option<Bounds<Pixels>>, bool) {
+    /// The box the pill is drawn in this frame, in the coordinates of the row
+    /// whose top left is `origin`, and whether it is still sliding. The row and
+    /// its tabs scroll together, so a tab's place in it holds while it scrolls.
+    fn place(
+        &mut self,
+        active: Option<&Id>,
+        origin: Point<Pixels>,
+        cx: &App,
+    ) -> (Option<Bounds<Pixels>>, bool) {
         if self.active.as_ref() != active {
             self.from = self
                 .drawn
                 .map(|drawn| (drawn, cx.background_executor().now()));
             self.active = active.cloned();
         }
-        let to = self.origin.and_then(|origin| {
-            let (_, tab) = self.places.iter().find(|(id, _)| Some(id) == active)?;
-            Some(Bounds::new(tab.origin - origin, tab.size))
-        });
+        let to = self
+            .places
+            .iter()
+            .find(|(id, _)| Some(id) == active)
+            .map(|(_, tab)| Bounds::new(tab.origin - origin, tab.size));
         let Some(to) = to else {
             self.drawn = None;
             return (None, false);
@@ -203,7 +207,7 @@ impl<Id: Clone + PartialEq + 'static> Bar<Id> {
 }
 
 impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
-    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
         let raised = theme.surface_raised;
         let Reorder {
@@ -213,40 +217,38 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
         } = self.reorder;
         let order: Vec<Id> = self.tabs.iter().map(|(id, _)| id.clone()).collect();
         let (track, active) = (self.track, self.active);
+        pill.borrow_mut()
+            .places
+            .retain(|(id, _)| order.contains(id));
+        let flat = track == Some(Track::Flat);
         // On a track the front tab's pill is drawn under the tabs rather than
-        // by the tab, so it can slide between them.
-        let (pill_at, sliding) = match track {
-            Some(_) => {
-                let mut pill = pill.borrow_mut();
-                pill.places.retain(|(id, _)| order.contains(id));
-                pill.place(active.as_ref(), cx)
-            }
-            None => (None, false),
-        };
-        if sliding {
-            window.request_animation_frame();
-        }
-        let under = pill_at.map(|at| {
-            div()
-                .absolute()
-                .left(at.origin.x)
-                .top(at.origin.y)
-                .w(at.size.width)
-                .h(at.size.height)
-                .rounded_full()
-                .bg(theme.card_selected_bg())
-                .shadow(theme::glass_selected_shadows())
-        });
-        let origin = track.map(|_| {
-            let pill = pill.clone();
+        // by the tab, so it can slide between them. It is placed when painted:
+        // every tab has been laid out and measured by then, this frame.
+        let under = track.map(|_| {
+            let (pill, active, theme) = (pill.clone(), active.clone(), theme.clone());
             canvas(
-                move |bounds, _, _| pill.borrow_mut().origin = Some(bounds.origin),
-                |_, _, _, _| {},
+                |_, _, _| {},
+                move |row, _, window, cx| {
+                    let (at, sliding) = pill.borrow_mut().place(active.as_ref(), row.origin, cx);
+                    if sliding {
+                        window.request_animation_frame();
+                    }
+                    let Some(at) = at else {
+                        return;
+                    };
+                    let bounds = Bounds::new(row.origin + at.origin, at.size);
+                    let corners = Corners::all(match flat {
+                        true => px(Theme::control_radius()),
+                        false => at.size.height / 2.,
+                    });
+                    window.paint_quad(fill(bounds, theme.card_selected_bg()).corner_radii(corners));
+                    window.paint_inset_shadows(bounds, corners, &theme::glass_selected_shadows());
+                },
             )
             .absolute()
             .top_0()
             .left_0()
-            .size_0()
+            .size_full()
         });
         // A line before every tab but the first, unless the pill is on either
         // side of it. Inside the tab and out of its flow, so no tab moves when
@@ -264,10 +266,9 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
             .gap(px(GAP))
             .overflow_x_scroll()
             .track_scroll(&scroll)
-            .children(origin)
             .children(under)
             .children(self.tabs.into_iter().enumerate().map(|(at, (id, tab))| {
-                let shown = pill_at.is_some() && active.as_ref() == Some(&id);
+                let shown = track.is_some() && active.as_ref() == Some(&id);
                 let measure = {
                     let (pill, id) = (pill.clone(), id.clone());
                     canvas(
@@ -294,7 +295,10 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
                         .h(px(widgets::on_track_height(TRACK_HEIGHT, TRACK_PAD)))
                         .max_w(relative(1.))
                         .justify_center()
-                        .rounded_full()
+                        .map(|tab| match flat {
+                            true => tab.rounded(px(Theme::control_radius())),
+                            false => tab.rounded_full(),
+                        })
                         .when(parted(at), |tab| {
                             tab.child(
                                 div()
@@ -360,9 +364,10 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
                 .h(px(TRACK_HEIGHT))
                 .rounded_full()
                 .flex_1()
-                .when(track == Track::Bare, |frame| {
+                .when(track != Track::Bordered, |frame| {
                     frame.border_color(transparent_black())
-                }),
+                })
+                .when(track == Track::Flat, |frame| frame.bg(transparent_black())),
         };
         frame
             .id(self.id)

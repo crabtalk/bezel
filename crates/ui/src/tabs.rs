@@ -282,7 +282,8 @@ pub enum State {
 }
 
 /// What a reorderable strip's tabs stand on — see [`Bar::on_track`]. A track
-/// and its tabs are capsules; the tabs share its width equally down to
+/// and its tabs are capsules, a [`Track::Flat`]'s rounded as a control is; the
+/// tabs share its width equally down to
 /// [`TRACK_MIN_WIDTH`], their labels centred, and a line parts two resting
 /// neighbours.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -291,6 +292,8 @@ pub enum Track {
     Bordered,
     /// The same wash with no border.
     Bare,
+    /// No wash and no border.
+    Flat,
 }
 
 /// When a tab's `×` is on show.
