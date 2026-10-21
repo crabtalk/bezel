@@ -46,7 +46,7 @@ mermaid = { workspace = true, optional = true }
 # The SVG a fence draws: parsed, laid out and shaped, and rasterized.
 usvg = { workspace = true, optional = true }
 resvg = { workspace = true, optional = true }
-image = { version = "0.25", default-features = false, optional = true }
+image = { workspace = true, optional = true }
 rustybuzz = { workspace = true, optional = true }
 
 [dev-dependencies]
