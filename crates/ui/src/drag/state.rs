@@ -145,12 +145,11 @@ struct Slide {
 
 impl Slide {
     fn offset(&self, now: Instant) -> Option<Point<Pixels>> {
-        let total = TAB_SLIDE.total().mul_f32(motion::speed_scale());
         let elapsed = now.saturating_duration_since(self.since);
-        if elapsed >= total {
+        if elapsed >= TAB_SLIDE.scaled_total() {
             return None;
         }
-        Some(self.from * (1. - TAB_SLIDE.progress(elapsed.as_secs_f32() / total.as_secs_f32())))
+        Some(self.from * (1. - TAB_SLIDE.progress_after(elapsed)))
     }
 }
 

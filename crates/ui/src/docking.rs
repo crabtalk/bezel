@@ -2,10 +2,8 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use gpui::{
-    AnyElement, App, Bounds, ElementId, IntoElement, Pixels, Point, Window, point, px, size,
-};
-use motion::{Painter, TAB_SLIDE};
+use gpui::{AnyElement, App, Bounds, ElementId, IntoElement, Pixels, Point, Window, point, px};
+use motion::{Painter, TAB_SLIDE, Tween};
 use web_time::Instant;
 
 mod element;
@@ -93,41 +91,6 @@ struct Target<P> {
     bounds: Bounds<Pixels>,
     visible: Bounds<Pixels>,
     bar_height: Pixels,
-}
-
-struct Tween {
-    from: Bounds<Pixels>,
-    to: Bounds<Pixels>,
-    since: Instant,
-}
-
-impl Tween {
-    fn progress(&self, cx: &App) -> f32 {
-        if cx.reduce_motion() {
-            return 1.;
-        }
-        let elapsed = cx
-            .background_executor()
-            .now()
-            .saturating_duration_since(self.since);
-        TAB_SLIDE.progress(
-            elapsed.as_secs_f32()
-                / TAB_SLIDE
-                    .total()
-                    .mul_f32(motion::speed_scale())
-                    .as_secs_f32(),
-        )
-    }
-    fn bounds(&self, cx: &App) -> Bounds<Pixels> {
-        let t = self.progress(cx);
-        Bounds::new(
-            self.from.origin + (self.to.origin - self.from.origin) * t,
-            size(
-                self.from.size.width + (self.to.size.width - self.from.size.width) * t,
-                self.from.size.height + (self.to.size.height - self.from.size.height) * t,
-            ),
-        )
-    }
 }
 
 struct Settling<P, I> {
@@ -245,6 +208,7 @@ impl<P: Clone + PartialEq, I: Clone + PartialEq> State<P, I> {
                 .map(|preview| preview.bounds(cx))
                 .unwrap_or(bounds);
             self.preview = Some(Tween {
+                spec: TAB_SLIDE,
                 from,
                 to: bounds,
                 since: cx.background_executor().now(),

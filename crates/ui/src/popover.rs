@@ -240,8 +240,7 @@ pub fn reap_popup<V: 'static, T: 'static>(
         cx.background_executor()
             .timer(
                 motion::MENU_OUT
-                    .total()
-                    .mul_f32(motion::speed_scale())
+                    .scaled_total()
                     .saturating_add(std::time::Duration::from_millis(20)),
             )
             .await;

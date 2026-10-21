@@ -28,11 +28,8 @@ impl CanvasView {
             });
         }
 
-        let raw = self.glide.as_ref().map_or(1.0, |glide| {
-            let total = LAYOUT.total().mul_f32(motion::speed_scale());
-            glide.since.elapsed().as_secs_f32() / total.as_secs_f32().max(f32::EPSILON)
-        });
-        let t = LAYOUT.progress(raw);
+        let elapsed = self.glide.as_ref().map(|glide| glide.since.elapsed());
+        let t = elapsed.map_or(1.0, |elapsed| LAYOUT.progress_after(elapsed));
         let shown: Positions = canvas
             .nodes
             .iter()
@@ -49,7 +46,7 @@ impl CanvasView {
                 (n.id.clone(), at)
             })
             .collect();
-        if raw >= 1.0 {
+        if elapsed.is_none_or(|elapsed| elapsed >= LAYOUT.scaled_total()) {
             self.glide = None;
         } else {
             window.request_animation_frame();

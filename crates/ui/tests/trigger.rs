@@ -142,8 +142,7 @@ fn an_old_reaper_cannot_finish_a_new_close(cx: &mut TestAppContext) {
     });
     let entity = window.root(cx).unwrap();
     let mut visual = VisualTestContext::from_window(window.into(), cx);
-    let duration =
-        motion::MENU_OUT.total().mul_f32(motion::speed_scale()) + Duration::from_millis(20);
+    let duration = motion::MENU_OUT.scaled_total() + Duration::from_millis(20);
     let half = duration / 2;
     visual.update(|_, cx| {
         entity.update(cx, |view, cx| {

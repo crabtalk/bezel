@@ -46,8 +46,10 @@ pub use gpui::AnimationExt;
 
 mod app;
 pub mod phase;
+mod tween;
 
 pub use app::AppExt;
+pub use tween::Tween;
 
 // ---------------------------------------------------------------------------
 // The clock — one leased drive for everything that repeats
@@ -419,6 +421,21 @@ impl MotionSpec {
         Duration::from_millis(self.delay_ms + self.duration_ms)
     }
 
+    /// [`total`](Self::total) at the current [`speed_scale`].
+    pub fn scaled_total(&self) -> Duration {
+        self.total().mul_f32(speed_scale())
+    }
+
+    /// Eased progress (0..1) `elapsed` into the timeline at the current
+    /// [`speed_scale`].
+    pub fn progress_after(&self, elapsed: Duration) -> f32 {
+        let total = self.scaled_total().as_secs_f32();
+        match total > 0.0 {
+            true => self.progress(elapsed.as_secs_f32() / total),
+            false => 1.0,
+        }
+    }
+
     /// Eased progress (0..1) for a raw timeline delta (0..1 across [`total`](Self::total)).
     /// Pure — unit-testable without a window.
     pub fn progress(&self, raw_delta: f32) -> f32 {
@@ -435,7 +452,7 @@ impl MotionSpec {
     /// Wall-clock span honors [`speed_scale`] (measurement knob).
     pub fn animation(&self) -> Animation {
         let spec = *self;
-        Animation::new(spec.total().mul_f32(speed_scale())).with_easing(move |d| spec.progress(d))
+        Animation::new(spec.scaled_total()).with_easing(move |d| spec.progress(d))
     }
 }
 

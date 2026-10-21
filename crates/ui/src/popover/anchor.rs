@@ -21,16 +21,7 @@ pub(super) fn pinned_layer(layer: AnyElement) -> AnyElement {
 /// the wall clock at render time. Monotonic by construction — unlike the
 /// animation element's own clock, it can never replay from 0 mid-exit.
 pub(super) fn exit_progress(since: web_time::Instant) -> f32 {
-    let total = motion::MENU_OUT
-        .total()
-        .mul_f32(motion::speed_scale())
-        .as_secs_f32();
-    let raw = if total <= 0.0 {
-        1.0
-    } else {
-        (since.elapsed().as_secs_f32() / total).clamp(0.0, 1.0)
-    };
-    motion::MENU_OUT.progress(raw)
+    motion::MENU_OUT.progress_after(since.elapsed())
 }
 
 /// The surface under a popover layer, on whichever look [`Theme::menu_style`]

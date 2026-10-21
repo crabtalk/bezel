@@ -1,19 +1,18 @@
 //! The horizontal, single-region adapter for [`crate::drag`].
 
-use std::{cell::RefCell, rc::Rc};
-use web_time::Instant;
-
+use crate::{
+    drag::{self, Domain},
+    tabs::{GAP, Strip, TRACK_HEIGHT, TRACK_MIN_WIDTH, TRACK_PAD, Track},
+    widgets,
+};
 use gpui::{
     App, Axis, Bounds, Corners, Div, ElementId, IntoElement, Pixels, Point, RenderOnce,
-    ScrollHandle, Stateful, Window, canvas, div, fill, prelude::*, px, relative, size,
-    transparent_black,
+    ScrollHandle, Stateful, Window, canvas, div, fill, prelude::*, px, relative, transparent_black,
 };
-use motion::TAB_SLIDE;
+use motion::{TAB_SLIDE, Tween};
+use std::{cell::RefCell, rc::Rc};
 use theme::Theme;
-
-use super::{GAP, Strip, TRACK_HEIGHT, TRACK_MIN_WIDTH, TRACK_PAD, Track};
-use crate::drag::{self, Domain};
-use crate::widgets;
+use web_time::Instant;
 
 /// Persistent gesture and animation state, one per strip.
 ///
@@ -84,25 +83,17 @@ impl<Id: Clone + PartialEq> Pill<Id> {
             self.drawn = None;
             return (None, false);
         };
-        let t = match self.from {
-            Some((_, since)) if !cx.reduce_motion() => {
-                let elapsed = cx
-                    .background_executor()
-                    .now()
-                    .saturating_duration_since(since);
-                let total = TAB_SLIDE.total().mul_f32(motion::speed_scale());
-                TAB_SLIDE.progress(elapsed.as_secs_f32() / total.as_secs_f32().max(f32::EPSILON))
-            }
-            _ => 1.,
-        };
-        let at = match self.from {
-            Some((from, _)) if t < 1. => Bounds::new(
-                from.origin + (to.origin - from.origin) * t,
-                size(
-                    from.size.width + (to.size.width - from.size.width) * t,
-                    from.size.height + (to.size.height - from.size.height) * t,
-                ),
-            ),
+        let slide = self.from.map(|(from, since)| {
+            let tween = Tween {
+                spec: TAB_SLIDE,
+                from,
+                to,
+                since,
+            };
+            (tween, tween.progress(cx))
+        });
+        let at = match slide {
+            Some((tween, t)) if t < 1. => tween.at(t),
             _ => {
                 self.from = None;
                 to

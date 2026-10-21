@@ -1,11 +1,14 @@
-use super::{Dock, OnDrop, Target, Tween};
-use crate::drag::Carry;
-use crate::surface::Surfaced;
+use crate::{
+    docking::{Dock, OnDrop, Target},
+    drag::Carry,
+    surface::Surfaced,
+};
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, ContentMask, DragMoveEvent, Element, ElementId,
     GlobalElementId, InspectorElementId, IntoElement, LayoutId, Pixels, RenderOnce, Window, div,
     prelude::*, px,
 };
+use motion::{TAB_SLIDE, Tween};
 use std::rc::Rc;
 
 #[derive(IntoElement)]
@@ -137,6 +140,7 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
                 .find(|target| target.id == settle.pane)
                 .map(|target| {
                     let tween = Tween {
+                        spec: TAB_SLIDE,
                         from,
                         to: Bounds::new(target.bounds.origin, from.size),
                         since: settle.since,
@@ -164,7 +168,7 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
             state.settling = None;
         }
         if active {
-            state.painter.lease(120., motion::TAB_SLIDE.total(), cx);
+            state.painter.lease(120., TAB_SLIDE.total(), cx);
         }
         drop(state);
         if let Some((item, rect, progress)) = carried.or(ghost)
@@ -265,6 +269,7 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element for
             .filter(|settle| settle.pane == self.id)
             .map(|settle| {
                 Tween {
+                    spec: TAB_SLIDE,
                     from: settle.preview,
                     to: bounds,
                     since: settle.since,
