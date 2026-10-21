@@ -1,6 +1,7 @@
 //! The horizontal, single-region adapter for [`crate::drag`].
 
-use std::{cell::RefCell, rc::Rc, time::Instant};
+use std::{cell::RefCell, rc::Rc};
+use web_time::Instant;
 
 use gpui::{
     App, Axis, Bounds, Corners, Div, ElementId, IntoElement, Pixels, Point, RenderOnce,
