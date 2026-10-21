@@ -1,5 +1,5 @@
-//! Content pieces — badges, avatar, icon tiles and decks, tag, breadcrumb, the
-//! empty state.
+//! Content pieces — badges, avatar, icon decks, tag, breadcrumb, the empty
+//! state.
 //!
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.badge(..)`, `theme.avatar(..)`, `theme.empty_state(..)`.
@@ -8,16 +8,19 @@ use gpui::{Div, SharedString, Svg, div, prelude::*, px};
 use icons::Icon;
 use theme::{TextStyle, Theme, ThemeExt, Typeset};
 
-/// The tiles an [`Content::icon_deck`] draws behind its front one, at most.
+/// The cards an [`Content::icon_deck`] shows behind its front one, at most.
 const DECK_DEPTH: usize = 2;
-/// How far each tile behind sticks out past the one before it.
+/// How far each card behind sticks out past the one before it, and the room
+/// left between them, which is what tells one card's edge from the next.
 const DECK_PEEK: f32 = 4.0;
-/// How much shorter each tile behind is, top and bottom.
-const DECK_INSET: f32 = 2.5;
-/// The ink each tile behind is washed in, nearest first.
-const DECK_WASH: [f32; DECK_DEPTH] = [0.14, 0.07];
-/// The room between a tile's edge and its icon.
-const TILE_PAD: f32 = 4.0;
+const DECK_GAP: f32 = 1.5;
+/// Each card behind's height as a share of the front's, nearest first.
+const DECK_HEIGHT: [f32; DECK_DEPTH] = [0.8, 0.6];
+/// The ink the front card and each one behind are washed in.
+const DECK_FRONT_INK: f32 = 0.12;
+const DECK_INK: [f32; DECK_DEPTH] = [0.18, 0.09];
+/// The room around the front card's icon, each side.
+const DECK_PAD: f32 = 3.0;
 
 pub trait Content: ThemeExt {
     /// Right-anchored badge pill: `rounded-full border px-2 py-0.5`.
@@ -71,45 +74,50 @@ pub trait Content: ThemeExt {
             .child(initials.into())
     }
 
-    /// An icon on a square tile, the tile the same whatever the icon's own
-    /// shape — so marks of different shapes line up, and overlap as cards in
-    /// [`Self::icon_deck`].
-    fn icon_tile(&self, icon: impl Into<Icon>) -> Div {
-        let theme = self.theme();
-        tile()
-            .bg(theme.surface_raised)
-            .border_1()
-            .border_color(theme.border_faint)
-            .child(
-                crate::icons::icon(icon)
-                    .size(px(TextStyle::Subheadline.painted()))
-                    .text_color(theme.text),
-            )
-    }
-
-    /// A stack shown as a deck: `front`'s [`Self::icon_tile`], with the edges of
-    /// blank tiles peeking out behind it, one for each of `behind` up to two,
-    /// each fainter than the one before.
-    /// More than two behind draws as two. Always as wide as a full deck, so a
-    /// row holding one does not shift as the stack grows or shrinks.
+    /// A stack shown as a deck of cards: `front` on a square card, with the
+    /// edge of one more card peeking out past it for each of `behind`, up to
+    /// two, each shorter than the one before. More than two behind draws as
+    /// two. Always as wide as a full deck, so a row holding one does not shift
+    /// as the stack grows or shrinks.
+    ///
+    /// The cards behind are drawn only where they show, so the deck needs no
+    /// knowledge of what is painted under it.
     fn icon_deck(&self, front: impl Into<Icon>, behind: usize) -> Div {
         let theme = self.theme();
-        let edge = tile_edge();
+        let glyph = TextStyle::Caption.painted();
+        let edge = glyph + DECK_PAD * 2.;
+        let radius = Theme::control_radius();
         div()
             .flex_none()
-            .relative()
+            .flex()
+            .flex_row()
+            .items_center()
             .w(px(edge + DECK_PEEK * DECK_DEPTH as f32))
             .h(px(edge))
-            .children((1..=behind.min(DECK_DEPTH)).rev().map(|at| {
-                let inset = DECK_INSET * at as f32;
-                tile()
-                    .bg(theme.ink(DECK_WASH[at - 1]))
-                    .absolute()
-                    .left(px(DECK_PEEK * at as f32))
-                    .top(px(inset))
-                    .h(px(edge - inset * 2.))
+            .child(
+                div()
+                    .flex_none()
+                    .size(px(edge))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(radius))
+                    .bg(theme.ink(DECK_FRONT_INK))
+                    .child(
+                        crate::icons::icon(front)
+                            .size(px(glyph))
+                            .text_color(theme.text),
+                    ),
+            )
+            .children((0..behind.min(DECK_DEPTH)).map(|at| {
+                div()
+                    .flex_none()
+                    .ml(px(DECK_GAP))
+                    .w(px(DECK_PEEK - DECK_GAP))
+                    .h(px(edge * DECK_HEIGHT[at]))
+                    .rounded_r(px(radius))
+                    .bg(theme.ink(DECK_INK[at]))
             }))
-            .child(self.icon_tile(front).absolute().left_0().top_0())
     }
 
     /// A removable chip — a token in a filter bar or a recipient field. The
@@ -232,23 +240,3 @@ pub trait Content: ThemeExt {
 }
 
 impl Content for Theme {}
-
-/// The side of an [`Content::icon_tile`]: a body-sized square and its pad.
-fn tile_edge() -> f32 {
-    TextStyle::Body.painted() + TILE_PAD * 2.
-}
-
-/// A tile's shape, [`tile_edge`] square and unpainted — what
-/// [`Content::icon_tile`] puts its icon on and [`Content::icon_deck`] stacks
-/// behind it.
-fn tile() -> Div {
-    let edge = tile_edge();
-    div()
-        .flex_none()
-        .w(px(edge))
-        .h(px(edge))
-        .flex()
-        .items_center()
-        .justify_center()
-        .rounded(px(Theme::control_radius()))
-}
