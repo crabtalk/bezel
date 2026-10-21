@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.2.19",
+    "date": "2026-10-21",
+    "summary": "Tabs that stand on a track and share its width, with the front one a pill that slides, and a deck that shows a stack in a title row.",
+    "new": [
+      "`tabs::Bar::on_track(Track)` stands a reorderable strip's tabs on a track: they share its width equally down to `tabs::TRACK_MIN_WIDTH` and then the strip scrolls, their labels centred, a line parting two resting neighbours, and the front tab a pill drawn under the tabs that slides from the tab that was in front to the one that is. `Track::Bordered` is the segmented control's track with its border, `Track::Bare` the same wash without one, and `Track::Flat` neither, its tabs rounded as a control is. `tabs::TRACK_HEIGHT` is how tall a track stands.",
+      "`Content::icon_deck(front, behind)` shows a stack: `front` on a neutral square card, and for each of `behind`, up to two, the edge of one more card past it, each shorter than the one before. It is always as wide as a full deck, so a row holding one does not shift as the stack grows or shrinks, and draws the cards behind only where they show, so it needs no knowledge of what is painted under it."
+    ],
+    "changed": [
+      "A terminal's grid is centred in its inset: the room its whole cells leave is shared out on both sides instead of left at the bottom and right."
+    ]
+  },
+  {
     "version": "0.2.18",
     "date": "2026-10-19",
     "summary": "Mermaid source drawn as SVG by the new `bezel-mermaid`, without gpui, and the document model builds without gpui.",
