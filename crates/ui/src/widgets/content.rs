@@ -21,6 +21,8 @@ const DECK_FRONT_INK: f32 = 0.12;
 const DECK_INK: [f32; DECK_DEPTH] = [0.18, 0.09];
 /// The room around the front card's icon, each side.
 const DECK_PAD: f32 = 3.0;
+/// Every card's corner.
+const DECK_RADIUS: f32 = 4.0;
 
 pub trait Content: ThemeExt {
     /// Right-anchored badge pill: `rounded-full border px-2 py-0.5`.
@@ -86,22 +88,44 @@ pub trait Content: ThemeExt {
         let theme = self.theme();
         let glyph = TextStyle::Caption.painted();
         let edge = glyph + DECK_PAD * 2.;
-        let radius = Theme::control_radius();
         div()
             .flex_none()
-            .flex()
-            .flex_row()
-            .items_center()
+            .relative()
             .w(px(edge + DECK_PEEK * DECK_DEPTH as f32))
             .h(px(edge))
+            // Each card behind whole, in a frame that shows only what sticks
+            // out past the card before it and the gap after that one.
+            .children((1..=behind.min(DECK_DEPTH)).map(|at| {
+                let height = edge * DECK_HEIGHT[at - 1];
+                let shown = DECK_PEEK - DECK_GAP;
+                div()
+                    .absolute()
+                    .top_0()
+                    .left(px(edge + DECK_PEEK * (at - 1) as f32 + DECK_GAP))
+                    .w(px(shown))
+                    .h(px(edge))
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .absolute()
+                            .left(px(shown - edge))
+                            .top(px((edge - height) / 2.))
+                            .w(px(edge))
+                            .h(px(height))
+                            .rounded(px(DECK_RADIUS))
+                            .bg(theme.ink(DECK_INK[at - 1])),
+                    )
+            }))
             .child(
                 div()
-                    .flex_none()
+                    .absolute()
+                    .top_0()
+                    .left_0()
                     .size(px(edge))
                     .flex()
                     .items_center()
                     .justify_center()
-                    .rounded(px(radius))
+                    .rounded(px(DECK_RADIUS))
                     .bg(theme.ink(DECK_FRONT_INK))
                     .child(
                         crate::icons::icon(front)
@@ -109,15 +133,6 @@ pub trait Content: ThemeExt {
                             .text_color(theme.text),
                     ),
             )
-            .children((0..behind.min(DECK_DEPTH)).map(|at| {
-                div()
-                    .flex_none()
-                    .ml(px(DECK_GAP))
-                    .w(px(DECK_PEEK - DECK_GAP))
-                    .h(px(edge * DECK_HEIGHT[at]))
-                    .rounded_r(px(radius))
-                    .bg(theme.ink(DECK_INK[at]))
-            }))
     }
 
     /// A removable chip — a token in a filter bar or a recipient field. The
