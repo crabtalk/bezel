@@ -502,10 +502,10 @@ pub(crate) fn track(theme: &Theme) -> Div {
         .border_color(theme.border)
 }
 
-/// How tall what stands on a [`track`] `outer` tall is: inside its 1px
-/// border and its [`TOGGLE_GROUP_PAD`].
-pub(crate) const fn on_track_height(outer: f32) -> f32 {
-    outer - 2.0 * (1.0 + TOGGLE_GROUP_PAD)
+/// How tall what stands on a [`track`] `outer` tall and padded by `pad` is:
+/// inside its 1px border and that padding.
+pub(crate) const fn on_track_height(outer: f32, pad: f32) -> f32 {
+    outer - 2.0 * (1.0 + pad)
 }
 
 /// The radius of what stands on a [`track`], concentric with it: 9 - 2 = 7.

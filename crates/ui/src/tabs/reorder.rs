@@ -9,7 +9,7 @@ use gpui::{
 use motion::TAB_SLIDE;
 use theme::Theme;
 
-use super::{GAP, Strip, TRACK_HEIGHT, TRACK_MIN_WIDTH, Track};
+use super::{GAP, Strip, TRACK_HEIGHT, TRACK_MIN_WIDTH, TRACK_PAD, Track};
 use crate::drag::{self, Domain};
 use crate::widgets;
 
@@ -291,7 +291,7 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
                         .relative()
                         .flex_1()
                         .min_w(px(TRACK_MIN_WIDTH))
-                        .h(px(widgets::on_track_height(TRACK_HEIGHT)))
+                        .h(px(widgets::on_track_height(TRACK_HEIGHT, TRACK_PAD)))
                         .max_w(relative(1.))
                         .justify_center()
                         .rounded_full()
@@ -302,8 +302,8 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
                                     // Past the tab's own 1px border, to the
                                     // middle of the gap.
                                     .left(px(-(1.0 + GAP / 2.0) - 0.5))
-                                    .top(px(7.0))
-                                    .bottom(px(7.0))
+                                    .top(px(5.0))
+                                    .bottom(px(5.0))
                                     .w(px(1.0))
                                     .bg(theme.border),
                             )
@@ -356,6 +356,7 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
         let frame = match track {
             None => div(),
             Some(track) => widgets::track(&theme)
+                .p(px(TRACK_PAD))
                 .h(px(TRACK_HEIGHT))
                 .rounded_full()
                 .flex_1()

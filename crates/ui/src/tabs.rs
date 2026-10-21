@@ -344,8 +344,11 @@ pub const MAX_WIDTH: f32 = 180.0;
 pub const TRACK_MIN_WIDTH: f32 = 120.0;
 
 /// How tall a [`Track`] stands. Its tabs fill it inside its border and
-/// padding, 28 high.
-pub const TRACK_HEIGHT: f32 = 34.0;
+/// [`TRACK_PAD`].
+pub const TRACK_HEIGHT: f32 = 30.0;
+
+/// The padding between a [`Track`]'s border and its tabs.
+const TRACK_PAD: f32 = 1.0;
 
 /// The box [`Label::mark`] paints in. Lucide's `circle-small` inks 14 of its 24
 /// units, which puts a solid one at 6px across.
