@@ -1,5 +1,6 @@
 //! Vega-Lite's example gallery at v6.5.0, `examples/specs` in `specs/`. The
-//! specs that import are exactly those named in `pass.txt`. What Vega draws
+//! specs that import, which a spec does only where it draws, are exactly
+//! those named in `pass.txt`. What Vega draws
 //! for each is written by `node vega/render.mjs <dir>`.
 //!
 //! `data/` holds the vega-datasets 3.2.1 files the specs name, with its

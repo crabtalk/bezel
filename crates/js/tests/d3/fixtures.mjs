@@ -1,6 +1,8 @@
 // Runs number and time specifiers through the pinned d3-format and
-// d3-time-format, and writes each case and d3's output to `format.json` and
-// `time_format.json` beside this file. Local time is America/New_York.
+// d3-time-format, point runs through d3-shape's curves and sectors through its
+// arc, and writes each
+// case and d3's output to `format.json`, `time_format.json` and `shape.json`
+// beside this file. Local time is America/New_York.
 //
 //   npm install && npm run fixtures
 import { writeFileSync } from 'node:fs';
@@ -14,6 +16,7 @@ import {
   precisionRound,
 } from 'd3-format';
 import { timeFormat, timeParse, utcFormat, utcParse } from 'd3-time-format';
+import * as shape from 'd3-shape';
 
 if (process.env.TZ !== 'America/New_York') throw new Error('run with TZ=America/New_York');
 
@@ -173,4 +176,56 @@ writeFileSync(
   JSON.stringify({ time, parse }, null, 0).replaceAll('],[', '],\n[') + '\n',
 );
 
-console.log({ number: number.length, prefix: prefix.length, precision: precision.length, specifier: specifier.length, time: time.length, parse: parse.length });
+const runs = [
+  [[0, 0]],
+  [[0, 0], [10, 20]],
+  [[0, 0], [10, 20], [30, 5]],
+  [[0, 0], [10, 20], [30, 5], [45, 40], [60, 10], [61, 10], [80, -15]],
+  [[0, 10], [5, 30], [5, 30], [20, 0], [20, 25], [40, 30]],
+  [[3, 2], [1, 8], [6, 9], [12, 4], [9, -1]],
+];
+const curves = [
+  ['Linear', shape.curveLinear], ['LinearClosed', shape.curveLinearClosed],
+  ['Step', shape.curveStep], ['StepBefore', shape.curveStepBefore], ['StepAfter', shape.curveStepAfter],
+  ['Basis', shape.curveBasis], ['BasisOpen', shape.curveBasisOpen], ['BasisClosed', shape.curveBasisClosed],
+  ['Bundle', shape.curveBundle, 0.85], ['Bundle', shape.curveBundle.beta(0.3), 0.3],
+  ['Cardinal', shape.curveCardinal, 0], ['Cardinal', shape.curveCardinal.tension(0.4), 0.4],
+  ['CardinalOpen', shape.curveCardinalOpen.tension(0.2), 0.2], ['CardinalClosed', shape.curveCardinalClosed.tension(0.7), 0.7],
+  ['CatmullRom', shape.curveCatmullRom, 0.5], ['CatmullRom', shape.curveCatmullRom.alpha(1), 1],
+  ['CatmullRom', shape.curveCatmullRom.alpha(0), 0],
+  ['CatmullRomOpen', shape.curveCatmullRomOpen, 0.5], ['CatmullRomClosed', shape.curveCatmullRomClosed, 0.5],
+  ['MonotoneX', shape.curveMonotoneX], ['MonotoneY', shape.curveMonotoneY], ['Natural', shape.curveNatural],
+];
+const curve = [];
+for (const [name, factory, parameter] of curves) {
+  for (const run of runs) {
+    const line = shape.line().curve(factory)(run);
+    // Bundle draws lines alone.
+    const area = name === 'Bundle' ? null : shape.area().x((p) => p[0]).y0((p) => p[1] - 7).y1((p) => p[1]).curve(factory)(run);
+    curve.push([name, parameter ?? null, run, line, area]);
+  }
+}
+
+// Each sector: inner and outer radius, start and end angle, pad angle,
+// corner radius.
+const sectors = [];
+for (const [inner, outer] of [[0, 100], [40, 100], [100, 40], [0, 0], [99, 100]]) {
+  for (const [start, end] of [[0, 1], [0.5, 2.5], [1, 0], [0, 3.5], [0, 2 * Math.PI], [2, 2.001], [-1, 5]]) {
+    for (const pad of [0, 0.04, 0.5]) {
+      for (const corner of [0, 4, 30, 200]) sectors.push([inner, outer, start, end, pad, corner]);
+    }
+  }
+}
+const arc = sectors.map(([inner, outer, start, end, pad, corner]) => [
+  inner, outer, start, end, pad, corner,
+  shape.arc().cornerRadius(corner)({ innerRadius: inner, outerRadius: outer, startAngle: start, endAngle: end, padAngle: pad }),
+]);
+
+writeFileSync(
+  join(dir, 'shape.json'),
+  JSON.stringify({ curve, arc }, null, 0)
+    .replaceAll('],["', '],\n["')
+    .replace(/(["l]\]),\[(-?\d)/g, '$1,\n[$2') + '\n',
+);
+
+console.log({ curve: curve.length, arc: arc.length, number: number.length, prefix: prefix.length, precision: precision.length, specifier: specifier.length, time: time.length, parse: parse.length });

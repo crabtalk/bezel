@@ -563,6 +563,8 @@ dependencies = [
  "bezel-gpui",
  "bezel-js",
  "bezel-theme",
+ "image",
+ "lyon",
  "serde_json",
 ]
 

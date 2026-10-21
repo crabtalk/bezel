@@ -29,10 +29,12 @@ vega-lite = ["dep:serde_json"]
 serde_json = { workspace = true, optional = true }
 gpui.workspace = true
 js.workspace = true
+lyon.workspace = true
 theme.workspace = true
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
+image.workspace = true
 
 [[test]]
 name = "vega_lite"

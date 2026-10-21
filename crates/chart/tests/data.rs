@@ -1,4 +1,4 @@
-use chart::{Channel, Chart, Column, Data, Kind, Mark};
+use chart::{Channel, Chart, Column, Data, Encode, Kind, Mark};
 
 fn sales() -> Data {
     Data::new()
@@ -58,9 +58,28 @@ fn builders_fill_the_encoding() {
         .y(Channel::quantitative("sales"))
         .title("Sales");
     assert_eq!(chart.layers[0].mark, Mark::Bar);
-    assert_eq!(chart.layers[0].encoding.x.clone().unwrap().field, "month");
     assert_eq!(
-        chart.layers[0].encoding.y.clone().unwrap().kind,
+        chart.layers[0]
+            .encoding
+            .x
+            .as_ref()
+            .and_then(Encode::channel)
+            .cloned()
+            .unwrap()
+            .field()
+            .unwrap()
+            .as_ref(),
+        "month"
+    );
+    assert_eq!(
+        chart.layers[0]
+            .encoding
+            .y
+            .as_ref()
+            .and_then(Encode::channel)
+            .cloned()
+            .unwrap()
+            .kind,
         Kind::Quantitative
     );
     assert!(chart.layers[0].encoding.color.is_none());

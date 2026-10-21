@@ -24,6 +24,13 @@ pub fn parse(text: &str) -> Option<f64> {
     (!time.is_nan()).then_some(time)
 }
 
+/// `new Date(year, month, day, h, m, s, ms)` with UTC as the local zone, as
+/// [`parse`] reads a string without an offset. `None` where it is `NaN`.
+pub fn local(year: f64, month: f64, day: f64, h: f64, m: f64, s: f64, ms: f64) -> Option<f64> {
+    let time = LocalZone::utc().local(year, month, day, h, m, s, ms).time();
+    (!time.is_nan()).then_some(time)
+}
+
 /// `ms` as a tick label showing fields down to `unit`.
 pub fn label(ms: f64, unit: Unit) -> String {
     let (year, month, day, hour, minute, second) = fields(ms);

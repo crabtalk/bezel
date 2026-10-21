@@ -1,7 +1,7 @@
 //! Pele's `diagrams/radar/render.ts`.
 
 use crate::config::capped;
-use js::{math, number::Number};
+use js::{curve::Curve, math, number::Number, path::Segment};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{
@@ -32,28 +32,58 @@ fn relative_radius(value: f64, min: f64, max: f64, radius: f64) -> f64 {
     (radius * (clipped - min)) / (max - min)
 }
 
-/// A closed Catmull-Rom spline through the points, as cubic Bézier segments.
+/// d3's closed cardinal curve through the points, from the first: each
+/// control point is `tension` times the span of its end's neighbours away.
 fn closed_round_curve(points: &[Point], tension: f64) -> impl fmt::Display + '_ {
     fragment(move |f| {
-        let n = points.len();
-        write!(f, "M{}", points[0])?;
-        for i in 0..n {
-            let p0 = points[(i + n - 1) % n];
-            let p1 = points[i];
-            let p2 = points[(i + 1) % n];
-            let p3 = points[(i + 2) % n];
-            write!(
-                f,
-                " C{},{} {},{} {},{}",
-                num(p1.x + (p2.x - p0.x) * tension),
-                num(p1.y + (p2.y - p0.y) * tension),
-                num(p2.x - (p3.x - p1.x) * tension),
-                num(p2.y - (p3.y - p1.y) * tension),
-                num(p2.x),
-                num(p2.y)
-            )?;
+        // d3 starts a closed curve at its second point.
+        let run: Vec<[f64; 2]> = points
+            .iter()
+            .cycle()
+            .skip(points.len().saturating_sub(1))
+            .take(points.len())
+            .map(|p| [p.x, p.y])
+            .collect();
+        let at = |[x, y]: [f64; 2]| Point::new(x, y);
+        let mut segments = Curve::CardinalClosed(1.0 - 6.0 * tension).line(&run);
+        // d3 leaves a closed curve of three or more points unclosed.
+        if segments.last() != Some(&Segment::Close) {
+            segments.push(Segment::Close);
         }
-        f.write_str(" Z")
+        for (i, segment) in segments.into_iter().enumerate() {
+            let gap = if i > 0 { " " } else { "" };
+            match segment {
+                Segment::Move(p) => write!(f, "{gap}M{}", at(p))?,
+                Segment::Line(p) => write!(f, "{gap}L{}", at(p))?,
+                Segment::Cubic(a, b, p) => write!(
+                    f,
+                    "{gap}C{},{} {},{} {},{}",
+                    num(a[0]),
+                    num(a[1]),
+                    num(b[0]),
+                    num(b[1]),
+                    num(p[0]),
+                    num(p[1])
+                )?,
+                Segment::Arc {
+                    radius,
+                    large,
+                    sweep,
+                    to,
+                } => write!(
+                    f,
+                    "{gap}A{},{} 0 {} {} {},{}",
+                    num(radius),
+                    num(radius),
+                    u8::from(large),
+                    u8::from(sweep),
+                    num(to[0]),
+                    num(to[1])
+                )?,
+                Segment::Close => write!(f, "{gap}Z")?,
+            }
+        }
+        Ok(())
     })
 }
 

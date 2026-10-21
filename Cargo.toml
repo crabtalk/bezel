@@ -92,6 +92,8 @@ memchr = "2"
 rustybuzz = "0.20"
 wasm-bindgen = "0.2"
 image = { version = "0.25", default-features = false }
+# gpui's tessellator, at its version: a chart strokes with its caps and joins.
+lyon = "1.0"
 tracing = "0.1"
 
 # Our zed fork, published from crabtalk/zed; the keys are what the source imports.

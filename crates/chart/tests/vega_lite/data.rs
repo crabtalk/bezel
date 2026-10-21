@@ -198,7 +198,7 @@ fn a_name_reads_the_top_levels_datasets() {
         format!(
             r#"{{"datasets": {{"rows": [{{"k": "a", "v": 1}}], "csv": "k,v\nb,2"}},
             "data": {{"name": "{name}"}}, "mark": "bar",
-            "encoding": {{"x": {{"field": "k", "type": "nominal"}}}}}}"#
+            "encoding": {{"x": {{"field": "k", "type": "nominal"}}, "y": {{"field": "v", "type": "quantitative"}}}}}}"#
         )
     };
     let chart = |name: &str| spec(name).parse::<Spec>().unwrap().chart(&|_| None);

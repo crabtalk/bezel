@@ -1,7 +1,43 @@
 //! A [Vega-Lite](https://vega.github.io/vega-lite/) spec as a chart: one
-//! `mark` or a top-level `layer` of them, and `x`, `y`, `color` and `theta`
-//! channels each naming a `field` and its `type`. A layer takes the top level's
-//! `data` unless it has its own, and the top level's `encoding` under its own.
+//! `mark` or a top-level `layer` of them, and an `encoding`. A layer takes the
+//! top level's `data` unless it has its own, and the top level's `encoding`
+//! under its own.
+//!
+//! A mark is a type or a definition, whose properties are those
+//! [`Properties`] holds by their Vega-Lite names, `point` and `line`
+//! overlays among them, and the channels' values: a property named for a
+//! channel, or `outerRadius` and `innerRadius` for `radius` and `radius2`,
+//! is the channel's value where the `encoding` leaves it out. A shape channel
+//! on a line, area or trail with no `point` property draws points over it,
+//! and a point overlay is filled and opaque unless it says otherwise. A
+//! `fill` or `stroke` property that an encoded `color` paints over is
+//! dropped, as are `tooltip`, `invalid`, `aria`, `description`,
+//! `cursor`, `style`, the bin and time unit properties, and an arc's
+//! corner-specific radii. `lineBreak` is a string or an `expr` that needs
+//! neither `datum` nor a param and gives a string or a regular expression.
+//!
+//! An `encoding` holds the channels [`Encoding`] does, by their Vega-Lite
+//! names, each a `field`, a `datum` or a `value`; `detail` and `order` are a
+//! field definition or a list of them. A value of `x`, `y`, `x2` or `y2` is
+//! pixels, or `"width"` or `"height"`. A
+//! [DateTime](https://vega.github.io/vega-lite/docs/datetime.html) object is a
+//! time wherever a datum, a scale's domain or a listed sort takes one, and a
+//! datum of one is temporal.
+//!
+//! A field or datum takes its `title`, `scale` (`zero`, `domain`, `nice`) and
+//! `sort` (`null`, `"ascending"`, `"descending"` or a list; on `order`,
+//! `"ascending"` or `"descending"`) with Vega-Lite's defaults: the field name
+//! for a title, ascending for a discrete field and for `order`. An `axis` or
+//! `legend` gives its `title` and nothing else. A missing `type` is
+//! Vega-Lite's default: nominal, but quantitative for a number datum or a
+//! numeric scale type, temporal for a time scale, ordinal for `order` or a
+//! listed sort. `x2`, `y2`, `theta2` and `radius2` take their primary's type
+//! and state none.
+//!
+//! A colour value is a CSS colour as d3-color reads it, `null` none; a shape
+//! value a Vega symbol name; a `strokeDash` value a list of lengths. A shape
+//! value that is an SVG path, a `condition`, and a `value` on `detail`,
+//! `order` or `key` answer `None`.
 //!
 //! A view's `data` is inline `values`, a `url` whose text the host supplies to
 //! [`Spec::chart`], a `name` in the top level's `datasets`, or a `sequence`,
@@ -12,20 +48,20 @@
 //! TopoJSON features and the generators' shapes carry no geometry. A `parse`
 //! with a d3 time format (`date:'%Y'`) answers `None`.
 //!
-//! A channel's `title`, `scale` (`zero`, `domain`, `nice`) and `sort`
-//! (`null`, `"ascending"`, `"descending"` or a list) are read with Vega-Lite's
-//! defaults: the field name for a title, ascending for a discrete field. An
-//! `axis` or `legend` gives its `title` and nothing else.
-//!
 //! A `transform` list runs as a pipeline over its view's data before encoding,
 //! in order: the top level's before a layer's own, for a layer that takes the
 //! top level's `data`. Its ops are `density`, `loess`, `quantile` and
 //! `regression` without `params`, computed by [`crate::transform`].
 //!
 //! A spec with a transform op the pipeline lacks, nested layers, composed or
-//! faceted views, params, an aggregate, a bin, a time unit, another channel,
-//! or a scale, sort or stack it cannot draw as written answers `None`. The `tooltip` channel and a
-//! mark's properties past its `type` are dropped.
+//! faceted views, params, an aggregate, a bin, a time unit, a mark, mark
+//! property, channel or channel property this does not read, or a scale,
+//! sort or stack it cannot draw as written answers `None`, as does a chart
+//! [`plan`] cannot draw. The `tooltip` channel is dropped.
+//!
+//! [`Encoding`]: crate::model::Encoding
+//! [`Properties`]: crate::model::Properties
+//! [`plan`]: crate::plan::plan
 //!
 //! A temporal field's strings are read by [`time::parse`]; its numbers are
 //! milliseconds since the epoch. A quantitative field's strings are read as
@@ -34,25 +70,23 @@
 
 use crate::{
     data::{Column, Data},
-    model::{Channel, Chart, Kind, Mark, Sort},
-    scale, time,
+    model::{Chart, Kind},
+    time,
     transform::Transform,
     vega_lite::{data::Sources, path::Path},
 };
-use gpui::SharedString;
 use serde_json::{Map, Value};
 use std::str::FromStr;
 
 mod data;
+mod datetime;
 mod dsv;
+mod encoding;
 mod format;
+mod mark;
 mod path;
 mod transform;
 
-/// What a channel may carry.
-const CHANNEL: [&str; 8] = [
-    "field", "type", "title", "axis", "legend", "scale", "sort", "stack",
-];
 /// Inside a layer as well as at the top.
 const UNSUPPORTED: [&str; 7] = [
     "hconcat", "vconcat", "concat", "facet", "repeat", "spec", "params",
@@ -90,8 +124,9 @@ impl Spec {
     }
 
     /// The chart the spec describes, `load` answering each of [`Self::urls`]
-    /// with the text at it. `None` for a spec this does not read, and for a url
-    /// `load` answers `None`.
+    /// with the text at it. `None` for a spec this does not read or
+    /// [`plan`](crate::plan::plan) cannot draw, and for a url `load` answers
+    /// `None`.
     pub fn chart<'a>(&self, load: &dyn Fn(&str) -> Option<&'a str>) -> Option<Chart> {
         let spec = &self.0;
         let sources = Sources {
@@ -148,11 +183,11 @@ impl Spec {
             chart = chart.layer(layer);
         }
         chart.title = match spec.get("title") {
-            Some(Value::Object(title)) => title.get("text").and_then(text),
-            Some(title) => text(title),
+            Some(Value::Object(title)) => title.get("text").and_then(encoding::title),
+            Some(title) => encoding::title(title),
             None => None,
         };
-        Some(chart)
+        chart.drawable().then_some(chart)
     }
 }
 
@@ -162,53 +197,25 @@ pub fn import(source: &str) -> Option<Chart> {
     source.parse::<Spec>().ok()?.chart(&|_| None)
 }
 
-/// One layer: `mark` drawn from `data` through `pipeline` as `encoding` says.
+/// One layer: `mark` drawn from `data` through `pipeline` as `map` says.
 fn layer(
     mark: &Value,
-    encoding: &Map<String, Value>,
+    map: &Map<String, Value>,
     data: &Value,
     sources: &Sources,
     pipeline: &[Transform],
 ) -> Option<Chart> {
-    let mark = match mark {
-        Value::String(mark) => mark.as_str(),
-        Value::Object(mark) => mark.get("type")?.as_str()?,
-        _ => return None,
-    };
-    let mark = match mark {
-        "bar" => Mark::Bar,
-        "line" => Mark::Line,
-        "area" => Mark::Area,
-        "point" | "circle" | "square" => Mark::Point,
-        "arc" => Mark::Arc,
-        _ => return None,
-    };
-
-    let mut chart = Chart::new(mark, Data::new());
+    let (mark, properties, map) = mark::read(mark, map)?;
+    let mut chart = Chart::new(mark, Data::new()).properties(properties);
     let layer = &mut chart.layers[0];
-    for (name, value) in encoding {
-        let slot = match name.as_str() {
-            "x" => &mut layer.encoding.x,
-            "y" => &mut layer.encoding.y,
-            "color" => &mut layer.encoding.color,
-            "theta" => &mut layer.encoding.theta,
-            "tooltip" => continue,
-            _ => return None,
-        };
-        *slot = Some(channel(value.as_object()?)?);
-    }
+    layer.encoding = encoding::read(&map)?;
 
     let rows = sources.rows(data)?;
-    let channels = [
-        &layer.encoding.x,
-        &layer.encoding.y,
-        &layer.encoding.color,
-        &layer.encoding.theta,
-    ];
-    let encoded: Vec<(&str, Kind)> = channels
-        .iter()
-        .filter_map(|c| c.as_ref())
-        .map(|c| (c.field.as_ref(), c.kind))
+    let encoded: Vec<(&str, Kind)> = layer
+        .encoding
+        .channels()
+        .into_iter()
+        .filter_map(|c| Some((c.field()?.as_ref(), c.kind)))
         .collect();
     let mut fields: Vec<(&str, Option<Kind>)> = Vec::new();
     for (field, kind) in encoded
@@ -259,104 +266,6 @@ fn layer(
     }
     layer.data = data;
     Some(chart)
-}
-
-fn channel(channel: &Map<String, Value>) -> Option<Channel> {
-    if channel.keys().any(|key| !CHANNEL.contains(&key.as_str())) {
-        return None;
-    }
-    let kind = match channel.get("type")?.as_str()? {
-        "quantitative" => Kind::Quantitative,
-        "temporal" => Kind::Temporal,
-        "ordinal" => Kind::Ordinal,
-        "nominal" => Kind::Nominal,
-        _ => return None,
-    };
-    let field = channel.get("field")?.as_str()?.to_string();
-    let mut out = Channel::new(field.clone(), kind);
-
-    let guide = ["axis", "legend"]
-        .into_iter()
-        .filter_map(|key| channel.get(key)?.as_object()?.get("title"))
-        .next();
-    out.title = match guide.or(channel.get("title")) {
-        None => Some(field.into()),
-        Some(title) => text(title),
-    };
-
-    if let Some(value) = channel.get("scale") {
-        let scale = value.as_object()?;
-        for (key, value) in scale {
-            match (key.as_str(), value) {
-                ("zero", Value::Bool(zero)) => out.scale.zero = *zero,
-                ("nice", Value::Bool(nice)) => out.scale.nice = *nice,
-                ("domain", Value::Array(ends))
-                    if matches!(kind, Kind::Quantitative | Kind::Temporal) =>
-                {
-                    let end = |value: &Value| match value {
-                        Value::Number(n) => n.as_f64(),
-                        Value::String(s) if kind == Kind::Temporal => time::parse(s),
-                        _ => None,
-                    };
-                    let [low, high] = ends.as_slice() else {
-                        return None;
-                    };
-                    out.scale.domain = Some([end(low)?, end(high)?]);
-                }
-                ("type", Value::String(name))
-                    if matches!(
-                        (kind, name.as_str()),
-                        (Kind::Quantitative, "linear")
-                            | (Kind::Temporal, "time" | "utc")
-                            | (Kind::Ordinal | Kind::Nominal, "band" | "point" | "ordinal")
-                    ) => {}
-                _ => return None,
-            }
-        }
-    }
-
-    if matches!(kind, Kind::Ordinal | Kind::Nominal) {
-        out.sort = match channel.get("sort") {
-            None => Sort::Ascending,
-            Some(Value::Null) => Sort::Data,
-            Some(Value::String(order)) if order == "ascending" => Sort::Ascending,
-            Some(Value::String(order)) if order == "descending" => Sort::Descending,
-            Some(Value::Array(values)) => Sort::Explicit(
-                values
-                    .iter()
-                    .map(|value| match value {
-                        Value::String(s) => Some(s.clone().into()),
-                        Value::Number(n) => Some(scale::value(n.as_f64()?).into()),
-                        _ => None,
-                    })
-                    .collect::<Option<_>>()?,
-            ),
-            Some(_) => return None,
-        };
-    }
-
-    match channel.get("stack") {
-        None | Some(Value::Bool(true)) => {}
-        Some(Value::String(stack)) if stack == "zero" => {}
-        Some(_) => return None,
-    }
-    Some(out)
-}
-
-/// A title: a string, lines joined by spaces, or `null` for none.
-fn text(value: &Value) -> Option<SharedString> {
-    match value {
-        Value::String(text) => Some(text.clone().into()),
-        Value::Array(lines) => Some(
-            lines
-                .iter()
-                .filter_map(Value::as_str)
-                .collect::<Vec<_>>()
-                .join(" ")
-                .into(),
-        ),
-        _ => None,
-    }
 }
 
 /// A field's values as the channel of `kind` that encodes it reads them.

@@ -6,6 +6,7 @@
   },
   "dependencies": {
     "d3-format": "3.1.2",
-    "d3-time-format": "4.1.0"
+    "d3-time-format": "4.1.0",
+    "d3-shape": "3.2.0"
   }
 }
