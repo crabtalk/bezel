@@ -20,7 +20,6 @@ name = "syntax"
 workspace = true
 
 [features]
-default = ["rust", "python", "typescript", "json", "go", "bash", "toml"]
 wasm = ["tree-sitter/wasm"]
 rust = ["dep:tree-sitter-rust"]
 python = ["dep:tree-sitter-python"]
@@ -50,3 +49,7 @@ tree-sitter-toml-ng = { workspace = true, optional = true }
 tree-sitter-html.workspace = true
 tree-sitter-css.workspace = true
 tree-sitter-rust.workspace = true
+
+[[test]]
+name = "install"
+required-features = ["rust"]
