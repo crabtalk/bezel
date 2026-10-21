@@ -1,4 +1,5 @@
-//! Content pieces — badges, avatar, tag, breadcrumb, the empty state.
+//! Content pieces — badges, avatar, icon decks, tag, breadcrumb, the empty
+//! state.
 //!
 //! A catalog trait, like every widget group: import it to unlock
 //! `theme.badge(..)`, `theme.avatar(..)`, `theme.empty_state(..)`.
@@ -6,6 +7,22 @@
 use gpui::{Div, SharedString, Svg, div, prelude::*, px};
 use icons::Icon;
 use theme::{TextStyle, Theme, ThemeExt, Typeset};
+
+/// The cards an [`Content::icon_deck`] shows behind its front one, at most.
+const DECK_DEPTH: usize = 2;
+/// How far each card behind sticks out past the one before it, and the room
+/// left between them, which is what tells one card's edge from the next.
+const DECK_PEEK: f32 = 4.0;
+const DECK_GAP: f32 = 1.5;
+/// Each card behind's height as a share of the front's, nearest first.
+const DECK_HEIGHT: [f32; DECK_DEPTH] = [0.8, 0.6];
+/// The ink the front card and each one behind are washed in.
+const DECK_FRONT_INK: f32 = 0.12;
+const DECK_INK: [f32; DECK_DEPTH] = [0.18, 0.09];
+/// The room around the front card's icon, each side.
+const DECK_PAD: f32 = 3.0;
+/// Every card's corner.
+const DECK_RADIUS: f32 = 4.0;
 
 pub trait Content: ThemeExt {
     /// Right-anchored badge pill: `rounded-full border px-2 py-0.5`.
@@ -57,6 +74,65 @@ pub trait Content: ThemeExt {
             .font_weight(gpui::FontWeight::MEDIUM)
             .text_color(theme.text_muted)
             .child(initials.into())
+    }
+
+    /// A stack shown as a deck of cards: `front` on a square card, with the
+    /// edge of one more card peeking out past it for each of `behind`, up to
+    /// two, each shorter than the one before. More than two behind draws as
+    /// two. Always as wide as a full deck, so a row holding one does not shift
+    /// as the stack grows or shrinks.
+    ///
+    /// The cards behind are drawn only where they show, so the deck needs no
+    /// knowledge of what is painted under it.
+    fn icon_deck(&self, front: impl Into<Icon>, behind: usize) -> Div {
+        let theme = self.theme();
+        let glyph = TextStyle::Caption.painted();
+        let edge = glyph + DECK_PAD * 2.;
+        div()
+            .flex_none()
+            .relative()
+            .w(px(edge + DECK_PEEK * DECK_DEPTH as f32))
+            .h(px(edge))
+            // Each card behind whole, in a frame that shows only what sticks
+            // out past the card before it and the gap after that one.
+            .children((1..=behind.min(DECK_DEPTH)).map(|at| {
+                let height = edge * DECK_HEIGHT[at - 1];
+                let shown = DECK_PEEK - DECK_GAP;
+                div()
+                    .absolute()
+                    .top_0()
+                    .left(px(edge + DECK_PEEK * (at - 1) as f32 + DECK_GAP))
+                    .w(px(shown))
+                    .h(px(edge))
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .absolute()
+                            .left(px(shown - edge))
+                            .top(px((edge - height) / 2.))
+                            .w(px(edge))
+                            .h(px(height))
+                            .rounded(px(DECK_RADIUS))
+                            .bg(theme.ink(DECK_INK[at - 1])),
+                    )
+            }))
+            .child(
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .size(px(edge))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(DECK_RADIUS))
+                    .bg(theme.ink(DECK_FRONT_INK))
+                    .child(
+                        crate::icons::icon(front)
+                            .size(px(glyph))
+                            .text_color(theme.text),
+                    ),
+            )
     }
 
     /// A removable chip — a token in a filter bar or a recipient field. The

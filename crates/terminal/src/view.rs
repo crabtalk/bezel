@@ -17,7 +17,7 @@
 
 use gpui::{
     App, Bounds, Edges, GlobalElementId, Hsla, KeyLayout, LayoutId, Modifiers, PaintQuad, Pixels,
-    Point, ShapedLine, SharedString, Style, TextRun, Window, fill, font, outline, point, px,
+    Point, ShapedLine, SharedString, Size, Style, TextRun, Window, fill, font, outline, point, px,
     relative, size,
 };
 
@@ -285,11 +285,14 @@ impl TerminalElement {
     }
 
     /// Grid origin on the device-pixel grid, so row edges share exact pixels.
-    fn grid_origin(&self, bounds: Bounds<Pixels>, scale: f32) -> Point<Pixels> {
+    /// `spare` is the room the whole cells leave inside the inset; half of it
+    /// goes before the grid, so the rest is shared out on both sides rather
+    /// than left at the bottom and right.
+    fn grid_origin(&self, bounds: Bounds<Pixels>, spare: Size<f32>, scale: f32) -> Point<Pixels> {
         let snap = |value: Pixels| Pixels::from((f32::from(value) * scale).floor() / scale);
         point(
-            snap(bounds.left() + self.inset.left),
-            snap(bounds.top() + self.inset.top),
+            snap(bounds.left() + self.inset.left + px(spare.width / 2.)),
+            snap(bounds.top() + self.inset.top + px(spare.height / 2.)),
         )
     }
 }
@@ -325,6 +328,8 @@ struct Painted {
 }
 
 pub struct TerminalPrepaint {
+    /// The grid's top left, as prepaint measured it.
+    origin: Point<Pixels>,
     bg_quads: Vec<PaintQuad>,
     /// Each visible image, in paint order.
     images: Vec<Painted>,
@@ -425,7 +430,11 @@ impl gpui::Element for TerminalElement {
         let rows = ((inner_h / f32::from(line_h)).floor() as i64).clamp(1, 500) as u16;
 
         // Report the measured grid, then snapshot for painting.
-        let origin = self.grid_origin(bounds, scale);
+        let spare = size(
+            inner_w - f32::from(cols) * f32::from(cell_w),
+            inner_h - f32::from(rows) * f32::from(line_h),
+        );
+        let origin = self.grid_origin(bounds, spare, scale);
         let snapshot = (self.grid)(
             GridGeometry {
                 origin,
@@ -438,6 +447,7 @@ impl gpui::Element for TerminalElement {
         );
         let Some(snapshot) = snapshot else {
             return TerminalPrepaint {
+                origin,
                 bg_quads: Vec::new(),
                 images: Vec::new(),
                 sel_quads: Vec::new(),
@@ -648,6 +658,7 @@ impl gpui::Element for TerminalElement {
         });
 
         TerminalPrepaint {
+            origin,
             bg_quads,
             images,
             sel_quads,
@@ -670,7 +681,7 @@ impl gpui::Element for TerminalElement {
     ) {
         let scale = window.scale_factor();
         let line_h = px(self.line_height(scale));
-        let origin = self.grid_origin(bounds, scale);
+        let origin = prepaint.origin;
         window.with_content_mask(Some(gpui::ContentMask::new(bounds)), |window| {
             let images = std::mem::take(&mut prepaint.images);
             let paint_layer = |layer: Layer, window: &mut Window| {

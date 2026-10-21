@@ -281,6 +281,21 @@ pub enum State {
     Focused,
 }
 
+/// What a reorderable strip's tabs stand on — see [`Bar::on_track`]. A track
+/// and its tabs are capsules, a [`Track::Flat`]'s rounded as a control is; the
+/// tabs share its width equally down to
+/// [`TRACK_MIN_WIDTH`], their labels centred, and a line parts two resting
+/// neighbours.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Track {
+    /// The segmented control's track, its border drawn.
+    Bordered,
+    /// The same wash with no border.
+    Bare,
+    /// No wash and no border.
+    Flat,
+}
+
 /// When a tab's `×` is on show.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Close {
@@ -327,6 +342,16 @@ pub fn drop_mark(style: StyleRefinement, side: Side, theme: &Theme) -> StyleRefi
 
 /// How wide one tab grows before its label truncates.
 pub const MAX_WIDTH: f32 = 180.0;
+
+/// The narrowest a tab on a [`Track`] gets before its strip scrolls.
+pub const TRACK_MIN_WIDTH: f32 = 120.0;
+
+/// How tall a [`Track`] stands. Its tabs fill it inside its border and
+/// [`TRACK_PAD`].
+pub const TRACK_HEIGHT: f32 = 30.0;
+
+/// The padding between a [`Track`]'s border and its tabs.
+const TRACK_PAD: f32 = 1.0;
 
 /// The box [`Label::mark`] paints in. Lucide's `circle-small` inks 14 of its 24
 /// units, which puts a solid one at 6px across.
