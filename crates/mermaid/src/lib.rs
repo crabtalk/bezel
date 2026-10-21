@@ -13,6 +13,7 @@
 //! assert!(drawing.svg.starts_with("<svg"));
 //! ```
 
+use js::string;
 use serde::Serialize;
 
 pub mod config;
@@ -20,7 +21,7 @@ pub mod detect;
 pub mod diagrams;
 pub mod error;
 pub mod geom;
-pub mod js;
+pub mod json;
 pub mod layout;
 pub mod preprocess;
 pub mod svg;
@@ -196,7 +197,7 @@ pub fn supports(source: &str) -> bool {
 /// [`Options::config`].
 pub fn parse(source: &str, options: &Options) -> Result<Parsed, Error> {
     let limit = options.limit;
-    if js::len_over(source, limit) {
+    if string::len_over(source, limit) {
         return Err(Error::limit(format!(
             "Diagram source is longer than the limit of {limit} characters."
         )));
@@ -270,7 +271,7 @@ pub fn render_parsed(
     };
     let rendered = parsed.model.render(&parsed.config, &ctx)?;
     let output_limit = options.output_limit;
-    if js::len_over(&rendered.svg, output_limit) {
+    if string::len_over(&rendered.svg, output_limit) {
         return Err(Error::limit(format!(
             "Diagram output is longer than the limit of {output_limit} characters."
         ))

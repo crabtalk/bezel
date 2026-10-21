@@ -1,12 +1,13 @@
 //! The `<svg>` element around a drawing. Pele's `svg/root.ts`.
 
 use crate::svg::builder::{Esc, EscText};
+use js::number::Number;
 use std::{fmt::Write as _, sync::LazyLock};
 
 use memchr::memmem::Finder;
 
 use super::theme::{RADIUS, ROOT_STYLE, push_font_style, resolve};
-use crate::js;
+
 use crate::{Ctx, Host};
 
 /// A rectangle's corner radius comes from a variable. Browsers only lately
@@ -124,7 +125,7 @@ pub fn svg_document(
     };
     let p = crate::PREFIX;
     let mut out = String::with_capacity(content.len() + 1024);
-    let (w, h) = (js::Number(width), js::Number(height));
+    let (w, h) = (Number(width), Number(height));
     let _ = write!(
         out,
         "<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"{p} {p}-{kind}\" viewBox=\"0 0 {w} {h}\" width=\"{w}\" height=\"{h}\" style=\""

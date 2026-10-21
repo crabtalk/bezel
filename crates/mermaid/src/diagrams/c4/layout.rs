@@ -1,5 +1,6 @@
 //! Pele's `diagrams/c4/layout.ts`.
 
+use js::{math, string};
 use std::collections::HashMap;
 
 use super::{
@@ -9,7 +10,6 @@ use super::{
 };
 use crate::{
     geom::{Point, Size},
-    js::{max, min},
     svg::shapes::Shape,
     text::{Host, Label, Style},
 };
@@ -88,7 +88,7 @@ impl C4Element {
         }
         if let Some(tags) = self.tags.as_deref().filter(|tags| !tags.is_empty()) {
             for tag in tags.split(',') {
-                if let Some(form) = form(crate::js::trim(tag)) {
+                if let Some(form) = form(string::trim(tag)) {
                     return form;
                 }
             }
@@ -152,15 +152,15 @@ fn measure(
     let mut tw: f64 = 0.0;
     let mut text_h = if labels[3].height > 0.0 { 4.0 } else { 0.0 };
     for label in &labels {
-        tw = max(tw, label.width);
+        tw = math::max(tw, label.width);
         text_h += label.height;
     }
     Node {
         bx: C4Box {
             at: Point::default(),
             size: Size::new(
-                max(width, tw + 2.0 * PAD_X + cap_w),
-                max(SHAPE_MIN_H, text_h + 2.0 * PAD_Y + cap_h),
+                math::max(width, tw + 2.0 * PAD_X + cap_w),
+                math::max(SHAPE_MIN_H, text_h + 2.0 * PAD_Y + cap_h),
             ),
             form,
             id: C4Ref::Shape(at),
@@ -180,11 +180,11 @@ fn rows(boxes: &mut [&mut C4Box], per_row: f64, gap_x: f64, gap_y: f64, stretch:
     let len = boxes.len();
     let mut from = 0;
     while from < len {
-        let to = min(len as f64, from as f64 + per_row) as usize;
+        let to = math::min(len as f64, from as f64 + per_row) as usize;
         let mut x = 0.0;
         let mut row_h: f64 = 0.0;
         for b in &boxes[from..to] {
-            row_h = max(row_h, b.size.h);
+            row_h = math::max(row_h, b.size.h);
         }
         for b in &mut boxes[from..to] {
             b.at = Point::new(x, y);
@@ -193,7 +193,7 @@ fn rows(boxes: &mut [&mut C4Box], per_row: f64, gap_x: f64, gap_y: f64, stretch:
             }
             x += b.size.w + gap_x;
         }
-        width = max(width, x - gap_x);
+        width = math::max(width, x - gap_x);
         y += row_h + gap_y;
         from = to;
     }
@@ -218,7 +218,7 @@ impl C4Model {
         for (at, boundary) in db.boundaries.iter().enumerate() {
             let label_room = match room {
                 None => 4000.0,
-                Some(room) => max(80.0, room - 2.0 * HEAD_LEFT - 2.0 * GROUP_PAD * 2.0),
+                Some(room) => math::max(80.0, room - 2.0 * HEAD_LEFT - 2.0 * GROUP_PAD * 2.0),
             };
             let labels = if boundary.parent.is_some() {
                 let ty = boundary
@@ -252,7 +252,7 @@ impl C4Model {
             let mut head_w: f64 = 0.0;
             for label in &labels {
                 head += label.height;
-                head_w = max(head_w, label.width);
+                head_w = math::max(head_w, label.width);
             }
             groups.push(Group {
                 bx: C4Box {
@@ -300,15 +300,18 @@ impl C4Model {
                 let depth = depths.get(&parent).copied().unwrap_or(0.0);
                 let node_width = match room {
                     None => SHAPE_W,
-                    Some(room) => max(100.0, min(SHAPE_W, room - 2.0 * depth * group_pad - 32.0)),
+                    Some(room) => math::max(
+                        100.0,
+                        math::min(SHAPE_W, room - 2.0 * depth * group_pad - 32.0),
+                    ),
                 };
                 let node = measure(shape, at, measurer, size, small, node_width);
                 groups[parent].nodes.push(node);
             }
         }
 
-        let per_row = max(1.0, db.shape_in_row);
-        let groups_per_row = max(1.0, db.boundary_in_row);
+        let per_row = math::max(1.0, db.shape_in_row);
+        let groups_per_row = math::max(1.0, db.boundary_in_row);
         let mut kids_top: HashMap<usize, f64> = HashMap::new();
         for &at in order.iter().rev() {
             let gap_x = if room.is_none() { GAP_X } else { gap };
@@ -318,11 +321,11 @@ impl C4Model {
                 };
                 let mut widest: f64 = 1.0;
                 for b in boxes {
-                    widest = max(widest, b.size.w);
+                    widest = math::max(widest, b.size.w);
                 }
-                max(
+                math::max(
                     1.0,
-                    min(
+                    math::min(
                         limit,
                         ((room + gap - 2.0 * group_pad) / (widest + gap)).floor(),
                     ),
@@ -363,8 +366,8 @@ impl C4Model {
             kids_top.insert(at, grid_h + between);
             let group = &mut groups[at];
             group.bx.size = Size::new(
-                max(
-                    max(grid_w, kids_w),
+                math::max(
+                    math::max(grid_w, kids_w),
                     group.head_w + 2.0 * HEAD_LEFT - 2.0 * frame,
                 ) + 2.0 * frame,
                 (if frame != 0.0 { group.head } else { frame }) + grid_h + between + kids_h + frame,

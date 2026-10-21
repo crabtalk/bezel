@@ -3,10 +3,10 @@
 
 use super::tokens::T;
 use crate::{
-    js::{self, Lazy},
     token::{Cursor, Token},
-    util::chars::{digits_end, is_space, is_word, starts_with_caseless, width_at},
+    util::chars::{digits_end, starts_with_caseless, width_at},
 };
+use js::{regex::Lazy, string};
 
 static RE_DIRECTION: Lazy = Lazy::new(r"direction", "gi");
 /// The direction kinds, and the words naming them, in grammar order.
@@ -172,7 +172,7 @@ impl<'s> Lexer<'s> {
 
     fn emit_text(&mut self, kind: T, text: &str, start: usize, end: usize) {
         self.cur
-            .emit_text(kind, js::trim(text).to_string(), start, end);
+            .emit_text(kind, string::trim(text).to_string(), start, end);
     }
 
     /// Whether `word`, in lower case, is at `at` in any case.
@@ -182,7 +182,7 @@ impl<'s> Lexer<'s> {
 
     /// [`Lexer::word`] with no word character after it.
     fn keyword(&self, word: &str, at: usize) -> bool {
-        self.word(word, at) && !self.at(at + word.len()).is_some_and(is_word)
+        self.word(word, at) && !self.at(at + word.len()).is_some_and(string::is_word)
     }
 
     fn ws_end(&self, q: usize) -> usize {
@@ -191,7 +191,7 @@ impl<'s> Lexer<'s> {
 
     /// The end of the run of whitespace at `q` that holds no line feed.
     fn blank_end(&self, q: usize) -> usize {
-        self.cur.until(q, |c| c == '\n' || !is_space(c))
+        self.cur.until(q, |c| c == '\n' || !string::is_space(c))
     }
 
     fn eol(&self, q: usize) -> usize {
@@ -322,11 +322,11 @@ impl<'s> Lexer<'s> {
                 self.emit(T::Nl, p, end);
                 return Ok(());
             }
-            if is_space(c) {
+            if string::is_space(c) {
                 self.cur.p = self.ws_end(p);
                 return Ok(());
             }
-        } else if c != '\n' && is_space(c) {
+        } else if c != '\n' && string::is_space(c) {
             self.cur.p = self.blank_end(p + c.len_utf8());
             return Ok(());
         }
@@ -444,7 +444,7 @@ impl<'s> Lexer<'s> {
         }
         let end = self
             .cur
-            .until(p, |c| matches!(c, ':' | '-' | '{') || is_space(c));
+            .until(p, |c| matches!(c, ':' | '-' | '{') || string::is_space(c));
         if end > p {
             self.emit_id(p, end);
             return Ok(());
@@ -492,7 +492,7 @@ impl<'s> Lexer<'s> {
     fn state(&mut self, c: char) -> Result<(), String> {
         let src = self.cur.src;
         let p = self.cur.p;
-        if c != '\n' && is_space(c) {
+        if c != '\n' && string::is_space(c) {
             self.cur.p = self.blank_end(p + c.len_utf8());
             return Ok(());
         }
@@ -529,23 +529,23 @@ impl<'s> Lexer<'s> {
             self.cur.state = S::Struct;
             return Ok(());
         }
-        if is_word(c) {
+        if string::is_word(c) {
             let first = self.cur.word_end(p);
             let second = self.ws_end(first);
             if second > first
-                && self.at(second).is_some_and(is_word)
+                && self.at(second).is_some_and(string::is_word)
                 && let Some(brace) = self.next_brace.at(src, second + 1)
                 && brace < self.line_end(second)
             {
                 return Err(format!(
                     "Error: State name must be a single word. Found: \"{}\"",
-                    js::trim(&src[p..brace + 1])
+                    string::trim(&src[p..brace + 1])
                 ));
             }
         }
         let end = self
             .cur
-            .until(p + c.len_utf8(), |c| c == '{' || is_space(c));
+            .until(p + c.len_utf8(), |c| c == '{' || string::is_space(c));
         self.emit(T::CompositState, p, end);
         Ok(())
     }
@@ -560,7 +560,7 @@ impl<'s> Lexer<'s> {
                 // Mermaid drops two characters here, expecting " :"; with no
                 // space before the colon the first character of the note goes
                 // too.
-                let from = p + js::units_end(&src[p..], 2).min(end);
+                let from = p + string::units_end(&src[p..], 2).min(end);
                 self.emit_text(T::NoteText, &src[from..end], p, end);
                 self.cur.pop();
                 return Ok(());
@@ -672,7 +672,7 @@ impl<'s> Lexer<'s> {
                 self.cur.state = S::ClassStyle;
             }
             S::Style => {
-                let ids_end = self.cur.until(p, |c| !(is_word(c) || c == ','));
+                let ids_end = self.cur.until(p, |c| !(string::is_word(c) || c == ','));
                 let end = self.ws_end(ids_end);
                 if ids_end == p || end == ids_end {
                     return Err(String::new());
@@ -696,7 +696,9 @@ impl<'s> Lexer<'s> {
             }
             S::NoteId => {
                 let q = self.ws_end(p);
-                let end = self.cur.until(q, |c| c == ':' || c == '-' || is_space(c));
+                let end = self
+                    .cur
+                    .until(q, |c| c == ':' || c == '-' || string::is_space(c));
                 if end == q {
                     return Err(String::new());
                 }

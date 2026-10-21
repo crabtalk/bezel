@@ -5,8 +5,8 @@ use super::{
     lexer::tokenize,
     tokens::T,
 };
-use crate::diagrams::common::chart::ChartKind;
-use crate::{detect::Kind, error::Error, js, token::Stream};
+use crate::{detect::Kind, diagrams::common::chart::ChartKind, error::Error, token::Stream};
+use js::{number::Number, string};
 
 pub fn parse_xy_chart(src: &str, db: &mut XyChartModel) -> Result<(), Error> {
     let tokens = tokenize(src);
@@ -32,7 +32,7 @@ pub fn parse_xy_chart(src: &str, db: &mut XyChartModel) -> Result<(), Error> {
             T::Title => {
                 p.s.bump();
                 let title = p.text()?;
-                db.titles.set_title(js::trim(&title));
+                db.titles.set_title(string::trim(&title));
             }
             T::XAxis | T::YAxis => {
                 p.s.bump();
@@ -85,14 +85,14 @@ pub fn parse_xy_chart(src: &str, db: &mut XyChartModel) -> Result<(), Error> {
             T::AccTitle => {
                 p.s.bump();
                 db.titles
-                    .set_acc_title(js::trim(p.s.expect(T::AccTitleValue, "")?));
+                    .set_acc_title(string::trim(p.s.expect(T::AccTitleValue, "")?));
             }
             T::AccDescr => {
                 p.s.bump();
                 db.titles
-                    .set_acc_descr(js::trim(p.s.expect(T::AccDescrValue, "")?));
+                    .set_acc_descr(string::trim(p.s.expect(T::AccDescrValue, "")?));
             }
-            T::AccDescrMultilineValue => db.titles.set_acc_descr(js::trim(p.s.take())),
+            T::AccDescrMultilineValue => db.titles.set_acc_descr(string::trim(p.s.take())),
             _ => {
                 return Err(p.s.fail(
                     "'title', 'X_AXIS', 'Y_AXIS', 'LINE', 'BAR', 'acc_title', 'acc_descr', 'acc_descr_multiline_value'",
@@ -126,7 +126,7 @@ impl<'t> Parser<'t, '_> {
     }
 
     fn number(&mut self) -> Result<f64, Error> {
-        Ok(js::number(self.s.expect(T::NumberWithDecimal, "")?))
+        Ok(Number::from(self.s.expect(T::NumberWithDecimal, "")?).0)
     }
 
     fn range(&mut self) -> Result<(f64, f64), Error> {

@@ -5,33 +5,14 @@
 //! is accepted only when formatting the parsed result gives back the input.
 //! Pele's `diagrams/gantt/dates.ts`.
 
+use js::{
+    date::{self, Date},
+    math,
+    number::{self, Number},
+    regex::Lazy,
+    string,
+};
 use std::{cell::RefCell, rc::Rc};
-
-use crate::js::{self, Lazy, date::Date};
-
-pub const MONTHS: [&str; 12] = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-];
-pub const WEEKDAYS: [&str; 7] = [
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-];
 
 /// A day of the week, numbered from Sunday as [`Date::day`] numbers it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
@@ -143,7 +124,7 @@ impl Unit {
 }
 
 fn pad(value: f64, length: usize) -> String {
-    let s = js::num_str(value);
+    let s = Number(value).to_string();
     if s.len() >= length {
         s
     } else {
@@ -158,11 +139,11 @@ fn ordinal(n: f64) -> String {
         ((0.0..4.0).contains(&i) && i.fract() == 0.0).then(|| s[i as usize])
     };
     let suffix = pick((v - 20.0) % 10.0).or_else(|| pick(v)).unwrap_or(s[0]);
-    format!("{}{suffix}", js::num_str(n))
+    format!("{}{suffix}", Number(n))
 }
 
 fn utc_offset(date: Date) -> f64 {
-    let offset = -js::round(date.timezone_offset() / 15.0) * 15.0;
+    let offset = -math::round(date.timezone_offset() / 15.0) * 15.0;
     if offset == 0.0 { 0.0 } else { offset }
 }
 
@@ -179,7 +160,7 @@ fn zone(date: Date) -> String {
 
 pub(crate) fn iso_weekday(date: Date) -> f64 {
     let day = date.day();
-    if js::truthy(day) { day } else { 7.0 }
+    if number::truthy(day) { day } else { 7.0 }
 }
 
 pub(crate) fn add_days(date: Date, days: f64) -> Date {
@@ -216,8 +197,8 @@ pub(crate) fn add(date: Date, amount: f64, unit: Unit) -> Date {
     match unit {
         Unit::Month => set_calendar(date, |d| d.set_month(date.month() + amount)),
         Unit::Y => set_calendar(date, |d| d.set_full_year(date.full_year() + amount)),
-        Unit::D => add_days(date, js::round(amount)),
-        Unit::W => add_days(date, js::round(7.0 * amount)),
+        Unit::D => add_days(date, math::round(amount)),
+        Unit::W => add_days(date, math::round(7.0 * amount)),
         Unit::H => date.at(date.time() + amount * 3_600_000.0),
         Unit::M => date.at(date.time() + amount * 60_000.0),
         Unit::S => date.at(date.time() + amount * 1000.0),
@@ -240,7 +221,7 @@ fn iso_week(date: Date) -> f64 {
     let weeks = (thursday.time() - first.time() - zone_delta) / WEEK;
     (if weeks < 0.0 {
         let up = weeks.ceil();
-        if js::truthy(up) { up } else { 0.0 }
+        if number::truthy(up) { up } else { 0.0 }
     } else {
         weeks.floor()
     }) + 1.0
@@ -264,26 +245,27 @@ pub(crate) fn format(date: Date, template: &str) -> Option<String> {
     let advanced = RE_ADVANCED.replace(s, |caps| {
         let m = caps.str(0);
         match m {
-            "Q" => js::num_str(((date.month() + 1.0) / 3.0).ceil()),
+            "Q" => Number(((date.month() + 1.0) / 3.0).ceil()).to_string(),
             "Do" => format!("[{}]", ordinal(date.date())),
-            "GGGG" => js::num_str(week_thursday(date).full_year()),
-            "W" => js::num_str(iso_week(date)),
+            "GGGG" => Number(week_thursday(date).full_year()).to_string(),
+            "W" => Number(iso_week(date)).to_string(),
             "WW" => pad(iso_week(date), 2),
-            "k" => js::num_str(if js::truthy(date.hours()) {
+            "k" => Number(if number::truthy(date.hours()) {
                 date.hours()
             } else {
                 24.0
-            }),
+            })
+            .to_string(),
             "kk" => pad(
-                if js::truthy(date.hours()) {
+                if number::truthy(date.hours()) {
                     date.hours()
                 } else {
                     24.0
                 },
                 2,
             ),
-            "X" => js::num_str((date.time() / 1000.0).floor()),
-            "x" => js::num_str(date.time()),
+            "X" => Number((date.time() / 1000.0).floor()).to_string(),
+            "x" => Number(date.time()).to_string(),
             "gggg" | "wo" | "w" | "ww" | "z" | "zzz" => {
                 unsupported = true;
                 m.to_string()
@@ -299,36 +281,36 @@ pub(crate) fn format(date: Date, template: &str) -> Option<String> {
         if let Some(literal) = caps.get(1).filter(|literal| !literal.is_empty()) {
             return literal.to_string();
         }
-        let twelve = if js::truthy(hours % 12.0) {
+        let twelve = if number::truthy(hours % 12.0) {
             hours % 12.0
         } else {
             12.0
         };
         match caps.str(0) {
             "YY" => {
-                let year = js::num_str(date.full_year());
+                let year = Number(date.full_year()).to_string();
                 year[year.len().saturating_sub(2)..].to_string()
             }
             "YYYY" => pad(date.full_year(), 4),
-            "M" => js::num_str(date.month() + 1.0),
+            "M" => Number(date.month() + 1.0).to_string(),
             "MM" => pad(date.month() + 1.0, 2),
-            "MMM" => MONTHS[date.month() as usize][..3].to_string(),
-            "MMMM" => MONTHS[date.month() as usize].to_string(),
-            "D" => js::num_str(date.date()),
+            "MMM" => date::MONTHS[date.month() as usize][..3].to_string(),
+            "MMMM" => date::MONTHS[date.month() as usize].to_string(),
+            "D" => Number(date.date()).to_string(),
             "DD" => pad(date.date(), 2),
-            "d" => js::num_str(date.day()),
-            "dd" => WEEKDAYS[date.day() as usize][..2].to_string(),
-            "ddd" => WEEKDAYS[date.day() as usize][..3].to_string(),
-            "dddd" => WEEKDAYS[date.day() as usize].to_string(),
-            "H" => js::num_str(hours),
+            "d" => Number(date.day()).to_string(),
+            "dd" => date::WEEKDAYS[date.day() as usize][..2].to_string(),
+            "ddd" => date::WEEKDAYS[date.day() as usize][..3].to_string(),
+            "dddd" => date::WEEKDAYS[date.day() as usize].to_string(),
+            "H" => Number(hours).to_string(),
             "HH" => pad(hours, 2),
-            "h" => js::num_str(twelve),
+            "h" => Number(twelve).to_string(),
             "hh" => pad(twelve, 2),
             "a" => if hours < 12.0 { "am" } else { "pm" }.into(),
             "A" => if hours < 12.0 { "AM" } else { "PM" }.into(),
-            "m" => js::num_str(date.minutes()),
+            "m" => Number(date.minutes()).to_string(),
             "mm" => pad(date.minutes(), 2),
-            "s" => js::num_str(date.seconds()),
+            "s" => Number(date.seconds()).to_string(),
             "ss" => pad(date.seconds(), 2),
             "SSS" => pad(date.milliseconds(), 3),
             "Z" => zone(date),
@@ -344,14 +326,14 @@ pub(crate) fn iso_date(date: Date) -> String {
     format!(
         "{}{}{}{}{}",
         if (1000.0..=9999.0).contains(&year) {
-            js::num_str(year)
+            Number(year).to_string()
         } else {
             pad(year, 4)
         },
         if month < 10.0 { "-0" } else { "-" },
-        js::num_str(month),
+        Number(month),
         if day < 10.0 { "-0" } else { "-" },
-        js::num_str(day)
+        Number(day)
     )
 }
 
@@ -426,7 +408,7 @@ fn reader(token: &str) -> Option<(&'static Lazy, Read)> {
 }
 
 fn read(f: &mut Fields, how: Read, input: &str) -> bool {
-    let value = js::number(input);
+    let value = Number::from(input).0;
     match how {
         Read::Afternoon(pm) => f.afternoon = Some(input == pm),
         Read::Quarter => f.month = Some((value - 1.0) * 3.0 + 1.0),
@@ -447,7 +429,7 @@ fn read(f: &mut Fields, how: Read, input: &str) -> bool {
             };
             // dayjs keeps the digits as a string here, so even "0" counts as
             // a day having been given.
-            f.day = Some(js::number(digits.str(0)));
+            f.day = Some(Number::from(digits.str(0)).0);
             f.day_given = true;
             for i in 1..=31 {
                 if ordinal(i as f64) == input {
@@ -456,7 +438,7 @@ fn read(f: &mut Fields, how: Read, input: &str) -> bool {
             }
         }
         Read::MonthName(short) => {
-            let index = MONTHS
+            let index = date::MONTHS
                 .iter()
                 .position(|name| {
                     if short {
@@ -477,9 +459,9 @@ fn read(f: &mut Fields, how: Read, input: &str) -> bool {
                 return true;
             }
             let parts = RE_OFFSET_PARTS.find_all(input);
-            let part = |i: usize| parts.get(i).map_or(f64::NAN, |p| js::number(p));
+            let part = |i: usize| parts.get(i).map_or(f64::NAN, |p| Number::from(*p).0);
             let second = part(2);
-            let minutes = part(1) * 60.0 + if js::truthy(second) { second } else { 0.0 };
+            let minutes = part(1) * 60.0 + if number::truthy(second) { second } else { 0.0 };
             f.offset = Some(if minutes == 0.0 {
                 0.0
             } else if parts[0] == "+" {
@@ -532,7 +514,7 @@ fn compile(template: &str) -> Option<Vec<Step>> {
 fn loose<'z>(input: &str, template: &str, now: Date<'z>) -> Option<Date<'z>> {
     if template == "x" || template == "X" {
         let scale = if template == "X" { 1000.0 } else { 1.0 };
-        return Some(now.at(scale * js::number(input)));
+        return Some(now.at(scale * Number::from(input).0));
     }
     let steps = compiled(template);
     let steps = steps.as_ref().as_ref()?;
@@ -542,13 +524,13 @@ fn loose<'z>(input: &str, template: &str, now: Date<'z>) -> Option<Date<'z>> {
     for step in steps {
         let (re, how) = match step {
             Step::Literal(text) => {
-                start += js::len(text);
+                start += string::len(text);
                 continue;
             }
             Step::Read(re, how) => (re, *how),
         };
         let found = re
-            .exec(&rest[js::units_end(&rest, start)..])?
+            .exec(&rest[string::units_end(&rest, start)..])?
             .str(0)
             .to_string();
         if !read(&mut f, how, &found) {
@@ -567,7 +549,7 @@ fn loose<'z>(input: &str, template: &str, now: Date<'z>) -> Option<Date<'z>> {
             f.hours = Some(0.0);
         }
     }
-    let truthy = |x: Option<f64>| x.is_some_and(js::truthy);
+    let truthy = |x: Option<f64>| x.is_some_and(number::truthy);
     let day = if f.day_given || truthy(f.day) {
         f.day.unwrap_or(f64::NAN)
     } else if !truthy(f.year) && !truthy(f.month) {
@@ -587,7 +569,7 @@ fn loose<'z>(input: &str, template: &str, now: Date<'z>) -> Option<Date<'z>> {
             _ => now.month(),
         };
     }
-    let or_zero = |x: Option<f64>| x.filter(|&x| js::truthy(x)).unwrap_or(0.0);
+    let or_zero = |x: Option<f64>| x.filter(|&x| number::truthy(x)).unwrap_or(0.0);
     let hours = or_zero(f.hours);
     let minutes = or_zero(f.minutes);
     let seconds = or_zero(f.seconds);

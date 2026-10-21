@@ -1,6 +1,7 @@
 //! Pele's `diagrams/class/db.ts`.
 
 use indexmap::{IndexMap, IndexSet};
+use js::string;
 
 use crate::geom::Direction;
 use serde::{
@@ -15,7 +16,7 @@ use super::{
         RelationType, StyleClass,
     },
 };
-use crate::{diagrams::common::db::Titles, js, text::decode_entities, util::url::sanitize_url};
+use crate::{diagrams::common::db::Titles, text::decode_entities, util::url::sanitize_url};
 
 /// Mermaid looks up ids that start with a digit under this prefix, so they
 /// never match a class.
@@ -136,8 +137,8 @@ impl ClassModel {
         }
         relation.id1 = split_name(&relation.id1).0.to_string();
         relation.id2 = split_name(&relation.id2).0.to_string();
-        relation.relation_title1 = js::trim(&relation.relation_title1).to_string();
-        relation.relation_title2 = js::trim(&relation.relation_title2).to_string();
+        relation.relation_title1 = string::trim(&relation.relation_title1).to_string();
+        relation.relation_title2 = string::trim(&relation.relation_title2).to_string();
         self.relations.push(relation);
     }
 
@@ -159,7 +160,7 @@ impl ClassModel {
 
     pub fn add_member(&mut self, class_name: &str, member: &str) {
         let node = self.ensure(class_name);
-        let text = js::trim(member);
+        let text = string::trim(member);
         if let Some(annotation) = text
             .strip_prefix("<<")
             .and_then(|text| text.strip_suffix(">>"))
@@ -245,7 +246,7 @@ impl ClassModel {
     pub fn set_link(&mut self, ids: &str, link: &str, target: Option<&str>) {
         // Entity codes are resolved first, so that what is checked is what a
         // browser would follow.
-        let url = js::trim(&decode_entities(link)).to_string();
+        let url = string::trim(&decode_entities(link)).to_string();
         for id in ids.split(',') {
             if let Some(node) = self.classes.get_mut(&lookup_id(id)) {
                 node.link = (!url.is_empty()).then(|| sanitize_url(&url));

@@ -1,24 +1,27 @@
 //! Pele's `diagrams/sankey/render.ts`.
 
-use crate::geom::{Point, Size};
-use crate::text::Label;
+use crate::{
+    geom::{Point, Size},
+    text::Label,
+};
+use js::{math, number::Number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use crate::config::capped;
-use crate::svg::builder::{Esc, EscText};
+use crate::{
+    config::capped,
+    svg::builder::{Esc, EscText},
+};
 use std::{collections::HashMap, fmt::Write as _};
 
 use super::{
     db::SankeyModel,
     layout::{Alignment, LayoutOptions},
 };
-use crate::{Config, Ctx, Host};
 use crate::{
-    Error, Rendered,
+    Config, Ctx, Error, Host, Rendered,
     config::{Map, Value},
     diagrams::Render,
-    js,
     svg::{
         builder::{TITLE, fragment, num},
         root::svg_document,
@@ -33,7 +36,7 @@ const VALUE_GAP: f64 = 15.0;
 fn text_option(value: Option<&Value>) -> String {
     match value {
         Some(Value::String(text)) => text.clone(),
-        Some(Value::Number(value)) => js::num_str(value.as_f64().unwrap_or(f64::NAN)),
+        Some(Value::Number(value)) => Number(value.as_f64().unwrap_or(f64::NAN)).to_string(),
         _ => String::new(),
     }
 }
@@ -42,7 +45,7 @@ fn text_option(value: Option<&Value>) -> String {
 /// left as they are.
 fn rounded(value: f64) -> f64 {
     if value.abs() < 1e15 {
-        js::round(value * 100.0) / 100.0
+        math::round(value * 100.0) / 100.0
     } else {
         value
     }
@@ -129,7 +132,7 @@ impl SankeyModel {
     ) -> Result<Rendered, Error> {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.875);
+        let small = math::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
 
@@ -204,7 +207,7 @@ impl SankeyModel {
 
             value.clear();
             if show_values {
-                let _ = write!(value, "{prefix}{}{suffix}", js::Number(rounded(node.value)));
+                let _ = write!(value, "{prefix}{}{suffix}", Number(rounded(node.value)));
             }
             let after = if outlined {
                 node.layer >= central
@@ -307,7 +310,7 @@ impl SankeyModel {
                     fixed.as_str()
                 },
                 EscText(&prefix),
-                js::Number(rounded(link.value)),
+                Number(rounded(link.value)),
                 EscText(&suffix)
             );
         }
@@ -335,7 +338,7 @@ impl SankeyModel {
             content,
             "{}<g transform=\"translate({offset})\"><g class=\"{p}-sankey-links\" fill-opacity=\"0.4\">{links_out}</g><g class=\"{p}-sankey-nodes\">{nodes_out}</g><g class=\"{p}-labels\" font-size=\"{}\">{labels_out}</g></g>",
             title.svg(Point::new(width / 2.0, pad + title.height / 2.0), TITLE),
-            js::Number(small)
+            Number(small)
         );
         let svg = svg_document(
             "sankey",

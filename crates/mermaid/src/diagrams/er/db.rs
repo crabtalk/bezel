@@ -1,15 +1,16 @@
 //! Pele's `diagrams/er/db.ts`.
 
-use crate::diagrams::common::db::Titles;
-use crate::diagrams::common::style_class::StyleClass;
-use crate::geom::Direction;
+use crate::{
+    diagrams::common::{db::Titles, style_class::StyleClass},
+    geom::Direction,
+};
 use indexmap::{IndexMap, IndexSet};
+use js::string;
 use serde::{Serialize, Serializer};
 
 use super::types::{
     DocItem, ErAttribute, ErEntity, ErRelationship, ErSubgraph, LabelType, ParsedAttribute, RelSpec,
 };
-use crate::js;
 
 /// Pele's `ErDb`, serialized with its lookups as Pele's is.
 #[derive(Clone, Debug, PartialEq)]
@@ -171,7 +172,7 @@ impl ErModel {
     }
 
     pub fn add_sub_graph(&mut self, id_text: &str, list: &[DocItem], title_text: &str) -> String {
-        let id = js::trim(id_text).to_string();
+        let id = string::trim(id_text).to_string();
         let mut seen: IndexSet<&str> = IndexSet::new();
         let mut nodes: Vec<String> = Vec::new();
         let mut dir = None;
@@ -183,7 +184,7 @@ impl ErModel {
                 }
                 DocItem::Name(item) => item,
             };
-            let trimmed = js::trim(item);
+            let trimmed = string::trim(item);
             if trimmed.is_empty() || seen.contains(trimmed) {
                 continue;
             }
@@ -199,7 +200,7 @@ impl ErModel {
         self.subgraphs.push(ErSubgraph {
             id: id.clone(),
             nodes,
-            title: js::trim(title_text).to_string(),
+            title: string::trim(title_text).to_string(),
             classes: Vec::new(),
             css_styles: Vec::new(),
             dir,

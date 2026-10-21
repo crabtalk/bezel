@@ -1,7 +1,8 @@
 //! Pele's `diagrams/pie/render.ts`.
 
-use crate::geom::Point;
-use crate::js::JsValue;
+use crate::{geom::Point, json::JsValue};
+use js::{math, number::Number};
+
 use crate::svg::builder::{EscText, fragment};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
@@ -11,13 +12,13 @@ use std::{
 };
 
 use super::model::PieModel;
-use crate::diagrams::common::legend::{ROW, SWATCH};
-use crate::{Config, Ctx, Error, Host};
 use crate::{
-    Rendered,
+    Config, Ctx, Error, Host, Rendered,
     config::Value,
-    diagrams::Render,
-    js,
+    diagrams::{
+        Render,
+        common::legend::{ROW, SWATCH},
+    },
     svg::{builder::num, root::svg_document, theme::series_color},
     text::{Label, Style},
 };
@@ -149,7 +150,7 @@ impl PieModel {
     ) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.875);
+        let small = math::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
 
@@ -180,7 +181,7 @@ impl PieModel {
             .iter()
             .map(|(label, value)| {
                 let text = if self.show_data {
-                    format!("{label} [{}]", js::Number(*value))
+                    format!("{label} [{}]", Number(*value))
                 } else {
                     label.to_string()
                 };
@@ -214,7 +215,7 @@ impl PieModel {
             .iter()
             .map(|(_, value)| {
                 let share = if sum > 0.0 { value / sum } else { 0.0 };
-                if share * 100.0 >= 1.0 && js::to_fixed(share * 100.0, 0) != "0" {
+                if share * 100.0 >= 1.0 && Number(share * 100.0).to_fixed(0) != "0" {
                     share
                 } else {
                     0.0
@@ -229,7 +230,8 @@ impl PieModel {
                 }
                 let chord = 2.0 * radius * text_position * (share * PI).sin();
                 chord
-                    < measure.width(&format!("{}%", js::to_fixed(share * 100.0, 0)), small, 0) + 6.0
+                    < measure.width(&format!("{}%", Number(share * 100.0).to_fixed(0)), small, 0)
+                        + 6.0
             })
             .collect();
         let margin = if narrow.contains(&true) { OUTSIDE } else { 0.0 };
@@ -309,12 +311,12 @@ impl PieModel {
             let _ = write!(
                 content,
                 "<circle class=\"{p}-slice\" r=\"{}\" fill=\"none\" stroke=\"var(--_b)\"/>",
-                js::Number(radius)
+                Number(radius)
             );
         }
         content.push_str("</g>");
 
-        let percent = |share: f64| js::to_fixed(share * 100.0, 0) + "%";
+        let percent = |share: f64| Number(share * 100.0).to_fixed(0) + "%";
         let mut inside = arcs().filter(|&(index, ..)| !narrow[index]).peekable();
         if inside.peek().is_some() {
             let _ = write!(

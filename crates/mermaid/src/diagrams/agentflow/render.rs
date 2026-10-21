@@ -1,6 +1,7 @@
 //! Pele's `diagrams/agentflow/render.ts`.
 
 use crate::svg::theme::node_class_names;
+use js::{math, regex::Lazy};
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -30,7 +31,6 @@ use crate::{
         },
     },
     geom::{Axis, Direction, Point, RoutePoint, Side, Size},
-    js::{self, Lazy},
     layout::{
         compound::{CEdge, CNode, compound_layout, level_dir},
         layered::LayeredOptions,
@@ -202,7 +202,7 @@ impl AgentflowDb {
         let p = crate::PREFIX;
         let graph = &self.graph;
         let size = ctx.options.font_size;
-        let edge_size = js::round(size * 0.875);
+        let edge_size = math::round(size * 0.875);
         let measure = ctx.host;
         let wrap_width = positive(config.wrapping_width, 120.0);
         let min_width = positive(config.min_node_width, 120.0);

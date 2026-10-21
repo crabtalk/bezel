@@ -2,6 +2,7 @@
 //! written in. Pele's `diagrams/usecase/json.ts`, where `JSON.parse` stands
 //! in: its errors are worded as V8 words them.
 
+use crate::json;
 use indexmap::IndexMap;
 
 use super::lexer::Source;
@@ -9,7 +10,6 @@ use crate::{
     config::Value,
     detect::Kind,
     error::Error,
-    js::parse_json,
     util::chars::{is_digit, is_hex},
 };
 
@@ -570,7 +570,7 @@ pub fn parse_ordered_json(
         });
         return Err(json_error(format!("Invalid JSON: {message}"), location));
     }
-    let value = parse_json(text).unwrap_or_default();
+    let value = json::parse_json(text).unwrap_or_default();
     if !matches!(value, Value::Object(_)) {
         return Err(json_error(
             "JSON value must have an object root".into(),

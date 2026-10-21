@@ -1,11 +1,10 @@
 //! Pele's `diagrams/c4/types.ts`.
 
+use crate::json;
 use std::fmt;
 
 use indexmap::IndexMap;
 use serde::{Serialize, Serializer};
-
-use crate::js;
 
 /// The header keyword of a diagram.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -195,12 +194,12 @@ pub struct C4Rel {
     pub line_color: Option<String>,
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "js::json_number_opt"
+        serialize_with = "json::number_opt"
     )]
     pub offset_x: Option<f64>,
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "js::json_number_opt"
+        serialize_with = "json::number_opt"
     )]
     pub offset_y: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]

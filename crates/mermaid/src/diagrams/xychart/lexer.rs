@@ -1,12 +1,13 @@
 //! Pele's `diagrams/xychart/lexer.ts`.
 
+use js::string;
 use std::sync::LazyLock;
 
 use super::tokens::T;
 use crate::{
     diagrams::common::chart::{ChartRules, ChartState},
     token::{Cursor, Token},
-    util::chars::{digits_end, is_space},
+    util::chars::digits_end,
 };
 
 /// Jison's start conditions.
@@ -172,7 +173,7 @@ impl Lexer<'_> {
             self.cur.push(S::String);
             return true;
         }
-        if is_space(c) {
+        if string::is_space(c) {
             self.cur.p = self.cur.space_end(p);
             return true;
         }

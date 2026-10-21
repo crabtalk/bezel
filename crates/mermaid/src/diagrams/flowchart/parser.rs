@@ -9,12 +9,8 @@ use super::{
     tokens::T,
     types::{DocItem, FlowText},
 };
-use crate::{
-    detect::Kind,
-    error::Error,
-    js::{self, Lazy},
-    util::chars::is_space,
-};
+use crate::{detect::Kind, error::Error};
+use js::{regex::Lazy, string};
 
 const NO_TAGS: [T; 21] = [
     T::Num,
@@ -101,8 +97,8 @@ impl Parser<'_> {
         }
         self.r.s.bump();
         // Without a bracketed title, an id with whitespace is only a title.
-        let id = (title.is_some() || !text.text.contains(|c: char| is_space(c)))
-            .then(|| js::trim(&text.text).to_string());
+        let id = (title.is_some() || !text.text.contains(|c: char| string::is_space(c)))
+            .then(|| string::trim(&text.text).to_string());
         Ok(Frame {
             id,
             title: Some(title.unwrap_or(text)),

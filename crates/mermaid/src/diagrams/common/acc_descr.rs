@@ -3,7 +3,7 @@
 //! Pele's `diagrams/common/accDescr.ts`.
 
 use super::tokens::{Scanner, TokenType, acc_descr as base};
-use crate::js::Lazy;
+use js::regex::Lazy;
 
 static RE_HEAD: Lazy = Lazy::new(
     r"[\t ]*accDescr(?:[\t ]*:(?:[^\n\r]*?(?=%%)|[^\n\r]*)|\s*(\{))",

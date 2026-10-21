@@ -1,9 +1,9 @@
 //! Pele's `diagrams/timeline/db.ts`.
 
-use crate::diagrams::common::db::Titles;
+use crate::{diagrams::common::db::Titles, json};
 use serde::{Serialize, Serializer};
 
-use crate::{Error, detect::Kind, geom::Direction, js};
+use crate::{Error, detect::Kind, geom::Direction};
 
 /// `TD` running down, `LR` otherwise.
 fn direction_name<S: Serializer>(direction: &Direction, s: S) -> Result<S::Ok, S::Error> {
@@ -20,7 +20,7 @@ pub struct TimelinePeriod {
     pub section: String,
     /// Index into `sections` of that section, `None` before the first one,
     /// which the JSON writes as -1.
-    #[serde(serialize_with = "js::json_index")]
+    #[serde(serialize_with = "json::index")]
     pub section_index: Option<usize>,
 }
 

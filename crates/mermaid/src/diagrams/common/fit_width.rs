@@ -3,8 +3,7 @@
 
 use std::convert::Infallible;
 
-use crate::Rendered;
-use crate::{Ctx, Host};
+use crate::{Ctx, Host, Rendered};
 
 const BREAKPOINT: f64 = 640.0;
 

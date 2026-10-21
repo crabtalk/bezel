@@ -3,8 +3,8 @@
 use crate::{
     diagrams::common::scan::{Lexer, T},
     token::Token,
-    util::chars::is_space,
 };
+use js::string;
 
 pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
     let mut lx = Lexer::new(src);
@@ -50,12 +50,13 @@ pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
         }
         // An event runs to the end of the line or to a colon that is followed
         // by whitespace.
-        if let Some(space) = cur.char_at(p + 1).filter(|&c| is_space(c)) {
+        if let Some(space) = cur.char_at(p + 1).filter(|&c| string::is_space(c)) {
             let from = p + 1 + space.len_utf8();
             let end = src[from..]
                 .char_indices()
                 .find(|&(at, c)| {
-                    c == '\n' || (c == ':' && cur.char_at(from + at + 1).is_some_and(is_space))
+                    c == '\n'
+                        || (c == ':' && cur.char_at(from + at + 1).is_some_and(string::is_space))
                 })
                 .map_or(src.len(), |(at, _)| from + at);
             if end > from {

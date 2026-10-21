@@ -1,25 +1,25 @@
 //! Pele's `diagrams/gantt/render.ts`.
 
-use crate::config::clamped;
-use crate::geom::Point;
-use crate::svg::builder::rewrite;
+use crate::{config::clamped, geom::Point, svg::builder::rewrite};
 use indexmap::IndexMap;
+use js::{
+    date::{Date, LocalZone},
+    math,
+    number::{self, Number},
+    regex::Lazy,
+    time,
+};
 use std::fmt::Write as _;
 
 use super::{
-    axis::{auto_ticks, interval_ticks, time_format},
+    axis::interval_ticks,
     dates::{Unit, Weekday, add, add_days},
     db::{GanttDb, clock, time},
     types::GanttTask,
 };
-use crate::diagrams::Render;
-use crate::{Config, Ctx};
 use crate::{
-    Error, Link, Rendered,
-    js::{
-        self, Lazy,
-        date::{Date, LocalZone},
-    },
+    Config, Ctx, Error, Link, Rendered,
+    diagrams::Render,
     svg::{
         builder::{Esc, EscText, fragment, num},
         root::svg_document,
@@ -108,7 +108,7 @@ fn pack_rows(
         let (a, b) = (&tasks[a], &tasks[b]);
         let d = time(a.start_time) - time(b.start_time);
         if d != 0.0 {
-            js::compare(d)
+            number::compare(d)
         } else {
             a.order.cmp(&b.order)
         }
@@ -158,16 +158,16 @@ impl Render for GanttDb {
         let p = crate::PREFIX;
 
         let label_size =
-            clamped(config.font_size, 4.0, 72.0).unwrap_or_else(|| js::round(size * 0.8125));
+            clamped(config.font_size, 4.0, 72.0).unwrap_or_else(|| math::round(size * 0.8125));
         let section_size = clamped(config.section_font_size, 4.0, 72.0).unwrap_or(label_size);
-        let tick_size = js::round(size * 0.75);
-        let bar_height =
-            clamped(config.bar_height, 4.0, 400.0).unwrap_or_else(|| js::round(label_size * 1.85));
+        let tick_size = math::round(size * 0.75);
+        let bar_height = clamped(config.bar_height, 4.0, 400.0)
+            .unwrap_or_else(|| math::round(label_size * 1.85));
         let bar_gap =
-            clamped(config.bar_gap, 0.0, 400.0).unwrap_or_else(|| js::round(bar_height / 4.0));
+            clamped(config.bar_gap, 0.0, 400.0).unwrap_or_else(|| math::round(bar_height / 4.0));
         let row_height = bar_height + bar_gap;
         let section_styles =
-            js::round(clamped(config.number_section_styles, 1.0, 1000.0).unwrap_or(4.0));
+            math::round(clamped(config.number_section_styles, 1.0, 1000.0).unwrap_or(4.0));
         let compact = self.display_mode == "compact";
         let top_axis = self.top_axis || config.top_axis == Some(true);
 
@@ -276,7 +276,7 @@ impl Render for GanttDb {
                 .unwrap_or("%Y-%m-%d")
                 .to_string()
         };
-        let tick_label = |t: f64| time_format(&axis_format, zone.date(t));
+        let tick_label = |t: f64| zone.date(t).format(&axis_format);
         let sample_width = measure
             .width(&tick_label(start), tick_size, 0)
             .max(measure.width(&tick_label(stop), tick_size, 0));
@@ -312,7 +312,7 @@ impl Render for GanttDb {
             }
         };
 
-        let tick_height = js::round(tick_size * 1.75);
+        let tick_height = math::round(tick_size * 1.75);
         let top_padding = clamped(config.top_padding, 0.0, 2000.0);
         let grid_start = clamped(config.grid_line_start_padding, 0.0, 2000.0);
         let head_height = pad + title_height + if top_axis { tick_height } else { 0.0 };
@@ -404,7 +404,7 @@ impl Render for GanttDb {
             (plot_width / 3.0).ceil(),
             &zone,
         )
-        .unwrap_or_else(|| auto_ticks(start, stop, count, &zone));
+        .unwrap_or_else(|| time::ticks(start, stop, count, &zone));
 
         let mut grid = String::new();
         let mut axis_bottom = String::new();
@@ -455,10 +455,11 @@ impl Render for GanttDb {
         let mut vert_labels = String::new();
         let mut vert_ends: Vec<f64> = Vec::new();
         let vert_top = plot_bottom + tick_height + 4.0;
-        let vert_line = js::round(label_size * 1.5);
+        let vert_line = math::round(label_size * 1.5);
         let mut sorted_verts = verts.clone();
-        sorted_verts
-            .sort_by(|&a, &b| js::compare(time(tasks[a].start_time) - time(tasks[b].start_time)));
+        sorted_verts.sort_by(|&a, &b| {
+            number::compare(time(tasks[a].start_time) - time(tasks[b].start_time))
+        });
         for &index in &sorted_verts {
             let task = &tasks[index];
             let vx = x(time(task.start_time));
@@ -524,9 +525,9 @@ impl Render for GanttDb {
                 let _ = write!(
                     bands,
                     "<rect class=\"{p}-section {p}-section-{}\" x=\"0\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"{}\"/>",
-                    js::Number(index),
+                    Number(index),
                     num(y),
-                    js::Number(width),
+                    Number(width),
                     num(h),
                     if index % 2.0 == 0.0 {
                         "var(--_s)"
@@ -775,7 +776,7 @@ impl Render for GanttDb {
         let _ = write!(
             content,
             "<g class=\"{p}-axis\" font-size=\"{}\" fill=\"var(--_m)\">{axis_bottom}{axis_top}</g>",
-            js::Number(tick_size)
+            Number(tick_size)
         );
         if !vert_labels.is_empty() {
             let _ = write!(

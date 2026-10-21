@@ -1,6 +1,6 @@
 //! Pele's `diagrams/kanban/db.ts`.
 
-use crate::js::JsValue;
+use crate::json::JsValue;
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 use crate::{

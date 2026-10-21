@@ -1,10 +1,15 @@
 //! Pele's `diagrams/er/render.ts`.
 
-use crate::geom::{Axis, Direction, Point, RoutePoint, Size};
-use crate::svg::builder::rewrite;
-use crate::svg::builder::{Esc, EscText, fragment, icon_element};
-use crate::svg::edges::Curve;
-use crate::{Config, config::positive};
+use crate::{
+    Config,
+    config::positive,
+    geom::{Axis, Direction, Point, RoutePoint, Size},
+    svg::{
+        builder::{Esc, EscText, fragment, icon_element, rewrite},
+        edges::Curve,
+    },
+};
+use js::{math, number::Number};
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
@@ -17,11 +22,9 @@ use super::{
     graph::{ErGraphEdge, ErGraphNode},
     markers::MARKER_LENGTH,
 };
-use crate::{Ctx, Host};
 use crate::{
-    Error, Link, Rendered,
+    Ctx, Error, Host, Link, Rendered,
     diagrams::{Render, common::generics::parse_generic_types},
-    js,
     layout::{
         compound::{CEdge, CNode, compound_layout, shift_layout, spread_ends},
         layered::LayeredOptions,
@@ -652,7 +655,7 @@ impl ErModel {
                 num(y0 + view.head_h),
                 num(x0 + w),
                 view.style.line,
-                js::Number(view.row_size)
+                Number(view.row_size)
             );
             let mut y = y0 + view.head_h;
             for row in &view.rows {
@@ -677,7 +680,7 @@ impl ErModel {
                         at(2),
                         format_args!(
                             " class=\"{p}-er-keys\" font-size=\"{}\" fill=\"var(--_m)\"{text}",
-                            js::Number(view.key_size)
+                            Number(view.key_size)
                         ),
                     ),
                     TextLeft(
@@ -783,7 +786,7 @@ impl ErModel {
                 let dx = (route[last].at.x - route[0].at.x).abs();
                 let dy = (route[last].at.y - route[0].at.y).abs();
                 let direct = route.len() == 2
-                    && (dx < 0.01 || dy < 0.01 || js::hypot(dx, dy) <= 3.0 * MARKER_LENGTH);
+                    && (dx < 0.01 || dy < 0.01 || math::hypot(&[dx, dy]) <= 3.0 * MARKER_LENGTH);
                 let stub = if direct { 0.0 } else { MARKER_LENGTH };
                 let path = route_path(&route, Curve::Smooth, stub, stub, None, None);
                 let _ = if stub > 0.0 {
@@ -844,7 +847,7 @@ impl ErModel {
             let _ = write!(
                 content,
                 "<g class=\"{p}-edge-labels\" font-size=\"{}\">{labels_out}</g>",
-                js::Number(small_size)
+                Number(small_size)
             );
         }
         let _ = write!(content, "<g class=\"{p}-nodes\">{nodes_out}</g>");

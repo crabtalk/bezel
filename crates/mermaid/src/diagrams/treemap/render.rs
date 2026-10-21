@@ -1,20 +1,20 @@
 //! Pele's `diagrams/treemap/render.ts`.
 
-use crate::geom::{Point, Size};
-use crate::text::Label;
+use crate::{
+    geom::{Point, Size},
+    text::Label,
+};
+use js::{math, number::Number, regex::Lazy, string};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
 use super::{format::Formatter, layout::Insets, model::TreemapModel};
-use crate::config::capped;
-use crate::svg::builder::{Esc, EscText};
-use crate::{Config, Ctx, Error, Host};
 use crate::{
-    Rendered,
+    Config, Ctx, Error, Host, Rendered,
+    config::capped,
     diagrams::{Render, common::fit_text::fit_text},
-    js::{self, Lazy},
     svg::{
-        builder::{TITLE, fragment, num},
+        builder::{Esc, EscText, TITLE, fragment, num},
         root::svg_document,
         theme::{RADIUS, class_names, resolve_style, series_color},
     },
@@ -59,9 +59,9 @@ impl TreemapModel {
     fn draw(&self, config: &TreemapConfig, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.875);
-        let tiny = js::round(size * 0.75);
-        let least = js::round(size * 0.5625);
+        let small = math::round(size * 0.875);
+        let tiny = math::round(size * 0.75);
+        let least = math::round(size * 0.5625);
         let measure = ctx.host;
         let pad = ctx
             .options
@@ -70,12 +70,12 @@ impl TreemapModel {
 
         // Mermaid sizes the diagram as ten times `nodeWidth` by ten times
         // `nodeHeight`.
-        let width = js::round(ctx.cap_width(
+        let width = math::round(ctx.cap_width(
             capped(config.node_width, 64.0, 1.0, 400.0) * 10.0,
             200.0,
             2.0 * pad,
         ));
-        let height = js::round(capped(config.node_height, 40.0, 1.0, 400.0) * 10.0);
+        let height = math::round(capped(config.node_height, 40.0, 1.0, 400.0) * 10.0);
         let show_values = config.show_values != Some(false);
         let format = Formatter::new(config.value_format.as_deref().unwrap_or(","));
         let (all, placed) = self.layout(
@@ -110,7 +110,7 @@ impl TreemapModel {
             let y = top + b.at.y;
             let Size { w, h } = b.size;
             let name = decode_entities(&node.name);
-            let name = js::trim(&name);
+            let name = string::trim(&name);
             let value = if show_values {
                 format.format(b.value)
             } else {
@@ -180,7 +180,7 @@ impl TreemapModel {
                             "<text class=\"{p}-value\" x=\"{}\" y=\"{}\" font-size=\"{}\" text-anchor=\"end\" fill=\"var(--_m)\"{}>{}</text>",
                             num(x + w - SIDE - 2.0),
                             num(baseline + tiny * 0.35),
-                            js::Number(tiny),
+                            Number(tiny),
                             style.text,
                             Esc(&value)
                         );
@@ -206,7 +206,7 @@ impl TreemapModel {
             if let Some(label) = label {
                 let cx = num(x + w / 2.0);
                 let cy = y + h / 2.0;
-                let value_size = least.max(js::round(label.size * 0.8));
+                let value_size = least.max(math::round(label.size * 0.8));
                 let lines = (label.size + value_size) * LINE;
                 if !value.is_empty()
                     && lines <= h - 4.0
@@ -255,7 +255,7 @@ impl TreemapModel {
             let _ = write!(
                 content,
                 "<g class=\"{p}-sections\" font-size=\"{}\">{sections}</g>",
-                js::Number(small)
+                Number(small)
             );
         }
         if !leaves.is_empty() {

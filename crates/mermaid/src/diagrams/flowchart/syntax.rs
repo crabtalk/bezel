@@ -8,9 +8,9 @@ use super::{
 use crate::{
     detect::Kind,
     error::Error,
-    js,
     token::{Stream, Token, expecting},
 };
+use js::string;
 
 const ID: [T; 11] = [
     T::Num,
@@ -579,18 +579,18 @@ impl<'a> Reader<'a> {
             }
             T::AccTitle => {
                 self.s.bump();
-                let value = js::trim(self.s.expect(T::AccTitleValue, "")?).to_string();
+                let value = string::trim(self.s.expect(T::AccTitleValue, "")?).to_string();
                 store.titles.set_acc_title(&value);
                 DocItem::Str(value)
             }
             T::AccDescr => {
                 self.s.bump();
-                let value = js::trim(self.s.expect(T::AccDescrValue, "")?).to_string();
+                let value = string::trim(self.s.expect(T::AccDescrValue, "")?).to_string();
                 store.titles.set_acc_descr(&value);
                 DocItem::Str(value)
             }
             T::AccDescrMultilineValue => {
-                let value = js::trim(self.s.take()).to_string();
+                let value = string::trim(self.s.take()).to_string();
                 store.titles.set_acc_descr(&value);
                 DocItem::Str(value)
             }

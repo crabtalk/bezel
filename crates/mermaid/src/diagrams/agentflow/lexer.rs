@@ -1,6 +1,7 @@
 //! Pele's `diagrams/agentflow/lexer.ts`. Positions are byte offsets; the
 //! columns in `locs` count UTF-16 units, as Jison does.
 
+use js::string;
 use std::borrow::Cow;
 
 use super::types::Loc;
@@ -9,9 +10,8 @@ use crate::{
         lexer::{Core, Lex, S},
         tokens::T,
     },
-    js,
     token::Token,
-    util::chars::{is_blank, is_space},
+    util::chars::is_blank,
 };
 
 pub struct Tokens<'s> {
@@ -52,7 +52,7 @@ impl<'s> Lex<'s> for Lexer<'s> {
 
     fn emit_flat(&mut self, kind: T, end: usize) {
         let text = &self.src()[self.p()..end];
-        self.record(kind, text.into(), end, |l| l.col += js::len(text));
+        self.record(kind, text.into(), end, |l| l.col += string::len(text));
     }
 
     /// Jison counts `\r\n` in such a run as two line breaks.
@@ -99,11 +99,11 @@ impl<'s> Lex<'s> for Lexer<'s> {
             k += 1;
         }
         match last_break {
-            None => self.col += js::len(text),
+            None => self.col += string::len(text),
             Some(at) => {
                 let rest = &text[at + 1..];
                 let stop = rest.find(['\u{2028}', '\u{2029}']).unwrap_or(rest.len());
-                self.col = js::len(&rest[..stop]);
+                self.col = string::len(&rest[..stop]);
             }
         }
         self.core.cur.p = end;
@@ -262,7 +262,7 @@ impl<'s> Lexer<'s> {
                 self.emit(T::Comment, end);
                 return true;
             }
-            Some(c) if is_space(c) => {
+            Some(c) if string::is_space(c) => {
                 if self.link() {
                     return true;
                 }
@@ -316,7 +316,7 @@ impl<'s> Lexer<'s> {
         while let Some(ch) = self.at(q) {
             if ch == '"'
                 || (ch == '-' && self.at(q + 1) == Some('-'))
-                || (is_space(ch) && self.arrow_end(q).is_some())
+                || (string::is_space(ch) && self.arrow_end(q).is_some())
             {
                 break;
             }

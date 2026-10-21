@@ -1,5 +1,7 @@
 //! A table of named, equal-length columns.
 
+use crate::transform::Transform;
+use gpui::SharedString;
 use std::{
     collections::HashMap,
     sync::{
@@ -7,8 +9,6 @@ use std::{
         atomic::{AtomicU64, Ordering},
     },
 };
-
-use gpui::SharedString;
 
 static GENERATIONS: AtomicU64 = AtomicU64::new(1);
 
@@ -131,6 +131,32 @@ impl Data {
             .iter()
             .find(|(name, _)| name == field)
             .map(|(_, column)| column)
+    }
+
+    /// `field`'s values as numbers, text read as decimal numbers. `NaN` for a
+    /// missing or unreadable value, and for every row of a field the table
+    /// lacks.
+    pub fn numbers(&self, field: &str) -> Vec<f64> {
+        match self.column(field) {
+            Some(Column::Number(values)) => values.to_vec(),
+            Some(Column::Text(text)) => {
+                let names: Vec<f64> = text
+                    .names
+                    .iter()
+                    .map(|name| name.trim().parse().unwrap_or(f64::NAN))
+                    .collect();
+                text.codes
+                    .iter()
+                    .map(|code| names[*code as usize])
+                    .collect()
+            }
+            None => vec![f64::NAN; self.len()],
+        }
+    }
+
+    /// The table `pipeline`'s ops make of this one, run in order.
+    pub fn transform(self, pipeline: &[Transform]) -> Self {
+        pipeline.iter().fold(self, |data, op| op.apply(&data))
     }
 
     /// In the order they were first added.

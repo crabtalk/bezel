@@ -1,10 +1,10 @@
 //! Pele's `diagrams/venn/lexer.ts`.
 
 use crate::{
-    js,
     token::{Cursor, Token, grammar},
-    util::chars::{digits_end, is_word},
+    util::chars::digits_end,
 };
+use js::string;
 
 grammar! {
     /// The venn lexer's token kinds.
@@ -182,7 +182,7 @@ impl<'s> VennLexer<'s> {
                         return self.token(kind, end);
                     }
                 }
-                let end = self.cur.run_end(i + 1, |c| is_word(c) || c == '-');
+                let end = self.cur.run_end(i + 1, |c| string::is_word(c) || c == '-');
                 return self.token(T::Identifier, end);
             }
             return match c {
@@ -240,7 +240,7 @@ impl<'s> VennLexer<'s> {
             return T::Error;
         }
         self.cur.p = end + 1;
-        self.text = js::trim(&src[i + 1..end]);
+        self.text = string::trim(&src[i + 1..end]);
         T::BracketLabel
     }
 

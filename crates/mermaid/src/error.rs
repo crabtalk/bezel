@@ -1,10 +1,11 @@
 //! Why a diagram did not draw.
 
+use js::string;
 use std::fmt;
 
 use serde::Serialize;
 
-use super::{detect::Kind, js};
+use crate::detect::Kind;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -134,7 +135,7 @@ impl Place {
             }
         }
         let line_end = src[offset..].find('\n').map_or(src.len(), |at| offset + at);
-        let column = js::len(&src[line_start..offset]) + 1;
+        let column = string::len(&src[line_start..offset]) + 1;
         let text = &src[line_start..line_end];
         Self {
             line,

@@ -1,20 +1,21 @@
 //! Pele's `diagrams/treeview/render.ts`.
 
 use super::TreeViewConfig;
-use crate::config::within;
-use crate::geom::Point;
-use crate::svg::builder::{Esc, EscText};
+use crate::{
+    config::within,
+    geom::Point,
+    svg::builder::{Esc, EscText},
+};
+use js::{math, string};
 use std::{collections::HashMap, fmt::Write as _};
 
 use super::{
     icons::{BUILTIN_PACK, IconConfig, glyph},
     model::{NodeType, TreeNode, TreeViewModel},
 };
-use crate::{Config, Ctx, Error, Host, util::chars};
 use crate::{
-    Rendered,
+    Config, Ctx, Error, Host, Rendered,
     diagrams::Render,
-    js,
     svg::{
         builder::{TITLE, fragment, icon_element, num},
         root::svg_document,
@@ -110,7 +111,7 @@ impl TreeViewModel {
         } else {
             row_indent + padding_x
         };
-        let row_height = js::round(size * 1.5) + 2.0 * padding_y;
+        let row_height = math::round(size * 1.5) + 2.0 * padding_y;
         let icon_size = size;
 
         let title = Label::layout(
@@ -172,10 +173,11 @@ impl TreeViewModel {
             if label_x + width > label_right {
                 label_right = label_x + width;
             }
-            let highlighted = node
-                .css_class
-                .as_deref()
-                .is_some_and(|class| class.split(chars::is_space).any(|name| name == "highlight"));
+            let highlighted = node.css_class.as_deref().is_some_and(|class| {
+                class
+                    .split(string::is_space)
+                    .any(|name| name == "highlight")
+            });
             if highlighted {
                 any_highlight = true;
             }

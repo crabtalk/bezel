@@ -1,19 +1,16 @@
 //! Pele's `diagrams/kanban/render.ts`.
 
 use crate::geom::Point;
+use js::{math, number::Number, string};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
 use super::db::{KanbanModel, KanbanNode};
-use crate::diagrams::Render;
-use crate::svg::builder::{Esc, EscText};
-use crate::{Config, Ctx, Error};
 use crate::{
-    Link, Rendered,
-    diagrams::common::icon::icon_svg,
-    js,
+    Config, Ctx, Error, Link, Rendered,
+    diagrams::{Render, common::icon::icon_svg},
     svg::{
-        builder::{TITLE, fragment, num, text_style},
+        builder::{Esc, EscText, TITLE, fragment, num, text_style},
         root::{Accessible, svg_document},
         theme::{CRITICAL, RADIUS, class_names},
     },
@@ -42,7 +39,7 @@ enum Priority {
 impl Priority {
     /// The priority `text` names, ignoring case and surrounding whitespace.
     fn parse(text: &str) -> Option<Self> {
-        Some(match js::trim(text).to_lowercase().as_str() {
+        Some(match string::trim(text).to_lowercase().as_str() {
             "very high" => Priority::VeryHigh,
             "high" => Priority::High,
             "low" => Priority::Low,
@@ -221,9 +218,9 @@ impl Render for KanbanModel {
     fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
         let conf = &config.kanban;
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.875);
-        let line = js::round(size * 1.5);
-        let small_line = js::round(small * 1.5);
+        let small = math::round(size * 0.875);
+        let line = math::round(size * 1.5);
+        let small_line = math::round(small * 1.5);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let p = crate::PREFIX;
@@ -391,7 +388,7 @@ impl Render for KanbanModel {
             let _ = write!(
                 body,
                 "<rect width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\"/>",
-                js::Number(column_width),
+                Number(column_width),
                 num(row_heights[row])
             );
             let _ = write!(
@@ -407,9 +404,9 @@ impl Render for KanbanModel {
             let _ = write!(
                 body,
                 "<text class=\"{p}-count\" x=\"{}\" y=\"{}\" text-anchor=\"end\" font-size=\"{}\" fill=\"var(--_m)\">{}</text>",
-                js::Number(edge),
+                Number(edge),
                 num(COLUMN_PAD + line / 2.0 + small * 0.35),
-                js::Number(small),
+                Number(small),
                 section.items.len()
             );
             if let Some(icon) = section
@@ -446,15 +443,15 @@ impl Render for KanbanModel {
                     }),
                     class_names(item.css_classes.as_deref().unwrap_or("")),
                     EscText(&item.id),
-                    js::Number(COLUMN_PAD),
+                    Number(COLUMN_PAD),
                     num(y),
-                    js::Number(small)
+                    Number(small)
                 );
                 let inner = &mut *body;
                 let _ = write!(
                     inner,
                     "<rect width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_bg)\" stroke=\"var(--_b)\"/>",
-                    js::Number(card_width),
+                    Number(card_width),
                     num(card.height)
                 );
                 if let Some(priority) = priority {

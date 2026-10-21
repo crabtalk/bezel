@@ -1,8 +1,11 @@
 //! Pele's `diagrams/block/layout.ts`.
 
 use super::types::Columns;
-use crate::geom::{Point, Size};
-use crate::{Error, Kind, js};
+use crate::{
+    Error, Kind,
+    geom::{Point, Size},
+};
+use js::number::Number;
 
 const MAX_SPAN: f64 = 1000.0;
 
@@ -43,7 +46,7 @@ impl Columns {
         if position < 0.0 || !is_integer(position) {
             return Err(Error::semantic(format!(
                 "Position must be a non-negative integer.{}",
-                js::num_str(position)
+                Number(position)
             ))
             .of(Kind::Block));
         }

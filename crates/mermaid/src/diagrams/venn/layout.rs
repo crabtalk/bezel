@@ -1,5 +1,6 @@
 //! Pele's `diagrams/venn/layout.ts`.
 
+use js::string;
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
@@ -10,7 +11,7 @@ use std::{
 use indexmap::IndexMap;
 
 use super::types::VennSubset;
-use crate::{geom::Point, js::sort_strings};
+use crate::geom::Point;
 
 const TAU: f64 = PI * 2.0;
 const GRID: i32 = 10;
@@ -40,7 +41,7 @@ pub fn ensure_pairwise_subsets(subsets: &[VennSubset]) -> Vec<VennSubset> {
     let mut sizes: HashMap<&str, f64> = HashMap::new();
     for subset in subsets {
         let mut sets = subset.sets.clone();
-        sort_strings(&mut sets);
+        string::sort(&mut sets);
         present.insert(sets);
         if subset.sets.len() == 1 {
             sizes.insert(&subset.sets[0], subset.size);
@@ -52,7 +53,7 @@ pub fn ensure_pairwise_subsets(subsets: &[VennSubset]) -> Vec<VennSubset> {
             continue;
         }
         let mut members = subset.sets.clone();
-        sort_strings(&mut members);
+        string::sort(&mut members);
         for i in 0..members.len() - 1 {
             for j in i + 1..members.len() {
                 let pair = vec![members[i].clone(), members[j].clone()];

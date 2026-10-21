@@ -1,8 +1,15 @@
 //! Pele's `diagrams/block/render.ts`.
 
-use crate::config::capped;
-use crate::geom::{Axis, Point, Side, Size};
-use crate::svg::builder::rewrite;
+use crate::{
+    config::capped,
+    geom::{Axis, Point, Side, Size},
+    svg::builder::rewrite,
+};
+use js::{
+    math,
+    number::{self, Number},
+    string,
+};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{
@@ -16,11 +23,9 @@ use super::{
     layout::{Cell, layout},
     types::{ArrowType, Block, BlockKind, BlockModel, Columns, Pattern, Thickness},
 };
-use crate::{Config, Ctx};
 use crate::{
-    Error, Rendered,
+    Config, Ctx, Error, Rendered,
     diagrams::Render,
-    js,
     svg::{
         builder::{EscText, num},
         edges::{EdgePath, Marker, edge_label_svg},
@@ -168,11 +173,11 @@ impl View {
         let hw = self.size.w / 2.0;
         let hh = self.size.h / 2.0;
         let mut k = if self.is_round() {
-            hw / js::or_one(js::hypot(dx, dy))
+            hw / number::or(math::hypot(&[dx, dy]), 1.0)
         } else if self.is_diamond() {
-            1.0 / js::or_one(dx.abs() / hw + dy.abs() / hh)
+            1.0 / number::or(dx.abs() / hw + dy.abs() / hh, 1.0)
         } else {
-            js::min(
+            math::min(
                 if dx == 0.0 {
                     f64::INFINITY
                 } else {
@@ -209,7 +214,7 @@ impl View {
         // hit unless all four corners are on one side.
         let dx = x2 - x1;
         let dy = y2 - y1;
-        let side = |x: f64, y: f64| js::sign(dx * (y - y1) - dy * (x - x1));
+        let side = |x: f64, y: f64| math::sign(dx * (y - y1) - dy * (x - x1));
         let first = side(l, t);
         first == 0.0 || side(r, t) != first || side(r, b) != first || side(l, b) != first
     }
@@ -218,11 +223,11 @@ impl View {
     /// block, or around the matching point on a round or diamond outline.
     fn loop_arc(&self, k: f64) -> Arc {
         let (Point { x, y }, hw, hh) = (self.center, self.size.w / 2.0, self.size.h / 2.0);
-        let r = js::max(1.0, js::min(js::min(10.0 + 5.0 * (k - 1.0), hw), hh));
+        let r = math::max(1.0, math::min(math::min(10.0 + 5.0 * (k - 1.0), hw), hh));
         if self.is_round() {
             let px = x + hw * FRAC_1_SQRT_2;
             let py = y - hw * FRAC_1_SQRT_2;
-            let half = 2.0 * js::min(1.0, r / (2.0 * hw)).asin();
+            let half = 2.0 * math::min(1.0, r / (2.0 * hw)).asin();
             let angle = |at: f64| (y - hw * at.sin() - py).atan2(x + hw * at.cos() - px);
             return Arc {
                 center: Point::new(px, py),
@@ -268,8 +273,8 @@ impl Arc {
         let ey = py + r * a2.sin();
         // Each marker lies along the chord it covers, so it follows the curve
         // instead of the tangent at its tip.
-        let sl = js::hypot(sx - x1, sy - y1);
-        let el = js::hypot(ex - x2, ey - y2);
+        let sl = math::hypot(&[sx - x1, sy - y1]);
+        let el = math::hypot(&[ex - x2, ey - y2]);
         EdgePath {
             d: format!(
                 "M{},{}A{},{} 0 {} 1 {},{}",
@@ -334,10 +339,10 @@ impl Router<'_> {
         let tr = t.center.x + t.size.w / 2.0;
         let tt = t.center.y - t.size.h / 2.0;
         let tb = t.center.y + t.size.h / 2.0;
-        let x1 = js::max(sl, tl);
-        let x2 = js::min(sr, tr);
-        let y1 = js::max(st, tt);
-        let y2 = js::min(sb, tb);
+        let x1 = math::max(sl, tl);
+        let x2 = math::min(sr, tr);
+        let y1 = math::max(st, tt);
+        let y2 = math::min(sb, tb);
         let over_x = x2 - x1 > 6.0;
         let over_y = y2 - y1 > 6.0;
 
@@ -351,7 +356,7 @@ impl Router<'_> {
             let down = o.y + outer.size.h / 2.0 - (i.y + inner.size.h / 2.0);
             let left = i.x - inner.size.w / 2.0 - (o.x - outer.size.w / 2.0);
             let right = o.x + outer.size.w / 2.0 - (i.x + inner.size.w / 2.0);
-            let least = js::min(js::min(up, down), js::min(left, right));
+            let least = math::min(math::min(up, down), math::min(left, right));
             let mut points = if least == down {
                 vec![
                     Point::new(i.x, inner.edge_y(i.x, 1.0)),
@@ -379,8 +384,8 @@ impl Router<'_> {
             return points;
         }
         if over_x {
-            let margin = js::min(6.0, (x2 - x1) / 2.0);
-            let x = js::min(js::max((x1 + x2) / 2.0 + shift, x1 + margin), x2 - margin);
+            let margin = math::min(6.0, (x2 - x1) / 2.0);
+            let x = math::min(math::max((x1 + x2) / 2.0 + shift, x1 + margin), x2 - margin);
             let down = if t.center.y > s.center.y { 1.0 } else { -1.0 };
             return vec![
                 Point::new(x, s.edge_y(x, down)),
@@ -388,8 +393,8 @@ impl Router<'_> {
             ];
         }
         if over_y {
-            let margin = js::min(6.0, (y2 - y1) / 2.0);
-            let y = js::min(js::max((y1 + y2) / 2.0 + shift, y1 + margin), y2 - margin);
+            let margin = math::min(6.0, (y2 - y1) / 2.0);
+            let y = math::min(math::max((y1 + y2) / 2.0 + shift, y1 + margin), y2 - margin);
             let right = if t.center.x > s.center.x { 1.0 } else { -1.0 };
             return vec![
                 Point::new(s.edge_x(y, right), y),
@@ -471,30 +476,30 @@ fn trace(p: &[Point], mut start_trim: f64, mut end_trim: f64) -> EdgePath {
     let Point { x: ex, y: ey } = p[n - 1];
     let mut ax = p[1].x - sx;
     let mut ay = p[1].y - sy;
-    let first = js::hypot(ax, ay);
-    ax /= js::or_one(first);
-    ay /= js::or_one(first);
+    let first = math::hypot(&[ax, ay]);
+    ax /= number::or(first, 1.0);
+    ay /= number::or(first, 1.0);
     let mut bx = ex - p[n - 2].x;
     let mut by = ey - p[n - 2].y;
-    let last = js::hypot(bx, by);
-    bx /= js::or_one(last);
-    by /= js::or_one(last);
+    let last = math::hypot(&[bx, by]);
+    bx /= number::or(last, 1.0);
+    by /= number::or(last, 1.0);
     if n == 2 && start_trim + end_trim > first {
         let scale = first / (start_trim + end_trim);
         start_trim *= scale;
         end_trim *= scale;
     }
-    start_trim = js::min(start_trim, first);
-    end_trim = js::min(end_trim, last);
+    start_trim = math::min(start_trim, first);
+    end_trim = math::min(end_trim, last);
     let mut d = format!(
         "M{},{}",
         num(sx + ax * start_trim),
         num(sy + ay * start_trim)
     );
     if n == 3 {
-        let r = js::max(
+        let r = math::max(
             0.0,
-            js::min(js::min(CORNER, first - start_trim), last - end_trim),
+            math::min(math::min(CORNER, first - start_trim), last - end_trim),
         );
         let bend = p[1];
         let _ = write!(
@@ -645,7 +650,7 @@ impl<H: Host> Viewer<'_, H> {
                     .lines
                     .iter()
                     .flatten()
-                    .all(|part| part.icon.is_none() && js::trim(&part.text).is_empty());
+                    .all(|part| part.icon.is_none() && string::trim(&part.text).is_empty());
                 let s = heads.size(if blank {
                     Size::default()
                 } else {
@@ -1031,7 +1036,7 @@ impl BlockModel {
             let _ = write!(
                 content,
                 "<g class=\"{p}-edge-labels\" font-size=\"{}\">{labels}</g>",
-                js::Number(edge_size)
+                Number(edge_size)
             );
         }
         let svg = svg_document(

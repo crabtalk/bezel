@@ -3,10 +3,8 @@
 //! and the `accTitle` and `accDescr` statements. Pele's
 //! `diagrams/common/scan.ts`.
 
-use crate::{
-    token::{Cursor, Token, grammar},
-    util::chars::is_space,
-};
+use crate::token::{Cursor, Token, grammar};
+use js::string;
 
 grammar! {
     /// The journey and timeline lexers' token kinds.
@@ -69,7 +67,7 @@ impl<'s> Lexer<'s> {
                 cur.p = cur.line_end(next + 2);
             } else if c == '\n' {
                 return true;
-            } else if is_space(c) {
+            } else if string::is_space(c) {
                 cur.p = cur.space_end(next);
             } else if c == '#' {
                 cur.p = cur.line_end(cur.p);

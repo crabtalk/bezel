@@ -1,10 +1,7 @@
 //! Pele's `diagrams/sankey/lexer.ts`.
 
-use crate::{
-    js,
-    token::{Cursor, Token, grammar},
-    util::chars::is_word,
-};
+use crate::token::{Cursor, Token, grammar};
+use js::string;
 
 grammar! {
     /// The sankey lexer's token kinds.
@@ -55,9 +52,9 @@ impl Lexer<'_> {
     /// character after it.
     fn keyword(&self, word: &str) -> Option<usize> {
         let p = self.cur.p;
-        let end = p + js::units_end(&self.cur.src[p..], word.len());
+        let end = p + string::units_end(&self.cur.src[p..], word.len());
         let matched = self.cur.src[p..end].to_lowercase() == word
-            && !self.cur.char_at(end).is_some_and(is_word);
+            && !self.cur.char_at(end).is_some_and(string::is_word);
         matched.then_some(end)
     }
 

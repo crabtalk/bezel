@@ -1,18 +1,16 @@
 //! The title and accessibility text every diagram's database keeps. Pele's
 //! `diagrams/common/commonDb.ts`.
 
+use js::{regex::Lazy, string};
 use serde::Serialize;
 
-use crate::{
-    js::{self, Lazy},
-    svg::root::Accessible,
-};
+use crate::svg::root::Accessible;
 
 static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
 
 /// `accTitle` text without its leading whitespace.
 pub fn acc_title(text: &str) -> String {
-    js::trim_start(text).to_string()
+    string::trim_start(text).to_string()
 }
 
 /// `accDescr` text without the indentation of its lines after the first.

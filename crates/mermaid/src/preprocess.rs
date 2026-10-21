@@ -4,10 +4,11 @@
 use super::{
     config::{Map, Value, merge},
     error::Error,
-    js::{self, JsValue, Lazy, parse_json},
     util::chars::{self, is_inline_space, width_at},
     yaml::parse_yaml,
 };
+use crate::{json, json::JsValue};
+use js::{regex::Lazy, string};
 
 static RE_COMMENT: Lazy = Lazy::new(r"^\s*%%(?!\{)[^\n]+\n?", "gm");
 static RE_DIRECTIVE: Lazy = Lazy::new(
@@ -34,14 +35,14 @@ pub fn cleanup_comments(text: &str) -> String {
     } else {
         text.to_string()
     };
-    js::trim_start(&text).to_string()
+    string::trim_start(&text).to_string()
 }
 
 /// Byte offsets of the line breaks in the run of whitespace at `from`.
 fn breaks_in_space(text: &str, from: usize) -> impl Iterator<Item = usize> + '_ {
     text[from..]
         .char_indices()
-        .take_while(|&(_, c)| chars::is_space(c))
+        .take_while(|&(_, c)| string::is_space(c))
         .filter(|&(_, c)| matches!(c, '\n' | '\r'))
         .map(move |(at, _)| from + at)
 }
@@ -114,7 +115,7 @@ fn directives(text: &str, config: &mut Map) -> String {
     if !text.contains("%%{") {
         return text.to_string();
     }
-    let normalized = js::trim(text).replace('\'', "\"");
+    let normalized = string::trim(text).replace('\'', "\"");
     for caps in RE_DIRECTIVE.captures_iter(&normalized) {
         let kind = caps.get(1).or_else(|| caps.get(2));
         match kind {
@@ -123,7 +124,7 @@ fn directives(text: &str, config: &mut Map) -> String {
             }
             Some("init" | "initialize") => {
                 if let Some(args) = caps.get(4).filter(|args| !args.is_empty())
-                    && let Some(Value::Object(args)) = parse_json(js::trim(args))
+                    && let Some(Value::Object(args)) = json::parse_json(string::trim(args))
                 {
                     // Mermaid ignores an init directive whose body is not
                     // valid JSON.
@@ -231,7 +232,7 @@ fn drop_color_semicolons(text: &str, keyword: &str) -> String {
                     hash = Some(j);
                     break;
                 }
-            } else if chars::is_space(c) {
+            } else if string::is_space(c) {
                 after_colon = false;
             }
         }

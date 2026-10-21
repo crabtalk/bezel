@@ -4,14 +4,16 @@
 //! getData from Mermaid's use case DB. Pele's `diagrams/usecase/graph.ts`.
 
 use super::json::pointer_key;
-use crate::js::JsValue;
+use crate::json::JsValue;
+use js::string;
+
 use indexmap::IndexMap;
 
 use super::types::{
     ActorType, Animation, Arrow, BoundaryType, LabelType, Relationship, RelationshipType,
     UseCaseShape, UsecaseJsonNode, UsecaseModel,
 };
-use crate::{config::Value, js, svg::edges::Marker};
+use crate::{config::Value, svg::edges::Marker};
 
 /// What an edge ends in: one of the shared markers, or the hollow triangle of
 /// a generalization.
@@ -246,8 +248,8 @@ impl UsecaseModel {
                 continue;
             };
             for raw in &definition.styles {
-                let style = js::trim(raw);
-                let property = js::trim(style.split_once(':').map_or(style, |(p, _)| p));
+                let style = string::trim(raw);
+                let property = string::trim(style.split_once(':').map_or(style, |(p, _)| p));
                 if !property.is_empty() {
                     out.insert(property.to_string(), style.to_string());
                 }

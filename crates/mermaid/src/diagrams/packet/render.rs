@@ -1,19 +1,20 @@
 //! Pele's `diagrams/packet/render.ts`.
 
-use crate::geom::{Point, Size};
-use crate::svg::builder::Esc;
+use crate::{
+    geom::{Point, Size},
+    svg::builder::Esc,
+};
+use js::{math, number::Number, string};
 use std::{collections::HashMap, fmt::Write as _};
 
 use super::{
     BitOrder, PacketConfig,
     model::{PacketBlock, PacketModel},
 };
-use crate::config::capped;
-use crate::{Config, Ctx, Error, Host};
 use crate::{
-    Rendered,
+    Config, Ctx, Error, Host, Rendered,
+    config::capped,
     diagrams::{Render, common::fit_text::fit_text},
-    js,
     svg::{
         builder::{TITLE, fragment, num},
         root::svg_document,
@@ -32,8 +33,8 @@ impl PacketModel {
     fn draw(&self, config: &PacketConfig, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let label_size = js::round(size * 0.875);
-        let bit_size = js::round(size * 0.625);
+        let label_size = math::round(size * 0.875);
+        let bit_size = math::round(size * 0.625);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
 
@@ -110,7 +111,7 @@ impl PacketModel {
                                     - 6.0,
                             );
                             Label::literal(
-                                js::trim(&decode_entities(&block.label)),
+                                string::trim(&decode_entities(&block.label)),
                                 &*measure,
                                 label_size,
                                 room,
@@ -175,10 +176,10 @@ impl PacketModel {
             fits.entry((label.to_string(), max.to_bits()))
                 .or_insert_with(|| {
                     fit_text(
-                        js::trim(&decode_entities(label)),
+                        string::trim(&decode_entities(label)),
                         max,
                         label_size,
-                        js::round(size * 0.5),
+                        math::round(size * 0.5),
                         &*measure,
                         0,
                     )
@@ -208,8 +209,8 @@ impl PacketModel {
                 let _ = write!(
                     fields,
                     "<g class=\"{p}-node\" data-id=\"{}-{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"/>",
-                    js::Number(block.start),
-                    js::Number(block.end),
+                    Number(block.start),
+                    Number(block.end),
                     num(corner.x),
                     num(corner.y),
                     num(field.w),
@@ -247,7 +248,7 @@ impl PacketModel {
                         "<text x=\"{}\" y=\"{}\" text-anchor=\"middle\">{}</text>",
                         num(center.x),
                         num(corner.y - 4.0),
-                        js::Number(leading)
+                        Number(leading)
                     );
                 } else {
                     let _ = write!(
@@ -255,10 +256,10 @@ impl PacketModel {
                         "<text x=\"{}\" y=\"{}\">{}</text><text x=\"{}\" y=\"{}\" text-anchor=\"end\">{}</text>",
                         num(corner.x),
                         num(corner.y - 4.0),
-                        js::Number(leading),
+                        Number(leading),
                         num(corner.x + field.w),
                         num(corner.y - 4.0),
-                        js::Number(trailing)
+                        Number(trailing)
                     );
                 }
             }
@@ -271,14 +272,14 @@ impl PacketModel {
             let _ = write!(
                 content,
                 "<g class=\"{p}-packet-fields\" font-size=\"{}\" text-anchor=\"middle\">{fields}</g>",
-                js::Number(label_size)
+                Number(label_size)
             );
         }
         if !bits.is_empty() {
             let _ = write!(
                 content,
                 "<g class=\"{p}-packet-bits\" font-size=\"{}\" fill=\"var(--_m)\">{bits}</g>",
-                js::Number(bit_size)
+                Number(bit_size)
             );
         }
         // Mermaid puts a packet's title under it.

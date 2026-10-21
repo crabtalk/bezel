@@ -1,12 +1,10 @@
 //! Pele's `diagrams/treemap/layout.ts`.
 
+use js::math;
 use std::cmp::Ordering;
 
 use super::model::{TreemapModel, TreemapNode};
-use crate::{
-    geom::{Point, Size},
-    js,
-};
+use crate::geom::{Point, Size};
 
 pub struct Tile<'m> {
     pub node: &'m TreemapNode,
@@ -88,12 +86,12 @@ fn squarify(tiles: &mut [Tile], shown: &[usize], total: f64, at: Point, size: Si
             };
             let bx = if w >= h { x } else { x + offset };
             let by = if w >= h { y + offset } else { y };
-            let x0 = js::round(bx + gap / 2.0);
-            let y0 = js::round(by + gap / 2.0);
+            let x0 = math::round(bx + gap / 2.0);
+            let y0 = math::round(by + gap / 2.0);
             b.at = Point::new(x0, y0);
             b.size = Size::new(
-                js::round(bx + (if w >= h { thickness } else { length }) - gap / 2.0) - x0,
-                js::round(by + (if w >= h { length } else { thickness }) - gap / 2.0) - y0,
+                math::round(bx + (if w >= h { thickness } else { length }) - gap / 2.0) - x0,
+                math::round(by + (if w >= h { length } else { thickness }) - gap / 2.0) - y0,
             );
             offset += length;
             rest -= b.value;

@@ -4,21 +4,19 @@ use super::{
     db::IshikawaDb,
     types::{NodeId, Nodes},
 };
-use crate::diagrams::Render;
-use crate::geom::{Point, Size};
-use crate::svg::builder::EscText;
-use crate::svg::edges::Marker;
-use crate::{Config, Ctx, Error};
 use crate::{
-    Rendered, js,
+    Config, Ctx, Error, Rendered,
+    diagrams::Render,
+    geom::{Point, Size},
     svg::{
-        builder::{TITLE, num},
-        edges::ARROW,
+        builder::{EscText, TITLE, num},
+        edges::{ARROW, Marker},
         root::{Accessible, svg_document},
         theme::RADIUS,
     },
     text::{Host, Label, Style},
 };
+use js::{math, number::Number};
 use std::fmt::Write as _;
 
 /// How far a bone moves toward the tail for each unit it rises from the
@@ -95,7 +93,7 @@ impl Category {
         small: f64,
     ) -> Self {
         let label = Label::layout(Some(&nodes.get(node).text), false, measure, size, 180.0, 0);
-        let line_height = js::round(small * 1.5);
+        let line_height = math::round(small * 1.5);
         let mut bones: Vec<Bone> = Vec::new();
         let mut rows: Vec<usize> = Vec::new();
         let mut stack: Vec<Frame> = Vec::new();
@@ -199,7 +197,7 @@ impl Render for IshikawaDb {
 impl IshikawaDb {
     fn draw_fishbone(&self, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.875);
+        let small = math::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let p = crate::PREFIX;
@@ -376,7 +374,7 @@ impl IshikawaDb {
                     let _ = write!(
                         groups,
                         "<g class=\"{p}-ishikawa-causes\" font-size=\"{}\">{texts}</g>",
-                        js::Number(small)
+                        Number(small)
                     );
                 }
                 groups.push_str("</g>");
@@ -443,7 +441,7 @@ impl IshikawaDb {
     /// The outline drawn as an indented list, for a drawing turned to fit.
     fn draw_outline(&self, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.875);
+        let small = math::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let p = crate::PREFIX;
@@ -482,7 +480,7 @@ impl IshikawaDb {
         let mut width = title.width;
         let mut shapes = String::new();
         let mut edges = String::new();
-        let small_attrs = format!(" class=\"{p}-label\" font-size=\"{}\"", js::Number(small));
+        let small_attrs = format!(" class=\"{p}-label\" font-size=\"{}\"", Number(small));
         for k in 0..order.len() {
             let entry = &order[k];
             let entry_depth = entry.depth as f64;

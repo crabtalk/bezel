@@ -6,30 +6,18 @@ use serde::Deserialize;
 pub use serde_json::Value;
 use serde_with::{DefaultOnError, serde_as};
 
-use crate::detect::Kind;
-use crate::diagrams::agentflow::AgentflowConfig;
-use crate::diagrams::architecture::ArchitectureConfig;
-use crate::diagrams::block::BlockConfig;
-use crate::diagrams::class::ClassConfig;
-use crate::diagrams::cynefin::CynefinConfig;
-use crate::diagrams::flowchart::FlowchartConfig;
-use crate::diagrams::gantt::GanttConfig;
-use crate::diagrams::git::GitGraphConfig;
-use crate::diagrams::kanban::KanbanConfig;
-use crate::diagrams::mindmap::MindmapConfig;
-use crate::diagrams::packet::PacketConfig;
-use crate::diagrams::pie::PieConfig;
-use crate::diagrams::quadrant::QuadrantConfig;
-use crate::diagrams::radar::RadarConfig;
-use crate::diagrams::railroad::RailroadConfig;
-use crate::diagrams::sankey::SankeyConfig;
-use crate::diagrams::sequence::SequenceConfig;
-use crate::diagrams::timeline::TimelineConfig;
-use crate::diagrams::treemap::TreemapConfig;
-use crate::diagrams::treeview::TreeViewConfig;
-use crate::diagrams::usecase::UsecaseConfig;
-use crate::diagrams::wardley::WardleyConfig;
-use crate::diagrams::xychart::XyChartConfig;
+use crate::{
+    detect::Kind,
+    diagrams::{
+        agentflow::AgentflowConfig, architecture::ArchitectureConfig, block::BlockConfig,
+        class::ClassConfig, cynefin::CynefinConfig, flowchart::FlowchartConfig, gantt::GanttConfig,
+        git::GitGraphConfig, kanban::KanbanConfig, mindmap::MindmapConfig, packet::PacketConfig,
+        pie::PieConfig, quadrant::QuadrantConfig, radar::RadarConfig, railroad::RailroadConfig,
+        sankey::SankeyConfig, sequence::SequenceConfig, timeline::TimelineConfig,
+        treemap::TreemapConfig, treeview::TreeViewConfig, usecase::UsecaseConfig,
+        wardley::WardleyConfig, xychart::XyChartConfig,
+    },
+};
 
 /// A JSON object, keys in the order they were written.
 pub type Map = serde_json::Map<String, Value>;

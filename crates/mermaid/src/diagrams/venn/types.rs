@@ -1,5 +1,6 @@
 //! Pele's `diagrams/venn/types.ts`.
 
+use crate::json;
 use indexmap::IndexMap;
 use serde::Serialize;
 
@@ -8,7 +9,7 @@ use serde::Serialize;
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct VennSubset {
     pub sets: Vec<String>,
-    #[serde(serialize_with = "crate::js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub size: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,

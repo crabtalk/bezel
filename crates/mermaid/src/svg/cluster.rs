@@ -1,12 +1,12 @@
 //! Cluster titles, kept clear of the edges that enter a cluster at its top.
 //! Pele's `svg/cluster.ts`.
 
+use js::math;
 use std::{collections::HashMap, fmt};
 
 use super::builder::{fragment, num};
 use crate::{
     geom::{Point, RoutePoint},
-    js,
     layout::compound::CNode,
     text::Label,
 };
@@ -25,7 +25,7 @@ impl Crossings {
 
     fn push(&mut self, at: Point) {
         self.xs
-            .entry(js::round(at.y) as i64)
+            .entry(math::round(at.y) as i64)
             .or_default()
             .push(at.x);
     }
@@ -47,7 +47,7 @@ impl Crossings {
     /// The x of every marked point level with the top of `c`.
     pub fn at_top(&self, c: &CNode) -> Option<&[f64]> {
         self.xs
-            .get(&(js::round(c.center.y - c.size.h / 2.0) as i64))
+            .get(&(math::round(c.center.y - c.size.h / 2.0) as i64))
             .map(Vec::as_slice)
     }
 

@@ -1,27 +1,24 @@
 //! Pele's `diagrams/packet/model.ts`.
 
 use super::PacketConfig;
-use crate::config::capped;
-use crate::diagrams::common::db::Titles;
+use crate::{config::capped, diagrams::common::db::Titles, json};
+use js::number::Number;
 use serde::Serialize;
 
 use super::parser::PacketAst;
-use crate::{
-    Error, Kind,
-    js::{self},
-};
+use crate::{Error, Kind};
 
 const MAX_ROWS: usize = 10_000;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct PacketBlock {
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub start: f64,
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub end: f64,
     /// As Mermaid counts it: one less than the width for the pieces of a
     /// field split across rows.
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub bits: f64,
     pub label: String,
 }
@@ -33,7 +30,7 @@ pub struct PacketModel {
     pub kind: &'static str,
     #[serde(flatten)]
     pub titles: Titles,
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub bits_per_row: f64,
     pub rows: Vec<Vec<PacketBlock>>,
 }
@@ -54,8 +51,8 @@ impl PacketModel {
             {
                 return Err(Error::semantic(format!(
                     "Packet block {} - {} is invalid. End must be greater than start.",
-                    js::num_str(start),
-                    js::num_str(end)
+                    Number(start),
+                    Number(end)
                 ))
                 .of(Kind::Packet));
             }
@@ -63,16 +60,16 @@ impl PacketModel {
             if start != next_bit {
                 return Err(Error::semantic(format!(
                     "Packet block {} - {} is not contiguous. It should start from {}.",
-                    js::num_str(start),
-                    js::num_str(end.unwrap_or(start)),
-                    js::num_str(next_bit)
+                    Number(start),
+                    Number(end.unwrap_or(start)),
+                    Number(next_bit)
                 ))
                 .of(Kind::Packet));
             }
             if bits == Some(0.0) {
                 return Err(Error::semantic(format!(
                     "Packet block {} is invalid. Cannot have a zero bit field.",
-                    js::num_str(start)
+                    Number(start)
                 ))
                 .of(Kind::Packet));
             }

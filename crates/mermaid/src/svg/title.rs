@@ -2,10 +2,11 @@
 //! `svg/title.ts`.
 
 use super::builder::num;
-use crate::geom::Point;
-use crate::svg::builder::TITLE;
-use crate::text::Label;
-use crate::text::{Host, Style};
+use crate::{
+    geom::Point,
+    svg::builder::TITLE,
+    text::{Host, Label, Style},
+};
 use std::fmt::Write as _;
 
 pub struct Titled {

@@ -1,7 +1,9 @@
 //! The graph flowchart and agentflow build, and the operations their shared
 //! productions perform on it.
 
+use crate::json::JsValue;
 use indexmap::{IndexMap, IndexSet};
+use js::string;
 use serde::Serialize;
 
 use super::types::{
@@ -11,7 +13,6 @@ use crate::{
     config::Value,
     diagrams::common::{db::Titles, style_class::StyleClass},
     error::Error,
-    js::{self, JsValue},
     util::{chars::unquote, url::safe_url},
 };
 
@@ -85,7 +86,7 @@ impl<P: Payload> FlowStore<P> {
     /// Applies `vertex` to the node `id`, created if new. An edge's id names
     /// that edge, and a blank or reserved id nothing; neither creates a node.
     pub fn add_vertex(&mut self, id: &str, vertex: Vertex<'_>) -> Option<Element<'_, P>> {
-        if js::trim(id).is_empty() || P::RESERVED.contains(&id) {
+        if string::trim(id).is_empty() || P::RESERVED.contains(&id) {
             return None;
         }
         if let Some(&at) = self.edge_by_id.get(id) {
@@ -98,7 +99,7 @@ impl<P: Payload> FlowStore<P> {
             .or_insert_with(|| Node::new(id.to_string()));
         if let Some(label) = vertex.label {
             node.label_type = label.kind;
-            node.text = Some(unquote(js::trim(&label.text)).to_string());
+            node.text = Some(unquote(string::trim(&label.text)).to_string());
         } else if node.text.is_none() {
             node.text = Some(id.to_string());
         }
@@ -139,7 +140,7 @@ impl<P: Payload> FlowStore<P> {
             ext: P::Edge::default(),
         };
         if let Some(text) = info.and_then(|info| info.text.as_ref()) {
-            edge.text = unquote(js::trim(&text.text)).to_string();
+            edge.text = unquote(string::trim(&text.text)).to_string();
             edge.label_type = text.kind;
         }
         if let Some(info) = info {
@@ -232,13 +233,13 @@ impl<P: Payload> FlowStore<P> {
         for entry in list {
             match entry {
                 DocItem::Str(entry) => {
-                    if !js::trim(entry).is_empty() && seen.insert(entry.as_str()) {
+                    if !string::trim(entry).is_empty() && seen.insert(entry.as_str()) {
                         node_list.push(entry.clone());
                     }
                 }
                 DocItem::List(items) => {
                     for item in items {
-                        if !js::trim(item).is_empty() && seen.insert(item.as_str()) {
+                        if !string::trim(item).is_empty() && seen.insert(item.as_str()) {
                             node_list.push(item.clone());
                         }
                     }
@@ -269,7 +270,7 @@ impl<P: Payload> FlowStore<P> {
         self.subgraphs.push(Subgraph {
             id: id.clone(),
             nodes,
-            title: js::trim(title_text.map_or("", |t| t.text.as_str())).to_string(),
+            title: string::trim(title_text.map_or("", |t| t.text.as_str())).to_string(),
             classes: Vec::new(),
             dir,
             label_type: title_text.map_or(LabelType::Markdown, |t| t.kind),
@@ -390,7 +391,7 @@ impl<P: Payload> FlowStore<P> {
     }
 
     pub fn set_link(&mut self, ids: &str, link: &str, target: Option<&str>) {
-        let url = js::trim(link);
+        let url = string::trim(link);
         for id in ids.split(',') {
             if let Some(vertex) = self.nodes.get_mut(id) {
                 vertex.link = (!url.is_empty()).then(|| safe_url(url));
@@ -416,7 +417,7 @@ impl<P: Payload> FlowStore<P> {
                     def.styles
                         .iter()
                         .chain(&def.text_styles)
-                        .map(|s| js::trim(s).to_string()),
+                        .map(|s| string::trim(s).to_string()),
                 );
             }
         }

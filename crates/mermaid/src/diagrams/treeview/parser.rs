@@ -7,9 +7,9 @@ use crate::{
         tokens::{Header, Reader, TokenType, acc_title, keyword, title, token_kinds},
     },
     error::Error,
-    js,
     util::chars::{char_at, inner},
 };
+use js::string;
 
 token_kinds! {
     enum Token {
@@ -124,14 +124,16 @@ pub fn parse_tree_view(src: &str) -> Result<TreeViewAst, Error> {
         loop {
             match r.kind() {
                 Some(Token::ClassAnnotation) => {
-                    node.class_annotation = Some(js::trim(&js::trim(r.take())[3..]).to_string());
+                    node.class_annotation =
+                        Some(string::trim(&string::trim(r.take())[3..]).to_string());
                 }
                 Some(Token::IconAnnotation) => {
-                    let trimmed = js::trim(r.take());
+                    let trimmed = string::trim(r.take());
                     node.icon_annotation = Some(trimmed[5..trimmed.len() - 1].to_string());
                 }
                 Some(Token::DescAnnotation) => {
-                    node.desc_annotation = Some(js::trim(&js::trim(r.take())[2..]).to_string());
+                    node.desc_annotation =
+                        Some(string::trim(&string::trim(r.take())[2..]).to_string());
                 }
                 _ => break,
             }

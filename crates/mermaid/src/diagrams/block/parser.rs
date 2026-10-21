@@ -5,7 +5,8 @@ use super::{
     tokens::T,
     types::{Block, BlockKind, BlockModel, Columns, EdgeLine, Statement},
 };
-use crate::{Error, detect::Kind, js, token::Stream};
+use crate::{Error, detect::Kind, token::Stream};
+use js::{number, string};
 
 const STATEMENT_START: &str = "'NODE_ID', 'COLUMNS', 'SPACE_BLOCK', 'BLOCK_DIAGRAM_KEY', 'id-block', 'classDef', 'class', 'style'";
 
@@ -76,7 +77,7 @@ impl Parser<'_, '_, '_> {
     fn node_statement(&mut self) -> Result<Statement, Error> {
         let first = self.node()?;
         let size = if self.s.is(T::Size) {
-            js::parse_int(self.s.take(), 10)
+            number::parse_int(self.s.take(), 10)
         } else {
             1.0
         };
@@ -157,7 +158,7 @@ impl Parser<'_, '_, '_> {
                     // The lexer writes `auto` as `-1`.
                     let columns = match self.s.take() {
                         "-1" => Columns::Auto,
-                        count => Columns::Count(js::parse_int(count, 10)),
+                        count => Columns::Count(number::parse_int(count, 10)),
                     };
                     list.push(Statement::One(self.db.alloc(Block {
                         kind: BlockKind::ColumnSetting,
@@ -166,7 +167,7 @@ impl Parser<'_, '_, '_> {
                     })));
                 }
                 T::SpaceBlock => {
-                    let width = js::parse_int(self.s.take(), 10);
+                    let width = number::parse_int(self.s.take(), 10);
                     let id = self.db.generate_id();
                     list.push(Statement::One(self.db.alloc(Block {
                         id: Some(id),
@@ -228,8 +229,8 @@ impl Parser<'_, '_, '_> {
                 }
                 T::Classdef => {
                     self.s.bump();
-                    let id = js::trim(self.s.expect(T::ClassdefId, "")?).to_string();
-                    let css = js::trim(self.s.expect(T::ClassdefStyleopts, "")?).to_string();
+                    let id = string::trim(self.s.expect(T::ClassdefId, "")?).to_string();
+                    let css = string::trim(self.s.expect(T::ClassdefStyleopts, "")?).to_string();
                     list.push(Statement::One(self.db.alloc(Block {
                         kind: BlockKind::ClassDef,
                         id: Some(id),
@@ -239,8 +240,8 @@ impl Parser<'_, '_, '_> {
                 }
                 T::Class => {
                     self.s.bump();
-                    let id = js::trim(self.s.expect(T::ClassentityIds, "")?).to_string();
-                    let class = js::trim(self.s.expect(T::Styleclass, "")?).to_string();
+                    let id = string::trim(self.s.expect(T::ClassentityIds, "")?).to_string();
+                    let class = string::trim(self.s.expect(T::Styleclass, "")?).to_string();
                     list.push(Statement::One(self.db.alloc(Block {
                         kind: BlockKind::ApplyClass,
                         id: Some(id),
@@ -250,8 +251,9 @@ impl Parser<'_, '_, '_> {
                 }
                 T::Style => {
                     self.s.bump();
-                    let id = js::trim(self.s.expect(T::StyleEntityIds, "")?).to_string();
-                    let styles = js::trim(self.s.expect(T::StyleDefinitionData, "")?).to_string();
+                    let id = string::trim(self.s.expect(T::StyleEntityIds, "")?).to_string();
+                    let styles =
+                        string::trim(self.s.expect(T::StyleDefinitionData, "")?).to_string();
                     list.push(Statement::One(self.db.alloc(Block {
                         kind: BlockKind::ApplyStyles,
                         id: Some(id),

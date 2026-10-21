@@ -1,9 +1,11 @@
 //! HTML entity codes and Mermaid's `#name;` placeholders, read as characters.
 
-use std::fmt::Write as _;
-use std::{collections::HashMap, sync::OnceLock};
+use std::{collections::HashMap, fmt::Write as _, sync::OnceLock};
 
-use super::super::js::Lazy;
+use js::{
+    number::{self, Number},
+    regex::Lazy,
+};
 
 /// Every entity name Pele reads, with its code point.
 const NAMED: &str = concat!(
@@ -79,7 +81,7 @@ fn decode_placeholders(text: &str) -> String {
             let raw = &text[at..stop + CLOSE.len()];
             out.push_str(&text[last..at]);
             if numeric {
-                let _ = write!(out, "{}", code_point(super::super::js::number(body), raw));
+                let _ = write!(out, "{}", code_point(Number::from(body).0, raw));
             } else {
                 match lookup(body) {
                     Some(c) => out.push(c),
@@ -128,10 +130,10 @@ fn decode_owned(text: &str) -> String {
     RE_ENTITY.replace(&text, |caps| {
         let whole = caps.str(0);
         if let Some(dec) = caps.get(1) {
-            return code_point(super::super::js::number(dec), whole);
+            return code_point(Number::from(dec).0, whole);
         }
         if let Some(hex) = caps.get(2) {
-            return code_point(super::super::js::parse_int(hex, 16), whole);
+            return code_point(number::parse_int(hex, 16), whole);
         }
         match lookup(caps.str(3)) {
             Some(c) => c.to_string(),

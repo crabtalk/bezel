@@ -1,5 +1,6 @@
 //! Pele's `diagrams/er/graph.ts`.
 
+use js::string;
 use std::collections::{HashMap, HashSet};
 
 use super::{
@@ -52,10 +53,10 @@ impl ErModel {
                     continue;
                 };
                 for style in &def.styles {
-                    out.push(crate::js::trim(style).to_string());
+                    out.push(string::trim(style).to_string());
                 }
                 for style in &def.text_styles {
-                    out.push(crate::js::trim(style).to_string());
+                    out.push(string::trim(style).to_string());
                 }
             }
             out

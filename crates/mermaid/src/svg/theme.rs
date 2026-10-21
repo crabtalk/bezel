@@ -2,10 +2,14 @@
 //! `svg/theme.ts`, with `--bezel-*` for `--pele-*`.
 
 use crate::svg::builder::Esc;
+use js::{
+    number::{self, Number},
+    regex::Lazy,
+    string,
+};
 use std::{borrow::Cow, collections::HashSet, fmt::Write as _};
 
 use super::builder::{esc, push_esc};
-use crate::js::{self, Lazy};
 
 /// Private aliases set once on the root element, so each use is short and
 /// the public `--bezel-*` tokens keep their fallbacks. The text colour is set
@@ -80,7 +84,7 @@ pub fn push_font_style(out: &mut String, size: f64, family: Option<&str>, mono: 
     out.push_str(";--_fm:var(--bezel-font-mono,");
     push_esc(out, families(mono, "monospace"));
     out.push_str(");font:");
-    let _ = write!(out, "{}", js::Number(size));
+    let _ = write!(out, "{}", Number(size));
     out.push_str("px sans-serif;letter-spacing:normal;word-spacing:normal;text-transform:none;direction:ltr;font-family:var(--bezel-font,");
     push_esc(out, families(family, "sans-serif"));
     out.push(')');
@@ -144,9 +148,9 @@ pub fn resolve_style<S: AsRef<str>>(declarations: &[S]) -> ResolvedStyle {
         let Some(at) = decl.find(':').filter(|&at| at > 0) else {
             continue;
         };
-        let prop = js::trim(&decl[..at]).to_lowercase();
+        let prop = string::trim(&decl[..at]).to_lowercase();
         let value = RE_IMPORTANT.replace(&decl[at + 1..], |_| String::new());
-        let value = js::trim(&value).to_string();
+        let value = string::trim(&value).to_string();
         if value.is_empty() || RE_UNSAFE.test(&value) {
             continue;
         }
@@ -185,7 +189,7 @@ pub fn resolve_style<S: AsRef<str>>(declarations: &[S]) -> ResolvedStyle {
     let px = size
         .as_deref()
         .filter(|size| RE_PX.test(size))
-        .map(js::parse_float);
+        .map(number::parse_float);
     let attr = |css: &str| {
         if css.is_empty() {
             String::new()
@@ -199,7 +203,9 @@ pub fn resolve_style<S: AsRef<str>>(declarations: &[S]) -> ResolvedStyle {
         text: attr(&text_css),
         stroke: get(&shape, "stroke"),
         bold: matches!(weight.as_deref(), Some("bold" | "bolder"))
-            || weight.as_deref().is_some_and(|w| js::number(w) >= 600.0),
+            || weight
+                .as_deref()
+                .is_some_and(|w| Number::from(w).0 >= 600.0),
         italic: get(&text, "font-style").as_deref() == Some("italic"),
         font_size: px.filter(|&px| px > 0.0 && px <= 200.0),
     }
@@ -209,7 +215,7 @@ pub fn resolve_style<S: AsRef<str>>(declarations: &[S]) -> ResolvedStyle {
 /// them. ` a b`, or `""` for none.
 pub fn class_names(raw: &str) -> String {
     let cleaned = RE_CLASS.replace(raw, |_| " ".to_string());
-    let cleaned = js::trim(&cleaned);
+    let cleaned = string::trim(&cleaned);
     if cleaned.is_empty() {
         String::new()
     } else {

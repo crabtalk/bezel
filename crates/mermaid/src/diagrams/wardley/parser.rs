@@ -1,6 +1,7 @@
 //! Pele's `diagrams/wardley/parser.ts`.
 
 use crate::util::chars::digits_end;
+use js::{number, string};
 
 use crate::{
     detect::Kind,
@@ -12,7 +13,6 @@ use crate::{
         },
     },
     error::Error,
-    js,
 };
 
 use super::builder::Strategy;
@@ -266,7 +266,7 @@ impl Parser<'_> {
     }
 
     fn int(&mut self) -> Result<f64, Error> {
-        Ok(js::parse_int(self.r.expect(Token::Int)?, 10))
+        Ok(number::parse_int(self.r.expect(Token::Int)?, 10))
     }
 
     fn coordinate(&mut self) -> Result<f64, Error> {
@@ -398,7 +398,7 @@ impl Parser<'_> {
         let link_label = self
             .r
             .at(Token::LinkLabel)
-            .then(|| js::trim(&self.r.take()[1..]).to_string());
+            .then(|| string::trim(&self.r.take()[1..]).to_string());
         Ok(LinkAst {
             from,
             from_port,

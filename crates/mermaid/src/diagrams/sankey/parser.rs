@@ -4,7 +4,8 @@ use super::{
     db::SankeyModel,
     lexer::{T, tokenize},
 };
-use crate::{detect::Kind, error::Error, js, token::Stream, util::chars::is_inline_space};
+use crate::{detect::Kind, error::Error, token::Stream, util::chars::is_inline_space};
+use js::{number, string};
 
 /// Mermaid's sankeyUtils: strip blanks at both ends of the text, then
 /// collapse runs of line breaks so that no row is empty.
@@ -14,7 +15,7 @@ pub fn prepare_text_for_parsing(text: &str) -> String {
         .split(['\n', '\r'])
         .filter(|row| !row.is_empty())
         .collect();
-    js::trim(&rows.join("\n")).to_string()
+    string::trim(&rows.join("\n")).to_string()
 }
 
 pub fn parse_sankey(src: &str, db: &mut SankeyModel) -> Result<(), Error> {
@@ -33,7 +34,7 @@ pub fn parse_sankey(src: &str, db: &mut SankeyModel) -> Result<(), Error> {
         let amount = p.field()?;
         let source = db.find_or_create_node(&from);
         let target = db.find_or_create_node(&to);
-        db.add_link(source, target, js::parse_float(js::trim(amount)));
+        db.add_link(source, target, number::parse_float(string::trim(amount)));
         if !p.s.eat(T::Newline) {
             break;
         }
@@ -63,6 +64,6 @@ impl<'t> Parser<'t, '_> {
     }
 
     fn name(&mut self) -> Result<String, Error> {
-        Ok(js::trim(self.field()?).replace("\"\"", "\""))
+        Ok(string::trim(self.field()?).replace("\"\"", "\""))
     }
 }

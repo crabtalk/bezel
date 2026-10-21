@@ -2,10 +2,10 @@
 
 use super::tokens::T;
 use crate::{
-    js,
     token::{Cursor, Token},
-    util::chars::{is_space, starts_with_caseless, width_at},
+    util::chars::{starts_with_caseless, width_at},
 };
+use js::string;
 
 /// Jison's start conditions.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -40,7 +40,7 @@ fn is_id_wide(c: char) -> bool {
 
 /// A character of a participant name.
 fn is_id(c: char) -> bool {
-    is_id_wide(c) && !is_space(c)
+    is_id_wide(c) && !string::is_space(c)
 }
 
 /// A character of the rest of a line.
@@ -53,7 +53,7 @@ fn is_menu(c: char) -> bool {
     !matches!(
         c,
         '/' | '\\' | '+' | '(' | ')' | '<' | '>' | ':' | '\n' | ',' | ';' | '-'
-    ) && !is_space(c)
+    ) && !string::is_space(c)
 }
 
 struct Lexer<'s> {
@@ -77,7 +77,7 @@ impl<'s> Lexer<'s> {
     fn skip_same_line(&mut self) -> bool {
         let p = self.cur.p;
         let q = self.cur.src[p..]
-            .find(|c: char| c == '\n' || !is_space(c))
+            .find(|c: char| c == '\n' || !string::is_space(c))
             .map_or(self.cur.src.len(), |at| p + at);
         if q == p {
             return false;
@@ -166,7 +166,7 @@ impl<'s> Lexer<'s> {
             }
             q = r;
         }
-        let text = js::trim(&self.cur.src[p..q]);
+        let text = string::trim(&self.cur.src[p..q]);
         self.cur.emit_text(T::Actor, text, p, q);
     }
 
@@ -256,7 +256,7 @@ impl<'s> Lexer<'s> {
         if legacy {
             q += 1;
         }
-        if !self.is(q, is_space) {
+        if !self.is(q, string::is_space) {
             return false;
         }
         let next = self.cur.after(q);
@@ -358,7 +358,7 @@ impl<'s> Lexer<'s> {
             self.cur.emit_to(T::Newline, q);
             return;
         }
-        if is_space(c) {
+        if string::is_space(c) {
             self.cur.p = self.cur.space_end(p);
             return;
         }
@@ -405,7 +405,7 @@ impl<'s> Lexer<'s> {
     /// Whether ` as ` follows the name that ends at `a`.
     fn alias_after(&self, a: usize) -> bool {
         let w = self.cur.space_end(a);
-        w > a && starts_with_caseless(self.cur.src, w, "as") && self.is(w + 2, is_space)
+        w > a && starts_with_caseless(self.cur.src, w, "as") && self.is(w + 2, string::is_space)
     }
 
     /// A participant name, up to an alias, a config object, or the end of the
@@ -457,7 +457,7 @@ impl<'s> Lexer<'s> {
                 }
             }
             if cut > p {
-                let text = js::trim(&self.cur.src[p..cut]);
+                let text = string::trim(&self.cur.src[p..cut]);
                 self.cur.emit_text(T::Actor, text, p, cut);
                 self.cur.pop();
                 return true;
@@ -471,7 +471,7 @@ impl<'s> Lexer<'s> {
         }
         if c != '\n' {
             let e = self.eol(p);
-            let text = js::trim(&self.cur.src[p..e]);
+            let text = string::trim(&self.cur.src[p..e]);
             self.cur.emit_text(T::Invalid, text, p, e);
             self.cur.pop();
             return true;

@@ -9,8 +9,8 @@ use crate::{
     },
     error::Error,
     geom::Direction,
-    js,
 };
+use js::number;
 
 token_kinds! {
     enum Token {
@@ -160,7 +160,7 @@ impl Parser<'_> {
                 let name = self.name()?;
                 let mut order = None;
                 if self.r.accept(Token::Order) {
-                    order = Some(js::parse_int(self.r.expect(Token::Int)?, 10));
+                    order = Some(number::parse_int(self.r.expect(Token::Int)?, 10));
                 }
                 StatementAst::Branch { name, order }
             }

@@ -1,13 +1,12 @@
 //! The URLs a diagram links to and shows images from. Pele's `util/url.ts`,
 //! after `@braintree/sanitize-url`, which Mermaid applies to click targets.
 
+use js::{number::Number, regex::Lazy, string};
 use std::fmt;
 
-use crate::svg::builder::{Esc, esc, fragment};
-use crate::{Ctx, Host};
 use crate::{
-    Link,
-    js::{self, Lazy},
+    Ctx, Host, Link,
+    svg::builder::{Esc, esc, fragment},
     text::decode_entities,
 };
 
@@ -56,7 +55,7 @@ pub fn sanitize_url(url: &str) -> String {
     if url.is_empty() {
         return BLANK.into();
     }
-    let mut decoded = decode(js::trim(url));
+    let mut decoded = decode(string::trim(url));
     let mut rounds = 0;
     loop {
         // Each round peels one layer of encoding. A URL wrapped this many
@@ -67,7 +66,7 @@ pub fn sanitize_url(url: &str) -> String {
         }
         let step = RE_CTRL.replace(&decoded, |_| String::new());
         let step = RE_HTML_ENTITIES.replace(&step, |caps| {
-            let code = js::number(caps.str(1));
+            let code = Number::from(caps.str(1)).0;
             char::from_u32(if code.is_finite() {
                 code as u32 & 0xffff
             } else {
@@ -78,7 +77,7 @@ pub fn sanitize_url(url: &str) -> String {
         let step = RE_HTML_CTRL_ENTITY.replace(&step, |_| String::new());
         let step = RE_CTRL.replace(&step, |_| String::new());
         let step = RE_WS_ESCAPE.replace(&step, |_| String::new());
-        decoded = decode(js::trim(&step));
+        decoded = decode(string::trim(&step));
         let more = RE_CTRL.test(&decoded)
             || RE_HTML_ENTITIES.test(&decoded)
             || RE_HTML_CTRL_ENTITY.test(&decoded)
@@ -95,11 +94,11 @@ pub fn sanitize_url(url: &str) -> String {
         return decoded;
     }
 
-    let trimmed = js::trim_start(&decoded);
+    let trimmed = string::trim_start(&decoded);
     let Some(scheme) = RE_SCHEME.exec(trimmed) else {
         return decoded;
     };
-    let protocol = js::trim(&scheme.str(0).to_lowercase()).to_string();
+    let protocol = string::trim(&scheme.str(0).to_lowercase()).to_string();
     if RE_INVALID_PROTOCOL.test(&protocol) {
         return BLANK.into();
     }

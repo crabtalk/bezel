@@ -1,16 +1,13 @@
 //! Pele's `diagrams/treeview/model.ts`.
 
-use crate::diagrams::common::db::Titles;
+use crate::{diagrams::common::db::Titles, json};
 use serde::Serialize;
 
 use super::{
     box_drawing::{preprocess_box_drawing, remap_error_lines},
     parser::{TreeNodeAst, TreeViewAst, parse_tree_view},
 };
-use crate::{
-    Error,
-    js::{self},
-};
+use crate::Error;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,7 +20,7 @@ pub enum NodeType {
 #[serde(rename_all = "camelCase")]
 pub struct TreeNode {
     pub id: usize,
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub level: f64,
     pub name: String,
     pub node_type: NodeType,

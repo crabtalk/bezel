@@ -1,12 +1,18 @@
 //! Pele's `diagrams/class/render.ts`.
 
-use crate::geom::{Axis, Direction, Point, RoutePoint, Side, Size};
-use crate::svg::edges::Curve;
+use crate::{
+    geom::{Axis, Direction, Point, RoutePoint, Side, Size},
+    svg::edges::Curve,
+};
+use js::{
+    math,
+    number::{self, Number},
+    string,
+};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
-use crate::config::positive;
-use crate::svg::builder::rewrite;
+use crate::{config::positive, svg::builder::rewrite};
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
@@ -20,11 +26,9 @@ use super::{
     members::{ClassMember, Classifier},
     types::{ClassNode, RelationType, StyleClass},
 };
-use crate::{Config, Ctx};
 use crate::{
-    Error, Link, Rendered,
+    Config, Ctx, Error, Link, Rendered,
     diagrams::{Render, common::generics::parse_generic_types},
-    js,
     layout::{
         compound::{CEdge, CNode, ancestors, compound_layout},
         layered::LayeredOptions,
@@ -142,7 +146,7 @@ impl Styler<'_> {
                         Some(at) => &decl[..at],
                         None => &decl[..decl.char_indices().last().map_or(0, |(at, _)| at)],
                     };
-                    js::trim(name).to_lowercase()
+                    string::trim(name).to_lowercase()
                 }
             })
             .clone();
@@ -188,7 +192,8 @@ impl Styler<'_> {
 
 impl Line {
     fn of(member: &ClassMember, measure: &impl Host, size: f64) -> Line {
-        let text = js::trim(&decode_entities(&member.display_details().display_text)).to_string();
+        let text =
+            string::trim(&decode_entities(&member.display_details().display_text)).to_string();
         let width = measure.width(
             &text,
             size,
@@ -279,7 +284,7 @@ impl View {
         let annotations: Vec<String> = cls
             .annotations
             .iter()
-            .map(|a| format!("«{}»", js::trim(&decode_entities(a))))
+            .map(|a| format!("«{}»", string::trim(&decode_entities(a))))
             .collect();
         let attributes: Vec<Line> = cls
             .members
@@ -393,7 +398,7 @@ fn straighten(
     let at = if first { 0 } else { route.len() - 1 };
     let next = if first { 1 } else { at - 1 };
     let reach = (route[next].at.along(along) - route[at].at.along(along)).abs();
-    let length = js::min(
+    let length = math::min(
         if across == Axis::Y {
             room + 10.0
         } else {
@@ -444,10 +449,10 @@ impl Cards {
             text: decode_entities(raw),
             at: Point::new(cx, cy),
         });
-        self.min.x = js::min(self.min.x, cx - width / 2.0);
-        self.max.x = js::max(self.max.x, cx + width / 2.0);
-        self.min.y = js::min(self.min.y, cy - tiny_height / 2.0);
-        self.max.y = js::max(self.max.y, cy + tiny_height / 2.0);
+        self.min.x = math::min(self.min.x, cx - width / 2.0);
+        self.max.x = math::max(self.max.x, cx + width / 2.0);
+        self.min.y = math::min(self.min.y, cy - tiny_height / 2.0);
+        self.max.y = math::max(self.max.y, cy + tiny_height / 2.0);
     }
 }
 
@@ -721,7 +726,7 @@ impl ClassModel {
             list.sort_by(|a, b| {
                 let d = a.toward - b.toward;
                 if d != 0.0 && !d.is_nan() {
-                    js::compare(d)
+                    number::compare(d)
                 } else {
                     a.order.cmp(&b.order)
                 }
@@ -751,7 +756,7 @@ impl ClassModel {
                 gaps[j] = gap;
                 total += gap;
             }
-            let scale = js::min(1.0, (length - 24.0) / total);
+            let scale = math::min(1.0, (length - 24.0) / total);
             if scale <= 0.0 {
                 continue;
             }
@@ -962,10 +967,7 @@ impl ClassModel {
                         Point::new(0.0, 0.0),
                         rewrite(
                             &mut member_attrs,
-                            format_args!(
-                                " class=\"{p}-label\" font-size=\"{}\"",
-                                js::Number(small)
-                            )
+                            format_args!(" class=\"{p}-label\" font-size=\"{}\"", Number(small))
                         )
                     )
                 );
@@ -977,10 +979,7 @@ impl ClassModel {
                         Point::new(0.0, 0.0),
                         rewrite(
                             &mut method_attrs,
-                            format_args!(
-                                " class=\"{p}-label\" font-size=\"{}\"",
-                                js::Number(small)
-                            )
+                            format_args!(" class=\"{p}-label\" font-size=\"{}\"", Number(small))
                         )
                     )
                 );
@@ -1097,14 +1096,14 @@ impl ClassModel {
             let _ = write!(
                 content,
                 "<g class=\"{p}-edge-labels\" font-size=\"{}\">{labels_out}</g>",
-                js::Number(small)
+                Number(small)
             );
         }
         if !cards_out.is_empty() {
             let _ = write!(
                 content,
                 "<g class=\"{p}-cardinalities\" font-size=\"{}\" fill=\"var(--_m)\">{cards_out}</g>",
-                js::Number(tiny)
+                Number(tiny)
             );
         }
         let _ = write!(content, "<g class=\"{p}-nodes\">{nodes_out}</g>");
@@ -1228,7 +1227,7 @@ impl View {
                     f,
                     "<text class=\"{p}-annotation\" x=\"0\" y=\"{}\" text-anchor=\"middle\" font-size=\"{}\" fill=\"var(--_m)\">{}</text>",
                     num(y + tiny_height / 2.0 + tiny * 0.35),
-                    js::Number(tiny),
+                    Number(tiny),
                     Esc(annotation)
                 )?;
                 y += tiny_height;
@@ -1243,7 +1242,7 @@ impl View {
                 write!(
                     f,
                     "<g class=\"{p}-members\" font-size=\"{}\">",
-                    js::Number(member_size)
+                    Number(member_size)
                 )?;
                 lines(f, &view.attributes, "attribute", first)?;
                 lines(f, &view.methods, "method", second)?;

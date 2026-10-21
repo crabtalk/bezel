@@ -1,6 +1,7 @@
 //! Pele's `diagrams/architecture/parser.ts`.
 
 use crate::util::chars::inner;
+use js::string;
 use serde::Serialize;
 
 use crate::{
@@ -11,7 +12,6 @@ use crate::{
     },
     error::Error,
     geom::Side,
-    js,
 };
 
 // The direction letters come before identifiers and have no longer
@@ -142,7 +142,7 @@ pub struct ArchitectureAst {
 
 /// Mermaid's ArchitectureValueConverter for ARCH_TITLE.
 fn label_value(text: &str) -> String {
-    let mut result = js::trim(inner(text)).to_string();
+    let mut result = string::trim(inner(text)).to_string();
     if (result.starts_with('"') && result.ends_with('"') && result.len() >= 2)
         || (result.starts_with('\'') && result.ends_with('\'') && result.len() >= 2)
     {
@@ -150,7 +150,7 @@ fn label_value(text: &str) -> String {
     } else if result == "\"" || result == "'" {
         result = String::new();
     }
-    js::trim(&result).to_string()
+    string::trim(&result).to_string()
 }
 
 struct Parser<'s> {

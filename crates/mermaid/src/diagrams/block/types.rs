@@ -5,14 +5,14 @@
 //! Pele shares between the copies of a space block are entries of
 //! [`BlockModel::class_lists`].
 
-use crate::diagrams::common::style_class::StyleClass;
+use crate::{diagrams::common::style_class::StyleClass, json::JsonNumber};
 use indexmap::{IndexMap, IndexSet};
+use js::string;
 use serde::{
     Serialize, Serializer,
     ser::{SerializeMap, SerializeSeq},
 };
 
-use crate::js::{self, JsonNumber};
 use crate::svg::{edges::Marker, shapes::Shape};
 
 /// A statement with links is a list: block, edge, block, and so on.
@@ -165,7 +165,7 @@ impl ArrowType {
 
     /// The head at the start of `link`.
     pub fn at_start(link: &str) -> Self {
-        match js::trim(link).chars().next() {
+        match string::trim(link).chars().next() {
             Some('x') => Self::Cross,
             Some('o') => Self::Circle,
             Some('<') => Self::Point,
@@ -175,7 +175,7 @@ impl ArrowType {
 
     /// The head at the end of `link`; `None` for an end without one.
     pub fn at_end(link: &str) -> Option<Self> {
-        match js::trim(link).chars().next_back() {
+        match string::trim(link).chars().next_back() {
             Some('x') => Some(Self::Cross),
             Some('o') => Some(Self::Circle),
             Some('>') => Some(Self::Point),

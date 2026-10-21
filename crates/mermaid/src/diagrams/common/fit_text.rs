@@ -1,7 +1,8 @@
 //! One line of text fitted into a width. Pele's
 //! `diagrams/common/fit-text.ts`.
 
-use crate::{js, text::Host};
+use crate::text::Host;
+use js::string;
 
 pub struct Fitted {
     pub text: String,
@@ -50,7 +51,7 @@ pub fn fit_text(
     let chars: Vec<char> = text.chars().collect();
     let cut_at = |n: usize| -> String {
         let head: String = chars[..n].iter().collect();
-        format!("{}…", js::trim_end(&head))
+        format!("{}…", string::trim_end(&head))
     };
     let (mut low, mut high) = (0usize, chars.len().saturating_sub(1));
     while low < high {

@@ -1,6 +1,7 @@
 //! Pele's `diagrams/radar/render.ts`.
 
 use crate::config::capped;
+use js::{math, number::Number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{
@@ -9,12 +10,13 @@ use std::{
 };
 
 use super::model::{Graticule, RadarModel};
-use crate::diagrams::common::legend::{ROW, SWATCH};
-use crate::{Config, Ctx, Error, Host, geom::Point};
 use crate::{
-    Rendered,
-    diagrams::Render,
-    js,
+    Config, Ctx, Error, Host, Rendered,
+    diagrams::{
+        Render,
+        common::legend::{ROW, SWATCH},
+    },
+    geom::Point,
     svg::{
         builder::{EscText, fragment, num},
         root::svg_document,
@@ -26,7 +28,7 @@ use crate::{
 const GAP: f64 = 24.0;
 
 fn relative_radius(value: f64, min: f64, max: f64, radius: f64) -> f64 {
-    let clipped = js::min(js::max(value, min), max);
+    let clipped = math::min(math::max(value, min), max);
     (radius * (clipped - min)) / (max - min)
 }
 
@@ -123,7 +125,7 @@ impl RadarModel {
     ) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.875);
+        let small = math::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
 
@@ -237,7 +239,7 @@ impl RadarModel {
         let total_width = (body_width + 2.0 * pad).ceil();
         let total_height = (max.y - min.y + title_height + 2.0 * pad).ceil();
 
-        let small = js::Number(small);
+        let small = Number(small);
         let mut content = String::new();
         let _ = write!(
             content,
@@ -340,8 +342,8 @@ impl RadarModel {
                     EscText(&curves[index].name),
                     num(legend_at.x),
                     num(y - SWATCH / 2.0),
-                    js::Number(SWATCH),
-                    js::Number(SWATCH),
+                    Number(SWATCH),
+                    Number(SWATCH),
                     label.svg(
                         Point::new(legend_at.x + SWATCH + 8.0 + label.width / 2.0, y),
                         ""

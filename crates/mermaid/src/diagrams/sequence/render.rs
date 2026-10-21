@@ -1,10 +1,16 @@
 //! Pele's `diagrams/sequence/render.ts`.
 
 use super::SequenceConfig;
-use crate::config::within;
-use crate::diagrams::Render;
-use crate::geom::{Point, Size};
-use crate::svg::edges::Marker;
+use crate::{
+    config::within,
+    diagrams::Render,
+    geom::{Point, Size},
+    svg::edges::Marker,
+};
+use js::{
+    math,
+    number::{self, Number},
+};
 use std::{
     collections::HashSet,
     fmt::{self, Write as _},
@@ -17,11 +23,9 @@ use super::{
     db::SequenceModel,
     types::{Block, CentralConnection, LineType, Placement, SeqActor, SeqMessage, SeqMessageText},
 };
-use crate::{Config, Ctx, Error};
 use crate::{
-    Rendered,
+    Config, Ctx, Error, Rendered,
     config::Value,
-    js,
     svg::{
         builder::{Esc, EscText, fragment, num},
         edges::ARROW,
@@ -163,14 +167,14 @@ impl Numbering {
         for (i, m) in messages.iter().enumerate() {
             if m.kind == LineType::Autonumber {
                 if let SeqMessageText::Numbering(spec) = &m.message {
-                    current = spec.start.filter(|&s| js::truthy(s)).unwrap_or(current);
-                    step = spec.step.filter(|&s| js::truthy(s)).unwrap_or(step);
+                    current = spec.start.filter(|&s| number::truthy(s)).unwrap_or(current);
+                    step = spec.step.filter(|&s| number::truthy(s)).unwrap_or(step);
                     visible = spec.visible;
                 }
             } else if m.kind.is_line() {
                 index[i] = current;
                 shown[i] = visible || always;
-                current = js::round((current + step) * 100.0) / 100.0;
+                current = math::round((current + step) * 100.0) / 100.0;
             }
         }
         Numbering { index, shown }
@@ -435,8 +439,8 @@ impl SequenceModel {
     fn draw(&self, conf: &SequenceConfig, ctx: &Ctx<'_, impl Host>, tight: bool) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.875);
-        let tiny = js::round(size * 0.75);
+        let small = math::round(size * 0.875);
+        let tiny = math::round(size * 0.75);
         let measurer = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let mirror = conf.mirror_actors != Some(false);
@@ -444,7 +448,7 @@ impl SequenceModel {
         let actor_margin =
             option(conf.actor_margin, 40.0).min(if tight { 8.0 } else { f64::INFINITY });
         let min_w = option(conf.width, 64.0).min(if tight { 48.0 } else { f64::INFINITY });
-        let min_h = option(conf.height, js::round(size * 1.5) + 20.0);
+        let min_h = option(conf.height, math::round(size * 1.5) + 20.0);
         let wrap_w = option(conf.width, 160.0).min(if tight {
             32f64.max(
                 (ctx.options.max_width.unwrap_or(320.0) - 2.0 * pad)
@@ -564,7 +568,7 @@ impl SequenceModel {
         };
         let badge_width = |i: usize| -> f64 {
             if numbering.shown[i] {
-                BADGE_H.max(measurer.width(&js::num_str(numbering.index[i]), tiny, 0) + 8.0)
+                BADGE_H.max(measurer.width(&Number(numbering.index[i]).to_string(), tiny, 0) + 8.0)
             } else {
                 0.0
             }
@@ -972,12 +976,12 @@ impl SequenceModel {
                 num(cx - w / 2.0),
                 num(cy - BADGE_H / 2.0),
                 num(w),
-                js::Number(BADGE_H),
-                js::Number(BADGE_H / 2.0),
+                Number(BADGE_H),
+                Number(BADGE_H / 2.0),
                 num(cx),
                 num(cy + tiny * 0.35),
-                js::Number(tiny),
-                Esc(&js::num_str(numbering.index[i]))
+                Number(tiny),
+                Esc(&Number(numbering.index[i]).to_string())
             );
         };
         let frame_label = format!(" class=\"{p}-frame-label\" fill=\"var(--_m)\" stroke=\"none\"");
@@ -1062,10 +1066,10 @@ impl SequenceModel {
                         "<rect x=\"{x}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\"/><text class=\"{p}-frame-kind\" x=\"{}\" y=\"{}\" text-anchor=\"middle\" font-size=\"{}\" font-weight=\"var(--_hw)\" fill=\"var(--_m)\" stroke=\"none\">{}</text>",
                         num(frame.top),
                         num(frame.tab_w),
-                        js::Number(TAB_H),
+                        Number(TAB_H),
                         num(frame.x0 + frame.tab_w / 2.0),
                         num(frame.top + TAB_H / 2.0 + tiny * 0.35),
-                        js::Number(tiny),
+                        Number(tiny),
                         frame.kind.name()
                     );
                     backed(
@@ -1147,7 +1151,7 @@ impl SequenceModel {
                         "<circle class=\"{p}-central\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"var(--_l)\" stroke=\"none\"/>",
                         num(centre.x),
                         num(centre.y),
-                        js::Number(CENTRAL_R)
+                        Number(CENTRAL_R)
                     );
                 };
                 let tail_at_end = st.at_start && !st.at_end;
@@ -1478,7 +1482,7 @@ impl SequenceModel {
             num(pad - out.min_x),
             num(pad - min_y)
         );
-        let small_str = js::Number(small);
+        let small_str = Number(small);
         if !boxes_out.is_empty() {
             let _ = write!(
                 content,
@@ -1510,7 +1514,7 @@ impl SequenceModel {
                     EscText(bar.id),
                     num(bar.at.x),
                     num(bar.at.y),
-                    js::Number(ACT_W),
+                    Number(ACT_W),
                     num(bar.height)
                 );
             }

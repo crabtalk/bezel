@@ -2,11 +2,13 @@
 //! schema: block and flow collections, quoted and plain scalars, and block
 //! scalars. Ported from Pele's `util/yaml.ts`.
 
-use super::{
-    config::{Map, Value},
-    js::{self, Lazy},
+use super::config::{Map, Value};
+use crate::{json, json::JsValue};
+use js::{
+    number::{self, Number},
+    regex::Lazy,
+    string,
 };
-use crate::{js::JsValue, util::chars};
 
 const MAX_DEPTH: usize = 64;
 
@@ -55,7 +57,7 @@ impl Reader {
 
     fn skip_blank(&mut self) {
         while self.i < self.lines.len() {
-            let t = js::trim(&self.lines[self.i]);
+            let t = string::trim(&self.lines[self.i]);
             if !t.is_empty() && !t.starts_with('#') && t != "---" {
                 break;
             }
@@ -89,11 +91,11 @@ fn blanks_end(bytes: &[u8], from: usize) -> usize {
 
 /// Whether `c` ends a plain scalar after a `:`.
 fn ends_plain(c: char) -> bool {
-    chars::is_space(c) || matches!(c, ',' | '[' | ']' | '{' | '}')
+    string::is_space(c) || matches!(c, ',' | '[' | ']' | '{' | '}')
 }
 
 fn leading(line: &str) -> usize {
-    line.len() - js::trim_start(line).len()
+    line.len() - string::trim_start(line).len()
 }
 
 /// Splits `key: rest` at the start of a line: the raw key and where the
@@ -128,7 +130,7 @@ fn split_key(line: &str) -> Option<(&str, usize)> {
         }
     } else {
         let first_char = line.chars().next()?;
-        if chars::is_space(first_char) || "#:,[]{}&*!|>'\"%@`".contains(first_char) {
+        if string::is_space(first_char) || "#:,[]{}&*!|>'\"%@`".contains(first_char) {
             return None;
         }
         if first == b'-'
@@ -157,7 +159,7 @@ fn split_key(line: &str) -> Option<(&str, usize)> {
 }
 
 fn scalar(raw: &str) -> Value {
-    let s = js::trim(raw);
+    let s = string::trim(raw);
     match s {
         "" | "~" | "null" | "Null" | "NULL" => return Value::Null,
         "true" | "True" | "TRUE" => return Value::Bool(true),
@@ -165,26 +167,27 @@ fn scalar(raw: &str) -> Value {
         _ => {}
     }
     if RE_INT.test(s) || RE_FLOAT.test(s) {
-        return js::number_value(js::number(s));
+        return json::number_value(Number::from(s).0);
     }
     if RE_HEX.test(s) || RE_OCT.test(s) || RE_BIN.test(s) {
         let neg = s.starts_with('-');
-        let v = js::number(if neg || s.starts_with('+') {
+        let v = Number::from(if neg || s.starts_with('+') {
             &s[1..]
         } else {
             s
-        });
-        return js::number_value(if neg { -v } else { v });
+        })
+        .0;
+        return json::number_value(if neg { -v } else { v });
     }
     if RE_INF.test(s) {
-        return js::number_value(if s.starts_with('-') {
+        return json::number_value(if s.starts_with('-') {
             f64::NEG_INFINITY
         } else {
             f64::INFINITY
         });
     }
     if RE_NAN.test(s) {
-        return js::number_value(f64::NAN);
+        return json::number_value(f64::NAN);
     }
     Value::String(s.to_string())
 }
@@ -277,7 +280,7 @@ fn unquote_double(body: &str) -> Result<String> {
             }
         };
         let digits: String = chars.by_ref().take(digits).collect();
-        let code = js::parse_int(&digits, 16);
+        let code = number::parse_int(&digits, 16);
         match (code.is_finite() && code >= 0.0)
             .then(|| char::from_u32(code as u32))
             .flatten()
@@ -296,7 +299,7 @@ fn skip(s: &str, mut pos: usize) -> usize {
         if is_blank(c) {
             pos += 1;
         } else if c == b'#'
-            && (pos == 0 || s[..pos].chars().next_back().is_some_and(chars::is_space))
+            && (pos == 0 || s[..pos].chars().next_back().is_some_and(string::is_space))
         {
             pos = s[pos..].find('\n').map_or(s.len(), |nl| pos + nl);
         } else {
@@ -417,16 +420,16 @@ fn flow(s: &str, pos: usize, stops: &str, depth: usize) -> Result<(Value, usize)
         {
             break;
         }
-        if c == b'#' && end > pos && s[..end].chars().next_back().is_some_and(chars::is_space) {
+        if c == b'#' && end > pos && s[..end].chars().next_back().is_some_and(string::is_space) {
             let nl = s[end..].find('\n').map_or(s.len(), |nl| end + nl);
-            return Ok((scalar(&fold(js::trim(&s[pos..end]))), nl));
+            return Ok((scalar(&fold(string::trim(&s[pos..end]))), nl));
         }
         end += 1;
     }
     while !s.is_char_boundary(end) {
         end += 1;
     }
-    Ok((scalar(&fold(js::trim(&s[pos..end]))), end))
+    Ok((scalar(&fold(string::trim(&s[pos..end]))), end))
 }
 
 fn strip_comment(s: &str) -> &str {
@@ -491,7 +494,7 @@ impl Reader {
         let mut out: Vec<String> = Vec::new();
         while self.i < self.lines.len() {
             let line = self.lines[self.i].clone();
-            if js::trim(&line).is_empty() {
+            if string::trim(&line).is_empty() {
                 out.push(String::new());
                 self.i += 1;
                 continue;
@@ -574,7 +577,7 @@ impl Reader {
                     Ok((value, end)) => {
                         let used = text[..end.min(text.len())].matches('\n').count();
                         let line_end = text[end..].find('\n').map_or(text.len(), |nl| end + nl);
-                        if !js::trim(strip_comment(&text[end..line_end])).is_empty() {
+                        if !string::trim(strip_comment(&text[end..line_end])).is_empty() {
                             return error("YAML: unexpected content after a value");
                         }
                         self.i = start + used;
@@ -595,12 +598,12 @@ impl Reader {
                 }
             }
         }
-        let mut text = js::trim(strip_comment(rest)).to_string();
+        let mut text = string::trim(strip_comment(rest)).to_string();
         while self.i < self.lines.len() {
             let line = &self.lines[self.i];
-            if js::trim(line).is_empty() {
+            if string::trim(line).is_empty() {
                 let mut j = self.i;
-                while j < self.lines.len() && js::trim(&self.lines[j]).is_empty() {
+                while j < self.lines.len() && string::trim(&self.lines[j]).is_empty() {
                     j += 1;
                 }
                 if j >= self.lines.len()
@@ -615,7 +618,7 @@ impl Reader {
             if parent.is_some_and(|parent| leading(line) <= parent) {
                 break;
             }
-            let more = js::trim(strip_comment(line)).to_string();
+            let more = string::trim(strip_comment(line)).to_string();
             if !text.ends_with('\n') {
                 text.push(' ');
             }
@@ -651,18 +654,18 @@ impl Reader {
                     break;
                 }
                 let rest = &cur[1..];
-                let pad = rest.len() - js::trim_start(rest).len() + 1;
-                let body = js::trim(strip_comment(rest));
+                let pad = rest.len() - string::trim_start(rest).len() + 1;
+                let body = string::trim(strip_comment(rest));
                 if body.is_empty() {
                     self.i += 1;
                     out.push(self.block(indent + 1, depth + 1)?);
                 } else if split_key(body).is_some() {
                     self.lines[self.i] =
-                        format!("{}{}", " ".repeat(indent + pad), js::trim_start(rest));
+                        format!("{}{}", " ".repeat(indent + pad), string::trim_start(rest));
                     out.push(self.block(indent + pad, depth + 1)?);
                 } else {
                     self.i += 1;
-                    out.push(self.inline_value(js::trim(rest), Some(indent))?);
+                    out.push(self.inline_value(string::trim(rest), Some(indent))?);
                 }
             }
             return Ok(Value::Array(out));
@@ -670,7 +673,7 @@ impl Reader {
 
         if split_key(&line).is_none() {
             self.i += 1;
-            return self.inline_value(js::trim(&line), indent.checked_sub(1));
+            return self.inline_value(string::trim(&line), indent.checked_sub(1));
         }
 
         let mut out = Map::new();
@@ -693,7 +696,7 @@ impl Reader {
             let key = flow(raw_key, 0, "", 0)?.0.to_js_string();
             let rest = cur[length..].to_string();
             self.i += 1;
-            if js::trim(strip_comment(&rest)).is_empty() {
+            if string::trim(strip_comment(&rest)).is_empty() {
                 self.skip_blank();
                 if self.i < self.lines.len() {
                     let next = self.indent()?;
@@ -709,7 +712,7 @@ impl Reader {
                     out.insert(key, Value::Null);
                 }
             } else {
-                let value = self.inline_value(js::trim(&rest), Some(indent))?;
+                let value = self.inline_value(string::trim(&rest), Some(indent))?;
                 out.insert(key, value);
             }
         }
@@ -721,7 +724,7 @@ pub fn parse_yaml(src: &str) -> std::result::Result<Value, YamlError> {
     let fail = |failure: Failure| match failure {
         Failure::Incomplete(message) | Failure::Error(message) => YamlError(message),
     };
-    let trimmed = js::trim(src);
+    let trimmed = string::trim(src);
     if trimmed.starts_with(['{', '[']) {
         let (value, end) = flow(trimmed, 0, "", 0).map_err(fail)?;
         if skip(trimmed, end) == trimmed.len() {
@@ -731,7 +734,7 @@ pub fn parse_yaml(src: &str) -> std::result::Result<Value, YamlError> {
     let mut r = Reader::new(src);
     let value = r.block(0, 0).map_err(fail)?;
     r.skip_blank();
-    if r.i < r.lines.len() && js::trim(&r.lines[r.i]) != "..." {
+    if r.i < r.lines.len() && string::trim(&r.lines[r.i]) != "..." {
         return Err(YamlError(
             "YAML: end of the stream or a document separator is expected".into(),
         ));

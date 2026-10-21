@@ -19,11 +19,8 @@ use super::{
         RelationshipType, Span, StatementKind, UseCaseShape, UsecaseModel,
     },
 };
-use crate::{
-    error::Error,
-    js,
-    util::chars::{is_blank, is_word},
-};
+use crate::{error::Error, util::chars::is_blank};
+use js::string;
 
 const FORBIDDEN: [&str; 5] = [
     "allowmixing",
@@ -456,7 +453,7 @@ impl Parser<'_> {
             self.p += 1;
             let text = self.expect(T::StereotypeText)?;
             self.expect(T::StereotypeEnd)?;
-            item.stereotype = Some(js::trim(&self.image(text)).to_string());
+            item.stereotype = Some(string::trim(&self.image(text)).to_string());
             item.stereotype_span = Some(self.span(text));
         }
         if self.t(self.p) == T::ClassSeparator {
@@ -841,11 +838,11 @@ impl Parser<'_> {
                 let open = after('{');
                 let close = text.rfind('}').unwrap_or(0);
                 self.drafts.acc_description =
-                    js::trim(text.get(open..close.max(open)).unwrap_or("")).to_string();
+                    string::trim(text.get(open..close.max(open)).unwrap_or("")).to_string();
             } else if kind == T::AccDescrLine {
-                self.drafts.acc_description = js::trim(&text[after(':')..]).to_string();
+                self.drafts.acc_description = string::trim(&text[after(':')..]).to_string();
             } else {
-                self.drafts.acc_title = js::trim(&text[after(':')..]).to_string();
+                self.drafts.acc_title = string::trim(&text[after(':')..]).to_string();
             }
             out = GraphStatement::new(if kind == T::AccTitleLine {
                 StatementKind::AccTitle
@@ -898,7 +895,7 @@ impl Parser<'_> {
                 from += 1;
             }
             let mut to = from;
-            while self.src.matches(to, is_word) {
+            while self.src.matches(to, string::is_word) {
                 to += 1;
             }
             let json = DraftJson {

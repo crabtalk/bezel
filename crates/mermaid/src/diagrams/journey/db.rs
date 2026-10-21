@@ -1,17 +1,16 @@
 //! Pele's `diagrams/journey/db.ts`.
 
-use crate::diagrams::common::db::Titles;
+use crate::{diagrams::common::db::Titles, json};
 use indexmap::IndexSet;
+use js::{number::Number, string};
 use serde::Serialize;
-
-use crate::js::{self};
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JourneyTask {
     pub task: String,
     /// As written: any number, or NaN when the score is not one.
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub score: f64,
     pub people: Vec<String>,
     /// Name of the section in force when the task was declared, `""` before
@@ -62,12 +61,12 @@ impl JourneyModel {
         } else {
             pieces[1]
                 .split(',')
-                .map(|name| js::trim(name).to_string())
+                .map(|name| string::trim(name).to_string())
                 .collect()
         };
         self.tasks.push(JourneyTask {
             task: task.to_string(),
-            score: js::number(pieces[0]),
+            score: Number::from(pieces[0]).0,
             people,
             section: self.current_section.clone(),
         });
@@ -82,7 +81,7 @@ impl JourneyModel {
             }
         }
         let mut names: Vec<String> = names.into_iter().collect();
-        js::sort_strings(&mut names);
+        string::sort(&mut names);
         names
     }
 }

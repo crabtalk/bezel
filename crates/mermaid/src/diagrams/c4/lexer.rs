@@ -1,12 +1,11 @@
 //! Pele's `diagrams/c4/lexer.ts`.
 
 use super::tokens::T;
-use crate::diagrams::common::directions::Directions;
 use crate::{
-    js::Lazy,
+    diagrams::common::directions::Directions,
     token::{Cursor, Token},
-    util::chars::{is_space, is_word},
 };
+use js::{regex::Lazy, string};
 
 static RE_DIRECTION: [(T, Lazy); 4] = [
     (T::DirectionTb, Lazy::new(r".*direction\s+TB[^\n]*", "y")),
@@ -103,7 +102,7 @@ impl<'s> Lexer<'s> {
     fn statement(&mut self, word: &str, kind: T) -> bool {
         let p = self.cur.p;
         let q = p + word.len();
-        if !self.cur.starts_with(word, p) || !self.cur.char_at(q).is_some_and(is_space) {
+        if !self.cur.starts_with(word, p) || !self.cur.char_at(q).is_some_and(string::is_space) {
             return false;
         }
         let from = self.cur.after(q);
@@ -170,7 +169,7 @@ impl<'s> Lexer<'s> {
             self.cur.p = q;
             return true;
         }
-        if is_space(c) {
+        if string::is_space(c) {
             let q = self.cur.space_end(p);
             match src[p..q].rfind('\n') {
                 Some(last) => self.cur.emit_to(T::Newline, p + last + 1),
@@ -189,7 +188,7 @@ impl<'s> Lexer<'s> {
             }
             _ => {}
         }
-        if is_word(c) {
+        if string::is_word(c) {
             let q = self.cur.word_end(p);
             let word = &src[p..q];
             let find = |table: &[(&str, T)]| {

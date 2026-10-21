@@ -6,8 +6,8 @@ use super::{
     tokens::T,
     types::{Cardinality, DocItem, Identification, ParsedAttribute, RelSpec},
 };
-use crate::util::chars::inner;
-use crate::{detect::Kind, error::Error, geom::Direction, js, token::Stream};
+use crate::{detect::Kind, error::Error, geom::Direction, token::Stream, util::chars::inner};
+use js::string;
 
 const NAME: &str = "'UNICODE_TEXT', 'NUM', 'ENTITY_NAME', 'DECIMAL_NUM', 'ENTITY_ONE'";
 const CARDS: &str = "'ZERO_OR_ONE', 'ZERO_OR_MORE', 'ONE_OR_MORE', 'ONLY_ONE', 'MD_PARENT'";
@@ -327,10 +327,10 @@ pub fn parse_er(src: &str, db: &mut ErModel) -> Result<(), Error> {
             }
             T::AccTitle | T::AccDescr | T::AccDescrMultilineValue => {
                 let value = if t == T::AccDescrMultilineValue {
-                    js::trim(r.s.take())
+                    string::trim(r.s.take())
                 } else {
                     r.s.bump();
-                    js::trim(r.s.expect(
+                    string::trim(r.s.expect(
                         if t == T::AccTitle {
                             T::AccTitleValue
                         } else {

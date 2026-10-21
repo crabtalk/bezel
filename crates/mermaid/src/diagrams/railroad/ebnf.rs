@@ -13,9 +13,9 @@ use crate::{
         TokenType, directive, keyword, single_line_comment, token_kinds, yaml,
     },
     error::Error,
-    js,
-    util::chars::{inner, is_space},
+    util::chars::inner,
 };
+use js::string;
 
 token_kinds! {
     enum Token {
@@ -69,7 +69,7 @@ fn special_sequence(src: &str, at: usize) -> Option<usize> {
         match c {
             '?' => return solid.then_some(at + 1 + i + 1),
             ';' => return None,
-            _ => solid = solid || !is_space(c),
+            _ => solid = solid || !string::is_space(c),
         }
     }
     None
@@ -156,7 +156,7 @@ impl Parser<'_, Token, EbnfPart> {
                     syntax.add(EbnfPart::NonTerminal(r.take().to_string()), Vec::new())
                 }
                 Some(Token::Special) => {
-                    let text = js::trim(inner(r.take())).to_string();
+                    let text = string::trim(inner(r.take())).to_string();
                     syntax.add(EbnfPart::Special(text), Vec::new())
                 }
                 Some(kind @ (Token::Group | Token::Optional | Token::Repeat)) => {

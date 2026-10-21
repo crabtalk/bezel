@@ -1,15 +1,15 @@
 //! Pele's `diagrams/flowchart/lexer.ts`, and the rules the agentflow lexer
 //! shares with it. Positions are byte offsets.
 
+use js::{regex::Lazy, string};
 use std::borrow::Cow;
 
 use super::tokens::T;
 use crate::{
     diagrams::common::directions::Directions,
-    js::Lazy,
     token::{Cursor, Token},
     util::{
-        chars::{char_at, digits_end, is_space, is_word, width_at},
+        chars::{char_at, digits_end, width_at},
         unicode::is_unicode_letter,
     },
 };
@@ -113,7 +113,7 @@ impl LinkIds {
     /// whitespace, through its last `@` with neither `{` nor `"` after it.
     fn end(&mut self, src: &str, p: usize) -> Option<usize> {
         let c = char_at(src, p)?;
-        if self.next.is_none() || c == '"' || is_space(c) {
+        if self.next.is_none() || c == '"' || string::is_space(c) {
             return None;
         }
         if p >= self.run_end {
@@ -121,7 +121,7 @@ impl LinkIds {
                 self.next = src[p..].find('@').map(|at| p + at);
             }
             let end = src[p..]
-                .find(|c: char| c == '"' || is_space(c))
+                .find(|c: char| c == '"' || string::is_space(c))
                 .map_or(src.len(), |at| p + at);
             self.run_end = end;
             self.run_at = None;
@@ -365,7 +365,9 @@ pub(crate) trait Lex<'s> {
                 self.quote();
                 return true;
             }
-            Some('h') if src[p..].starts_with("href") && self.at(p + 4).is_some_and(is_space) => {
+            Some('h')
+                if src[p..].starts_with("href") && self.at(p + 4).is_some_and(string::is_space) =>
+            {
                 self.emit(T::Href, p + 4 + width_at(src, p + 4));
                 return true;
             }
@@ -438,7 +440,7 @@ pub(crate) trait Lex<'s> {
             }
             '^' => (T::Up, 1),
             '\\' if next == Some('|') => (T::Sep, 2),
-            'v' if !next.is_some_and(is_word) => (T::Down, 1),
+            'v' if !next.is_some_and(string::is_word) => (T::Down, 1),
             '\\' | 'v' => return Some(self.node_string()),
             _ => return None,
         };
@@ -508,7 +510,7 @@ pub(crate) trait Lex<'s> {
             // a comment may start with one.
             Some('%') if Self::COMMENTS => return self.comment(),
             c => {
-                if c.is_some_and(|c| c == '~' || is_space(c)) && self.invis_link() {
+                if c.is_some_and(|c| c == '~' || string::is_space(c)) && self.invis_link() {
                     return true;
                 }
                 let end = self.core().cur.until(p + width_at(src, p), |c| {
@@ -532,7 +534,7 @@ pub(crate) trait Lex<'s> {
             self.quote();
             return true;
         }
-        if c.is_some_and(|c| c == '~' || is_space(c)) && self.invis_link() {
+        if c.is_some_and(|c| c == '~' || string::is_space(c)) && self.invis_link() {
             return true;
         }
         if c == Some('%')
@@ -556,7 +558,7 @@ pub(crate) trait Lex<'s> {
             if matches!(ch, '"' | '(' | ')' | '[' | ']' | '{' | '}')
                 || (matches!(ch, '-' | '/') && self.at(q + 1) == Some(')'))
                 || (ch == '%' && self.comment_end(q).is_some())
-                || ((ch == '~' || is_space(ch)) && self.invis_link_end(q).is_some())
+                || ((ch == '~' || string::is_space(ch)) && self.invis_link_end(q).is_some())
             {
                 break;
             }
@@ -575,7 +577,7 @@ pub(crate) trait Lex<'s> {
             self.quote();
             return true;
         }
-        if c.is_some_and(|c| c == '~' || is_space(c)) && self.invis_link() {
+        if c.is_some_and(|c| c == '~' || string::is_space(c)) && self.invis_link() {
             return true;
         }
         let (kind, len) = match c {
@@ -661,12 +663,12 @@ pub(crate) trait Lex<'s> {
             S::TrapText => return self.trap_text(),
             S::Click => match c {
                 Some('"') => self.quote(),
-                Some(c) if is_space(c) => {
+                Some(c) if string::is_space(c) => {
                     self.pop();
                     self.skip(rest_from);
                 }
                 _ => {
-                    let end = cur.until(rest_from, is_space);
+                    let end = cur.until(rest_from, string::is_space);
                     self.emit_flat(T::Click, end);
                 }
             },
@@ -896,7 +898,7 @@ impl Lexer<'_> {
             }
             Some('=') => return self.link(),
             Some('~') => return self.invis_link(),
-            Some(c) if is_space(c) => {
+            Some(c) if string::is_space(c) => {
                 return self.link()
                     || self.rule(&RE_NEWLINE, T::Newline)
                     || self.rule(&RE_SPACE, T::Space);
@@ -938,7 +940,7 @@ impl Lexer<'_> {
                 if line != '-' || self.at(q + 1) == Some('-') {
                     break;
                 }
-            } else if (matches!(ch, 'x' | 'o' | '<') || Some(ch) == also || is_space(ch))
+            } else if (matches!(ch, 'x' | 'o' | '<') || Some(ch) == also || string::is_space(ch))
                 && closes(self.link_char(q))
                 && link.match_end(src, q).is_some()
             {

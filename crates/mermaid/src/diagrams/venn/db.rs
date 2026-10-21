@@ -2,13 +2,14 @@
 
 use crate::util::chars::unquote;
 use indexmap::{IndexMap, IndexSet};
+use js::string;
 use serde::Serialize;
 
 use super::{
     lexer::IndentHost,
     types::{VennStyle, VennSubset, VennText},
 };
-use crate::{detect::Kind, error::Error, js};
+use crate::{detect::Kind, error::Error};
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,12 +39,12 @@ pub enum VennType {
 
 /// Mermaid takes one pair of quotes off an id, label or style value.
 pub fn normalize_text(text: &str) -> String {
-    unquote(js::trim(text)).to_string()
+    unquote(string::trim(text)).to_string()
 }
 
 fn normalize_ids(ids: &[String]) -> Vec<String> {
     let mut sets: Vec<String> = ids.iter().map(|id| normalize_text(id)).collect();
-    js::sort_strings(&mut sets);
+    string::sort(&mut sets);
     sets
 }
 

@@ -4,9 +4,8 @@
 //! Pele has no browser, so it knows the color keywords and the rgb() and hsl()
 //! notations. Other functions, such as calc() and var(), are not recognized.
 
+use js::{regex::Lazy, string};
 use std::{collections::HashSet, sync::LazyLock};
-
-use crate::js::{self, Lazy};
 
 const KEYWORDS: [&str; 196] = [
     "aliceblue",
@@ -250,15 +249,15 @@ fn is_function(color: &str) -> bool {
     if !matches!(name, "rgb" | "rgba" | "hsl" | "hsla") {
         return false;
     }
-    if js::len(color) > 120 || color.find(')') != Some(color.len() - 1) {
+    if string::len(color) > 120 || color.find(')') != Some(color.len() - 1) {
         return false;
     }
-    let inner = js::trim(&color[open + 1..color.len() - 1]);
+    let inner = string::trim(&color[open + 1..color.len() - 1]);
     let mut parts: Vec<&str>;
     let mut alpha: Option<&str> = None;
     let legacy = inner.contains(',');
     if legacy {
-        parts = inner.split(',').map(js::trim).collect();
+        parts = inner.split(',').map(string::trim).collect();
         if parts.len() == 4 {
             alpha = parts.pop();
         }
@@ -267,9 +266,9 @@ fn is_function(color: &str) -> bool {
         if slash.len() > 2 {
             return false;
         }
-        parts = RE_SPACES.split_str(js::trim(slash[0]));
+        parts = RE_SPACES.split_str(string::trim(slash[0]));
         if slash.len() == 2 {
-            alpha = Some(js::trim(slash[1]));
+            alpha = Some(string::trim(slash[1]));
         }
     }
     if parts.len() != 3 || alpha.is_some_and(|alpha| !is_alpha(alpha, !legacy)) {

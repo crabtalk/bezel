@@ -1,11 +1,10 @@
 //! Pele's `diagrams/xychart/db.ts`.
 
+use crate::{json, json::JsonNumber};
+use js::{number::Number, string};
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::{
-    diagrams::common::db::Titles,
-    js::{self, JsonNumber},
-};
+use crate::diagrams::common::db::Titles;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DataPoint {
@@ -22,9 +21,9 @@ pub enum XAxis {
     },
     Linear {
         title: String,
-        #[serde(serialize_with = "js::json_number")]
+        #[serde(serialize_with = "json::number")]
         min: f64,
-        #[serde(serialize_with = "js::json_number")]
+        #[serde(serialize_with = "json::number")]
         max: f64,
     },
 }
@@ -47,9 +46,9 @@ impl XAxis {
 #[serde(tag = "type", rename = "linear")]
 pub struct LinearAxis {
     pub title: String,
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub min: f64,
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub max: f64,
 }
 
@@ -139,7 +138,7 @@ impl XyChartModel {
     }
 
     pub fn set_x_axis_title(&mut self, title: &str) {
-        *self.x_axis.title_mut() = js::trim(title).to_string();
+        *self.x_axis.title_mut() = string::trim(title).to_string();
     }
 
     pub fn set_x_axis_range_data(&mut self, min: f64, max: f64) {
@@ -154,13 +153,16 @@ impl XyChartModel {
     pub fn set_x_axis_band(&mut self, categories: &[String]) {
         self.x_axis = XAxis::Band {
             title: self.x_axis.title().to_string(),
-            categories: categories.iter().map(|c| js::trim(c).to_string()).collect(),
+            categories: categories
+                .iter()
+                .map(|c| string::trim(c).to_string())
+                .collect(),
         };
         self.has_set_x_axis = true;
     }
 
     pub fn set_y_axis_title(&mut self, title: &str) {
-        self.y_axis.title = js::trim(title).to_string();
+        self.y_axis.title = string::trim(title).to_string();
     }
 
     pub fn set_y_axis_range_data(&mut self, min: f64, max: f64) {
@@ -209,13 +211,13 @@ impl XyChartModel {
                 .collect(),
             XAxis::Linear { min, max, .. } => {
                 if values.len() == 1 {
-                    return vec![(js::num_str(*min), Some(values[0]))];
+                    return vec![(Number(*min).to_string(), Some(values[0]))];
                 }
                 let step = (max - min) / (values.len() - 1) as f64;
                 values
                     .iter()
                     .enumerate()
-                    .map(|(i, &value)| (js::num_str(min + i as f64 * step), Some(value)))
+                    .map(|(i, &value)| (Number(min + i as f64 * step).to_string(), Some(value)))
                     .collect()
             }
         }
@@ -225,16 +227,16 @@ impl XyChartModel {
         let values = data.iter().map(|d| d.value).collect();
         let mut plot = Plot {
             kind,
-            title: js::trim(title).to_string(),
+            title: string::trim(title).to_string(),
             data: self.plot_data(values),
             point_labels: None,
         };
         // Mermaid accepts labels on the points of a bar series and ignores
         // them.
-        if kind == PlotKind::Line && data.iter().any(|d| !js::trim(&d.label).is_empty()) {
+        if kind == PlotKind::Line && data.iter().any(|d| !string::trim(&d.label).is_empty()) {
             plot.point_labels = Some(
                 data.iter()
-                    .map(|d| js::trim(&d.label).to_string())
+                    .map(|d| string::trim(&d.label).to_string())
                     .collect(),
             );
         }

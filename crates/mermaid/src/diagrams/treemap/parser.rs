@@ -1,6 +1,7 @@
 //! Pele's `diagrams/treemap/parser.ts`.
 
 use crate::util::chars::inner;
+use js::{number, regex::Lazy};
 
 use crate::{
     detect::Kind,
@@ -8,7 +9,6 @@ use crate::{
         Header, Reader, TokenType, acc_descr, acc_title, title, token_kinds,
     },
     error::Error,
-    js::{self, Lazy},
 };
 
 token_kinds! {
@@ -106,7 +106,7 @@ pub fn parse_treemap(src: &str) -> Result<TreemapAst, Error> {
             }
             r.accept(Token::Indentation);
             let number = r.expect(Token::Number)?;
-            ItemKind::Leaf(js::parse_float(
+            ItemKind::Leaf(number::parse_float(
                 &RE_COMMA.replace(number, |_| String::new()),
             ))
         } else {

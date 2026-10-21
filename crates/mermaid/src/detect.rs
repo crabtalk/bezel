@@ -1,8 +1,7 @@
 //! Which diagram a source is, from its first keyword.
 
+use js::regex::Lazy;
 use serde::{Serialize, Serializer};
-
-use super::js::Lazy;
 
 /// Every diagram type Mermaid 12.1 registers, by the name Pele gives it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

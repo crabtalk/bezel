@@ -1,6 +1,6 @@
 //! Pele's `diagrams/treemap/format.ts`.
 
-use crate::js::{self, Lazy};
+use js::{number::Number, regex::Lazy};
 
 /// The parts of d3-format's specifier that treemap values use: an optional
 /// `$`, `,` for thousands separators, a precision, and a type of `f`, `%`,
@@ -64,7 +64,7 @@ impl Formatter {
             currency: m.get(2).is_some(),
             comma: m.get(3).is_some(),
             trim: m.get(5).is_some_and(|t| !t.is_empty()),
-            precision: m.get(4).map(|p| js::number(p).min(20.0) as usize),
+            precision: m.get(4).map(|p| Number::from(p).0.min(20.0) as usize),
             notation: match m.str(6) {
                 "f" => Notation::Fixed,
                 "%" => Notation::Percent,
@@ -79,17 +79,16 @@ impl Formatter {
         let abs = value.abs();
         let mut suffix = "";
         let mut body = match self.notation {
-            Notation::Fixed => js::to_fixed(abs, self.precision.unwrap_or(6)),
+            Notation::Fixed => Number(abs).to_fixed(self.precision.unwrap_or(6)),
             Notation::Percent => {
                 suffix = "%";
-                js::to_fixed(abs * 100.0, self.precision.unwrap_or(6))
+                Number(abs * 100.0).to_fixed(self.precision.unwrap_or(6))
             }
-            Notation::Integer => js::to_fixed(abs.round(), 0),
-            Notation::Exponent => js::to_exponential(abs, self.precision.unwrap_or(6)),
-            Notation::Significant => js::num_str(js::to_precision_number(
-                abs,
-                self.precision.unwrap_or(12).max(1),
-            )),
+            Notation::Integer => Number(abs.round()).to_fixed(0),
+            Notation::Exponent => Number(abs).to_exponential(self.precision.unwrap_or(6)),
+            Notation::Significant => Number(abs)
+                .round_significant(self.precision.unwrap_or(12).max(1))
+                .to_string(),
         };
 
         if self.trim && body.contains('.') && !body.contains('e') {

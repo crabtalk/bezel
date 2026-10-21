@@ -1,8 +1,11 @@
 //! Pele's `diagrams/railroad/render.ts`.
 
-use crate::config::{capped, capped_option};
-use crate::geom::Point;
-use crate::text::Label;
+use crate::{
+    config::{capped, capped_option},
+    geom::Point,
+    text::Label,
+};
+use js::{math, number::Number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{collections::HashMap, fmt::Write as _};
@@ -12,11 +15,9 @@ use super::{
     db::RailroadDb,
     types::{NodeId, Nodes, RailroadNode},
 };
-use crate::{Config, Ctx, Error};
 use crate::{
-    Rendered,
+    Config, Ctx, Error, Rendered,
     diagrams::Render,
-    js,
     svg::{
         builder::{Esc, EscText, fragment, num},
         root::svg_document,
@@ -135,7 +136,7 @@ fn count(min: f64, max: f64) -> String {
     }
     let text = |value: f64| {
         if value.is_finite() {
-            js::num_str(value)
+            Number(value).to_string()
         } else {
             "∞".to_string()
         }
@@ -467,10 +468,10 @@ impl<H: Host> Drawn<'_, H> {
                                 "M{},{}l{},{}l{},{}z",
                                 num(start - ARROW),
                                 num(y + next_offset - ARROW / 2.0),
-                                js::Number(ARROW),
-                                js::Number(ARROW / 2.0),
-                                js::Number(-ARROW),
-                                js::Number(ARROW / 2.0)
+                                Number(ARROW),
+                                Number(ARROW / 2.0),
+                                Number(-ARROW),
+                                Number(ARROW / 2.0)
                             );
                             offset = next_offset;
                         } else {
@@ -583,9 +584,9 @@ impl<H: Host> Drawn<'_, H> {
                         "M{},{}l{},{}v{}z",
                         num(middle - ARROW / 2.0),
                         num(loop_y),
-                        js::Number(ARROW),
-                        js::Number(-ARROW / 2.0),
-                        js::Number(ARROW)
+                        Number(ARROW),
+                        Number(-ARROW / 2.0),
+                        Number(ARROW)
                     );
                     if !count.is_empty() {
                         let _ = write!(
@@ -593,7 +594,7 @@ impl<H: Host> Drawn<'_, H> {
                             "<text class=\"{p}-edge-label {p}-count\" x=\"{}\" y=\"{}\" font-size=\"{}\" fill=\"var(--_m)\">{}</text>",
                             num(middle),
                             num(loop_y + COUNT_SIZE + 3.0),
-                            js::Number(COUNT_SIZE),
+                            Number(COUNT_SIZE),
                             Esc(count)
                         );
                     }
@@ -659,11 +660,11 @@ impl RailroadDb {
         let size = if font_size > 0.0 {
             font_size
         } else {
-            js::round(base * 0.875)
+            math::round(base * 0.875)
         };
         let head_size = if font_size > 0.0 { font_size } else { base };
         let padding = capped_option(config.padding, 0.0, 200.0);
-        let line_height = js::round(size * 1.5);
+        let line_height = math::round(size * 1.5);
         let measurer = ctx.host;
         let m = Metrics {
             measure: measurer,
@@ -708,7 +709,7 @@ impl RailroadDb {
             Style::BOLD,
         );
         let title_height = title.spaced_height(16.0);
-        let head_height = js::round(head_size * 1.5);
+        let head_height = math::round(head_size * 1.5);
 
         let mut drawn = Drawn {
             m: &m,

@@ -1,9 +1,14 @@
 //! Pele's `diagrams/quadrant/db.ts`.
 
+use crate::json;
 use indexmap::IndexMap;
+use js::{
+    number::{self, Number},
+    string,
+};
 use serde::Serialize;
 
-use crate::{detect::Kind, diagrams::common::db::Titles, error::Error, js};
+use crate::{detect::Kind, diagrams::common::db::Titles, error::Error};
 
 fn is_number(value: &str) -> bool {
     !value.is_empty() && value.bytes().all(|b| b.is_ascii_digit())
@@ -35,7 +40,7 @@ pub struct QuadrantText {
 impl QuadrantText {
     fn trimmed(self) -> Self {
         Self {
-            text: js::trim(&self.text).to_string(),
+            text: string::trim(&self.text).to_string(),
             kind: self.kind,
         }
     }
@@ -46,7 +51,7 @@ impl QuadrantText {
 pub struct PointStyle {
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "js::json_number_opt"
+        serialize_with = "json::number_opt"
     )]
     pub radius: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -60,9 +65,9 @@ pub struct PointStyle {
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct QuadrantPoint {
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub x: f64,
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub y: f64,
     pub text: QuadrantText,
     pub class_name: String,
@@ -100,16 +105,16 @@ fn invalid(style: &str, value: &str, kind: &str) -> Error {
 /// The first two parts of Mermaid's `style.trim().split(/\s*:\s*/)`, found in
 /// one pass.
 fn key_value(style: &str) -> (&str, &str) {
-    let s = js::trim(style);
+    let s = string::trim(style);
     let Some(colon) = s.find(':') else {
         return (s, "undefined");
     };
-    let rest = js::trim_start(&s[colon + 1..]);
+    let rest = string::trim_start(&s[colon + 1..]);
     let value = match rest.find(':') {
         None => rest,
-        Some(next) => js::trim_end(&rest[..next]),
+        Some(next) => string::trim_end(&rest[..next]),
     };
-    (js::trim_end(&s[..colon]), value)
+    (string::trim_end(&s[..colon]), value)
 }
 
 impl PointStyle {
@@ -122,7 +127,7 @@ impl PointStyle {
                     if !is_number(value) {
                         return Err(invalid(key, value, "number"));
                     }
-                    out.radius = Some(js::parse_int(value, 10));
+                    out.radius = Some(number::parse_int(value, 10));
                 }
                 "color" => {
                     if !is_hex(value) {
@@ -186,8 +191,8 @@ impl QuadrantModel {
     ) -> Result<(), Error> {
         let style = PointStyle::parse(styles)?;
         self.points.push(QuadrantPoint {
-            x: js::number(x),
-            y: js::number(y),
+            x: Number::from(x).0,
+            y: Number::from(y).0,
             text: label.trimmed(),
             class_name,
             style,

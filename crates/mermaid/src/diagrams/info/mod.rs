@@ -1,19 +1,16 @@
 //! `info`: the renderer's name and version. Pele's `diagrams/info`.
 
-use crate::diagrams::common::db::Titles;
-use crate::geom::Point;
-use crate::text::Label;
+use crate::{diagrams::common::db::Titles, geom::Point, text::Label};
 mod parser;
 
 use serde::Serialize;
 
 use super::{Diagram, Model, Render};
 use crate::{
-    Config, Error, ParseLimits, Rendered,
+    Config, Ctx, Error, Host, ParseLimits, Rendered,
     svg::{builder::TITLE, root::svg_document},
     text::Style,
 };
-use crate::{Ctx, Host};
 use std::fmt::Write as _;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

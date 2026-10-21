@@ -1,16 +1,16 @@
 //! Pele's `diagrams/journey/render.ts`.
 
-use crate::geom::Point;
-use crate::svg::builder::EscText;
+use crate::{geom::Point, svg::builder::EscText};
+use js::{math, number::Number, string};
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
 };
 
 use super::db::JourneyModel;
-use crate::diagrams::Render;
 use crate::{
-    Config, Error, Rendered, js,
+    Config, Ctx, Error, Host, Rendered,
+    diagrams::Render,
     svg::{
         builder::{TITLE, fragment, num},
         root::svg_document,
@@ -18,7 +18,6 @@ use crate::{
     },
     text::{Label, Style},
 };
-use crate::{Ctx, Host};
 
 const PAD_X: f64 = 10.0;
 const PAD_Y: f64 = 8.0;
@@ -79,7 +78,7 @@ impl Mood {
                 self.name(),
                 num(at.x),
                 num(at.y),
-                js::Number(FACE),
+                Number(FACE),
                 self.mouth(),
                 p = crate::PREFIX,
             )
@@ -125,8 +124,8 @@ impl JourneyModel {
 
     fn draw(&self, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.875);
-        let tiny = js::round(size * 0.75);
+        let small = math::round(size * 0.875);
+        let tiny = math::round(size * 0.75);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let p = crate::PREFIX;
@@ -163,7 +162,7 @@ impl JourneyModel {
         let pitch = card_w + GAP;
         let plot_w = if n > 0 { n as f64 * pitch - GAP } else { 0.0 };
 
-        let line_h = js::round(small * 1.5);
+        let line_h = math::round(small * 1.5);
         let limit = plot_w.max(240.0);
         let mut legend: Vec<LegendItem> = Vec::new();
         let mut legend_w: f64 = 0.0;
@@ -279,7 +278,7 @@ impl JourneyModel {
             let _ = write!(
                 body,
                 "<path class=\"{p}-grid\" d=\"{grid}\" fill=\"none\" stroke=\"var(--_a)\"/><g class=\"{p}-scale\" font-size=\"{}\" text-anchor=\"end\" fill=\"var(--_m)\">{scale}</g>",
-                js::Number(tiny)
+                Number(tiny)
             );
 
             let mut line = String::new();
@@ -288,7 +287,7 @@ impl JourneyModel {
             let mut cards = String::new();
             // Where each task's card in `cards` ends.
             let mut ends: Vec<usize> = Vec::with_capacity(tasks.len());
-            let card_attrs = format!(" font-size=\"{}\"", js::Number(small));
+            let card_attrs = format!(" font-size=\"{}\"", Number(small));
             for (i, task) in tasks.iter().enumerate() {
                 let x = left + i as f64 * pitch;
                 let cx = x + card_w / 2.0;
@@ -318,7 +317,7 @@ impl JourneyModel {
                 let _ = write!(
                     cards,
                     "<g class=\"{p}-node {p}-task\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_s)\" stroke=\"var(--_b)\"/>{}",
-                    EscText(js::trim(&task.task)),
+                    EscText(string::trim(&task.task)),
                     num(x),
                     num(cards_y),
                     num(card_w),
@@ -336,7 +335,7 @@ impl JourneyModel {
                         "<circle class=\"{p}-actor\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\" stroke=\"var(--_s)\"><title>{}</title></circle>",
                         num(cx + (k as f64 - (count - 1.0) / 2.0) * step),
                         num(cards_y + card_h - PAD_Y - DOT),
-                        js::Number(DOT),
+                        Number(DOT),
                         series_color(actor.get(name.as_str()).copied().unwrap_or(0)),
                         EscText(name)
                     );
@@ -358,7 +357,7 @@ impl JourneyModel {
 
             let band_attrs = format!(
                 " font-size=\"{}\" font-weight=\"var(--_hw)\"",
-                js::Number(small)
+                Number(small)
             );
             for run in &runs {
                 let from = if run.start == 0 {
@@ -376,7 +375,7 @@ impl JourneyModel {
                 let _ = write!(
                     body,
                     "<g class=\"{p}-cluster {p}-section\" data-id=\"{}\"><rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"{RADIUS}\" fill=\"var(--_a)\"/>{}{members}</g>",
-                    EscText(js::trim(&tasks[run.start].section)),
+                    EscText(string::trim(&tasks[run.start].section)),
                     num(x),
                     num(top),
                     num(w),
@@ -398,7 +397,7 @@ impl JourneyModel {
                         EscText(&item.name),
                         num(x0 + item.at.x + DOT),
                         num(cy),
-                        js::Number(DOT),
+                        Number(DOT),
                         series_color(actor.get(item.name.as_str()).copied().unwrap_or(0)),
                         item.label.svg(
                             Point::new(
@@ -412,7 +411,7 @@ impl JourneyModel {
                 let _ = write!(
                     body,
                     "<g class=\"{p}-legend\" font-size=\"{}\">{items}</g>",
-                    js::Number(small)
+                    Number(small)
                 );
                 bottom = y0 + legend_h;
             }
@@ -439,7 +438,7 @@ impl JourneyModel {
     /// The journey as a column of steps.
     fn draw_down(&self, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.875);
+        let small = math::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let p = crate::PREFIX;
@@ -464,7 +463,7 @@ impl JourneyModel {
         let count = self.tasks.len();
         let actor_attrs = format!(
             " class=\"{p}-journey-actor\" font-size=\"{}\"",
-            js::Number(small)
+            Number(small)
         );
         for (index, task) in self.tasks.iter().enumerate() {
             if section != Some(task.section.as_str()) {
@@ -532,7 +531,7 @@ impl JourneyModel {
                     "<text class=\"{p}-journey-score\" x=\"{}\" y=\"{}\" font-size=\"{}\" text-anchor=\"middle\">{}</text>",
                     num(cx),
                     num(y + PAD_Y + 2.0 * FACE + small),
-                    js::Number(small),
+                    Number(small),
                     num(task.score.clamp(1.0, 5.0))
                 );
             }
@@ -544,7 +543,7 @@ impl JourneyModel {
                     "<circle class=\"{p}-actor\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"{}\"/>",
                     num(pad + 16.0),
                     num(py + ph / 2.0),
-                    js::Number(DOT),
+                    Number(DOT),
                     series_color(actors[name])
                 );
                 let _ = write!(

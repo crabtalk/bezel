@@ -2,6 +2,7 @@
 
 use crate::diagrams::common::{db::Titles, tokens::Header};
 use indexmap::IndexMap;
+use js::regex::Lazy;
 use serde::{Serialize, Serializer, ser::SerializeMap};
 
 use super::{
@@ -11,7 +12,7 @@ use super::{
     peg::parse_peg,
     types::{Nodes, Notation, RailroadRule, Rule},
 };
-use crate::{detect::Kind, error::Error, js::Lazy};
+use crate::{detect::Kind, error::Error};
 
 static RE_KEYWORD: Lazy = Lazy::new(r"^\s*railroad-(ebnf-|abnf-|peg-)?beta", "i");
 

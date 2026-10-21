@@ -1,8 +1,7 @@
 //! A `classDef`: the styles it gives a node, and those it gives its text.
 
+use js::string;
 use serde::Serialize;
-
-use crate::js;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,7 +33,7 @@ impl StyleClass {
     /// `;`. One that sets a color styles the text with it as `fill`, and its
     /// first `fill` as `bgFill`.
     pub fn push_attribute(&mut self, attribute: &str) {
-        let fixed = js::trim(&attribute.replacen(';', "", 1)).to_string();
+        let fixed = string::trim(&attribute.replacen(';', "", 1)).to_string();
         if attribute.contains("color") {
             self.text_styles.push(
                 fixed

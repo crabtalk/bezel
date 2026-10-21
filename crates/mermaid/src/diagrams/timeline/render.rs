@@ -1,20 +1,19 @@
 //! Pele's `diagrams/timeline/render.ts`.
 
 use super::db::TimelineModel;
-use crate::diagrams::Render;
-use crate::geom::{Point, Size};
-use crate::svg::edges::Marker;
-use crate::{Config, Ctx, Error, Host};
 use crate::{
-    Rendered, js,
+    Config, Ctx, Error, Host, Rendered,
+    diagrams::Render,
+    geom::{Point, Size},
     svg::{
         builder::{EscText, num, rect},
-        edges::ARROW,
+        edges::{ARROW, Marker},
         root::svg_document,
         theme::{RADIUS, SeriesColor, series_color},
     },
     text::{Label, Style},
 };
+use js::{math, number::Number, string};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::fmt::{self, Write as _};
@@ -81,7 +80,7 @@ impl Render for TimelineModel {
 impl TimelineModel {
     fn draw(&self, config: &TimelineConfig, ctx: &Ctx<'_, impl Host>, vertical: bool) -> Rendered {
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.875);
+        let small = math::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let p = crate::PREFIX;
@@ -119,7 +118,7 @@ impl TimelineModel {
             _ => f64::INFINITY,
         };
         let taken = AXIS + SPINE * 2.0 + 4.0 * PAD_X;
-        let period_text = MIN_TEXT.min(80f64.max(js::round((room - taken) * 0.38)));
+        let period_text = MIN_TEXT.min(80f64.max(math::round((room - taken) * 0.38)));
         let event_text = EVENT_TEXT_TD.min(110f64.max(room - taken - period_text));
         let mut text_w = period_text;
         let event_text_w = |text_w: f64| if vertical { event_text } else { text_w };
@@ -183,11 +182,11 @@ impl TimelineModel {
                 .collect();
         }
 
-        let line_height = js::round(size * 1.5);
+        let line_height = math::round(size * 1.5);
         let col_w = text_w + 2.0 * PAD_X;
         let event_w = event_text_w(text_w) + 2.0 * PAD_X;
         let chip_height = |label: &Label| label.height.max(line_height) + 2.0 * PAD_Y;
-        let event_height = |label: &Label| label.height.max(js::round(small * 1.5)) + 2.0 * PAD_Y;
+        let event_height = |label: &Label| label.height.max(math::round(small * 1.5)) + 2.0 * PAD_Y;
         let color_of = |group: &Group, period: usize| match group.section {
             Some(section) => Hue::Series(series_color(section as i64)),
             None if has_sections => Hue::Muted,
@@ -262,7 +261,7 @@ impl TimelineModel {
                 period_labels[i].svg(Point::new(at.x + col_w / 2.0, at.y + h / 2.0), ON_COLOR)
             );
         };
-        let event_attrs = format!(" font-size=\"{}\"", js::Number(small));
+        let event_attrs = format!(" font-size=\"{}\"", Number(small));
         let event = |out: &mut String, label: &Label, color: Hue, at: Point, h: f64| {
             let _ = write!(
                 out,
@@ -291,7 +290,7 @@ impl TimelineModel {
                 let _ = write!(
                     out,
                     "<g class=\"{p}-cluster {p}-section\" data-id=\"{}\">",
-                    EscText(js::trim(&self.sections[section]))
+                    EscText(string::trim(&self.sections[section]))
                 );
             }
         };
@@ -299,7 +298,7 @@ impl TimelineModel {
             let _ = write!(
                 out,
                 "<g class=\"{p}-node {p}-period\" data-id=\"{}\">",
-                EscText(js::trim(&periods[i].text))
+                EscText(string::trim(&periods[i].text))
             );
         };
 

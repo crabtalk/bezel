@@ -561,6 +561,7 @@ name = "bezel-chart"
 version = "0.2.19"
 dependencies = [
  "bezel-gpui",
+ "bezel-js",
  "bezel-theme",
  "serde_json",
 ]
@@ -900,6 +901,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bezel-js"
+version = "0.2.19"
+dependencies = [
+ "chrono",
+ "serde_json",
+]
+
+[[package]]
 name = "bezel-markdown"
 version = "0.2.19"
 dependencies = [
@@ -919,6 +928,7 @@ dependencies = [
 name = "bezel-mermaid"
 version = "0.2.19"
 dependencies = [
+ "bezel-js",
  "chrono",
  "indexmap 2.14.0",
  "memchr",

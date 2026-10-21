@@ -4,12 +4,11 @@
 //! parts by their place in it, so that nesting depth is bounded by memory, not
 //! by the stack.
 
+use crate::json::JsonNumber;
 use serde::{
     Serialize, Serializer,
     ser::{SerializeMap, SerializeStruct},
 };
-
-use crate::js::JsonNumber;
 
 /// A node's place in [`Nodes`].
 pub type NodeId = usize;

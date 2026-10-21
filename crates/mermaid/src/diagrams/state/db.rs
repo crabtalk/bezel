@@ -4,12 +4,13 @@
 //! ported.
 
 use indexmap::IndexMap;
+use js::string;
 
 use super::{
     graph::build_state_graph,
     types::{Descr, StateKind, StateLink, StateModel, StateNote, StateRelation, StateStmt, Stmt},
 };
-use crate::{diagrams::common::style_class::StyleClass, error::Error, geom::Direction, js};
+use crate::{diagrams::common::style_class::StyleClass, error::Error, geom::Direction};
 
 /// A document being given ids, taken out of its state while its statements
 /// are visited.
@@ -52,7 +53,7 @@ impl StateModel {
         for item in doc {
             match item {
                 Stmt::State(item) => self.add_state(
-                    js::trim(&item.id),
+                    string::trim(&item.id),
                     item.kind,
                     item.doc.as_ref(),
                     item.description.as_ref(),
@@ -62,20 +63,22 @@ impl StateModel {
                 Stmt::Relation(item) => {
                     self.add_relation(&item.state1, &item.state2, item.description.as_deref())
                 }
-                Stmt::ClassDef(item) => self.add_style_class(js::trim(&item.id), &item.classes),
+                Stmt::ClassDef(item) => self.add_style_class(string::trim(&item.id), &item.classes),
                 Stmt::Style(item) => {
                     let styles: Vec<String> = item
                         .style_class
                         .split(',')
-                        .map(|s| js::trim(&s.replace(';', "")).to_string())
+                        .map(|s| string::trim(&s.replace(';', "")).to_string())
                         .collect();
-                    for key in self.named(js::trim(&item.id)) {
+                    for key in self.named(string::trim(&item.id)) {
                         if let Some(state) = self.states.get_mut(&key) {
                             state.styles = Some(styles.clone());
                         }
                     }
                 }
-                Stmt::ApplyClass(item) => self.set_css_class(js::trim(&item.id), &item.style_class),
+                Stmt::ApplyClass(item) => {
+                    self.set_css_class(string::trim(&item.id), &item.style_class)
+                }
                 Stmt::Click(item) => self.add_link(&item.id.id, &item.url, &item.tooltip),
                 _ => {}
             }
@@ -172,7 +175,7 @@ impl StateModel {
         note: Option<&StateNote>,
         classes: Option<&Vec<String>>,
     ) {
-        let trimmed = js::trim(id).to_string();
+        let trimmed = string::trim(id).to_string();
         let kind = kind.unwrap_or(StateKind::Default);
         match self.states.get_mut(&trimmed) {
             None => {
@@ -202,7 +205,7 @@ impl StateModel {
         }
         if let Some(descr) = descr.filter(|descr| !descr.is_empty()) {
             for text in descr.texts() {
-                self.add_description(&trimmed, js::trim(&text));
+                self.add_description(&trimmed, string::trim(&text));
             }
         }
         if let Some(note) = note
@@ -212,7 +215,7 @@ impl StateModel {
         }
         if let Some(classes) = classes {
             for name in classes {
-                self.set_css_class(&trimmed, js::trim(name));
+                self.set_css_class(&trimmed, string::trim(name));
             }
         }
     }
@@ -239,8 +242,8 @@ impl StateModel {
             );
         }
         self.relations.push(StateRelation {
-            id1: js::trim(&item1.id).to_string(),
-            id2: js::trim(&item2.id).to_string(),
+            id1: string::trim(&item1.id).to_string(),
+            id2: string::trim(&item2.id).to_string(),
             relation_title: title.unwrap_or("").to_string(),
         });
     }
@@ -252,7 +255,7 @@ impl StateModel {
             .and_then(|state| state.descriptions.as_mut())
         {
             descriptions.push(if descr.starts_with(':') {
-                js::trim(&descr.replacen(':', "", 1)).to_string()
+                string::trim(&descr.replacen(':', "", 1)).to_string()
             } else {
                 descr.to_string()
             });
@@ -300,7 +303,7 @@ impl StateModel {
                 continue;
             }
             self.add_state(id, None, None, None, None, None);
-            let trimmed = js::trim(id);
+            let trimmed = string::trim(id);
             if self.states.contains_key(trimmed) {
                 out.push(trimmed.to_string());
             }
@@ -317,7 +320,7 @@ impl StateStmt {
             self.id = format!("{parent_id}{}", if start { "_start" } else { "_end" });
             self.start = Some(start);
         } else {
-            self.id = js::trim(&self.id).to_string();
+            self.id = string::trim(&self.id).to_string();
         }
     }
 }

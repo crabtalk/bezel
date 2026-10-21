@@ -1,11 +1,11 @@
 //! Pele's `diagrams/treemap/model.ts`.
 
-use crate::diagrams::common::db::Titles;
+use crate::{diagrams::common::db::Titles, json};
 use indexmap::IndexMap;
+use js::regex::Lazy;
 use serde::Serialize;
 
 use super::parser::{ItemKind, RowAst, TreemapAst};
-use crate::js::{self, Lazy};
 
 static RE_ESCAPED_COMMA: Lazy = Lazy::new(r"\\,", "g");
 static RE_COMMA: Lazy = Lazy::new(r",", "g");
@@ -20,7 +20,7 @@ pub struct TreemapNode {
     pub children: Option<Vec<TreemapNode>>,
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "js::json_number_opt"
+        serialize_with = "json::number_opt"
     )]
     pub value: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -1,7 +1,8 @@
 //! Jison's `.*direction\s+TB[^\n]*` rules and their siblings, which a lexer
 //! tries at every position of `INITIAL`.
 
-use crate::{js::Lazy, util::chars::starts_with_caseless};
+use crate::util::chars::starts_with_caseless;
+use js::regex::Lazy;
 
 /// The direction rules of one grammar, in its order, and what earlier
 /// positions found out about the text. Positions must be asked about in

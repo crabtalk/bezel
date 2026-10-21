@@ -8,10 +8,11 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-readme.workspace = true
+readme = "README.md"
 keywords.workspace = true
 categories.workspace = true
 rust-version.workspace = true
+exclude = ["tests/"]
 
 [lib]
 name = "chart"
@@ -27,6 +28,7 @@ vega-lite = ["dep:serde_json"]
 [dependencies]
 serde_json = { workspace = true, optional = true }
 gpui.workspace = true
+js.workspace = true
 theme.workspace = true
 
 [dev-dependencies]
@@ -34,4 +36,12 @@ gpui = { workspace = true, features = ["test-support"] }
 
 [[test]]
 name = "vega_lite"
+required-features = ["vega-lite"]
+
+[[test]]
+name = "transform"
+required-features = ["vega-lite"]
+
+[[test]]
+name = "expr"
 required-features = ["vega-lite"]

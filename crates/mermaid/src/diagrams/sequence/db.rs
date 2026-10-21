@@ -1,7 +1,8 @@
 //! Pele's `diagrams/sequence/db.ts`.
 
-use crate::diagrams::common::db::Titles;
-use crate::js::JsValue;
+use crate::{diagrams::common::db::Titles, json, json::JsValue};
+use js::{regex::Lazy, string};
+
 use indexmap::IndexMap;
 use serde::{Serialize, Serializer, ser::SerializeMap};
 
@@ -12,14 +13,7 @@ use super::{
         SeqBoxData, SeqMessage, SeqMessageText, SeqNote, SeqNumbering, SeqStatement, SeqText,
     },
 };
-use crate::{
-    config::Value,
-    detect::Kind,
-    error::Error,
-    js::parse_json,
-    js::{self, Lazy},
-    yaml::parse_yaml,
-};
+use crate::{config::Value, detect::Kind, error::Error, yaml::parse_yaml};
 
 static RE_WRAP: Lazy = Lazy::new(r"^:?wrap:", "");
 static RE_NOWRAP: Lazy = Lazy::new(r"^:?nowrap:", "");
@@ -86,7 +80,7 @@ fn slice_units(text: &str, to: i64) -> String {
 impl SeqText {
     /// A message, without the `wrap:` or `nowrap:` that may open it.
     pub fn parse(raw: &str) -> Self {
-        let text = js::trim(raw);
+        let text = string::trim(raw);
         let wrap = if RE_WRAP.test(text) {
             Some(true)
         } else if RE_NOWRAP.test(text) {
@@ -99,7 +93,7 @@ impl SeqText {
             Some(_) => RE_WRAP_PREFIX.replace(text, |_| String::new()),
         };
         Self {
-            text: js::trim(&text).to_string(),
+            text: string::trim(&text).to_string(),
             wrap,
         }
     }
@@ -110,16 +104,16 @@ impl SeqBoxData {
     pub fn parse(text: &str) -> Self {
         let found = split_box(text);
         let mut color = match found {
-            Some((color, _)) if !color.is_empty() => js::trim(color).to_string(),
+            Some((color, _)) if !color.is_empty() => string::trim(color).to_string(),
             _ => "transparent".to_string(),
         };
         let mut title = match found {
-            Some((_, rest)) if !rest.is_empty() => Some(js::trim(rest).to_string()),
+            Some((_, rest)) if !rest.is_empty() => Some(string::trim(rest).to_string()),
             _ => None,
         };
         if !is_css_color(&color) {
             color = "transparent".into();
-            title = Some(js::trim(text).to_string());
+            title = Some(string::trim(text).to_string());
         }
         let Some(title) = title else {
             return Self {
@@ -378,7 +372,7 @@ impl SequenceModel {
         let Some(actor) = self.actors.get_mut(actor_id) else {
             return;
         };
-        if let Some(parsed) = parse_json(&text.text) {
+        if let Some(parsed) = json::parse_json(&text.text) {
             for (key, value) in entries(parsed) {
                 actor.links.insert(key, value);
             }
@@ -394,14 +388,14 @@ impl SequenceModel {
         // `at` -1 when there is no `@`.
         let (key, value) = match text.find('@') {
             Some(at) => (
-                slice_units(text, js::len(&text[..at]) as i64 - 1),
+                slice_units(text, string::len(&text[..at]) as i64 - 1),
                 &text[at + 1..],
             ),
             None => (slice_units(text, -2), text),
         };
         actor.links.insert(
-            js::trim(&key).to_string(),
-            Value::String(js::trim(value).to_string()),
+            string::trim(&key).to_string(),
+            Value::String(string::trim(value).to_string()),
         );
     }
 
@@ -409,7 +403,7 @@ impl SequenceModel {
         let Some(actor) = self.actors.get_mut(actor_id) else {
             return;
         };
-        if let Some(parsed) = parse_json(&text.text) {
+        if let Some(parsed) = json::parse_json(&text.text) {
             for (key, value) in entries(parsed) {
                 actor.properties.insert(key, value);
             }

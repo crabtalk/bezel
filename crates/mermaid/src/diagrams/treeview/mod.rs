@@ -12,8 +12,10 @@ use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
 use super::{Diagram, Model};
-use crate::config::{Map, Value};
-use crate::{Config, Error, ParseLimits};
+use crate::{
+    Config, Error, ParseLimits,
+    config::{Map, Value},
+};
 
 pub struct TreeView;
 

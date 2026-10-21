@@ -2,8 +2,8 @@
 //! the domains and the S-shaped cliff between Clear and Chaotic. Pele's
 //! `diagrams/cynefin/boundaries.ts`.
 
-use crate::geom::Point;
-use crate::{js, svg::builder::fragment};
+use crate::{geom::Point, svg::builder::fragment};
+use js::number;
 use std::fmt;
 
 pub const FOLD: WaveOptions = WaveOptions {
@@ -27,7 +27,7 @@ pub const HORIZON: WaveOptions = WaveOptions {
 
 /// mulberry32, one step.
 pub fn seeded_random(seed: f64) -> f64 {
-    let mut t = js::to_int32(seed + f64::from(0x6d2b79f5u32));
+    let mut t = number::to_int32(seed + f64::from(0x6d2b79f5u32));
     t = (t ^ ((t as u32) >> 15) as i32).wrapping_mul(t | 1);
     t ^= t.wrapping_add((t ^ ((t as u32) >> 7) as i32).wrapping_mul(t | 61));
     f64::from((t ^ ((t as u32) >> 14) as i32) as u32) / 4294967296.0

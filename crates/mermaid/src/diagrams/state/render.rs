@@ -1,6 +1,7 @@
 //! Pele's `diagrams/state/render.ts`.
 
 use crate::svg::builder::rect;
+use js::{math, number, regex::Lazy};
 use std::{
     cmp::Ordering,
     collections::HashMap,
@@ -16,7 +17,6 @@ use crate::{
     config::positive,
     diagrams::Render,
     geom::{Axis, Direction, Point, RoutePoint, Size},
-    js::{self, Lazy},
     layout::{
         compound::{CEdge, CNode, compound_layout},
         layered::LayeredOptions,
@@ -242,7 +242,7 @@ impl<'a> Scene<'a> {
             let lo = |i: usize| self.extent(i, axis).0;
             let hi = |i: usize| self.extent(i, axis).1;
             let mut sorted = regions.clone();
-            sorted.sort_by(|&a, &b| js::compare(lo(a) - lo(b)).then(a.cmp(&b)));
+            sorted.sort_by(|&a, &b| number::compare(lo(a) - lo(b)).then(a.cmp(&b)));
             let apart = (1..sorted.len()).all(|k| hi(sorted[k - 1]) <= lo(sorted[k]) + 0.5);
             if !apart {
                 continue;
@@ -305,7 +305,7 @@ impl<'a> Scene<'a> {
             if (delta.abs() - extent / 2.0).abs() >= 0.5 {
                 continue;
             }
-            *end.along_mut(axis) -= (js::sign(delta) * (extent - drawn_extent)) / 2.0;
+            *end.along_mut(axis) -= (math::sign(delta) * (extent - drawn_extent)) / 2.0;
             if bar && breadth > drawn_extent {
                 *end.along_mut(across) = other
                     .along(across)
@@ -322,7 +322,7 @@ impl StateModel {
         let p = crate::PREFIX;
         let graph = &self.graph;
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.875);
+        let small = math::round(size * 0.875);
         let measure = ctx.host;
         let wrap_width = positive(config.wrapping_width, 200.0);
         let pad = ctx.options.padding.unwrap_or(8.0);
@@ -866,7 +866,7 @@ impl StateModel {
                             .min(8.0 + k * 6.0)
                             .max(2.0);
                         let reach = LOOP + k * 8.0;
-                        let trim = Marker::trim_of(end_marker) / js::hypot(reach, spread);
+                        let trim = Marker::trim_of(end_marker) / math::hypot(&[reach, spread]);
                         // Offsets are given for a loop on the right and turned
                         // a quarter for one below.
                         let Point { x: ax, y: ay } = a.center;
@@ -889,7 +889,7 @@ impl StateModel {
                                 py(-reach, -spread) - py(0.0, 0.0),
                             ),
                         };
-                        let len = js::or_one(js::hypot(lp.end_dir.x, lp.end_dir.y));
+                        let len = number::or(math::hypot(&[lp.end_dir.x, lp.end_dir.y]), 1.0);
                         lp.end_dir.x /= len;
                         lp.end_dir.y /= len;
                         path = lp;

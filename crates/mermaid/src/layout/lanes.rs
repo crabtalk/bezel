@@ -3,9 +3,8 @@
 //! a step sits level with the steps that happen at the same time in other
 //! lanes, and each node stays inside its own lane.
 
+use js::{math, number};
 use std::collections::HashSet;
-
-use crate::js::{self, compare};
 
 use super::{
     compound::{CEdge, CNode},
@@ -393,7 +392,7 @@ fn settle_row(row: &mut [usize], lane: &[i32], key: &[f64], pos: &mut [f64]) {
     row.sort_by(|&a, &b| {
         lane[a]
             .cmp(&lane[b])
-            .then(compare(key[a] - key[b]))
+            .then(number::compare(key[a] - key[b]))
             .then(a.cmp(&b))
     });
     for (k, &item) in row.iter().enumerate() {
@@ -494,7 +493,7 @@ impl Lanes<'_> {
                     // The edge crosses from its first lane to its last one
                     // evenly along the way.
                     lane_[d] = lane_[a]
-                        + js::round(((lane_[b] - lane_[a]) * (r - ra)) as f64 / (rb - ra) as f64)
+                        + math::round(((lane_[b] - lane_[a]) * (r - ra)) as f64 / (rb - ra) as f64)
                             as i32;
                     dummy[d] = true;
                     if r == label_rank {
@@ -935,7 +934,7 @@ impl Lanes<'_> {
                 let aa = router.amid(a);
                 let ba = router.amid(b);
                 let dc = (bc - ac).signum();
-                let da = js::sign(ba - aa);
+                let da = math::sign(ba - aa);
                 let first = [
                     Point::new(ac + dc * size[a] / 2.0, aa),
                     Point::new(bc, aa),
@@ -1000,7 +999,7 @@ impl Lanes<'_> {
                         around.push((pts, cost, lane));
                     }
                 }
-                around.sort_by(|p, q| compare(p.1 - q.1));
+                around.sort_by(|p, q| number::compare(p.1 - q.1));
                 for (pts, _, lane) in &around {
                     if !router.attempt(edges, &mut labels, &mut routed, e, k, ei, pts, 1.0) {
                         continue;

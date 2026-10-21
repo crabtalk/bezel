@@ -2,9 +2,10 @@
 
 use crate::diagrams::common::style_class::StyleClass;
 use indexmap::{IndexMap, IndexSet};
+use js::{number::Number, string};
 
 use super::types::{Block, BlockKind, BlockModel, Columns, Statement};
-use crate::{Error, Kind, js};
+use crate::{Error, Kind};
 
 const MAX_SPACES: f64 = 100000.0;
 
@@ -88,7 +89,7 @@ impl BlockModel {
     /// misses b. Here it is trimmed first.
     pub fn set_css_class(&mut self, item_ids: &str, css_class_name: &str) {
         for id in item_ids.split(',') {
-            let at = self.named(js::trim(id));
+            let at = self.named(string::trim(id));
             let list = match self.nodes[at].classes {
                 Some(list) => list,
                 None => {
@@ -216,7 +217,7 @@ impl BlockModel {
                 if width.is_nan() || width > MAX_SPACES - self.spaces {
                     return Err(Error::limit(format!(
                         "A block diagram can hold at most {} space blocks.",
-                        js::num_str(MAX_SPACES)
+                        Number(MAX_SPACES)
                     ))
                     .of(Kind::Block));
                 }

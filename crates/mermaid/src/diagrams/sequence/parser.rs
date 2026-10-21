@@ -17,9 +17,9 @@ use super::{
 use crate::{
     detect::Kind,
     error::Error,
-    js,
     token::{Stream, after_keyword},
 };
+use js::{number::Number, string};
 
 const SIGNAL_TOKENS: &str = "'SOLID_OPEN_ARROW', 'DOTTED_OPEN_ARROW', 'SOLID_ARROW', 'DOTTED_ARROW', 'SOLID_CROSS', 'DOTTED_CROSS', 'SOLID_POINT', 'DOTTED_POINT'";
 
@@ -114,7 +114,7 @@ impl Parser<'_, '_, '_> {
     }
 
     fn text2(&mut self) -> Result<SeqText, Error> {
-        let text = js::trim(self.s.expect(T::Txt, "")?);
+        let text = string::trim(self.s.expect(T::Txt, "")?);
         Ok(SeqText::parse(&text[1.min(text.len())..]))
     }
 
@@ -147,7 +147,7 @@ impl Parser<'_, '_, '_> {
             self.s.bump();
             let content = self.s.expect(T::ConfigContent, "")?;
             self.s.expect(T::ConfigEnd, "")?;
-            node.config = Some(js::trim(content).to_string());
+            node.config = Some(string::trim(content).to_string());
         }
         node.draw = Some(if t == T::Participant {
             ActorKind::Participant
@@ -286,9 +286,9 @@ impl Parser<'_, '_, '_> {
         let mut step = None;
         let mut visible = true;
         if self.s.is(T::Num) {
-            index = Some(js::number(self.s.take()));
+            index = Some(Number::from(self.s.take()).0);
             step = Some(if self.s.is(T::Num) {
-                js::number(self.s.take())
+                Number::from(self.s.take()).0
             } else {
                 1.0
             });
@@ -421,15 +421,15 @@ impl Parser<'_, '_, '_> {
                 T::AccTitle => {
                     self.s.bump();
                     let value = self.s.expect(T::AccTitleValue, "")?;
-                    self.db.titles.set_acc_title(js::trim(value));
+                    self.db.titles.set_acc_title(string::trim(value));
                 }
                 T::AccDescr => {
                     self.s.bump();
                     let value = self.s.expect(T::AccDescrValue, "")?;
-                    self.db.titles.set_acc_descr(js::trim(value));
+                    self.db.titles.set_acc_descr(string::trim(value));
                 }
                 T::AccDescrMultilineValue => {
-                    let value = js::trim(self.s.take());
+                    let value = string::trim(self.s.take());
                     self.db.titles.set_acc_descr(value);
                 }
                 T::Loop

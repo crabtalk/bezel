@@ -6,9 +6,10 @@ use super::{
     icons::icon_markup,
     measure::{Host, Style},
 };
-use crate::{
-    js::{self, Lazy},
-    util::chars::{is_space, is_word},
+use js::{
+    math,
+    regex::{Lazy, Regex},
+    string,
 };
 
 pub const LINE_HEIGHT: f64 = 1.5;
@@ -23,10 +24,10 @@ static RE_BREAK: Lazy = Lazy::new(r"<br\s*\/?>|\\n|\n", "gi");
 static RE_TAG: Lazy = Lazy::new(r"<\/?([a-zA-Z][\w-]*)(?:\s[^<>]*)?\/?>", "y");
 static RE_ICON: Lazy = Lazy::new(r"(fa[bklrs]?):fa-([\w-]+)", "g");
 static RE_MARKUP: Lazy = Lazy::new(r"[<\\\n*_]|fa[bklrs]?:fa-", "");
-static RE_CJK: std::sync::LazyLock<crate::js::Regex> =
-    std::sync::LazyLock::new(|| crate::js::Regex::new(&format!("[{CJK}]"), ""));
-static RE_PIECE: std::sync::LazyLock<crate::js::Regex> = std::sync::LazyLock::new(|| {
-    crate::js::Regex::new(
+static RE_CJK: std::sync::LazyLock<Regex> =
+    std::sync::LazyLock::new(|| Regex::new(&format!("[{CJK}]"), ""));
+static RE_PIECE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(
         &format!(r"\s*(?:[{OPEN}]*[{CJK}][{CLOSE}]*|[^\s{CJK}]+[{CLOSE}]*)\s*|\s+"),
         "g",
     )
@@ -61,10 +62,10 @@ fn dedent(text: &str) -> String {
     let lines: Vec<&str> = text.split('\n').collect();
     let mut min = usize::MAX;
     for line in &lines {
-        if js::trim(line).is_empty() {
+        if string::trim(line).is_empty() {
             continue;
         }
-        let indent = js::len(line) - js::len(js::trim_start(line));
+        let indent = string::len(line) - string::len(string::trim_start(line));
         min = min.min(indent);
     }
     if min == usize::MAX || min == 0 {
@@ -73,7 +74,7 @@ fn dedent(text: &str) -> String {
     lines
         .iter()
         .map(|line| {
-            let own = js::len(line) - js::len(js::trim_start(line));
+            let own = string::len(line) - string::len(string::trim_start(line));
             let cut = min.min(own);
             // The cut is all whitespace, one unit per character it takes.
             let at = line
@@ -132,7 +133,7 @@ fn push_icons(line: &mut Vec<Span>, text: &str, style: u8, host: &impl Host) {
             && let Some(before) = line.last_mut()
             && before.icon.is_none()
         {
-            before.text = js::trim_end(&before.text).to_string();
+            before.text = string::trim_end(&before.text).to_string();
         }
     }
     push_text(line, &text[last..], style);
@@ -190,10 +191,12 @@ fn inline(line: &mut Vec<Span>, source: &str, markdown: bool, base: u8, host: &i
             } else {
                 ch.to_string()
             };
-            let can_open =
-                open && next.is_some_and(|c| !is_space(c)) && source[i + len..].contains(&marker);
-            let can_close = !open && prev.is_some_and(|c| !is_space(c));
-            let wordy = ch == '_' && prev.is_some_and(is_word) && next.is_some_and(is_word);
+            let can_open = open
+                && next.is_some_and(|c| !string::is_space(c))
+                && source[i + len..].contains(&marker);
+            let can_close = !open && prev.is_some_and(|c| !string::is_space(c));
+            let wordy =
+                ch == '_' && prev.is_some_and(string::is_word) && next.is_some_and(string::is_word);
             if (can_open || can_close) && !wordy {
                 push_icons(line, &text, style, host);
                 text.clear();
@@ -247,7 +250,7 @@ fn wrap(
         if let Some(last) = current.last_mut()
             && last.icon.is_none()
         {
-            let trimmed = js::trim_end(&last.text).to_string();
+            let trimmed = string::trim_end(&last.text).to_string();
             if trimmed != last.text {
                 let w = measure.width(&trimmed, size, last.style);
                 *width += w - last.width;
@@ -274,9 +277,10 @@ fn wrap(
         }
         for piece in RE_PIECE.find_all(&span.text) {
             let mut part = piece;
-            if width > 0.0 && width + measure.width(js::trim_end(part), size, span.style) > max {
+            if width > 0.0 && width + measure.width(string::trim_end(part), size, span.style) > max
+            {
                 commit(&mut current, &mut width, out, widths);
-                part = js::trim_start(part);
+                part = string::trim_start(part);
             }
             if let Some(last) = current.last_mut()
                 && last.style == span.style
@@ -326,10 +330,10 @@ impl Label {
         let Some(raw) = raw.filter(|raw| !raw.is_empty()) else {
             return Label::default();
         };
-        let line_height = js::round(size * LINE_HEIGHT);
+        let line_height = math::round(size * LINE_HEIGHT);
 
         if !RE_MARKUP.test(raw) && !raw.contains('&') && !raw.contains('ﬂ') {
-            let text = js::trim(raw);
+            let text = string::trim(raw);
             let width = measure.width(text, size, base);
             if width <= max_width || !(text.contains(' ') || RE_CJK.test(text)) {
                 return Label {
@@ -374,15 +378,15 @@ impl Label {
         }
 
         let source = if markdown {
-            js::trim(&dedent(&raw.replace("\r\n", "\n").replace('\r', "\n"))).to_string()
+            string::trim(&dedent(&raw.replace("\r\n", "\n").replace('\r', "\n"))).to_string()
         } else {
-            js::trim(raw).to_string()
+            string::trim(raw).to_string()
         };
         let mut lines = Vec::new();
         let mut widths = Vec::new();
         for part in RE_BREAK.split_str(&source) {
             let mut line = Vec::new();
-            inline(&mut line, js::trim(part), markdown, base, measure);
+            inline(&mut line, string::trim(part), markdown, base, measure);
             let w = measure_spans(&mut line, measure, size);
             if w > max_width {
                 wrap(&line, measure, size, max_width, &mut lines, &mut widths);
@@ -436,12 +440,12 @@ impl Label {
                     let rest = width - span.width;
                     if span.icon.is_none() && rest + dots < max_width {
                         let mut lo = 0;
-                        let mut hi = js::len(&span.text);
+                        let mut hi = string::len(&span.text);
                         while lo < hi {
                             let mid = (lo + hi + 1) >> 1;
                             if rest
                                 + measure.width(
-                                    &span.text[..js::units_end(&span.text, mid)],
+                                    &span.text[..string::units_end(&span.text, mid)],
                                     label.size,
                                     span.style,
                                 )
@@ -460,7 +464,7 @@ impl Label {
                         }
                         span.text = format!(
                             "{}…",
-                            js::trim_end(&span.text[..js::units_end(&span.text, lo)])
+                            string::trim_end(&span.text[..string::units_end(&span.text, lo)])
                         );
                         span.width = measure.width(&span.text, label.size, span.style);
                         width = rest + span.width;

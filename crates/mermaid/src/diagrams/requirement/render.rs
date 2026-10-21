@@ -1,8 +1,10 @@
 //! Pele's `diagrams/requirement/render.ts`.
 
-use crate::geom::{Direction, Point, Size};
-use crate::svg::builder::rewrite;
-use crate::svg::edges::Curve;
+use crate::{
+    geom::{Direction, Point, Size},
+    svg::{builder::rewrite, edges::Curve},
+};
+use js::number::Number;
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
@@ -13,11 +15,9 @@ use super::{
     graph::{GraphEdge, GraphNode, NodeItem},
     types::Relationship,
 };
-use crate::Ctx;
 use crate::{
-    Config, Error, Rendered,
+    Config, Ctx, Error, Rendered,
     diagrams::Render,
-    js,
     layout::{
         compound::{CEdge, CNode, compound_layout, spread_ends},
         layered::LayeredOptions,
@@ -126,7 +126,7 @@ fn contains_marker(tip: Point, dir: Point) -> impl fmt::Display {
             "<circle class=\"{p}-marker\" cx=\"{}\" cy=\"{}\" r=\"{}\"/><path class=\"{p}-marker\" d=\"M{}L{}M{}L{}\"/>",
             num(center.x),
             num(center.y),
-            js::Number(r),
+            Number(r),
             center - dir * r,
             center + dir * r,
             Point::new(center.x + dir.y * r, center.y - dir.x * r),
@@ -253,7 +253,7 @@ impl<'g, 'a> NodeView<'g, 'a> {
             kind_attrs_buf,
             format_args!(
                 " class=\"{p}-stereotype\" font-size=\"{}\" fill=\"var(--_m)\"{}",
-                js::Number(self.kind.size),
+                Number(self.kind.size),
                 style.text
             ),
         );
@@ -261,7 +261,7 @@ impl<'g, 'a> NodeView<'g, 'a> {
             name_attrs_buf,
             format_args!(
                 " class=\"{p}-label\" font-size=\"{}\" font-weight=\"var(--_hw)\"{}",
-                js::Number(self.name.size),
+                Number(self.name.size),
                 style.text
             ),
         );
@@ -285,7 +285,7 @@ impl<'g, 'a> NodeView<'g, 'a> {
                 Point::new(left, divider),
                 num(-left),
                 style.line,
-                js::Number(first.key.size)
+                Number(first.key.size)
             );
             let mut y = divider + PAD_Y;
             for row in &self.rows {
@@ -549,7 +549,7 @@ impl RequirementModel {
             let _ = write!(
                 content,
                 "<g class=\"{p}-edge-labels\" font-size=\"{}\" fill=\"var(--_m)\">{labels_out}</g>",
-                js::Number(small)
+                Number(small)
             );
         }
         let _ = write!(content, "<g class=\"{p}-nodes\">{nodes_out}</g>");

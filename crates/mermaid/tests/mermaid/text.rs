@@ -5,7 +5,7 @@ use mermaid::{
     Value,
     detect::{Kind, detect},
     geom::Point,
-    js::parse_json,
+    json::parse_json,
     preprocess::{cleanup_comments, encode_entities, preprocess},
     svg::builder::{esc, num},
     text::{Host, Label, Metrics, Style, decode_entities},

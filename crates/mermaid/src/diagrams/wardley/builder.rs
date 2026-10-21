@@ -1,19 +1,19 @@
 //! Pele's `diagrams/wardley/builder.ts`.
 
+use crate::{json, json::JsonNumber};
 use std::collections::HashMap;
 
 use indexmap::IndexMap;
 use serde::{Serialize, ser::SerializeMap};
 
 use super::parser::Flow;
-use crate::js::{self, JsonNumber};
 
 /// A place on the map, in percent: `x` is evolution, `y` is visibility.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct MapPoint {
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub x: f64,
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub y: f64,
 }
 
@@ -147,7 +147,7 @@ pub struct WardleyPipeline {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct WardleyAnnotation {
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub number: f64,
     pub coordinates: Vec<MapPoint>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -187,16 +187,16 @@ pub struct WardleyAxesConfig {
 
 fn numbers_opt<S: serde::Serializer>(xs: &Option<Vec<f64>>, s: S) -> Result<S::Ok, S::Error> {
     match xs {
-        Some(xs) => js::json_numbers(xs, s),
+        Some(xs) => json::numbers(xs, s),
         None => s.serialize_unit(),
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
 pub struct WardleySize {
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub width: f64,
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub height: f64,
 }
 

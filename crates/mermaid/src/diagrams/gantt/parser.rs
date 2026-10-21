@@ -9,9 +9,9 @@ use super::{
 use crate::{
     Error,
     detect::Kind,
-    js,
     token::{Stream, after_keyword},
 };
+use js::string;
 
 const LINE: &str = "'EOF', 'SPACE', 'NL', 'weekday_monday', 'weekday_tuesday', 'weekday_wednesday', 'weekday_thursday', 'weekday_friday', 'weekday_saturday', 'weekday_sunday', 'weekend_friday', 'weekend_saturday', 'dateFormat', 'inclusiveEndDates', 'topAxis', 'axisFormat', 'tickInterval', 'excludes', 'includes', 'todayMarker', 'title', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'section', 'taskTxt', 'click'";
 
@@ -39,12 +39,12 @@ pub fn parse_gantt(src: &str, db: &mut GanttDb) -> Result<(), Error> {
             T::AccTitle => {
                 let value = p.s.expect(T::AccTitleValue, "")?;
                 p.line_end("")?;
-                db.titles.set_acc_title(js::trim(value));
+                db.titles.set_acc_title(string::trim(value));
             }
             T::AccDescr => {
                 let value = p.s.expect(T::AccDescrValue, "")?;
                 p.line_end("")?;
-                db.titles.set_acc_descr(js::trim(value));
+                db.titles.set_acc_descr(string::trim(value));
             }
             T::TaskTxt => {
                 let data = p.s.expect(T::TaskData, "")?;
@@ -66,7 +66,7 @@ pub fn parse_gantt(src: &str, db: &mut GanttDb) -> Result<(), Error> {
                     T::WeekendFriday => db.weekend = Weekend::Friday,
                     T::WeekendSaturday => db.weekend = Weekend::Saturday,
                     T::Title => db.titles.set_title(after_keyword(text, 5)),
-                    T::AccDescrMultilineValue => db.titles.set_acc_descr(js::trim(text)),
+                    T::AccDescrMultilineValue => db.titles.set_acc_descr(string::trim(text)),
                     T::Section => db.add_section(after_keyword(text, 7)),
                     _ => {
                         if let Some(day) = kind.weekday() {

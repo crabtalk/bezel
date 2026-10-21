@@ -1,6 +1,7 @@
 //! Pele's `diagrams/wardley/model.ts`.
 
 use crate::diagrams::common::db::Titles;
+use js::{number::Number, string};
 use serde::Serialize;
 
 use super::{
@@ -10,11 +11,7 @@ use super::{
     },
     parser::{Flow, LabelAst, WardleyAst},
 };
-use crate::{
-    detect::Kind,
-    error::Error,
-    js::{self},
-};
+use crate::{detect::Kind, error::Error};
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,7 +30,7 @@ fn to_percent(value: f64, context: &str) -> Result<f64, Error> {
     if normalized < 0.0 || normalized > 100.0 {
         return Err(Error::semantic(format!(
             "{context} must be between 0-1 (decimal) or 0-100 (percentage). Received: {}",
-            js::num_str(value)
+            Number(value)
         ))
         .of(Kind::Wardley));
     }
@@ -85,9 +82,9 @@ impl WardleyBuilder {
                     .iter()
                     .map(|stage| match &stage.second_name {
                         Some(second) if !second.is_empty() => {
-                            format!("{} / {}", js::trim(&stage.name), js::trim(second))
+                            format!("{} / {}", string::trim(&stage.name), string::trim(second))
                         }
-                        _ => js::trim(&stage.name).to_string(),
+                        _ => string::trim(&stage.name).to_string(),
                     })
                     .collect(),
                 stages.iter().filter_map(|stage| stage.boundary).collect(),
@@ -215,7 +212,7 @@ impl WardleyBuilder {
             let at = to_coordinates(
                 annotation.x,
                 annotation.y,
-                &format!("Annotation {}", js::num_str(annotation.number)),
+                &format!("Annotation {}", Number(annotation.number)),
             )?;
             self.add_annotation(WardleyAnnotation {
                 number: annotation.number,

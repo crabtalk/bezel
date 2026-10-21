@@ -1,7 +1,8 @@
 //! Pele's `diagrams/venn/render.ts`.
 
-use crate::geom::Point;
-use crate::js::JsValue;
+use crate::{geom::Point, json::JsValue};
+use js::{math, number::Number};
+
 use crate::svg::builder::EscText;
 use indexmap::{IndexMap, IndexSet};
 use std::fmt::Write as _;
@@ -12,10 +13,9 @@ use super::{
     types::VennSubset,
 };
 use crate::{
-    Config, Error, Rendered,
+    Config, Ctx, Error, Host, Rendered,
     config::Value,
     diagrams::Render,
-    js,
     svg::{
         builder::{TITLE, num},
         root::{Accessible, svg_document},
@@ -23,7 +23,6 @@ use crate::{
     },
     text::{Label, Style},
 };
-use crate::{Ctx, Host};
 
 const RADIUS: f64 = 100.0;
 const MAX_GROWTH: f64 = 1.6;
@@ -59,8 +58,8 @@ fn key_of(ids: &[String]) -> String {
 impl Render for VennDb {
     fn render(&self, _config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.875);
-        let tiny = js::round(size * 0.8125);
+        let small = math::round(size * 0.875);
+        let tiny = math::round(size * 0.8125);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let p = crate::PREFIX;
@@ -320,7 +319,7 @@ impl Render for VennDb {
                     None => {
                         let _ = write!(attrs, " class=\"{p}-label\"");
                         if line.size != size {
-                            let _ = write!(attrs, " font-size=\"{}\"", js::Number(line.size));
+                            let _ = write!(attrs, " font-size=\"{}\"", Number(line.size));
                         }
                         write!(attrs, "{}", region.style.text)
                     }
@@ -328,7 +327,7 @@ impl Render for VennDb {
                         attrs,
                         " class=\"{p}-venn-text\" data-id=\"{}\" font-size=\"{}\" fill=\"var(--_m)\"{}",
                         EscText(text_id),
-                        js::Number(tiny),
+                        Number(tiny),
                         style_of(text_id).text
                     ),
                 };

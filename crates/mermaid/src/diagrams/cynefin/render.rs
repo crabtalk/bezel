@@ -1,9 +1,11 @@
 //! Pele's `diagrams/cynefin/render.ts`.
 
-use crate::config::within;
-use crate::geom::Point;
-use crate::svg::builder::EscText;
-use crate::svg::edges::Marker;
+use crate::{
+    config::within,
+    geom::Point,
+    svg::{builder::EscText, edges::Marker},
+};
+use js::{math, number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{collections::HashMap, fmt::Write as _};
@@ -12,11 +14,10 @@ use super::{
     boundaries::{FOLD, HORIZON, WaveOptions, cliff, ellipse_path, resolve_seed, wave},
     model::{CynefinModel, Domain},
 };
-use crate::diagrams::Render;
-use crate::geom::Size;
-use crate::{Config, Ctx, Error, Host};
 use crate::{
-    Rendered, js,
+    Config, Ctx, Error, Host, Rendered,
+    diagrams::Render,
+    geom::Size,
     svg::{
         builder::{TITLE, fragment, num},
         root::svg_document,
@@ -106,8 +107,8 @@ impl Render for CynefinModel {
         let config = &config.cynefin;
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.8125);
-        let item_size = js::round(size * 0.875);
+        let small = math::round(size * 0.8125);
+        let item_size = math::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let show_descriptions = config.show_domain_descriptions != Some(false);
@@ -116,7 +117,7 @@ impl Render for CynefinModel {
             within(config.seed, 0.0, -1e15, 1e15),
             ctx.options.id_prefix.as_str(),
         );
-        let item_line = js::round(item_size * 1.5);
+        let item_line = math::round(item_size * 1.5);
 
         let badge = |text: String, overflow: bool| -> Badge {
             let label = Label::layout(Some(&text), false, measure, item_size, ITEM_MAX_WIDTH, 0);
@@ -460,7 +461,7 @@ impl Render for CynefinModel {
             seen.insert(key, repeat + 1.0);
 
             let d = to.center - from.center;
-            let len = js::hypot(d.x, d.y);
+            let len = math::hypot(&[d.x, d.y]);
             let mid = from.center.midpoint(to.center);
             // Curves bow away from the middle of the diagram, which keeps them
             // off the ellipse.
@@ -477,7 +478,7 @@ impl Render for CynefinModel {
                 && d.x.abs() > 1.0
                 && d.y.abs() > 1.0;
             let bow = (if diagonal {
-                2.0 * (js::hypot(rx * normal.x, ry * normal.y) + 16.0)
+                2.0 * (math::hypot(&[rx * normal.x, ry * normal.y]) + 16.0)
             } else {
                 len * 0.15
             }) + repeat * 56.0;
@@ -521,7 +522,7 @@ impl Render for CynefinModel {
             let q = from.center * ((1.0 - t0) * (1.0 - t1))
                 + control * ((1.0 - t0) * t1 + t0 * (1.0 - t1))
                 + to.center * (t0 * t1);
-            let el = js::or_one(js::hypot(end.x - q.x, end.y - q.y));
+            let el = number::or(math::hypot(&[end.x - q.x, end.y - q.y]), 1.0);
             let u = (end - q) / el;
             let head = Marker::Arrow.draw(end, u, "var(--_l)");
             end = end - u * Marker::Arrow.trim();

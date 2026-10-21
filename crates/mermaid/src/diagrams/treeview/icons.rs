@@ -1,8 +1,11 @@
 //! Pele's `diagrams/treeview/icons.ts`.
 
-use super::TreeViewConfig;
-use super::model::{NodeType, TreeNode};
-use crate::js::JsValue;
+use super::{
+    TreeViewConfig,
+    model::{NodeType, TreeNode},
+};
+use crate::json::JsValue;
+
 use crate::{Value, config::Map};
 
 /// Mermaid's name for its built-in pack. Only `file` and `folder` are built

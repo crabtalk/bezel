@@ -1,6 +1,7 @@
 //! Pele's `diagrams/state/graph.ts`: Mermaid's dataFetcher, which walks the
 //! documents and resolves them into the nodes and edges that are drawn.
 
+use js::string;
 use std::collections::HashMap;
 
 use indexmap::IndexMap;
@@ -10,8 +11,9 @@ use super::{
     db::last_direction,
     types::{Descr, StateKind, StateStmt, Stmt},
 };
-use crate::diagrams::common::style_class::StyleClass;
-use crate::{detect::Kind, error::Error, geom::Direction, js};
+use crate::{
+    detect::Kind, diagrams::common::style_class::StyleClass, error::Error, geom::Direction,
+};
 
 /// What a node of the graph is drawn as, by Mermaid's names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -238,7 +240,7 @@ impl Builder<'_> {
             }
         }
         let length = match &draft.description {
-            Descr::One(text) => js::len(text),
+            Descr::One(text) => string::len(text),
             Descr::Many(list) => list.len(),
         };
         if length == 1 && draft.shape == Some(StateShape::RectWithTitle) {
@@ -269,11 +271,12 @@ impl Builder<'_> {
                 _ => {
                     let slot = self.next_slot;
                     self.next_slot += 1;
-                    draft.color_index = if !js::trim(&class_str).is_empty() || !styles.is_empty() {
-                        None
-                    } else {
-                        Some(slot)
-                    };
+                    draft.color_index =
+                        if !string::trim(&class_str).is_empty() || !styles.is_empty() {
+                            None
+                        } else {
+                            Some(slot)
+                        };
                 }
             }
             self.slots.insert(id.to_string(), draft.color_index);

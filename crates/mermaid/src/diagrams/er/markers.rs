@@ -1,13 +1,11 @@
 //! Pele's `diagrams/er/markers.ts`.
 
 use crate::geom::Point;
+use js::number::Number;
 use std::fmt;
 
 use super::types::Cardinality;
-use crate::{
-    js,
-    svg::builder::{fragment, num},
-};
+use crate::svg::builder::{fragment, num};
 
 /// How far a marker reaches back along its line from the box it touches.
 pub const MARKER_LENGTH: f64 = 18.0;
@@ -44,7 +42,7 @@ impl Cardinality {
                     "<circle class=\"{p}-marker\" cx=\"{}\" cy=\"{}\" r=\"{}\" fill=\"var(--_bg)\"/>",
                     num(x - dx * back),
                     num(y - dy * back),
-                    js::num_str(RING)
+                    Number(RING)
                 )
             };
             let open = |f: &mut fmt::Formatter<'_>| write!(f, "<path class=\"{p}-marker\" d=\"");

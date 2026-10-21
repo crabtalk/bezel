@@ -32,6 +32,7 @@
 //! 8. The drawing stays compact. A gap between ranks grows only to hold the
 //!    levels in it, or to let curves that cross do so at a clear angle.
 
+use js::{math, number};
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
@@ -39,10 +40,7 @@ use std::{
 
 use indexmap::{IndexMap, IndexSet};
 
-use crate::{
-    geom::{Point, Size},
-    js::{self, compare},
-};
+use crate::geom::{Point, Size};
 
 const MAX_SWEEPS: usize = 24;
 /// An edge gets a bend point in every rank it skips. Past this many, the
@@ -876,7 +874,7 @@ impl Graph {
         if near.is_empty() {
             return;
         }
-        near.sort_by(|&x, &y| compare(off(xs, x).abs() - off(xs, y).abs()).then(x.cmp(&y)));
+        near.sort_by(|&x, &y| number::compare(off(xs, x).abs() - off(xs, y).abs()).then(x.cmp(&y)));
         let gap = |v: usize| self.half_room(opt, v);
         // Whether every node of a block can move by `shift` and keep its room
         // from those beside it.
@@ -1032,8 +1030,8 @@ impl Graph {
             let end = layer_start[r + 1];
             let mut row = order[s..end].to_vec();
             row.sort_by(|&a, &b| {
-                compare(from[a] - from[b])
-                    .then(compare(to[a] - to[b]))
+                number::compare(from[a] - from[b])
+                    .then(number::compare(to[a] - to[b]))
                     .then(a.cmp(&b))
             });
             let mut i = 0;
@@ -1200,7 +1198,7 @@ impl Graph {
                     }
                     if mixed {
                         let mut ids = pred_e[from..to].to_vec();
-                        ids.sort_by(|&a, &b| compare(etd[a] - etd[b]));
+                        ids.sort_by(|&a, &b| number::compare(etd[a] - etd[b]));
                         for k in 0..ids.len() {
                             if k > 0 && etd[ids[k]] != etd[ids[k - 1]] {
                                 places += 1;
@@ -1248,7 +1246,7 @@ impl Graph {
                     Some(place) if mixed => {
                         let mut ids = succ_e[from..to].to_vec();
                         ids.sort_by(|&a, &b| {
-                            compare(efd[a] - efd[b]).then(place[a].cmp(&place[b]))
+                            number::compare(efd[a] - efd[b]).then(place[a].cmp(&place[b]))
                         });
                         for k in 0..d {
                             targets[t0 + k] = place[ids[k]];
@@ -1363,7 +1361,7 @@ impl Graph {
                 } else {
                     pos[a].cmp(&pos[b])
                 };
-                compare(bary[a] - bary[b]).then(by_pos)
+                number::compare(bary[a] - bary[b]).then(by_pos)
             });
             let mut k = 0;
             for i in s..e {
@@ -2106,7 +2104,8 @@ pub fn layered(nodes: &mut [LNode], edges: &mut [LEdge], opt: &LayeredOptions) -
         for r in 0..=max_rank {
             let layer = &mut order[layer_start[r]..layer_start[r + 1]];
             let mut indexed: Vec<(usize, usize)> = layer.iter().copied().enumerate().collect();
-            indexed.sort_by(|&(i, a), &(j, b)| compare(pin_of(a) - pin_of(b)).then(i.cmp(&j)));
+            indexed
+                .sort_by(|&(i, a), &(j, b)| number::compare(pin_of(a) - pin_of(b)).then(i.cmp(&j)));
             for (slot, (_, v)) in layer.iter_mut().zip(indexed) {
                 *slot = v;
             }
@@ -2710,7 +2709,7 @@ pub fn rank(nodes: &mut [LNode], edges: &[LEdge], step: i32) {
 /// to tell how near two curves will pass, and the drawing to draw them.
 pub fn ease(across: f64, along: f64) -> f64 {
     let across = across.abs();
-    let across = js::or_one(across);
+    let across = number::or(across, 1.0);
     0.25f64.max(0.5f64.min((4.0 * along.abs()) / across))
 }
 
@@ -2778,8 +2777,8 @@ impl Spans<'_> {
         // otherwise: the pieces that reach furthest go first, so that those
         // of one fan nest.
         list.sort_by(|&a, &b| {
-            compare(hi[b] - lo[b] - (hi[a] - lo[a]))
-                .then(compare(lo[a] - lo[b]))
+            number::compare(hi[b] - lo[b] - (hi[a] - lo[a]))
+                .then(number::compare(lo[a] - lo[b]))
                 .then(a.cmp(&b))
         });
         let count = list.len();
@@ -2920,9 +2919,9 @@ fn reach(points: &[Point; SAMPLES + 1], line: &[Point; SAMPLES + 1]) -> f64 {
             let dx = b.x - a.x;
             let dy = b.y - a.y;
             let length = dx * dx + dy * dy;
-            let length = js::or_one(length);
+            let length = number::or(length, 1.0);
             let t = 0f64.max(1f64.min(((p.x - a.x) * dx + (p.y - a.y) * dy) / length));
-            let d = js::hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+            let d = math::hypot(&[p.x - a.x - t * dx, p.y - a.y - t * dy]);
             if d < least {
                 least = d;
             }

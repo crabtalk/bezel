@@ -3,8 +3,9 @@
 //! `diagrams/treeview/boxDrawing.ts`.
 
 use indexmap::IndexMap;
+use js::{number, regex::Lazy, string};
 
-use crate::{Error, Kind, js, js::Lazy, util::chars::is_space};
+use crate::{Error, Kind};
 
 const INDENT_UNIT: &str = "    ";
 
@@ -30,7 +31,7 @@ fn is_box(c: char) -> bool {
 
 /// A line of nothing but whitespace and rails.
 fn is_decoration(line: &str) -> bool {
-    !line.is_empty() && line.chars().all(|c| is_space(c) || is_rail(c))
+    !line.is_empty() && line.chars().all(|c| string::is_space(c) || is_rail(c))
 }
 
 static METADATA_LINE: Lazy = Lazy::new(r"^\s*(title[\t ]|accTitle[\t ]*:|accDescr[\t ]*[:{])", "");
@@ -51,7 +52,7 @@ pub fn is_box_drawing_format(lines: &[String]) -> bool {
 fn infer_segment_width(content_lines: &[String]) -> usize {
     for line in content_lines {
         if let Some(start) = line.find(is_branch) {
-            let index = js::len(&line[..start]);
+            let index = string::len(&line[..start]);
             if index > 0 {
                 return index;
             }
@@ -62,7 +63,7 @@ fn infer_segment_width(content_lines: &[String]) -> usize {
 
 pub fn remap_error_lines(message: &str, line_map: &IndexMap<usize, usize>) -> String {
     RE_LINE.replace(message, |caps| {
-        match line_map.get(&(js::parse_int(caps.str(1), 10) as usize)) {
+        match line_map.get(&(number::parse_int(caps.str(1), 10) as usize)) {
             Some(&original) if original != 0 => format!("line {original}"),
             _ => caps.str(0).to_string(),
         }
@@ -90,13 +91,13 @@ pub fn preprocess_box_drawing(input: &str) -> Result<PreprocessResult, Error> {
 
     let Some(keyword_idx) = lines
         .iter()
-        .position(|line| js::trim(line) == "treeView-beta")
+        .position(|line| string::trim(line) == "treeView-beta")
     else {
         return unchanged(line_map);
     };
 
     let passes = |line: &str| -> bool {
-        js::trim(line).is_empty() || COMMENT_LINE.test(line) || METADATA_LINE.test(line)
+        string::trim(line).is_empty() || COMMENT_LINE.test(line) || METADATA_LINE.test(line)
     };
 
     let mut content_lines: Vec<String> = Vec::new();
@@ -131,12 +132,12 @@ pub fn preprocess_box_drawing(input: &str) -> Result<PreprocessResult, Error> {
 
         let normalized = line.replace('\t', INDENT_UNIT);
         if let Some(start) = normalized.find(is_branch) {
-            let index = js::len(&normalized[..start]);
+            let index = string::len(&normalized[..start]);
             let depth = (index as f64 / segment_width as f64).round() as usize + 1;
             let after = &normalized[start..];
             let after = &after[after.chars().next().map_or(0, char::len_utf8)..];
             let name = after.trim_start_matches(is_dash).trim_start_matches(' ');
-            let content = js::trim_end(name);
+            let content = string::trim_end(name);
             if content.is_empty() {
                 return Err(fail(
                     i + 1,
@@ -144,13 +145,15 @@ pub fn preprocess_box_drawing(input: &str) -> Result<PreprocessResult, Error> {
                 ));
             }
             keep(INDENT_UNIT.repeat(depth) + content, i, &mut line_map);
-        } else if !normalized.is_empty() && normalized.chars().all(|c| is_space(c) || is_box(c)) {
+        } else if !normalized.is_empty()
+            && normalized.chars().all(|c| string::is_space(c) || is_box(c))
+        {
             continue;
         } else if normalized.contains(is_box) {
             // A name that happens to contain a box character, such as
             // "Section ─ A.txt", is a root item.
             keep(line.to_string(), i, &mut line_map);
-        } else if normalized.starts_with(is_space) {
+        } else if normalized.starts_with(string::is_space) {
             return Err(fail(
                 i + 1,
                 "Unexpected indentation without box-drawing characters. In box-drawing format, use ├── or └── prefixes for indented nodes.",

@@ -1,16 +1,12 @@
 //! Pele's `diagrams/radar/model.ts`.
 
-use crate::diagrams::common::db::Titles;
+use crate::{diagrams::common::db::Titles, json};
 use std::collections::HashMap;
 
 use serde::Serialize;
 
 use super::parser::{OptionAst, RadarAst};
-use crate::{
-    detect::Kind,
-    error::Error,
-    js::{self},
-};
+use crate::{detect::Kind, error::Error};
 
 const MAX_TICKS: f64 = 32.0;
 
@@ -24,7 +20,7 @@ pub struct RadarAxis {
 pub struct RadarCurve {
     pub name: String,
     pub label: String,
-    #[serde(serialize_with = "js::json_numbers")]
+    #[serde(serialize_with = "json::numbers")]
     pub entries: Vec<f64>,
 }
 
@@ -40,11 +36,11 @@ pub enum Graticule {
 #[serde(rename_all = "camelCase")]
 pub struct RadarOptions {
     pub show_legend: bool,
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub ticks: f64,
-    #[serde(serialize_with = "js::json_number_opt")]
+    #[serde(serialize_with = "json::number_opt")]
     pub max: Option<f64>,
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub min: f64,
     pub graticule: Graticule,
 }

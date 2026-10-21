@@ -5,8 +5,8 @@ use super::{
     lexer::tokenize,
     tokens::{QUADRANTS, T},
 };
-use crate::diagrams::common::chart::ChartKind;
-use crate::{detect::Kind, error::Error, js, token::Stream};
+use crate::{detect::Kind, diagrams::common::chart::ChartKind, error::Error, token::Stream};
+use js::string;
 
 const TEXT_TOKENS: &str = "'STR', 'MD_STR', 'ALPHA', 'NUM', 'UNICODE_TEXT', 'PUNCTUATION'";
 
@@ -71,19 +71,19 @@ pub fn parse_quadrant(src: &str, db: &mut QuadrantModel) -> Result<(), Error> {
             T::Title => {
                 p.s.bump();
                 db.titles
-                    .set_title(js::trim(p.s.expect(T::TitleValue, "")?));
+                    .set_title(string::trim(p.s.expect(T::TitleValue, "")?));
             }
             T::AccTitle => {
                 p.s.bump();
                 db.titles
-                    .set_acc_title(js::trim(p.s.expect(T::AccTitleValue, "")?));
+                    .set_acc_title(string::trim(p.s.expect(T::AccTitleValue, "")?));
             }
             T::AccDescr => {
                 p.s.bump();
                 db.titles
-                    .set_acc_descr(js::trim(p.s.expect(T::AccDescrValue, "")?));
+                    .set_acc_descr(string::trim(p.s.expect(T::AccDescrValue, "")?));
             }
-            T::AccDescrMultilineValue => db.titles.set_acc_descr(js::trim(p.s.take())),
+            T::AccDescrMultilineValue => db.titles.set_acc_descr(string::trim(p.s.take())),
             _ if t.is_text() => {
                 let label = p.text()?;
                 let class_name = if p.s.is(T::ClassName) {
@@ -147,7 +147,7 @@ impl<'t> Parser<'t, '_> {
             while self.s.kind().is_style() {
                 style += self.s.take();
             }
-            out.push(js::trim(&style).to_string());
+            out.push(string::trim(&style).to_string());
             if !self.s.eat(T::Comma) {
                 return Ok(out);
             }

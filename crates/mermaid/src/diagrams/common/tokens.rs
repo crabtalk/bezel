@@ -3,13 +3,12 @@
 //! Chevrotain. Pele's `diagrams/common/tokens.ts`.
 
 use crate::util::chars::{self, char_at, digits_end};
-
-use crate::{
-    detect::Kind,
-    diagrams::common::db::Titles,
-    error::Error,
-    js::{self, Lazy, Regex},
+use js::{
+    regex::{Lazy, Regex},
+    string,
 };
+
+use crate::{detect::Kind, diagrams::common::db::Titles, error::Error};
 
 /// The end of a match at a position, or `None`.
 pub type Scanner = Box<dyn FnMut(&str, usize) -> Option<usize>>;
@@ -405,7 +404,7 @@ static RE_TRAIL: Lazy = Lazy::new(r"\s+$", "gm");
 static RE_BREAKS: Lazy = Lazy::new(r"[\n\r]{2,}", "gm");
 
 fn single(text: &str) -> String {
-    RE_SPACES.replace(js::trim(text), |_| " ".into())
+    RE_SPACES.replace(string::trim(text), |_| " ".into())
 }
 
 pub fn title_value(text: &str) -> String {

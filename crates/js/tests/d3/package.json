@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fixtures": "TZ=America/New_York node fixtures.mjs"
+  },
+  "dependencies": {
+    "d3-format": "3.1.2",
+    "d3-time-format": "4.1.0"
+  }
+}

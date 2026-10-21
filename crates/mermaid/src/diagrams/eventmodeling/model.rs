@@ -1,6 +1,7 @@
 //! Pele's `diagrams/eventmodeling/model.ts`.
 
-use crate::diagrams::common::db::Titles;
+use crate::{diagrams::common::db::Titles, json};
+use js::string;
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},
@@ -13,7 +14,6 @@ use super::parser::{EntityType, EventModelAst};
 use crate::{
     detect::Kind,
     error::{Error, Place},
-    js::{self},
 };
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -21,7 +21,7 @@ pub struct EmLane {
     /// Mermaid's ordering key: 0 for UI/Automation, 100 for Command/Read
     /// Model, 200 for Events, and the next free number after those for each
     /// namespace.
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub index: f64,
     pub label: String,
     pub group: Group,
@@ -144,7 +144,7 @@ fn block_text(raw: &str) -> String {
     let close = raw.rfind('}');
     let inner = match (open, close) {
         (Some(open), Some(close)) if close > open => &raw[open + 1..close],
-        (None, _) if js::len(raw) >= 2 => {
+        (None, _) if string::len(raw) >= 2 => {
             let first = raw.chars().next().map_or(0, char::len_utf8);
             let last = raw.chars().next_back().map_or(0, char::len_utf8);
             &raw[first..raw.len() - last]
@@ -153,22 +153,25 @@ fn block_text(raw: &str) -> String {
     };
     let inner = inner.replace('\r', "");
     let mut lines: Vec<&str> = inner.split('\n').collect();
-    while !lines.is_empty() && js::trim(lines[0]).is_empty() {
+    while !lines.is_empty() && string::trim(lines[0]).is_empty() {
         lines.remove(0);
     }
-    while lines.last().is_some_and(|line| js::trim(line).is_empty()) {
+    while lines
+        .last()
+        .is_some_and(|line| string::trim(line).is_empty())
+    {
         lines.pop();
     }
     let mut indent = usize::MAX;
     for line in &lines {
-        if js::trim(line).is_empty() {
+        if string::trim(line).is_empty() {
             continue;
         }
-        indent = indent.min(js::len(line) - js::len(js::trim_start(line)));
+        indent = indent.min(string::len(line) - string::len(string::trim_start(line)));
     }
     lines
         .iter()
-        .map(|line| js::trim_end(&line[js::units_end(line, indent)..]))
+        .map(|line| string::trim_end(&line[string::units_end(line, indent)..]))
         .collect::<Vec<_>>()
         .join("\n")
 }

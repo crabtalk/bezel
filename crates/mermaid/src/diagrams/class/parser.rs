@@ -6,7 +6,8 @@ use super::{
     tokens::T,
     types::{ClassRelation, LineType, Relation, RelationEnd, RelationType},
 };
-use crate::{detect::Kind, error::Error, geom::Direction, js, token::Stream};
+use crate::{detect::Kind, error::Error, geom::Direction, token::Stream};
+use js::string;
 
 const NAME_TOKENS: &str = "'UNICODE_TEXT', 'NUM', 'ALPHA', 'MINUS', 'BQUOTE_STR'";
 
@@ -37,7 +38,7 @@ impl T {
 
 /// A label without the colon before it.
 fn cleanup_label(label: &str) -> String {
-    js::trim(label.strip_prefix(':').unwrap_or(label)).to_string()
+    string::trim(label.strip_prefix(':').unwrap_or(label)).to_string()
 }
 
 struct Frame {
@@ -399,18 +400,18 @@ impl<'t> Parser<'t, '_> {
             T::AccTitle => {
                 self.s.bump();
                 let text = self.s.expect(T::AccTitleValue, "")?;
-                self.db.titles.set_acc_title(js::trim(text));
+                self.db.titles.set_acc_title(string::trim(text));
                 return Ok(());
             }
             T::AccDescr => {
                 self.s.bump();
                 let text = self.s.expect(T::AccDescrValue, "")?;
-                self.db.titles.set_acc_descr(js::trim(text));
+                self.db.titles.set_acc_descr(string::trim(text));
                 return Ok(());
             }
             T::AccDescrMultilineValue => {
                 let text = self.s.take();
-                self.db.titles.set_acc_descr(js::trim(text));
+                self.db.titles.set_acc_descr(string::trim(text));
                 return Ok(());
             }
             _ => {}

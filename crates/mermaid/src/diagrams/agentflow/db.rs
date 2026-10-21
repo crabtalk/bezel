@@ -1,6 +1,8 @@
 //! What the agentflow parser builds. Pele's `diagrams/agentflow/db.ts`.
 
+use crate::json::JsValue;
 use indexmap::{IndexMap, IndexSet};
+use js::{regex::Lazy, string};
 use serde::{Serialize, Serializer, ser::SerializeMap};
 
 use super::{
@@ -19,7 +21,6 @@ use crate::{
     detect::Kind,
     diagrams::flowchart::store::{Element, FlowStore, Repeat, StoreOptions},
     error::Error,
-    js::{self, JsValue, Lazy},
     yaml::parse_yaml,
 };
 
@@ -171,9 +172,9 @@ fn strip_line_trailing_commas(body: &str) -> String {
     let mut block_scalar_indent: Option<usize> = None;
     let mut out: Vec<String> = Vec::new();
     for line in body.split('\n') {
-        let indent = js::len(line) - js::len(js::trim_start(line));
+        let indent = string::len(line) - string::len(string::trim_start(line));
         if let Some(block) = block_scalar_indent {
-            if js::trim(line).is_empty() || indent > block {
+            if string::trim(line).is_empty() || indent > block {
                 out.push(line.to_string());
                 continue;
             }
@@ -227,7 +228,7 @@ fn strip_line_trailing_commas(body: &str) -> String {
 }
 
 fn destruct_end_link(raw: &str) -> LinkInfo {
-    let text = js::trim(raw);
+    let text = string::trim(raw);
     let mut line = text.get(..text.len().saturating_sub(1)).unwrap_or("");
     let mut kind = ArrowType::Open;
     match text.as_bytes().last() {
@@ -386,7 +387,7 @@ impl AgentflowDb {
     /// flow's, connector's, edge's or node's metadata, and a node's shape and
     /// label or an edge's animation and curve.
     pub fn add_metadata(&mut self, id: &str, source: &str, loc: Loc) -> Result<(), Error> {
-        if js::trim(id).is_empty() {
+        if string::trim(id).is_empty() {
             return Ok(());
         }
 
@@ -461,7 +462,7 @@ impl AgentflowDb {
         list: &[DocItem],
         title_text: Option<&FlowText>,
     ) -> String {
-        let id = id_text.map(|t| js::trim(&t.text).to_string());
+        let id = id_text.map(|t| string::trim(&t.text).to_string());
         let global = &self.global_nodes;
         let (id, repeat) = self
             .store
@@ -469,7 +470,7 @@ impl AgentflowDb {
         // A repeated id adds its members to the first flow; its title and
         // direction win.
         if let Some(Repeat { subgraph, dir }) = repeat {
-            let title = js::trim(title_text.map_or("", |t| t.text.as_str()));
+            let title = string::trim(title_text.map_or("", |t| t.text.as_str()));
             if !title.is_empty() {
                 subgraph.title = title.to_string();
             }
@@ -485,7 +486,7 @@ impl AgentflowDb {
     pub fn add_global(&mut self, list: &[DocItem]) {
         let mut release = false;
         let mut add = |item: &str, db: &mut Self| {
-            let id = js::trim(item);
+            let id = string::trim(item);
             if id.is_empty() {
                 return;
             }
@@ -520,11 +521,11 @@ impl AgentflowDb {
         text_obj: Option<&FlowText>,
         title_obj: Option<&FlowText>,
     ) -> String {
-        let id = text_obj.map_or("", |t| js::trim(&t.text)).to_string();
+        let id = text_obj.map_or("", |t| string::trim(&t.text)).to_string();
         if id.is_empty() {
             return String::new();
         }
-        let title = title_obj.map_or("", |t| js::trim(&t.text));
+        let title = title_obj.map_or("", |t| string::trim(&t.text));
         if !self.connectors.contains(&id) {
             let created = Node {
                 text: Some(if title.is_empty() {
@@ -726,7 +727,7 @@ impl AgentflowDb {
         start_loc: Loc,
         end_loc: Loc,
     ) {
-        let id = text_obj.map_or("", |t| js::trim(&t.text)).to_string();
+        let id = text_obj.map_or("", |t| string::trim(&t.text)).to_string();
         self.block_mapping(&id, StatementType::Connector, start_loc, end_loc);
     }
 

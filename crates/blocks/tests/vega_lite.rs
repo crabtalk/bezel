@@ -40,3 +40,19 @@ fn a_spec_paints_at_the_fences_height(cx: &mut TestAppContext) {
 fn a_spec_it_cannot_read_is_left_to_its_source(cx: &mut TestAppContext) {
     assert!(block("{\"mark\": \"bar\"", None, cx).is_none());
 }
+
+const URL_SPEC: &str = r#"{"data": {"url": "data/a.csv"}, "mark": "bar",
+  "encoding": {"x": {"field": "a", "type": "nominal"}, "y": {"field": "b", "type": "quantitative"}}}"#;
+
+#[gpui::test]
+fn a_spec_with_a_url_waits_for_the_loader(cx: &mut TestAppContext) {
+    assert!(block(URL_SPEC, None, cx).is_none());
+    cx.update(|cx| blocks::vega_lite::set_loader(cx, |_, _| None));
+    assert!(block(URL_SPEC, None, cx).is_none());
+    cx.update(|cx| {
+        blocks::vega_lite::set_loader(cx, |url, _| {
+            (url == "data/a.csv").then(|| "a,b\nx,1\ny,2".into())
+        })
+    });
+    assert!(block(URL_SPEC, None, cx).is_some());
+}

@@ -14,7 +14,7 @@ use super::{
 use serde::Serialize;
 
 use crate::{
-    Config, Error, ParseLimits, Rendered,
+    Config, Ctx, Error, Host, ParseLimits, Rendered,
     geom::{Direction, Point, Size},
     layout::{
         compound::{CEdge, CNode},
@@ -28,7 +28,6 @@ use crate::{
     },
     text::Label,
 };
-use crate::{Ctx, Host};
 use std::fmt::Write as _;
 
 const DEFAULT_LANE: &str = "__swimlane_default__";

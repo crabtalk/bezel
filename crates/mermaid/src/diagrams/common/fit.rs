@@ -1,10 +1,8 @@
 //! Labels laid out as journey and timeline draw them, and cut to fit a box.
 //! Pele's `diagrams/common/fit.ts`.
 
-use crate::{
-    js::{self, Lazy},
-    text::{Host, Label},
-};
+use crate::text::{Host, Label};
+use js::{regex::Lazy, string};
 
 static RE_TAG_START: Lazy = Lazy::new(r"<(?!br\s*\/?>)", "gi");
 static RE_ICON: Lazy = Lazy::new(r":fa-", "g");
@@ -42,8 +40,8 @@ impl Label {
         let mut out = String::new();
         let mut width = 0.0;
         for unit in RE_UNIT.find_all(raw) {
-            let units = js::len(unit);
-            if js::trim(unit).is_empty() || (units > 2 && unit.starts_with('<')) {
+            let units = string::len(unit);
+            if string::trim(unit).is_empty() || (units > 2 && unit.starts_with('<')) {
                 width = 0.0;
             } else {
                 let w = measure.width(if units > 2 { "x" } else { unit }, size, base);

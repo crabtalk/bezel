@@ -1,19 +1,20 @@
 //! Pele's `diagrams/quadrant/render.ts`.
 
 use crate::geom::{Point, Rect};
+use js::{
+    math,
+    number::{self, Number},
+};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
 use super::db::{QuadrantModel, QuadrantText, TextKind};
-use crate::config::capped;
-use crate::svg::builder::EscText;
-use crate::{Config, Ctx, Error, Host};
 use crate::{
-    Rendered,
+    Config, Ctx, Error, Host, Rendered,
+    config::capped,
     diagrams::Render,
-    js,
     svg::{
-        builder::{TITLE, fragment, num},
+        builder::{EscText, TITLE, fragment, num},
         root::svg_document,
         theme::{RADIUS, class_names, resolve_style, series_color},
     },
@@ -97,12 +98,12 @@ impl QuadrantModel {
     fn draw(&self, config: &QuadrantConfig, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let axis_size = js::round(size * 0.875);
-        let point_size = js::round(size * 0.75);
+        let axis_size = math::round(size * 0.875);
+        let point_size = math::round(size * 0.75);
         let measure = ctx.host;
-        let natural = js::round(100f64.max(capped(config.chart_width, 500.0, 0.0, 4000.0)));
-        let width = js::round(ctx.cap_width(natural, 280.0, 0.0));
-        let height = js::round(
+        let natural = math::round(100f64.max(capped(config.chart_width, 500.0, 0.0, 4000.0)));
+        let width = math::round(ctx.cap_width(natural, 280.0, 0.0));
+        let height = math::round(
             (100f64.max(capped(config.chart_height, 500.0, 0.0, 4000.0)) * width) / natural,
         );
         let outer = capped(
@@ -335,7 +336,7 @@ impl QuadrantModel {
             let center = Point::new(left + point.x * w, top + (1.0 - point.y) * h);
             dots.push(Dot {
                 center,
-                reach: r + stroke_width.map_or(0.0, |w| js::parse_int(w, 10).min(400.0) / 2.0),
+                reach: r + stroke_width.map_or(0.0, |w| number::parse_int(w, 10).min(400.0) / 2.0),
                 text: label(Some(&point.text), point_size, 200.0),
             });
             let _ = write!(
@@ -435,7 +436,7 @@ impl QuadrantModel {
             let _ = write!(
                 content,
                 "<g class=\"{p}-axis-labels\" font-size=\"{}\" fill=\"var(--_m)\">{axes}</g>",
-                js::Number(axis_size)
+                Number(axis_size)
             );
         }
         if !dots.is_empty() {
@@ -447,7 +448,7 @@ impl QuadrantModel {
             let _ = write!(
                 content,
                 "</g><g class=\"{p}-point-labels\" font-size=\"{}\">{labels}</g>",
-                js::Number(point_size)
+                Number(point_size)
             );
         }
 

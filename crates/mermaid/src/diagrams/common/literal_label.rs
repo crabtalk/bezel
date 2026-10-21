@@ -1,13 +1,12 @@
 //! Labels that keep every character, and labels broken between characters.
 //! Pele's `diagrams/common/literal-label.ts`.
 
-use crate::geom::Point;
 use crate::{
-    js,
+    geom::Point,
     svg::builder::{Esc, fragment, num, span_style, text_style},
     text::{Host, Label, Span},
-    util::chars::is_space,
 };
+use js::{math, string};
 use std::fmt;
 
 impl Label {
@@ -44,9 +43,9 @@ impl Label {
                 }
                 let mut take = lo;
                 let wraps = from + take < chars.len();
-                if wraps && !is_space(chars[from + take]) {
+                if wraps && !string::is_space(chars[from + take]) {
                     for i in (1..take).rev() {
-                        if is_space(chars[from + i]) {
+                        if string::is_space(chars[from + i]) {
                             take = i + 1;
                             break;
                         }
@@ -54,7 +53,7 @@ impl Label {
                 }
                 let line: String = chars[from..from + take].iter().collect();
                 lines.push(if wraps {
-                    let trimmed = js::trim_end(&line);
+                    let trimmed = string::trim_end(&line);
                     if trimmed.is_empty() {
                         line.clone()
                     } else {
@@ -64,7 +63,7 @@ impl Label {
                     line
                 });
                 from += take;
-                while wraps && from < chars.len() && is_space(chars[from]) {
+                while wraps && from < chars.len() && string::is_space(chars[from]) {
                     from += 1;
                 }
             }
@@ -77,7 +76,7 @@ impl Label {
             .map(|line| measure.width(line, size, style))
             .collect();
         let width = widths.iter().copied().fold(0.0, f64::max);
-        let line_height = js::round(size * 1.5);
+        let line_height = math::round(size * 1.5);
         let height = lines.len() as f64 * line_height;
         Label {
             lines: lines

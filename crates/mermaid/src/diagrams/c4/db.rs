@@ -1,7 +1,8 @@
 //! Pele's `diagrams/c4/db.ts`.
 
-use crate::diagrams::common::db::Titles;
+use crate::{diagrams::common::db::Titles, json::JsonNumber};
 use indexmap::IndexMap;
+use js::{number, string};
 use serde::{
     Serialize, Serializer,
     ser::{Error as _, SerializeMap},
@@ -10,7 +11,6 @@ use serde::{
 use super::types::{
     C4Attr, C4Element, C4Named, C4Ref, C4Rel, C4Type, NodeType, RelKind, ShapeBase, ShapeKind,
 };
-use crate::js::{self, JsonNumber};
 
 /// A field of a shape, a boundary or a relation that an argument may set.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -196,15 +196,15 @@ impl Target for C4Rel {
 
 /// `parseInt(text)`: hexadecimal after `0x`, decimal otherwise.
 fn parse_int(text: &str) -> f64 {
-    let rest = js::trim_start(text);
+    let rest = string::trim_start(text);
     let rest = rest
         .strip_prefix('-')
         .or_else(|| rest.strip_prefix('+'))
         .unwrap_or(rest);
     if rest.starts_with("0x") || rest.starts_with("0X") {
-        js::parse_int(text, 16)
+        number::parse_int(text, 16)
     } else {
-        js::parse_int(text, 10)
+        number::parse_int(text, 10)
     }
 }
 

@@ -6,7 +6,8 @@ use super::{
     tokens::T,
     types::{Relationship, RequirementType, Risk, VerifyMethod},
 };
-use crate::{detect::Kind, error::Error, geom::Direction, js, token::Stream};
+use crate::{detect::Kind, error::Error, geom::Direction, token::Stream};
+use js::string;
 
 const REQUIREMENT_TYPES: [(T, RequirementType); 6] = [
     (T::Requirement, RequirementType::Requirement),
@@ -87,12 +88,12 @@ impl<'t> Parser<'t, '_> {
     fn directive(&mut self, db: &mut RequirementModel) -> Result<bool, Error> {
         if self.s.eat(T::AccTitle) {
             db.titles
-                .set_acc_title(js::trim(self.s.expect(T::AccTitleValue, "")?));
+                .set_acc_title(string::trim(self.s.expect(T::AccTitleValue, "")?));
         } else if self.s.eat(T::AccDescr) {
             db.titles
-                .set_acc_descr(js::trim(self.s.expect(T::AccDescrValue, "")?));
+                .set_acc_descr(string::trim(self.s.expect(T::AccDescrValue, "")?));
         } else if self.s.is(T::AccDescrMultilineValue) {
-            db.titles.set_acc_descr(js::trim(self.s.take()));
+            db.titles.set_acc_descr(string::trim(self.s.take()));
         } else {
             return Ok(false);
         }

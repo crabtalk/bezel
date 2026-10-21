@@ -1,6 +1,7 @@
 //! Pele's `diagrams/flowchart/render.ts`.
 
 use crate::svg::theme::node_class_names;
+use js::{math, number::Number};
 use std::{borrow::Cow, collections::HashMap, fmt::Write as _};
 
 use super::{
@@ -15,7 +16,6 @@ use crate::{
     config::positive,
     diagrams::{Render, common::icon::icon_svg},
     geom::{Direction, Point, Size},
-    js::{self},
     layout::{
         compound::{CEdge, CNode, compound_layout, level_dir, shift_layout},
         layered::LayeredOptions,
@@ -180,7 +180,7 @@ impl Layers {
             let _ = write!(
                 content,
                 "<g class=\"{p}-edge-labels\" font-size=\"{}\">{}</g>",
-                js::Number(edge_size),
+                Number(edge_size),
                 self.labels
             );
         }
@@ -259,7 +259,7 @@ impl<H: Host> FlowRenderer<'_, H> {
             variant.prepare(&mut graph);
         }
         let size = ctx.options.font_size;
-        let edge_size = js::round(size * 0.875);
+        let edge_size = math::round(size * 0.875);
         let measure = ctx.host;
         let wrap_width = positive(flow.wrapping_width, 200.0).min(if variant.is_some() && tight {
             100.0

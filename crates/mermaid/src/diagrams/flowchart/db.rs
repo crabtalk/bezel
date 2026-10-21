@@ -1,5 +1,7 @@
 //! What the flowchart parser builds. Pele's `diagrams/flowchart/db.ts`.
 
+use crate::json::JsValue;
+use js::string;
 use serde::{Serialize, Serializer, ser::SerializeMap};
 
 use super::{
@@ -8,20 +10,14 @@ use super::{
     store::{Element, FlowStore},
     types::{ArrowType, LinkInfo, Stroke, Vertex},
 };
-use crate::{
-    config::Value,
-    detect::Kind,
-    error::Error,
-    js::{self, JsValue},
-    yaml::parse_yaml,
-};
+use crate::{config::Value, detect::Kind, error::Error, yaml::parse_yaml};
 
 /// The flowchart model. Serializes as Pele's `FlowDb` does through
 /// `JSON.stringify`, its bookkeeping included.
 pub type FlowDb = FlowStore<Flowchart>;
 
 fn destruct_start_link(raw: &str) -> LinkInfo {
-    let text = js::trim(raw);
+    let text = string::trim(raw);
     let kind = match text.as_bytes().first() {
         Some(b'<') => ArrowType::Point,
         Some(b'x') => ArrowType::Cross,
@@ -48,7 +44,7 @@ fn destruct_start_link(raw: &str) -> LinkInfo {
 }
 
 fn destruct_end_link(raw: &str) -> LinkInfo {
-    let text = js::trim(raw);
+    let text = string::trim(raw);
     let mut line = text.get(..text.len().saturating_sub(1)).unwrap_or("");
     let mut kind = ArrowType::Open;
     let head = match text.as_bytes().last() {
@@ -111,7 +107,7 @@ impl FlowDb {
     /// Applies a `@{ … }` block to what `id` names: a subgraph's or node's
     /// metadata, or an edge's animation and curve.
     pub fn add_metadata(&mut self, id: &str, metadata: &str) -> Result<(), Error> {
-        if js::trim(id).is_empty() {
+        if string::trim(id).is_empty() {
             return Ok(());
         }
         let yaml = if metadata.contains('\n') {
@@ -158,7 +154,7 @@ impl FlowDb {
             node.kind = Some(shape);
         }
         let label = doc.get("label").and_then(Value::as_str);
-        let blank_label = label.is_none_or(|label| js::trim(label).is_empty());
+        let blank_label = label.is_none_or(|label| string::trim(label).is_empty());
         node.apply_label(&doc);
         let assets = &mut node.ext;
         if let Some(icon) = doc.get("icon").filter(|v| v.truthy()) {

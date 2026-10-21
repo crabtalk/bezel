@@ -1,6 +1,6 @@
 //! `List~int~` as `List<int>`. Pele's `diagrams/common/generics.ts`.
 
-use crate::js::Lazy;
+use js::regex::Lazy;
 
 static RE_COMMA: Lazy = Lazy::new(r"(,)", "");
 

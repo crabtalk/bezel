@@ -1,11 +1,11 @@
 //! Layout of a graph whose nodes may be nested in groups, each group laid out
 //! with [`layered`] in its own direction.
 
+use js::number;
 use std::collections::HashMap;
 
 use crate::{
     geom::{Axis, Direction, Point, RoutePoint, Side, Size},
-    js,
     text::Label,
 };
 
@@ -462,7 +462,7 @@ pub fn compound_layout(
     for level in &mut levels.list {
         level
             .items
-            .sort_by(|&a, &b| js::compare(nodes[a].seq - nodes[b].seq).then(a.cmp(&b)));
+            .sort_by(|&a, &b| number::compare(nodes[a].seq - nodes[b].seq).then(a.cmp(&b)));
     }
 
     // Every group border an edge crosses costs a port. Past the budget, an
@@ -845,7 +845,7 @@ pub fn spread_ends(
             .min((length - 2.0 * margin) / (ends.len() - 1) as f64)
             .max(0.0);
         let center = nodes[node].center.along(axis);
-        ends.sort_by(|a, b| js::compare(a.toward - b.toward));
+        ends.sort_by(|a, b| number::compare(a.toward - b.toward));
         let count = ends.len() as f64;
         for (j, end) in ends.iter().enumerate() {
             *edges[end.edge].route[end.at].at.along_mut(axis) =

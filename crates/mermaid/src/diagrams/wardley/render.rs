@@ -1,8 +1,7 @@
 //! Pele's `diagrams/wardley/render.ts`.
 
-use crate::config::within;
-use crate::geom::Point;
-use crate::svg::edges::Marker;
+use crate::{config::within, geom::Point, svg::edges::Marker};
+use js::{math, number::Number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{
@@ -20,11 +19,10 @@ use super::{
     model::WardleyModel,
     parser::Flow,
 };
-use crate::diagrams::Render;
-use crate::geom::Size;
-use crate::{Config, Ctx, Error, Host};
 use crate::{
-    Rendered, js,
+    Config, Ctx, Error, Host, Rendered,
+    diagrams::Render,
+    geom::Size,
     svg::{
         builder::{Esc, EscText, fragment, num, span_style, text_style},
         root::svg_document,
@@ -220,8 +218,8 @@ impl WardleyModel {
         let p = crate::PREFIX;
         let built = &self.built;
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.8125);
-        let tiny = js::round(size * 0.6875);
+        let small = math::round(size * 0.8125);
+        let tiny = math::round(size * 0.6875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
 
@@ -450,7 +448,7 @@ impl WardleyModel {
                 let label = labels
                     .entry(at.node)
                     .or_insert_with(|| text(&node.label, small, Some(anchor_width), Style::BOLD));
-                return 1.0 / js::hypot(u.x / (label.width / 2.0 + 5.0), u.y / (small * 0.8));
+                return 1.0 / math::hypot(&[u.x / (label.width / 2.0 + 5.0), u.y / (small * 0.8)]);
             }
             if node.is_pipeline_parent == Some(true) {
                 return SQUARE / SQRT_2;
@@ -496,7 +494,7 @@ impl WardleyModel {
             let from = &positions[fi];
             let to = &positions[ti];
             let d = to.at - from.at;
-            let distance = js::hypot(d.x, d.y);
+            let distance = math::hypot(&[d.x, d.y]);
             if distance < 0.01 {
                 continue;
             }
@@ -570,7 +568,7 @@ impl WardleyModel {
             };
             let target = trend.target.project(plot);
             let d = target - origin.at;
-            let distance = js::hypot(d.x, d.y);
+            let distance = math::hypot(&[d.x, d.y]);
             let start = if distance > 0.0 {
                 reach(origin, d / distance)
             } else {
@@ -773,7 +771,7 @@ impl WardleyModel {
         let mark_attrs = format!(" font-size=\"{}\" font-weight=\"var(--_hw)\"", num(tiny));
         for annotation in &built.annotations {
             let label = text(
-                &js::num_str(annotation.number),
+                &Number(annotation.number).to_string(),
                 tiny,
                 Some(4000.0),
                 Style::BOLD,
@@ -781,7 +779,7 @@ impl WardleyModel {
             let _ = write!(
                 annotations,
                 "<g class=\"{p}-wardley-annotation\" data-id=\"{}\">",
-                EscText(&js::num_str(annotation.number))
+                EscText(&Number(annotation.number).to_string())
             );
             for coordinate in &annotation.coordinates {
                 let at = coordinate.project(plot);
@@ -814,11 +812,7 @@ impl WardleyModel {
                 .iter()
                 .map(|a| {
                     text(
-                        &format!(
-                            "{}. {}",
-                            js::Number(a.number),
-                            a.text.as_deref().unwrap_or("")
-                        ),
+                        &format!("{}. {}", Number(a.number), a.text.as_deref().unwrap_or("")),
                         small,
                         Some(list_width),
                         0,

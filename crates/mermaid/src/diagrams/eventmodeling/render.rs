@@ -1,8 +1,13 @@
 //! Pele's `diagrams/eventmodeling/render.ts`.
 
-use crate::geom::{Point, Size};
-use crate::svg::builder::{Esc, EscText, TITLE, fragment};
-use crate::svg::edges::Marker;
+use crate::{
+    geom::{Point, Size},
+    svg::{
+        builder::{Esc, EscText, TITLE, fragment},
+        edges::Marker,
+    },
+};
+use js::{math, string};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Write as _},
@@ -15,7 +20,6 @@ use super::{
 use crate::{
     Config, Ctx, Error, Rendered,
     diagrams::Render,
-    js,
     svg::{
         builder::num,
         root::svg_document,
@@ -81,7 +85,7 @@ struct Band<'m> {
 fn hard_wrap(text: &str, columns: usize) -> Vec<String> {
     let mut out = Vec::new();
     for line in decode_entities(text).split('\n') {
-        if js::len(line) <= columns {
+        if string::len(line) <= columns {
             out.push(line.to_string());
             continue;
         }
@@ -198,11 +202,11 @@ impl EventModelingModel {
     fn draw_lanes(&self, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let name_size = js::round(size * 0.875);
-        let small = js::round(size * 0.8125);
-        let mono = js::round(size * 0.75);
-        let mono_step = js::round(mono * 1.4);
-        let small_step = js::round(small * 1.5);
+        let name_size = math::round(size * 0.875);
+        let small = math::round(size * 0.8125);
+        let mono = math::round(size * 0.75);
+        let mono_step = math::round(mono * 1.4);
+        let small_step = math::round(small * 1.5);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
 
@@ -582,8 +586,8 @@ impl EventModelingModel {
     fn draw_cards(&self, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.875);
-        let mono = js::round(size * 0.75);
+        let small = math::round(size * 0.875);
+        let mono = math::round(size * 0.75);
         let pad = ctx.options.padding.unwrap_or(8.0);
         let measure = ctx.host;
         let room = 160f64.max(ctx.options.max_width.unwrap_or(320.0) - 2.0 * pad);

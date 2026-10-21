@@ -1,9 +1,10 @@
 //! Pele's `diagrams/sankey/db.ts`.
 
+use crate::json;
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use crate::{detect::Kind, diagrams::common::db::Titles, js};
+use crate::{detect::Kind, diagrams::common::db::Titles};
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SankeyNode {
@@ -15,7 +16,7 @@ pub struct SankeyNode {
 pub struct SankeyLink {
     pub source: SankeyNode,
     pub target: SankeyNode,
-    #[serde(serialize_with = "js::json_number")]
+    #[serde(serialize_with = "json::number")]
     pub value: f64,
 }
 

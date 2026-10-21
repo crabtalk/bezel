@@ -1,10 +1,11 @@
 //! Pele's `diagrams/sequence/types.ts`.
 
+use crate::json;
 use serde::{Serialize, Serializer, ser::SerializeMap};
 use serde_repr::Serialize_repr;
 
 use super::actors::ActorKind;
-use crate::{config::Value, js};
+use crate::config::Value;
 
 /// A message's kind, numbered as in Mermaid. Besides lines it covers notes,
 /// numbering, activations and the starts, sections and ends of blocks.
@@ -263,12 +264,12 @@ impl SeqActor {
 pub struct SeqNumbering {
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "js::json_number_opt"
+        serialize_with = "json::number_opt"
     )]
     pub start: Option<f64>,
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "js::json_number_opt"
+        serialize_with = "json::number_opt"
     )]
     pub step: Option<f64>,
     pub visible: bool,

@@ -1,15 +1,12 @@
 //! Pele's `diagrams/pie/model.ts`.
 
-use crate::diagrams::common::db::Titles;
+use crate::{diagrams::common::db::Titles, json};
 use indexmap::IndexMap;
+use js::number::Number;
 use serde::Serialize;
 
 use super::parser::PieAst;
-use crate::{
-    detect::Kind,
-    error::Error,
-    js::{self},
-};
+use crate::{detect::Kind, error::Error};
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,7 +16,7 @@ pub struct PieModel {
     #[serde(flatten)]
     pub titles: Titles,
     pub show_data: bool,
-    #[serde(serialize_with = "js::json_number_map")]
+    #[serde(serialize_with = "json::number_map")]
     pub sections: IndexMap<String, f64>,
 }
 
@@ -31,7 +28,7 @@ impl PieModel {
                 return Err(Error::semantic(format!(
                     "\"{}\" has invalid value: {}. Negative values are not allowed in pie charts. All slice values must be >= 0.",
                     section.label,
-                    js::num_str(section.value)
+                    Number(section.value)
                 ))
                 .of(Kind::Pie));
             }

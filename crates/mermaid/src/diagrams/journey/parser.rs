@@ -5,9 +5,9 @@ use crate::{
     Error,
     detect::Kind,
     diagrams::common::scan::T,
-    js,
     token::{Stream, after_keyword},
 };
+use js::string;
 
 const STATEMENT: &str = "'EOF', 'SPACE', 'NEWLINE', 'title', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'section', 'taskName'";
 
@@ -22,13 +22,13 @@ pub fn parse_journey(src: &str, db: &mut JourneyModel) -> Result<(), Error> {
             T::Title => db.titles.set_title(after_keyword(text, 5)),
             T::AccTitle => {
                 s.bump();
-                db.titles.set_acc_title(js::trim(s.text()));
+                db.titles.set_acc_title(string::trim(s.text()));
             }
             T::AccDescr => {
                 s.bump();
-                db.titles.set_acc_descr(js::trim(s.text()));
+                db.titles.set_acc_descr(string::trim(s.text()));
             }
-            T::AccDescrMultilineValue => db.titles.set_acc_descr(js::trim(text)),
+            T::AccDescrMultilineValue => db.titles.set_acc_descr(string::trim(text)),
             T::Section => db.add_section(after_keyword(text, 7)),
             T::TaskName => {
                 s.bump();

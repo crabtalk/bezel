@@ -1,13 +1,10 @@
 //! Pele's `diagrams/class/members.ts`.
 
+use js::string;
 use serde::{Serialize, Serializer};
 use std::fmt::Write as _;
 
-use crate::{
-    diagrams::common::generics::parse_generic_types,
-    js,
-    util::chars::{is_line_end, is_space},
-};
+use crate::diagrams::common::generics::parse_generic_types;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -111,7 +108,7 @@ pub struct DisplayDetails {
 /// The end of the line at `from` of `input`.
 fn line_end(input: &str, from: usize) -> usize {
     input[from..]
-        .find(|c: char| is_line_end(c))
+        .find(|c: char| string::is_line_end(c))
         .map_or(input.len(), |at| from + at)
 }
 
@@ -132,9 +129,9 @@ impl ClassMember {
             member.parse_attribute(input);
         }
         member.id = if member.id.starts_with(' ') {
-            format!(" {}", js::trim(&member.id))
+            format!(" {}", string::trim(&member.id))
         } else {
-            js::trim(&member.id).to_string()
+            string::trim(&member.id).to_string()
         };
         member
     }
@@ -173,15 +170,15 @@ impl ClassMember {
                 start
             };
             self.id = input[id_start..open].to_string();
-            self.parameters = js::trim(&input[open + 1..close]).to_string();
+            self.parameters = string::trim(&input[open + 1..close]).to_string();
             let mut rest = close + 1;
             if let Some(c) = input[rest..].chars().next()
-                && (Classifier::parse(c).is_some() || is_space(c))
+                && (Classifier::parse(c).is_some() || string::is_space(c))
             {
                 self.classifier = Classifier::parse(c);
                 rest += c.len_utf8();
             }
-            self.return_type = js::trim(&input[rest..line_end(input, rest)]).to_string();
+            self.return_type = string::trim(&input[rest..line_end(input, rest)]).to_string();
             if self.classifier.is_none()
                 && let Some(c) = self.return_type.chars().next_back()
                 && let Some(classifier) = Classifier::parse(c)
@@ -210,7 +207,7 @@ impl ClassMember {
             let _ = write!(
                 display_text,
                 "({})",
-                parse_generic_types(js::trim(&self.parameters))
+                parse_generic_types(string::trim(&self.parameters))
             );
             if !self.return_type.is_empty() {
                 display_text += " : ";
@@ -218,7 +215,7 @@ impl ClassMember {
             }
         }
         DisplayDetails {
-            display_text: js::trim(&display_text).to_string(),
+            display_text: string::trim(&display_text).to_string(),
             css_style: self.classifier.map_or("", Classifier::css_style),
         }
     }

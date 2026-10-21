@@ -1,12 +1,12 @@
 //! Pele's `diagrams/er/lexer.ts`.
 
 use super::tokens::T;
-use crate::diagrams::common::directions::Directions;
 use crate::{
-    js::Lazy,
+    diagrams::common::directions::Directions,
     token::{Cursor, Token},
-    util::chars::{digits_end, is_space, is_word, starts_with_caseless},
+    util::chars::{digits_end, starts_with_caseless},
 };
+use js::{regex::Lazy, string};
 
 /// Jison's start conditions.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -44,11 +44,11 @@ enum Run {
 impl Run {
     fn has_ascii(self, c: char) -> bool {
         match self {
-            Self::Text => is_word(c) || matches!(c, '-' | '*' | '.'),
-            Self::StyleText => is_word(c) || matches!(c, '-' | '*'),
+            Self::Text => string::is_word(c) || matches!(c, '-' | '*' | '.'),
+            Self::StyleText => string::is_word(c) || matches!(c, '-' | '*'),
             Self::AttrStart => c.is_ascii_alphabetic() || matches!(c, '_' | '*'),
             Self::AttrRest => {
-                is_word(c) || matches!(c, '-' | '*' | '.' | '[' | ']' | '(' | ')' | ',')
+                string::is_word(c) || matches!(c, '-' | '*' | '.' | '[' | ']' | '(' | ')' | ',')
             }
         }
     }
@@ -98,13 +98,13 @@ impl<'s> Lexer<'s> {
 
     /// Whether the character at `q` is not a word character.
     fn boundary(&self, q: usize) -> bool {
-        !self.cur.char_at(q).is_some_and(is_word)
+        !self.cur.char_at(q).is_some_and(string::is_word)
     }
 
     /// The end of the run of characters that are not whitespace at `from`.
     fn word_end(&self, from: usize) -> usize {
         self.cur.src[from..]
-            .find(is_space)
+            .find(string::is_space)
             .map_or(self.cur.src.len(), |at| from + at)
     }
 
@@ -151,10 +151,10 @@ impl<'s> Lexer<'s> {
         }
         if c == '1' {
             match d {
-                Some(d) if is_space(d) => {
+                Some(d) if string::is_space(d) => {
                     let r = self.cur.space_end(self.cur.after(p + 1));
                     let f = self.cur.char_at(r);
-                    if f.is_some_and(is_word) || matches!(f, Some('"' | '\'')) {
+                    if f.is_some_and(string::is_word) || matches!(f, Some('"' | '\'')) {
                         self.cur.emit_to(T::OnlyOne, p + 1);
                         return;
                     }
@@ -329,7 +329,7 @@ impl<'s> Lexer<'s> {
 
     fn block(&mut self, c: char) {
         let p = self.cur.p;
-        if is_space(c) {
+        if string::is_space(c) {
             self.cur.p = self.cur.space_end(p);
             return;
         }
@@ -377,7 +377,7 @@ impl<'s> Lexer<'s> {
                 self.cur.state = S::Initial;
                 self.cur.emit_to(T::Newline, e);
             }
-            _ if is_space(c) => self.cur.p = self.cur.space_end(p),
+            _ if string::is_space(c) => self.cur.p = self.cur.space_end(p),
             ':' => self.cur.emit_to(T::Colon, p + 1),
             ',' => self.cur.emit_to(T::Comma, p + 1),
             '#' => self.cur.emit_to(T::Brkt, p + 1),

@@ -1,5 +1,7 @@
 //! What a flowchart is made of. Pele's `diagrams/flowchart/types.ts`.
 
+use crate::{json, json::JsValue};
+use js::string;
 use std::fmt::Debug;
 
 use indexmap::IndexMap;
@@ -9,7 +11,6 @@ use crate::{
     config::{Map, Value},
     detect::Kind,
     geom::{Direction, Size},
-    js::{self, JsValue},
     svg::edges::Marker,
 };
 
@@ -212,12 +213,12 @@ pub struct NodeAssets {
     pub constraint: Option<String>,
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "crate::js::json_number_opt"
+        serialize_with = "json::number_opt"
     )]
     pub asset_width: Option<f64>,
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "crate::js::json_number_opt"
+        serialize_with = "json::number_opt"
     )]
     pub asset_height: Option<f64>,
 }
@@ -386,7 +387,7 @@ impl FlowDir {
     /// The direction a `graph` header's direction token names: `<`, `^`,
     /// `>` and `v` by the arrow, and `TD` as `TB`.
     pub fn from_header(token: &str) -> Self {
-        let token = js::trim(token);
+        let token = string::trim(token);
         if token.contains('v') {
             Self::Tb
         } else if token.contains('>') {

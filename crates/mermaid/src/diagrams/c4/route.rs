@@ -1,11 +1,11 @@
 //! Pele's `diagrams/c4/route.ts`.
 
+use js::{math, number};
 use std::{collections::HashMap, fmt::Write as _};
 
 use super::types::C4Ref;
 use crate::{
     geom::{Point, Side, Size},
-    js::{self, max, min, sign},
     svg::{builder::num, edges::EdgePath, shapes::Shape},
 };
 
@@ -75,14 +75,14 @@ impl C4Box {
         let ellipse =
             |cx: f64, cy: f64, rx: f64, ry: f64| hit_ellipse(Point::new(cx, cy), rx, ry, p, d);
         match self.form {
-            Shape::Person => min(
+            Shape::Person => math::min(
                 rect(x, y + HEAD, x + w, y + h),
                 ellipse(x + w / 2.0, y + 14.0, 13.0, 13.0),
             ),
             Shape::Cylinder => {
                 let ry = cyl_ry(w);
-                min(
-                    min(
+                math::min(
+                    math::min(
                         rect(x, y + ry, x + w, y + h - ry),
                         ellipse(x + w / 2.0, y + ry, w / 2.0, ry),
                     ),
@@ -91,8 +91,8 @@ impl C4Box {
             }
             Shape::HorizontalCylinder => {
                 let rx = queue_rx(h);
-                min(
-                    min(
+                math::min(
+                    math::min(
                         rect(x + rx, y, x + w - rx, y + h),
                         ellipse(x + rx, y + h / 2.0, rx, h / 2.0),
                     ),
@@ -124,11 +124,11 @@ pub struct Route {
 
 /// The cap radii `Shape::draw` uses for the two cylinders.
 pub fn cyl_ry(w: f64) -> f64 {
-    min(12.0, max(6.0, w / 14.0))
+    math::min(12.0, math::max(6.0, w / 14.0))
 }
 
 pub fn queue_rx(h: f64) -> f64 {
-    min(12.0, h / 4.0)
+    math::min(12.0, h / 4.0)
 }
 
 /// How far along the segment from `p` by `d` it first meets the rectangle
@@ -143,8 +143,8 @@ fn hit_rect(lo: Point, hi: Point, p: Point, d: Point) -> f64 {
     } else {
         let a = (lo.x - p.x) / d.x;
         let b = (hi.x - p.x) / d.x;
-        enter = max(enter, min(a, b));
-        leave = min(leave, max(a, b));
+        enter = math::max(enter, math::min(a, b));
+        leave = math::min(leave, math::max(a, b));
     }
     if d.y == 0.0 {
         if p.y < lo.y || p.y > hi.y {
@@ -153,8 +153,8 @@ fn hit_rect(lo: Point, hi: Point, p: Point, d: Point) -> f64 {
     } else {
         let a = (lo.y - p.y) / d.y;
         let b = (hi.y - p.y) / d.y;
-        enter = max(enter, min(a, b));
-        leave = min(leave, max(a, b));
+        enter = math::max(enter, math::min(a, b));
+        leave = math::min(leave, math::max(a, b));
     }
     if enter <= leave { enter } else { f64::INFINITY }
 }
@@ -202,7 +202,7 @@ fn connect(a: &C4Box, b: &C4Box, shift: f64) -> (Point, Point) {
         let right = outer.right() - inner.at.x - inner.size.w;
         let top = inner.at.y - outer.at.y;
         let bottom = outer.bottom() - inner.at.y - inner.size.h;
-        let least = min(min(left, right), min(top, bottom));
+        let least = math::min(math::min(left, right), math::min(top, bottom));
         let ox = if least == left {
             outer.at.x
         } else if least == right {
@@ -217,7 +217,7 @@ fn connect(a: &C4Box, b: &C4Box, shift: f64) -> (Point, Point) {
         } else {
             outer.at.y
         };
-        let t = min(inner.hit(Point::new(ox, oy), Point::new(ix, iy)), 1.0);
+        let t = math::min(inner.hit(Point::new(ox, oy), Point::new(ix, iy)), 1.0);
         let o = Point::new(ox, oy);
         let m = Point::new(ox + (ix - ox) * t, oy + (iy - oy) * t);
         return if down { (o, m) } else { (m, o) };
@@ -229,10 +229,10 @@ fn connect(a: &C4Box, b: &C4Box, shift: f64) -> (Point, Point) {
     let mut qy = by;
     // Shapes that share a column or a row are joined by an upright or level
     // line through the shared span.
-    let x0 = max(a.at.x, b.at.x);
-    let x1 = min(a.right(), b.right());
-    let y0 = max(a.at.y, b.at.y);
-    let y1 = min(a.bottom(), b.bottom());
+    let x0 = math::max(a.at.x, b.at.x);
+    let x1 = math::min(a.right(), b.right());
+    let y0 = math::max(a.at.y, b.at.y);
+    let y1 = math::min(a.bottom(), b.bottom());
     if x0 < x1 {
         px = (x0 + x1) / 2.0;
         qx = px;
@@ -240,8 +240,8 @@ fn connect(a: &C4Box, b: &C4Box, shift: f64) -> (Point, Point) {
         py = (y0 + y1) / 2.0;
         qy = py;
     }
-    let len = js::hypot(qx - px, qy - py);
-    let len = js::or_one(len);
+    let len = math::hypot(&[qx - px, qy - py]);
+    let len = number::or(len, 1.0);
     let nx = (-(qy - py) / len) * shift;
     let ny = ((qx - px) / len) * shift;
     let mut ta = a.hit(Point::new(qx + nx, qy + ny), Point::new(px + nx, py + ny));
@@ -256,8 +256,8 @@ fn connect(a: &C4Box, b: &C4Box, shift: f64) -> (Point, Point) {
         py = ay;
         qx = bx;
         qy = by;
-        ta = min(a.hit(Point::new(qx, qy), Point::new(px, py)), 1.0);
-        tb = min(b.hit(Point::new(px, py), Point::new(qx, qy)), 1.0);
+        ta = math::min(a.hit(Point::new(qx, qy), Point::new(px, py)), 1.0);
+        tb = math::min(b.hit(Point::new(px, py), Point::new(qx, qy)), 1.0);
     }
     (
         Point::new(qx + (px - qx) * ta, qy + (py - qy) * ta),
@@ -297,8 +297,8 @@ pub struct Lanes {
 
 impl Lanes {
     pub fn free(&self, upright: bool, at: f64, a0: f64, a1: f64) -> bool {
-        let lo = min(a0, a1);
-        let hi = max(a0, a1);
+        let lo = math::min(a0, a1);
+        let hi = math::max(a0, a1);
         let near = |list: &[Stretch], gap: f64| -> bool {
             list.iter()
                 .any(|s| (s.at - at).abs() < gap && s.lo < hi && s.hi > lo)
@@ -318,8 +318,8 @@ impl Lanes {
             let upright = q.x == p.x;
             let at = if upright { q.x } else { q.y };
             let (u, v) = if upright { (p.y, q.y) } else { (p.x, q.x) };
-            let lo = min(u, v);
-            let hi = max(u, v);
+            let lo = math::min(u, v);
+            let hi = math::max(u, v);
             let list = if upright { &self.level } else { &self.upright };
             for s in list {
                 if s.at > lo && s.at < hi && s.lo < at && s.hi > at {
@@ -343,10 +343,10 @@ impl Lanes {
             let (p, q) = (leg[0], leg[1]);
             if q.x == p.x {
                 self.upright
-                    .push(Stretch::new(q.x, min(p.y, q.y), max(p.y, q.y)));
+                    .push(Stretch::new(q.x, math::min(p.y, q.y), math::max(p.y, q.y)));
             } else if q.y == p.y {
                 self.level
-                    .push(Stretch::new(q.y, min(p.x, q.x), max(p.x, q.x)));
+                    .push(Stretch::new(q.y, math::min(p.x, q.x), math::max(p.x, q.x)));
             }
         }
     }
@@ -383,8 +383,8 @@ impl Lanes {
 fn path(points: &[Point], start_trim: f64, end_trim: f64) -> String {
     let n = points.len();
     let first = points[0];
-    let ux = sign(points[1].x - first.x);
-    let uy = sign(points[1].y - first.y);
+    let ux = math::sign(points[1].x - first.x);
+    let uy = math::sign(points[1].y - first.y);
     let mut d = format!(
         "M{},{}",
         num(first.x + ux * start_trim),
@@ -393,12 +393,12 @@ fn path(points: &[Point], start_trim: f64, end_trim: f64) -> String {
     for i in 1..n - 1 {
         let Point { x, y } = points[i];
         let (prev, next) = (points[i - 1], points[i + 1]);
-        let ix = sign(x - prev.x);
-        let iy = sign(y - prev.y);
-        let ox = sign(next.x - x);
-        let oy = sign(next.y - y);
-        let r = min(
-            min(CORNER, (x - prev.x + y - prev.y).abs() / 2.0),
+        let ix = math::sign(x - prev.x);
+        let iy = math::sign(y - prev.y);
+        let ox = math::sign(next.x - x);
+        let oy = math::sign(next.y - y);
+        let r = math::min(
+            math::min(CORNER, (x - prev.x + y - prev.y).abs() / 2.0),
             (next.x - x + next.y - y).abs() / 2.0,
         );
         if ix != 0.0 {
@@ -416,8 +416,8 @@ fn path(points: &[Point], start_trim: f64, end_trim: f64) -> String {
         );
     }
     let (last, before) = (points[n - 1], points[n - 2]);
-    let lx = sign(last.x - before.x);
-    let ly = sign(last.y - before.y);
+    let lx = math::sign(last.x - before.x);
+    let ly = math::sign(last.y - before.y);
     if lx != 0.0 {
         d + &format!("H{}", num(last.x - lx * end_trim))
     } else {
@@ -448,11 +448,14 @@ fn bent(points: Vec<Point>, along: usize, start_trim: f64, end_trim: f64, label:
         path: EdgePath {
             d: path(&points, start_trim, end_trim),
             start: first,
-            start_dir: Point::new(-sign(points[1].x - first.x), -sign(points[1].y - first.y)),
+            start_dir: Point::new(
+                -math::sign(points[1].x - first.x),
+                -math::sign(points[1].y - first.y),
+            ),
             end: last,
             end_dir: Point::new(
-                sign(last.x - points[n - 2].x),
-                sign(last.y - points[n - 2].y),
+                math::sign(last.x - points[n - 2].x),
+                math::sign(last.y - points[n - 2].y),
             ),
         },
         along: (points[along], points[along + 1]),
@@ -466,7 +469,7 @@ fn bent(points: Vec<Point>, along: usize, start_trim: f64, end_trim: f64, label:
 fn across(lo: f64, hi: f64) -> Vec<f64> {
     let mut out = Vec::new();
     let mid = (lo + hi) / 2.0;
-    let step = max(LANE_STEP, (hi - lo) / 4.0);
+    let step = math::max(LANE_STEP, (hi - lo) / 4.0);
     for k in 0u32..9 {
         let at = mid + (if k & 1 == 1 { 1.0 } else { -1.0 }) * f64::from(k.div_ceil(2)) * step;
         if at >= lo + NEAR && at <= hi - NEAR {
@@ -533,7 +536,7 @@ fn elbow(
     };
     if a.right() <= b.at.x || b.right() <= a.at.x {
         let right = bx > ax;
-        let down = sign(by - ay);
+        let down = math::sign(by - ay);
         let sides = if right {
             [Side::Right, Side::Left]
         } else {
@@ -560,9 +563,11 @@ fn elbow(
             ) {
                 for &lane in &lanes_across {
                     let x0 = lane
-                        + (ax - lane) * min(a.hit(Point::new(lane, y0), Point::new(ax, y0)), 1.0);
+                        + (ax - lane)
+                            * math::min(a.hit(Point::new(lane, y0), Point::new(ax, y0)), 1.0);
                     let x1 = lane
-                        + (bx - lane) * min(b.hit(Point::new(lane, y1), Point::new(bx, y1)), 1.0);
+                        + (bx - lane)
+                            * math::min(b.hit(Point::new(lane, y1), Point::new(bx, y1)), 1.0);
                     if consider(
                         &mut best,
                         lanes,
@@ -583,7 +588,7 @@ fn elbow(
     }
     if a.bottom() <= b.at.y || b.bottom() <= a.at.y {
         let below = by > ay;
-        let sideways = sign(bx - ax);
+        let sideways = math::sign(bx - ax);
         let sides = if below {
             [Side::Bottom, Side::Top]
         } else {
@@ -610,9 +615,11 @@ fn elbow(
             ) {
                 for &lane in &lanes_across {
                     let y0 = lane
-                        + (ay - lane) * min(a.hit(Point::new(x0, lane), Point::new(x0, ay)), 1.0);
+                        + (ay - lane)
+                            * math::min(a.hit(Point::new(x0, lane), Point::new(x0, ay)), 1.0);
                     let y1 = lane
-                        + (by - lane) * min(b.hit(Point::new(x1, lane), Point::new(x1, by)), 1.0);
+                        + (by - lane)
+                            * math::min(b.hit(Point::new(x1, lane), Point::new(x1, by)), 1.0);
                     if consider(
                         &mut best,
                         lanes,
@@ -680,8 +687,8 @@ pub fn route(
     end_trim: f64,
 ) -> Route {
     if a.id == b.id {
-        let spread = min(a.size.h / 2.0 - 4.0, 10.0);
-        let len = js::hypot(LOOP, spread);
+        let spread = math::min(a.size.h / 2.0 - 4.0, 10.0);
+        let len = math::hypot(&[LOOP, spread]);
         let x = a.right();
         let cy = a.at.y + a.size.h / 2.0;
         let ux = LOOP / len;
@@ -752,9 +759,9 @@ pub fn route(
             let mut widen = |it: &C4Box| {
                 let edge = if upright { it.at.x } else { it.at.y };
                 lane = if forward {
-                    max(lane, edge + if upright { it.size.w } else { it.size.h })
+                    math::max(lane, edge + if upright { it.size.w } else { it.size.h })
                 } else {
-                    min(lane, edge)
+                    math::min(lane, edge)
                 };
             };
             widen(a);
@@ -767,14 +774,14 @@ pub fn route(
             lane
         };
         let lo = if upright {
-            min(a.at.y, b.at.y)
+            math::min(a.at.y, b.at.y)
         } else {
-            min(a.at.x, b.at.x)
+            math::min(a.at.x, b.at.x)
         };
         let hi = if upright {
-            max(a.bottom(), b.bottom())
+            math::max(a.bottom(), b.bottom())
         } else {
-            max(a.right(), b.right())
+            math::max(a.right(), b.right())
         };
         let outside = |forward: bool, lane: f64| -> bool {
             for other in others {
@@ -797,9 +804,9 @@ pub fn route(
         let Point { x: ax, y: ay } = a.center();
         let Point { x: bx, y: by } = b.center();
         let towards = if upright {
-            sign(by - ay)
+            math::sign(by - ay)
         } else {
-            sign(bx - ax)
+            math::sign(bx - ax)
         };
         // The route on one side: each end leaves its shape a quarter of the
         // way from the middle towards the other, clear of the straight lines
@@ -851,10 +858,10 @@ pub fn route(
             };
             let points_at = |at: f64| -> Vec<Point> {
                 if upright {
-                    let x0 =
-                        at + (ax - at) * min(a.hit(Point::new(at, p0), Point::new(ax, p0)), 1.0);
-                    let x1 =
-                        at + (bx - at) * min(b.hit(Point::new(at, p1), Point::new(bx, p1)), 1.0);
+                    let x0 = at
+                        + (ax - at) * math::min(a.hit(Point::new(at, p0), Point::new(ax, p0)), 1.0);
+                    let x1 = at
+                        + (bx - at) * math::min(b.hit(Point::new(at, p1), Point::new(bx, p1)), 1.0);
                     return vec![
                         Point::new(x0, p0),
                         Point::new(at, p0),
@@ -862,8 +869,10 @@ pub fn route(
                         Point::new(x1, p1),
                     ];
                 }
-                let y0 = at + (ay - at) * min(a.hit(Point::new(p0, at), Point::new(p0, ay)), 1.0);
-                let y1 = at + (by - at) * min(b.hit(Point::new(p1, at), Point::new(p1, by)), 1.0);
+                let y0 =
+                    at + (ay - at) * math::min(a.hit(Point::new(p0, at), Point::new(p0, ay)), 1.0);
+                let y1 =
+                    at + (by - at) * math::min(b.hit(Point::new(p1, at), Point::new(p1, by)), 1.0);
                 vec![
                     Point::new(p0, y0),
                     Point::new(p0, at),
@@ -960,8 +969,8 @@ pub fn route(
         );
     }
 
-    let len = js::hypot(e.x - s.x, e.y - s.y);
-    let len = js::or_one(len);
+    let len = math::hypot(&[e.x - s.x, e.y - s.y]);
+    let len = number::or(len, 1.0);
     let dx = (e.x - s.x) / len;
     let dy = (e.y - s.y) / len;
     if upright || s.y == e.y {

@@ -12,9 +12,9 @@ use super::{
 use crate::{
     detect::Kind,
     error::Error,
-    js,
     token::{Stream, after_keyword},
 };
+use js::string;
 
 const HEADERS: &str = "'direction_tb', 'direction_bt', 'direction_rl', 'direction_lr', 'C4_CONTEXT', 'C4_CONTAINER', 'C4_COMPONENT', 'C4_DYNAMIC', 'C4_DEPLOYMENT'";
 const ATTRIBUTES: &str = "'STR', 'STR_KEY', 'ATTRIBUTE', 'ATTRIBUTE_EMPTY'";
@@ -123,19 +123,19 @@ impl Parser<'_, '_> {
         let mut attrs = Vec::new();
         loop {
             match self.s.kind() {
-                T::Str => attrs.push(C4Attr::Str(js::trim(self.s.take()).to_string())),
+                T::Str => attrs.push(C4Attr::Str(string::trim(self.s.take()).to_string())),
                 T::AttributeEmpty => {
                     self.s.bump();
                     attrs.push(C4Attr::Str(String::new()));
                 }
                 T::StrKey => {
-                    let key = js::trim(self.s.take()).to_string();
+                    let key = string::trim(self.s.take()).to_string();
                     if !self.s.is(T::StrValue) {
                         return Err(self.s.fail("'STR_VALUE'"));
                     }
                     attrs.push(C4Attr::Named(C4Named {
                         key,
-                        value: js::trim(self.s.take()).to_string(),
+                        value: string::trim(self.s.take()).to_string(),
                     }));
                 }
                 _ => break,
@@ -151,7 +151,7 @@ impl Parser<'_, '_> {
         match t {
             T::Title => db.titles.set_title(after_keyword(self.s.take(), 5)),
             T::AccDescription => db.titles.set_acc_descr(after_keyword(self.s.take(), 14)),
-            T::AccDescrMultilineValue => db.titles.set_acc_descr(js::trim(self.s.take())),
+            T::AccDescrMultilineValue => db.titles.set_acc_descr(string::trim(self.s.take())),
             T::AccTitle => {
                 self.s.bump();
                 if !self.s.is(T::AccTitleValue) {
@@ -159,14 +159,14 @@ impl Parser<'_, '_> {
                 }
                 // The grammar hands `accTitle:` to setTitle, so it becomes the
                 // visible title.
-                db.titles.set_title(js::trim(self.s.take()));
+                db.titles.set_title(string::trim(self.s.take()));
             }
             _ => {
                 self.s.bump();
                 if !self.s.is(T::AccDescrValue) {
                     return Err(self.s.fail("'acc_descr_value'"));
                 }
-                db.titles.set_acc_descr(js::trim(self.s.take()));
+                db.titles.set_acc_descr(string::trim(self.s.take()));
             }
         }
         Ok(())

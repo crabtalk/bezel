@@ -1,10 +1,10 @@
 //! Pele's `diagrams/block/arrows.ts`.
 
+use js::string;
 use std::fmt::Write as _;
 
 use crate::{
     geom::{Axis, Point, Size},
-    js,
     svg::shapes::poly,
 };
 
@@ -38,7 +38,7 @@ impl Heads {
     pub fn from_directions(directions: Option<&[String]>) -> Self {
         let mut heads = Heads::default();
         for direction in directions.unwrap_or_default() {
-            match js::trim(direction) {
+            match string::trim(direction) {
                 "right" => heads.right = true,
                 "left" => heads.left = true,
                 "up" => heads.up = true,

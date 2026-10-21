@@ -3,6 +3,7 @@
 //! indented `text` continues a set, and the statements are what tell the
 //! model so. Pele's `diagrams/venn/parser.ts`.
 
+use js::number;
 use std::borrow::Cow;
 
 use super::{
@@ -12,7 +13,6 @@ use super::{
 use crate::{
     detect::Kind,
     error::Error,
-    js,
     token::{Grammar, Token, after_keyword},
 };
 
@@ -104,7 +104,7 @@ impl<'s> Parser<'s, '_> {
         };
         let mut size = None;
         if self.eat(T::Colon) {
-            size = Some(js::parse_float(&self.expect(T::Numeric)?));
+            size = Some(number::parse_float(&self.expect(T::Numeric)?));
         }
         if union {
             if ids.len() < 2 {

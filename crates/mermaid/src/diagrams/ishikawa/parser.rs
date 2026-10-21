@@ -9,7 +9,8 @@ use super::{
     db::IshikawaDb,
     lexer::{T, tokenize},
 };
-use crate::{detect::Kind, error::Error, js, token::Stream};
+use crate::{detect::Kind, error::Error, token::Stream};
+use js::string;
 
 const STOP: &str = "'SPACELINE', 'NL', 'EOF'";
 const STOPS: [T; 3] = [T::Spaceline, T::Nl, T::Eof];
@@ -43,7 +44,7 @@ pub fn parse_ishikawa(src: &str, db: &mut IshikawaDb) -> Result<(), Error> {
             if !s.is_any(&STOPS) {
                 return Err(s.fail(STOP));
             }
-            db.add_node(level, js::trim(text).to_string());
+            db.add_node(level, string::trim(text).to_string());
         } else if kind == T::Spaceline || kind == T::Spacelist {
             s.bump();
             if !s.is_any(&STOPS) {

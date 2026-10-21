@@ -2,16 +2,19 @@
 
 use super::GitGraphConfig;
 use crate::geom::{Direction, Point, Size};
+use js::{
+    math,
+    number::{self, Number},
+};
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
 };
 
 use super::db::{CommitType, GitCommit, GitModel};
-use crate::diagrams::Render;
-use crate::{Config, Ctx, Error, Host};
 use crate::{
-    Rendered, js,
+    Config, Ctx, Error, Host, Rendered,
+    diagrams::Render,
     svg::{
         builder::{EscText, fragment, num},
         root::svg_document,
@@ -74,15 +77,15 @@ impl CommitType {
                         "<rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" rx=\"2\" fill=\"{color}\"/>",
                         num(x - DOT - 1.0),
                         num(y - DOT - 1.0),
-                        js::Number(2.0 * DOT + 2.0),
-                        js::Number(2.0 * DOT + 2.0)
+                        Number(2.0 * DOT + 2.0),
+                        Number(2.0 * DOT + 2.0)
                     );
                 }
                 CommitType::Merge => {
                     return write!(
                         f,
                         "<circle {centre} r=\"{}\" fill=\"var(--_bg)\" stroke=\"{color}\" stroke-width=\"2\"/><circle {centre} r=\"2.5\" fill=\"{color}\"/>",
-                        js::Number(DOT - 1.0)
+                        Number(DOT - 1.0)
                     );
                 }
                 _ => {}
@@ -90,7 +93,7 @@ impl CommitType {
             write!(
                 f,
                 "<circle {centre} r=\"{}\" fill=\"{color}\"/>",
-                js::Number(DOT)
+                Number(DOT)
             )?;
             match self {
                 CommitType::Reverse => write!(
@@ -175,7 +178,7 @@ impl GitModel {
     ) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = js::round(size * 0.75);
+        let small = math::round(size * 0.75);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
 
@@ -191,7 +194,7 @@ impl GitModel {
             lane_of.insert(name, index);
         }
         let lane_count = self.lanes.len();
-        let medium = js::round(size * 0.875);
+        let medium = math::round(size * 0.875);
         // Mermaid writes branch names, tags, and commit ids as plain text, so
         // tags in them show as written.
         let names: Vec<Label> = self
@@ -420,7 +423,7 @@ impl GitModel {
         }
         if parallel {
             for list in &mut taken {
-                list.sort_by(|a, b| js::compare(a - b));
+                list.sort_by(|a, b| number::compare(a - b));
             }
         }
         let busy = |lane: usize, from: f64, to: f64| -> bool {
@@ -721,7 +724,7 @@ impl GitModel {
             let _ = write!(
                 content,
                 "<g class=\"{p}-branches\" fill=\"none\" font-size=\"{}\">{branches}</g>",
-                js::Number(medium)
+                Number(medium)
             );
         }
         if !curves.is_empty() || !lines.is_empty() {
@@ -734,7 +737,7 @@ impl GitModel {
             let _ = write!(
                 content,
                 "<g class=\"{p}-commits\" font-size=\"{}\" fill=\"var(--_m)\">{commits}</g>",
-                js::Number(small)
+                Number(small)
             );
         }
         content.push_str("</g>");

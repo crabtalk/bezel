@@ -51,18 +51,17 @@ fn values_read_out_whole() {
 }
 
 #[test]
-fn time_round_trips_the_calendar() {
-    for days in [-800_000, -1, 0, 59, 10_957, 19_782, 2_000_000] {
-        let (y, m, d) = time::civil(days);
-        assert_eq!(time::days(y, m, d), days);
-    }
+fn time_reads_and_describes_utc() {
     let at = time::parse("2024-03-05T14:30:00Z").unwrap();
     assert_eq!(time::describe(at), "2024-03-05 14:30");
     assert_eq!(
         time::describe(time::parse("2024-03-05").unwrap()),
         "2024-03-05"
     );
-    assert!(time::parse("2024-03-05T14:30+02:00").is_none());
+    assert_eq!(
+        time::parse("2024-03-05T14:30+02:00"),
+        time::parse("2024-03-05T12:30Z")
+    );
 }
 
 #[test]

@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "fixtures": "node fixtures.mjs"
+  },
+  "dependencies": {
+    "vega": "6.4.0",
+    "vega-datasets": "3.2.1",
+    "vega-lite": "6.5.0"
+  }
+}

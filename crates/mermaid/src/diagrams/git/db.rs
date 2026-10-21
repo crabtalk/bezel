@@ -3,11 +3,12 @@
 use super::GitGraphConfig;
 use crate::diagrams::common::db::Titles;
 use indexmap::IndexMap;
+use js::number;
 use serde::Serialize;
 use serde_repr::Serialize_repr;
 
 use super::parser::{GitGraphAst, StatementAst};
-use crate::{Error, Kind, geom::Direction, js};
+use crate::{Error, Kind, geom::Direction};
 
 /// A commit's kind, numbered as in Mermaid.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize_repr)]
@@ -387,7 +388,7 @@ impl GitModel {
                 )
             })
             .collect();
-        lanes.sort_by(|a, b| js::compare(a.1 - b.1));
+        lanes.sort_by(|a, b| number::compare(a.1 - b.1));
 
         Ok(Self {
             kind: "gitGraph",

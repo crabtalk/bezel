@@ -2,6 +2,8 @@
 //! `charCodeAt`, and text between delimiters. Past the end of the text the
 //! code is [`NONE`], which is none of these.
 
+use js::string;
+
 /// What `charCodeAt` answers past the end.
 pub const NONE: u32 = u32::MAX;
 
@@ -29,38 +31,15 @@ pub fn width_at(src: &str, at: usize) -> usize {
         .map_or(1, char::len_utf8)
 }
 
-/// Whitespace as `\s` sees it.
-pub fn is_space(c: impl Into<u32>) -> bool {
-    let c = c.into();
-    if c < 128 {
-        return c == 32 || (9..=13).contains(&c);
-    }
-    c == 0xa0
-        || c == 0x1680
-        || (0x2000..=0x200a).contains(&c)
-        || c == 0x2028
-        || c == 0x2029
-        || c == 0x202f
-        || c == 0x205f
-        || c == 0x3000
-        || c == 0xfeff
-}
-
 /// Whitespace as `\s` sees it, other than a line feed or carriage return.
 pub fn is_inline_space(c: impl Into<u32>) -> bool {
     let c = c.into();
-    is_space(c) && c != u32::from('\n') && c != u32::from('\r')
+    string::is_space(c) && c != u32::from('\n') && c != u32::from('\r')
 }
 
 pub fn is_blank(c: impl Into<u32>) -> bool {
     let c = c.into();
     c == 32 || c == 9
-}
-
-/// A line terminator: what `.` does not match.
-pub fn is_line_end(c: impl Into<u32>) -> bool {
-    let c = c.into();
-    c == 10 || c == 13 || c == 0x2028 || c == 0x2029
 }
 
 pub fn is_digit(c: impl Into<u32>) -> bool {
@@ -76,12 +55,6 @@ pub fn is_letter(c: impl Into<u32>) -> bool {
 pub fn is_hex(c: impl Into<u32>) -> bool {
     let c = c.into();
     (48..=57).contains(&c) || (65..=70).contains(&c) || (97..=102).contains(&c)
-}
-
-/// A character of `\w`.
-pub fn is_word(c: impl Into<u32>) -> bool {
-    let c = c.into();
-    (48..=57).contains(&c) || (65..=90).contains(&c) || (97..=122).contains(&c) || c == 95
 }
 
 /// Whether `word`, written in lower case, is at byte `at` of `src`. Only

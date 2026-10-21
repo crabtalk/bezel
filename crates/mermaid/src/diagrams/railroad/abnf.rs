@@ -2,6 +2,7 @@
 //! semicolon. Pele's `diagrams/railroad/abnf.ts`.
 
 use crate::util::chars::inner;
+use js::number;
 
 use super::{
     common::{
@@ -14,7 +15,6 @@ use crate::{
         TokenType, directive, keyword, single_line_comment, token_kinds, yaml,
     },
     error::Error,
-    js,
 };
 
 const DIGITS: &str = "0123456789";
@@ -205,13 +205,15 @@ impl ToNode for AbnfPart {
                 let star = repeat.find('*');
                 let exact = star.is_none();
                 let min = if star.is_some_and(|star| star > 0) || exact {
-                    js::parse_int(repeat, 10)
+                    number::parse_int(repeat, 10)
                 } else {
                     0.0
                 };
                 let max = match star {
                     None => min,
-                    Some(star) if star < repeat.len() - 1 => js::parse_int(&repeat[star + 1..], 10),
+                    Some(star) if star < repeat.len() - 1 => {
+                        number::parse_int(&repeat[star + 1..], 10)
+                    }
                     Some(_) => f64::INFINITY,
                 };
                 if min == 0.0 && max == 1.0 {

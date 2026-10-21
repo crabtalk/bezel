@@ -14,8 +14,8 @@ use crate::{
         tokens::T,
     },
     error::Error,
-    js::Lazy,
 };
+use js::regex::Lazy;
 
 const NO_TAGS: [T; 23] = [
     T::Num,

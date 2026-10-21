@@ -1,9 +1,8 @@
 //! Pele's `diagrams/gantt/types.ts`. The model itself is
 //! [`super::db::GanttDb`].
 
+use crate::json;
 use serde::Serialize;
-
-use crate::js::{self, date};
 
 /// A task as written.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -26,17 +25,17 @@ pub struct GanttTask {
     /// what it refers to never resolves.
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "date::json_opt"
+        serialize_with = "json::date_opt"
     )]
     pub start_time: Option<f64>,
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "date::json_opt"
+        serialize_with = "json::date_opt"
     )]
     pub end_time: Option<f64>,
     /// Where the bar ends when excluded days pushed the task's end out;
     /// `None` when the end was given as a date.
-    #[serde(serialize_with = "date::json_opt")]
+    #[serde(serialize_with = "json::date_opt")]
     pub render_end_time: Option<f64>,
     pub manual_end_time: bool,
     pub processed: bool,
@@ -47,7 +46,7 @@ pub struct GanttTask {
     pub vert: bool,
     /// Row index in source order; `None` for vertical markers, which take
     /// no row.
-    #[serde(serialize_with = "js::json_index")]
+    #[serde(serialize_with = "json::index")]
     pub order: Option<usize>,
     pub classes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

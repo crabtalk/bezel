@@ -1,22 +1,20 @@
 //! Pele's `diagrams/gantt/db.ts`.
 
-use crate::diagrams::common::db::Titles;
+use crate::{diagrams::common::db::Titles, json::JsonNumber};
 use indexmap::{IndexMap, IndexSet};
+use js::{
+    date::{self, Date, LocalZone},
+    number::{self, Number},
+    regex::Lazy,
+    string,
+};
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 
 use super::{
-    dates::{Unit, WEEKDAYS, Weekday, add, add_days, format, iso_date, parse_strict},
+    dates::{Unit, Weekday, add, add_days, format, iso_date, parse_strict},
     types::{GanttTask, RawTask},
 };
-use crate::{
-    Error,
-    detect::Kind,
-    js::{
-        self, Lazy,
-        date::{Date, LocalZone},
-    },
-    util::url::safe_url,
-};
+use crate::{Error, detect::Kind, util::url::safe_url};
 
 /// Scheduling walks tasks day by day and parses dates with a format the
 /// diagram supplies. This bounds the total, in rough character operations,
@@ -43,8 +41,8 @@ pub fn clock(now: Option<f64>) -> f64 {
 }
 
 pub fn parse_duration(text: &str) -> (f64, Unit) {
-    match RE_DURATION.exec(js::trim(text)) {
-        Some(m) => (js::parse_float(m.str(1)), Unit::parse(m.str(2))),
+    match RE_DURATION.exec(string::trim(text)) {
+        Some(m) => (number::parse_float(m.str(1)), Unit::parse(m.str(2))),
         None => (f64::NAN, Unit::Ms),
     }
 }
@@ -186,8 +184,8 @@ impl Serialize for GanttDb {
             out.serialize_field("lastTaskId", last_task_id)?;
         }
         out.serialize_field("options", &NoOptions)?;
-        out.serialize_field("now", &js::JsonNumber(self.now))?;
-        out.serialize_field("work", &js::JsonNumber(self.work))?;
+        out.serialize_field("now", &JsonNumber(self.now))?;
+        out.serialize_field("work", &JsonNumber(self.work))?;
         out.serialize_field("includeSet", &self.include_set)?;
         out.serialize_field("excludeSet", &self.exclude_set)?;
         out.serialize_field("excludedDays", &self.excluded_days)?;
@@ -322,19 +320,19 @@ impl GanttDb {
         if data.is_empty() {
             return Err(Error::semantic(format!(
                 "Task \"{}\" needs a duration or an end date.",
-                js::trim(descr)
+                string::trim(descr)
             ))
             .of(Kind::Gantt));
         }
         if data.len() > 3 {
             return Err(Error::semantic(format!(
                 "Task \"{}\" has too many fields. A task takes an id, a start, and an end or duration.",
-                js::trim(descr)
+                string::trim(descr)
             ))
             .of(Kind::Gantt));
         }
         for item in &mut data {
-            *item = js::trim(item).to_string();
+            *item = string::trim(item).to_string();
         }
 
         if data.len() == 3 {
@@ -397,7 +395,7 @@ impl GanttDb {
         self.exclude_set = self.excludes.iter().cloned().collect();
         let weekend_start = self.weekend.iso_day();
         let weekends = self.exclude_set.contains("weekends");
-        self.excluded_days = WEEKDAYS
+        self.excluded_days = date::WEEKDAYS
             .iter()
             .enumerate()
             .map(|(day, name)| {
@@ -410,9 +408,13 @@ impl GanttDb {
         // as a weekday name, so when nothing else is excluded or included
         // there is no need to format each day.
         self.dated_tokens =
-            !self.includes.is_empty() || !RE_NUMERIC_FORMAT.test(js::trim(&self.date_format));
+            !self.includes.is_empty() || !RE_NUMERIC_FORMAT.test(string::trim(&self.date_format));
         for token in &self.excludes {
-            if token != "weekends" && !WEEKDAYS.iter().any(|day| day.to_lowercase() == *token) {
+            if token != "weekends"
+                && !date::WEEKDAYS
+                    .iter()
+                    .any(|day| day.to_lowercase() == *token)
+            {
                 self.dated_tokens = true;
             }
         }
@@ -444,12 +446,12 @@ impl GanttDb {
         if !self.dated_tokens {
             return Ok(weekday);
         }
-        let template = js::trim(&self.date_format).to_string();
+        let template = string::trim(&self.date_format).to_string();
         let date_only = iso_date(date);
         let mut formatted = Some(date_only.clone());
         self.spend(DATED_STEP)?;
         if template != "YYYY-MM-DD" {
-            self.spend(FORMAT_STEP + js::len(&template) as f64 * 8.0)?;
+            self.spend(FORMAT_STEP + string::len(&template) as f64 * 8.0)?;
             formatted = format(date, &template);
         }
         let listed = |set: &IndexSet<String>| {
@@ -475,7 +477,7 @@ impl GanttDb {
         text: &str,
         template: &str,
     ) -> Result<Option<Date<'z>>, Error> {
-        self.spend((js::len(template) as f64 + 1.0) * (js::len(text) as f64 + 1.0))?;
+        self.spend((string::len(template) as f64 + 1.0) * (string::len(text) as f64 + 1.0))?;
         Ok(parse_strict(text, template, zone.date(self.now)))
     }
 
@@ -539,11 +541,11 @@ impl GanttDb {
     /// The start a task's `raw.start` gives, `None` where it is a task that
     /// has no end yet.
     fn get_start_date(&mut self, zone: &LocalZone, raw: &str) -> Result<Option<f64>, Error> {
-        let text = js::trim(raw);
-        let template = js::trim(&self.date_format).to_string();
+        let text = string::trim(raw);
+        let template = string::trim(&self.date_format).to_string();
 
         if (template == "x" || template == "X") && RE_DIGITS.test(text) {
-            let date = zone.date(js::number(text));
+            let date = zone.date(Number::from(text).0);
             if !date.is_valid() {
                 return Err(invalid_date(text));
             }
@@ -584,7 +586,7 @@ impl GanttDb {
         start_time: f64,
         raw: &str,
     ) -> Result<Option<f64>, Error> {
-        let text = js::trim(raw);
+        let text = string::trim(raw);
 
         if let Some(until) = RE_UNTIL.exec(text) {
             let mut earliest: Option<usize> = None;
@@ -601,7 +603,7 @@ impl GanttDb {
             });
         }
 
-        let template = js::trim(&self.date_format).to_string();
+        let template = string::trim(&self.date_format).to_string();
         if let Some(parsed) = self.parse(zone, text, &template)? {
             return Ok(Some(if self.inclusive_end_dates {
                 add_days(parsed, 1.0).time()

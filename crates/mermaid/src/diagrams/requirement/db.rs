@@ -1,8 +1,9 @@
 //! Pele's `diagrams/requirement/db.ts`.
 
-use crate::diagrams::common::db::Titles;
-use crate::diagrams::common::style_class::StyleClass;
-use crate::geom::Direction;
+use crate::{
+    diagrams::common::{db::Titles, style_class::StyleClass},
+    geom::Direction,
+};
 use indexmap::IndexMap;
 use serde::Serialize;
 

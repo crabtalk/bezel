@@ -2,10 +2,10 @@
 
 use super::tokens::{KEYWORDS, T};
 use crate::{
-    js::{self, Lazy},
     token::{Cursor, Token},
-    util::chars::{is_line_end, is_space, is_word, starts_with_caseless},
+    util::chars::starts_with_caseless,
 };
+use js::{regex::Lazy, string};
 
 /// Jison's start conditions.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -88,7 +88,7 @@ impl<'s> Lexer<'s> {
             && src
                 .get(p + 1..p + 5)
                 .is_some_and(|rest| rest.eq_ignore_ascii_case("itle"))
-            && self.cur.char_at(p + 5).is_some_and(is_space)
+            && self.cur.char_at(p + 5).is_some_and(string::is_space)
         {
             let from = self.cur.after(p + 5);
             let q = src[from..].find(['#', '\n', ';']).map_or(n, |at| from + at);
@@ -111,7 +111,10 @@ impl<'s> Lexer<'s> {
                 return true;
             }
         }
-        if self.dirs.iter().any(|list| !list.is_empty()) && !is_line_end(c) && self.direction() {
+        if self.dirs.iter().any(|list| !list.is_empty())
+            && !string::is_line_end(c)
+            && self.direction()
+        {
             return true;
         }
 
@@ -128,7 +131,7 @@ impl<'s> Lexer<'s> {
             }
             return self.emit(T::Newline, q);
         }
-        if is_space(c) {
+        if string::is_space(c) {
             self.cur.p = self.cur.space_end(p);
             return true;
         }
@@ -137,7 +140,7 @@ impl<'s> Lexer<'s> {
             return true;
         }
 
-        if is_word(c) {
+        if string::is_word(c) {
             let mut q = self.cur.word_end(p);
             if q - p <= LONGEST_KEYWORD {
                 let word = src[p..q].to_ascii_lowercase();
@@ -149,7 +152,8 @@ impl<'s> Lexer<'s> {
                 }
             }
             q = src[q..].find(is_stop).map_or(n, |at| q + at);
-            self.cur.emit_text(T::Unqstring, js::trim(&src[p..q]), p, q);
+            self.cur
+                .emit_text(T::Unqstring, string::trim(&src[p..q]), p, q);
             return true;
         }
 
@@ -174,7 +178,7 @@ impl<'s> Lexer<'s> {
     fn style(&mut self, c: char) -> bool {
         let p = self.cur.p;
         match c {
-            _ if is_word(c) => {
+            _ if string::is_word(c) => {
                 let q = self.cur.word_end(p);
                 self.emit(T::Alpha, q)
             }

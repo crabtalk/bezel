@@ -1,23 +1,22 @@
 //! Pele's `diagrams/mindmap/render.ts`.
 
 use super::db::{MindmapModel, MindmapNode};
-use crate::config::positive;
-use crate::diagrams::Render;
-use crate::geom::{Point, Side, Size};
-use crate::svg::builder::{EscText, fragment};
-use crate::{Config, Error};
-use crate::{Ctx, Host};
 use crate::{
-    Rendered,
-    diagrams::common::icon::icon_svg,
-    js,
+    Config, Ctx, Error, Host, Rendered,
+    config::positive,
+    diagrams::{Render, common::icon::icon_svg},
+    geom::{Point, Side, Size},
     svg::{
-        builder::{TITLE, num},
+        builder::{EscText, TITLE, fragment, num},
         root::{Accessible, svg_document},
         shapes::Shape,
         theme::{SeriesColor, class_names, series_color},
     },
     text::{Label, Style, has_icon},
+};
+use js::{
+    math,
+    number::{self, Number},
 };
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
@@ -157,7 +156,7 @@ impl MindmapModel {
                 } else {
                     0.0
                 };
-            let th = label.height.max(js::round(size * 1.5));
+            let th = label.height.max(math::round(size * 1.5));
             let mut shape = node.kind.shape().or_else(|| (i == 0).then_some(ROOT_SHAPE));
             // In an outline the root heads a column, and the trunk drops from
             // under its left end. The root is a pill there unless it is a box
@@ -346,7 +345,7 @@ impl MindmapModel {
                     STEM
                 };
                 let x1 = at[p].x - sizes[p].w / 2.0 + stem.min(sizes[p].w / 2.0);
-                let y1 = if js::truthy(trunk[p]) {
+                let y1 = if number::truthy(trunk[p]) {
                     trunk[p]
                 } else {
                     at[p].y + sizes[p].h
@@ -412,7 +411,7 @@ impl MindmapModel {
                 tint,
                 " fill=\"{0}\" fill-opacity=\"{1}\" stroke=\"{0}\"",
                 paint(color),
-                js::Number(TINT)
+                Number(TINT)
             );
             let kind = match shape {
                 Some(shape) => shape.name(),

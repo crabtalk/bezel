@@ -8,13 +8,14 @@ use super::{
         StateNote, StateStmt, Stmt, StyleStmt,
     },
 };
-use crate::{detect::Kind, error::Error, geom::Direction, js, token::Stream};
+use crate::{detect::Kind, error::Error, geom::Direction, token::Stream};
+use js::string;
 
 const STATEMENT: &str = "'NL', 'ID', 'HIDE_EMPTY', 'scale', 'COMPOSIT_STATE', 'STATE_DESCR', 'FORK', 'JOIN', 'CHOICE', 'CONCURRENT', 'note', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'CLICK', 'classDef', 'style', 'class', 'direction_tb', 'direction_bt', 'direction_rl', 'direction_lr', 'EDGE_STATE'";
 
 /// A description without the colon before it.
 fn trim_colon(text: &str) -> String {
-    js::trim(text.strip_prefix(':').unwrap_or(text)).to_string()
+    string::trim(text.strip_prefix(':').unwrap_or(text)).to_string()
 }
 
 /// A composite being read, and the document it sits in.
@@ -58,13 +59,13 @@ impl Parser<'_, '_> {
         if !self.s.is_any(&[T::Id, T::EdgeState]) {
             return Err(self.s.fail("'ID', 'EDGE_STATE'"));
         }
-        let id = js::trim(self.s.take()).to_string();
+        let id = string::trim(self.s.take()).to_string();
         let mut state = StateStmt::new(id, Some(StateKind::Default));
         state.description = Some(Descr::One(String::new()));
         if !self.s.eat(T::StyleSeparator) {
             return Ok(state);
         }
-        state.classes = Some(vec![js::trim(self.s.expect(T::Id, "")?).to_string()]);
+        state.classes = Some(vec![string::trim(self.s.expect(T::Id, "")?).to_string()]);
         Ok(state)
     }
 
@@ -103,12 +104,12 @@ impl Parser<'_, '_> {
             let second = second.split(':').next().unwrap_or("");
             state = StateStmt::new(id, Some(StateKind::Default));
             state.description = Some(Descr::Many(vec![
-                js::trim(&description).to_string(),
+                string::trim(&description).to_string(),
                 second.to_string(),
             ]));
         } else {
             state = StateStmt::new(id, Some(StateKind::Default));
-            state.description = Some(Descr::One(js::trim(&description).to_string()));
+            state.description = Some(Descr::One(string::trim(&description).to_string()));
         }
         self.add_state(state);
         Ok(())
@@ -117,9 +118,9 @@ impl Parser<'_, '_> {
     fn note(&mut self) -> Result<(), Error> {
         let keyword = self.s.take().to_string();
         if self.s.is_any(&[T::LeftOf, T::RightOf]) {
-            let position = js::trim(self.s.take()).to_string();
-            let id = js::trim(self.s.expect(T::Id, "")?).to_string();
-            let text = js::trim(self.s.expect(T::NoteText, "")?).to_string();
+            let position = string::trim(self.s.take()).to_string();
+            let id = string::trim(self.s.expect(T::Id, "")?).to_string();
+            let text = string::trim(self.s.expect(T::NoteText, "")?).to_string();
             let mut state = StateStmt::new(id, None);
             state.note = Some(StateNote {
                 position: Some(position),
@@ -161,7 +162,7 @@ impl Parser<'_, '_> {
     }
 
     fn acc_descr(&mut self, value: &str) {
-        let value = js::trim(value).to_string();
+        let value = string::trim(value).to_string();
         self.db.titles.set_acc_descr(&value);
         self.add(Stmt::Text(value));
     }
@@ -169,8 +170,8 @@ impl Parser<'_, '_> {
     /// A keyword's two values, trimmed.
     fn pair(&mut self, first: T, second: T) -> Result<(String, String), Error> {
         self.s.bump();
-        let first = js::trim(self.s.expect(first, "")?).to_string();
-        let second = js::trim(self.s.expect(second, "")?).to_string();
+        let first = string::trim(self.s.expect(first, "")?).to_string();
+        let second = string::trim(self.s.expect(second, "")?).to_string();
         Ok((first, second))
     }
 
@@ -237,7 +238,7 @@ impl Parser<'_, '_> {
                 }
                 T::AccTitle => {
                     self.s.bump();
-                    let value = js::trim(self.s.expect(T::AccTitleValue, "")?).to_string();
+                    let value = string::trim(self.s.expect(T::AccTitleValue, "")?).to_string();
                     self.db.titles.set_acc_title(&value);
                     self.add(Stmt::Text(value));
                 }

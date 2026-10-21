@@ -1,9 +1,13 @@
 //! Pele's `diagrams/class/markers.ts`.
 
 use super::types::RelationType;
-use crate::geom::Point;
-use crate::svg::builder::{fragment, num};
-use crate::svg::edges::Marker;
+use crate::{
+    geom::Point,
+    svg::{
+        builder::{fragment, num},
+        edges::Marker,
+    },
+};
 use std::fmt;
 
 const TRIANGLE: f64 = 12.0;
