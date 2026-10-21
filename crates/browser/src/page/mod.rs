@@ -5,11 +5,11 @@ use std::{
     sync::Arc,
 };
 
-#[cfg_attr(target_os = "macos", path = "page/macos.rs")]
-#[cfg_attr(target_os = "windows", path = "page/windows.rs")]
+#[cfg_attr(target_os = "macos", path = "macos.rs")]
+#[cfg_attr(target_os = "windows", path = "windows.rs")]
 #[cfg_attr(
     not(any(target_os = "macos", target_os = "windows")),
-    path = "page/stub.rs"
+    path = "stub.rs"
 )]
 mod platform;
 

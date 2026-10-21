@@ -578,7 +578,7 @@ where
 // functions); this crate animates them with gpui.
 pub use crate::phase::{
     ORB_BLOOM_RINGS, ORB_RING_DOT, ORB_RING_DOTS, ORB_RING_RADIUS, ORB_SEATS, ORBS,
-    PULSE_MIN_OPACITY, PULSE_MIN_SCALE, PULSE_STAGGER, gspin_opacity, orb_bloom_opacity,
+    PULSE_MIN_OPACITY, PULSE_MIN_SCALE, PULSE_STAGGER, gspin_opacity, lerp, orb_bloom_opacity,
     orb_bloom_radius, orb_converge_radius, orb_drift, orb_glow, orb_opacity, orb_ring_seat,
     orb_size, pulse_opacity, pulse_scale, pulse_wave, staggered_phase,
 };
@@ -589,11 +589,6 @@ pub use crate::phase::{
 pub fn matrix_wave(raw_delta: f32, wave_index: usize, wave_count: usize) -> f32 {
     let count = wave_count.max(1) as f32;
     pulse_wave(staggered_phase(raw_delta, wave_index, 1.0 / count))
-}
-
-/// Linear interpolation (layout tweens).
-pub fn lerp(from: f32, to: f32, t: f32) -> f32 {
-    from + (to - from) * t
 }
 
 // ---------------------------------------------------------------------------

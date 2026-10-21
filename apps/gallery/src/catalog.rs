@@ -510,8 +510,8 @@ pub const COMPONENTS: &[Group] = &[
                     example("ghost", "Ghost frame"),
                 ],
             ),
-            section("text-field", "Text field", "crates/ui/src/input.rs"),
-            section("textarea", "Textarea", "crates/ui/src/input.rs"),
+            section("text-field", "Text field", "crates/ui/src/input/mod.rs"),
+            section("textarea", "Textarea", "crates/ui/src/input/mod.rs"),
             section("select", "Select", "crates/ui/src/widgets/controls.rs"),
             section("combobox", "Combobox", "crates/ui/src/combobox.rs"),
             section(
@@ -531,14 +531,14 @@ pub const COMPONENTS: &[Group] = &[
                 "crates/ui/src/widgets/controls.rs",
             ),
             section("slider", "Slider", "crates/ui/src/widgets/controls.rs"),
-            section("color-picker", "Color picker", "crates/ui/src/color.rs"),
+            section("color-picker", "Color picker", "crates/ui/src/color/mod.rs"),
             section("date-picker", "Date picker", "crates/ui/src/date.rs"),
         ],
     },
     Group {
         title: "Menus & actions",
         sections: &[
-            section("menu", "Menu", "crates/ui/src/popover.rs"),
+            section("menu", "Menu", "crates/ui/src/popover/mod.rs"),
             section(
                 "context-menu",
                 "Context menu",
@@ -551,8 +551,8 @@ pub const COMPONENTS: &[Group] = &[
     Group {
         title: "Presentation",
         sections: &[
-            section("dialog", "Dialog", "crates/ui/src/popover.rs"),
-            section("sheet", "Sheet", "crates/ui/src/popover.rs"),
+            section("dialog", "Dialog", "crates/ui/src/popover/mod.rs"),
+            section("sheet", "Sheet", "crates/ui/src/popover/mod.rs"),
             section("tooltip", "Tooltip", "crates/ui/src/tooltip.rs"),
             section("hover-card", "Hover card", "crates/ui/src/hover_card.rs"),
         ],
@@ -566,9 +566,9 @@ pub const COMPONENTS: &[Group] = &[
                 "crates/ui/src/widgets/scaffolding.rs",
             ),
             section("tabs", "Tabs", "crates/ui/src/widgets/layout.rs"),
-            section("tab-strip", "Tab strip", "crates/ui/src/tabs.rs"),
-            section("docking", "Pane docking", "crates/ui/src/docking.rs"),
-            section("sortable", "Sortable lists", "crates/ui/src/drag.rs"),
+            section("tab-strip", "Tab strip", "crates/ui/src/tabs/mod.rs"),
+            section("docking", "Pane docking", "crates/ui/src/docking/mod.rs"),
+            section("sortable", "Sortable lists", "crates/ui/src/drag/mod.rs"),
             section("nav-row", "Nav row", "crates/ui/src/widgets/layout.rs"),
             section(
                 "collapsible",
@@ -590,12 +590,12 @@ pub const COMPONENTS: &[Group] = &[
     Group {
         title: "Data",
         sections: &[
-            section("scroll-area", "Scroll area", "crates/ui/src/scroll.rs"),
-            section("follow", "Follow scroll", "crates/ui/src/scroll.rs"),
-            section("drift", "Drag to scroll", "crates/ui/src/scroll.rs"),
+            section("scroll-area", "Scroll area", "crates/ui/src/scroll/mod.rs"),
+            section("follow", "Follow scroll", "crates/ui/src/scroll/mod.rs"),
+            section("drift", "Drag to scroll", "crates/ui/src/scroll/mod.rs"),
             section("table", "Table", "crates/ui/src/table.rs"),
             section("tree", "Tree view", "crates/ui/src/tree.rs"),
-            section("virtual-list", "Virtualized list", "crates/ui/src/list.rs"),
+            section("virtual-list", "Virtualized list", "crates/ui/src/list/mod.rs"),
         ],
     },
     Group {
@@ -615,7 +615,7 @@ pub const COMPONENTS: &[Group] = &[
                 "Empty state",
                 "crates/ui/src/widgets/content.rs",
             ),
-            section("skeleton", "Skeleton", "crates/ui/src/popover.rs"),
+            section("skeleton", "Skeleton", "crates/ui/src/popover/mod.rs"),
         ],
     },
     Group {
