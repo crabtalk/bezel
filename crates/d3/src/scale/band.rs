@@ -20,17 +20,18 @@ pub struct Band {
     pub round: bool,
 }
 
-/// vega-scale's `bandSpace`: how many steps the range holds.
-pub fn band_space(count: usize, padding_inner: f64, padding_outer: f64) -> f64 {
-    let space = count as f64 - padding_inner + padding_outer * 2.0;
-    match count {
-        0 => 0.0,
-        _ if space > 0.0 => space,
-        _ => 1.0,
-    }
-}
-
 impl Band {
+    /// vega-scale's `bandSpace`: how many steps a range of `count` bands
+    /// holds.
+    pub fn space(count: usize, padding_inner: f64, padding_outer: f64) -> f64 {
+        let space = count as f64 - padding_inner + padding_outer * 2.0;
+        match count {
+            0 => 0.0,
+            _ if space > 0.0 => space,
+            _ => 1.0,
+        }
+    }
+
     /// No padding, centred, unrounded.
     pub fn new(count: usize, range: [f64; 2]) -> Self {
         Self {
@@ -64,7 +65,7 @@ impl Band {
             true => (self.range[1], self.range[0]),
             false => (self.range[0], self.range[1]),
         };
-        let space = band_space(self.count, inner, outer);
+        let space = Self::space(self.count, inner, outer);
         let mut step = (stop - start) / if space == 0.0 { 1.0 } else { space };
         if self.round {
             step = step.floor();

@@ -3,10 +3,7 @@
 
 use crate::{
     model::{Align, Anchor, Baseline, Frame, Side, Title},
-    plan::{
-        Ink, Label, Rect,
-        layout::{self, Layout},
-    },
+    plan::{Ink, Label, Rect, layout, layout::Layout},
 };
 
 /// Vega's title defaults, in pixels.

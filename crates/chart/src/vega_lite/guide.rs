@@ -7,7 +7,6 @@
 
 use crate::{
     data::{Column, Data},
-    expr::{Expr, Row},
     model::{
         Align, Anchor, Axis, Baseline, Cap, Case, Datum, Format, Frame, GridAlign, Kind, Legend,
         LegendKind, LegendOrient, Lettering, Line, Orient, Overlap, Relabel, Side, Test, TickBand,
@@ -15,13 +14,13 @@ use crate::{
     },
     time,
     transform::Part,
-    value::Value as ExprValue,
     vega_lite::{datetime, encoding},
 };
 use d3::{format::Specifier, time::Unit};
 use gpui::SharedString;
 use serde_json::{Map, Value};
 use std::sync::Arc;
+use vega::{expr::Expr, value::Value as ExprValue};
 
 /// What no guide draws differently for.
 const DROPPED: [&str; 3] = ["aria", "description", "style"];
@@ -120,12 +119,7 @@ fn relabel(source: &Value) -> Option<Relabel> {
     let expr: Expr = source.as_str()?.parse().ok()?;
     Some(Relabel(Arc::new(move |value, label, index| {
         let data = tick(value, label, index);
-        let row = Row {
-            data: &data,
-            index: 0,
-            params: &[],
-        };
-        match expr.eval(&row) {
+        match data.eval(&expr, 0) {
             Ok(ExprValue::Array(lines)) => lines
                 .iter()
                 .map(ExprValue::to_string)
@@ -144,12 +138,7 @@ fn test(source: &Value) -> Option<Test> {
     let expr: Expr = source.as_str()?.parse().ok()?;
     Some(Test(Arc::new(move |value, label| {
         let data = tick(value, label, 0.0);
-        let row = Row {
-            data: &data,
-            index: 0,
-            params: &[],
-        };
-        expr.eval(&row).is_ok_and(|value| value.truthy())
+        data.eval(&expr, 0).is_ok_and(|value| value.truthy())
     })))
 }
 

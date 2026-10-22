@@ -1,6 +1,6 @@
 //! [Vega expressions](https://vega.github.io/vega/docs/expressions/): the
-//! JavaScript subset Vega accepts, evaluated with JavaScript's semantics over
-//! one row of a [`Data`](crate::Data).
+//! JavaScript subset Vega accepts, evaluated with JavaScript's semantics in a
+//! [`Context`].
 //!
 //! `datum` is the row, the constants (`PI`, `E`, …) are numbers, and any other
 //! bare name is a param. Calls name a built-in function; a name this does not
@@ -15,14 +15,16 @@
 //! `timeFormat` and `timeParse` in the host's zone, `utcFormat` and
 //! `utcParse` in UTC. An invalid number format throws.
 //!
-//! Not here: the statistical functions, and every function that reads a
-//! runtime (scales, data sets, selections, view state).
+//! The scale functions read scales through the context.
+//!
+//! Not here: the statistical functions, and the functions that read data
+//! sets, selections or view state.
 
 use crate::{
     expr::parse::{Node, Parser},
     value::{TypeError, Value, regexp::SyntaxError},
 };
-pub use eval::Row;
+pub use eval::Context;
 use std::{fmt, str::FromStr};
 
 mod array;
@@ -38,7 +40,7 @@ pub struct Expr(Node);
 
 impl Expr {
     /// The expression's value on `row`, or the error JavaScript would throw.
-    pub fn eval(&self, row: &Row) -> Result<Value, Error> {
+    pub fn eval(&self, row: &Context<'_, '_>) -> Result<Value, Error> {
         self.0.eval(row)
     }
 }

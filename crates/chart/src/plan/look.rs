@@ -9,16 +9,16 @@ use crate::{
         NamedRange, Range, ScaleType, Shape, Sort,
     },
     plan::{
-        Font, Ink, Style,
-        domain::{self, Colors, Discrete},
-        invalid,
-        scales::{self, ColorScale, Colored, Context, Role, Steps},
+        Font, Ink, Style, domain,
+        domain::{Colors, Discrete},
+        invalid, scales,
+        scales::{ColorScale, Colored, Context, Role, Steps},
     },
-    value::regexp::RegExp,
 };
 use d3::{format::number::Number as JsNumber, scale::Continuous};
 use gpui::{Hsla, SharedString};
 use std::{cmp::Ordering, collections::HashMap, sync::Arc};
+use vega::value::regexp::RegExp;
 
 /// Vega-Lite's ranges for its numeric channels.
 pub(super) const OPACITY: [f32; 2] = [0.3, 0.8];

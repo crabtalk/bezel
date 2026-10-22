@@ -1,10 +1,8 @@
 //! A table of named, equal-length columns.
 
 use crate::{
-    path::Path,
     time,
     transform::{Random, Transform},
-    value::Value,
 };
 use d3::format::number::Number as JsNumber;
 use gpui::SharedString;
@@ -16,6 +14,11 @@ use std::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
+};
+use vega::{
+    expr::{self, Context, Expr},
+    path::Path,
+    value::Value,
 };
 
 static GENERATIONS: AtomicU64 = AtomicU64::new(1);
@@ -415,6 +418,17 @@ impl Data {
         self.fields().fold(Data::new(), |data, (name, column)| {
             data.adopt(self, name.clone(), column.pick(&picked))
         })
+    }
+
+    /// `expr` on row `row` as its `datum`, with no params and no scales.
+    pub fn eval(&self, expr: &Expr, row: usize) -> Result<Value, expr::Error> {
+        let datum = self.row(row);
+        let context = Context {
+            datum: &datum,
+            param: &|_| Value::Undefined,
+            scale: &|_| None,
+        };
+        expr.eval(&context)
     }
 
     /// Row `row` as a JavaScript object of every field, in field order.

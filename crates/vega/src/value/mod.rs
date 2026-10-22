@@ -89,6 +89,25 @@ impl From<Vec<Value>> for Value {
     }
 }
 
+/// `JSON.parse`'s value: a number as `f64`, objects in their key order.
+impl From<&serde_json::Value> for Value {
+    fn from(json: &serde_json::Value) -> Self {
+        match json {
+            serde_json::Value::Null => Self::Null,
+            serde_json::Value::Bool(b) => Self::Bool(*b),
+            serde_json::Value::Number(n) => Self::Number(n.as_f64().unwrap_or(f64::NAN)),
+            serde_json::Value::String(s) => Self::String(s.as_str().into()),
+            serde_json::Value::Array(items) => Self::Array(items.iter().map(Self::from).collect()),
+            serde_json::Value::Object(fields) => Self::Object(
+                fields
+                    .iter()
+                    .map(|(key, value)| (key.as_str().into(), Self::from(value)))
+                    .collect(),
+            ),
+        }
+    }
+}
+
 impl From<RegExp> for Value {
     fn from(value: RegExp) -> Self {
         Self::RegExp(Arc::new(value))
@@ -96,6 +115,54 @@ impl From<RegExp> for Value {
 }
 
 impl Value {
+    /// `object[key] = value` on a copy: the field replaced where the object
+    /// has it, else added last. Anything but an object is left as it is.
+    pub fn with_field(&self, key: &str, value: Value) -> Value {
+        let Self::Object(fields) = self else {
+            return self.clone();
+        };
+        let mut fields = fields.to_vec();
+        match fields.iter_mut().find(|(k, _)| &**k == key) {
+            Some((_, v)) => *v = value,
+            None => fields.push((key.into(), value)),
+        }
+        Self::Object(fields.into())
+    }
+
+    /// `JSON.stringify(value)` as an array item writes it: `undefined` as
+    /// `null`, a number that is not finite as `null`.
+    pub fn to_json_text(&self) -> String {
+        match self {
+            Self::Undefined | Self::Null => "null".into(),
+            Self::Number(n) if !n.is_finite() => "null".into(),
+            Self::Number(n) => Number(*n).to_string(),
+            Self::Bool(b) => b.to_string(),
+            Self::String(s) => serde_json::to_string(&**s).expect("JSON"),
+            Self::Array(items) => format!(
+                "[{}]",
+                items
+                    .iter()
+                    .map(Self::to_json_text)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            Self::Object(fields) => format!(
+                "{{{}}}",
+                fields
+                    .iter()
+                    .filter(|(_, v)| !matches!(v, Self::Undefined))
+                    .map(|(k, v)| format!(
+                        "{}:{}",
+                        serde_json::to_string(&**k).expect("JSON"),
+                        v.to_json_text()
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            Self::RegExp(_) => "{}".into(),
+        }
+    }
+
     /// JavaScript's `!!value`.
     pub fn truthy(&self) -> bool {
         match self {

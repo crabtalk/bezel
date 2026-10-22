@@ -3,13 +3,8 @@
 
 use crate::{
     data::Data,
-    expr::{self, Expr, Row},
     transform::{Aggregate, Bin, Bins, Measure, Op, Part, Random, TimeUnit, Transform},
-    value::Value,
-    vega_lite::{
-        encoding::Def,
-        field::{self, Derive},
-    },
+    vega_lite::{encoding::Def, field, field::Derive},
 };
 use d3::{
     format::NumberFormat,
@@ -17,6 +12,7 @@ use d3::{
 };
 use gpui::SharedString;
 use std::str::FromStr;
+use vega::{expr, expr::Expr, value::Value};
 
 /// Vega-Lite's dash between a bin's edges in its text range.
 const DASH: &str = " – ";
@@ -78,12 +74,7 @@ impl Formula {
                 if aggregated.iter().any(|values| values[index].is_nan()) {
                     return Value::Number(f64::NAN);
                 }
-                let row = Row {
-                    data,
-                    index,
-                    params: &[],
-                };
-                self.expr.eval(&row).unwrap_or_default()
+                data.eval(&self.expr, index).unwrap_or_default()
             })
             .collect()
     }

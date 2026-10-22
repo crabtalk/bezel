@@ -1,0 +1,26 @@
+[package]
+name = "bezel-vega-lite"
+description = "Vega-Lite 6.5's compiler: a Vega-Lite spec compiled to a Vega spec, gpui-free"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+exclude = ["tests/"]
+
+[lib]
+name = "vega_lite"
+
+[lints]
+workspace = true
+
+[dependencies]
+d3.workspace = true
+vega.workspace = true
+serde.workspace = true
+serde_json = { workspace = true, features = ["preserve_order"] }

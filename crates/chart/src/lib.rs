@@ -5,15 +5,13 @@
 mod color;
 pub mod data;
 pub mod decimate;
-#[cfg(feature = "vega-lite")]
-pub mod expr;
 pub mod model;
-mod path;
+mod paint;
 pub mod plan;
 pub mod scale;
+pub mod scene;
 pub mod time;
 pub mod transform;
-pub mod value;
 #[cfg(feature = "vega-lite")]
 pub mod vega_lite;
 pub mod view;
@@ -24,5 +22,6 @@ pub use model::{
     Sort, Source,
 };
 pub use plan::{Plan, plan};
+pub use scene::{SceneView, scene};
 pub use transform::Transform;
 pub use view::{ChartView, view};

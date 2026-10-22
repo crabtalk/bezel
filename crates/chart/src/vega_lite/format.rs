@@ -1,11 +1,11 @@
 //! A data source's `format`: how its text becomes rows, as vega-loader reads
 //! it, and the `parse` applied to them.
 
-use crate::{path::Path, time, vega_lite::dsv};
+use crate::{time, vega_lite::dsv};
 
-use crate::value::Value as JsValue;
 use serde_json::{Map, Number, Value};
 use std::str::FromStr;
+use vega::{path::Path, value::Value as JsValue};
 
 /// A row: one datum, its fields by name.
 pub(crate) type Row = Map<String, Value>;

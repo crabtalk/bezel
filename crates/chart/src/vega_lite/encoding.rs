@@ -9,11 +9,7 @@ use crate::{
     },
     time,
     transform::{Bins, Op},
-    vega_lite::{
-        datetime,
-        field::{self, Derive},
-        format, guide,
-    },
+    vega_lite::{datetime, field, field::Derive, format, guide},
 };
 use d3::{
     format::number::Number as JsNumber, interpolate::Interpolate, scheme as palette, time::Unit,

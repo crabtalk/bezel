@@ -6,7 +6,8 @@
 use crate::{
     transform::{Aggregate, Op},
     vega_lite::{
-        composite::{self, Extract, Factory, Unit},
+        composite,
+        composite::{Extract, Factory, Unit},
         dataflow::Step,
         format,
         view::{Body, View},

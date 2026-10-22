@@ -1,5 +1,5 @@
-use chart::value::{TypeError, Value, regexp::RegExp};
 use std::cmp::Ordering;
+use vega::value::{TypeError, Value, regexp::RegExp};
 
 fn array(items: &[Value]) -> Value {
     items.to_vec().into()

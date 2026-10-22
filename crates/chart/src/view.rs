@@ -9,7 +9,9 @@
 
 use crate::{
     model::{Align, Baseline, Cap, Chart, Encoding, Join, Mark, Properties, Shape, Title},
-    plan::{self, Face, Fill, Glyph, Label, Marks, Metrics, Paint, Plan, Rect, Slice, Tip},
+    paint::{dashed, points, polyline},
+    plan,
+    plan::{Face, Fill, Glyph, Label, Marks, Metrics, Paint, Plan, Rect, Slice, Tip},
 };
 use d3::shape::{arc::Sector, curve::Curve, path::Segment};
 use gpui::{
@@ -818,10 +820,6 @@ fn ramp(gradient: &plan::Gradient, theme: &Theme) -> Vec<Op> {
     ops
 }
 
-fn points(run: &[[f32; 2]]) -> Vec<Point<Pixels>> {
-    run.iter().map(|&[x, y]| point(px(x), px(y))).collect()
-}
-
 fn wide(run: &[[f32; 2]]) -> Vec<[f64; 2]> {
     run.iter().map(|&[x, y]| [x as f64, y as f64]).collect()
 }
@@ -885,47 +883,6 @@ fn stroked(segments: &[Segment], style: &plan::Style) -> Option<Path<Pixels>> {
         }
         _ => trace(&mut builder, segments),
     }
-    builder.build().ok()
-}
-
-/// `dash` begun `offset` into its pattern, as one pattern from its start.
-fn dashed(dash: &[f32], offset: f32) -> Vec<f32> {
-    let mut dash = dash.to_vec();
-    if dash.len() % 2 == 1 {
-        dash.extend_from_within(..);
-    }
-    let period: f32 = dash.iter().sum();
-    if offset == 0.0 || period <= 0.0 {
-        return dash;
-    }
-    let mut into = offset.rem_euclid(period);
-    let mut index = 0;
-    while index < dash.len() - 1 && into >= dash[index] {
-        into -= dash[index];
-        index += 1;
-    }
-    // A gap begun part way leads with an empty dash, so dashes stay dashes.
-    let mut out = Vec::with_capacity(dash.len() + 3);
-    if index % 2 == 1 {
-        out.push(0.0);
-    }
-    out.push(dash[index] - into);
-    out.extend(&dash[index + 1..]);
-    out.extend(&dash[..index]);
-    out.push(into);
-    if out.len() % 2 == 1 {
-        out.push(0.0);
-    }
-    out
-}
-
-/// A plain line along `run`.
-fn polyline(run: &[[f32; 2]], width: f32, dash: Option<&[f32]>) -> Option<Path<Pixels>> {
-    let mut builder = PathBuilder::stroke(px(width));
-    if let Some(dash) = dash {
-        builder = builder.dash_array(&dash.iter().map(|d| px(*d)).collect::<Vec<_>>());
-    }
-    builder.add_polygon(&points(run), false);
     builder.build().ok()
 }
 

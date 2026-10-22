@@ -1,42 +1,26 @@
-//! A syntax tree's value on one row.
+//! A syntax tree's value in a context.
 
 use crate::{
-    data::Data,
     expr::{
         Error,
         parse::{Binary, Node, Unary},
     },
+    scale::Scale,
+    value::Value,
 };
-use gpui::SharedString;
-
-use crate::value::Value;
 use std::cmp::Ordering;
 
-/// What an expression reads: `datum` is row `index` of `data`, and a bare
-/// name is the param of that name in `params`. A name `params` lacks is
-/// `undefined`.
-///
-/// `index` is below `data.len()` unless `data` has no columns.
-#[derive(Clone, Copy, Debug)]
-pub struct Row<'a> {
-    pub data: &'a Data,
-    pub index: usize,
-    pub params: &'a [(SharedString, Value)],
-}
-
-impl Row<'_> {
-    /// `datum[field]`: a number column's `NaN` is `null`, a missing field
-    /// `undefined`.
-    pub fn field(&self, field: &str) -> Value {
-        match self.data.column(field) {
-            Some(column) => column.value(self.index),
-            None => Value::Undefined,
-        }
-    }
+/// What an expression reads: `datum`, a bare name through `param` (a
+/// signal, or `item` in an encoder), and a scale by name through `scale`.
+#[derive(Clone, Copy)]
+pub struct Context<'a, 's> {
+    pub datum: &'a Value,
+    pub param: &'a dyn Fn(&str) -> Value,
+    pub scale: &'a dyn Fn(&str) -> Option<&'s Scale>,
 }
 
 impl Node {
-    pub(crate) fn eval(&self, row: &Row) -> Result<Value, Error> {
+    pub(crate) fn eval(&self, row: &Context<'_, '_>) -> Result<Value, Error> {
         Ok(match self {
             Self::Literal(value) => value.clone(),
             Self::Array(items) => Value::Array(
@@ -51,17 +35,12 @@ impl Node {
                     .map(|(key, node)| Ok((key.clone(), node.eval(row)?)))
                     .collect::<Result<_, Error>>()?,
             ),
-            Self::Datum => row.data.row(row.index),
-            Self::Param(name) => row
-                .params
-                .iter()
-                .find(|(param, _)| param == name)
-                .map(|(_, value)| value.clone())
-                .unwrap_or_default(),
+            Self::Datum => row.datum.clone(),
+            Self::Param(name) => (row.param)(name),
             Self::Member(object, property) => {
                 let key = property.eval(row)?;
                 match **object {
-                    Self::Datum => row.field(&key.to_string()),
+                    Self::Datum => row.datum.get(&key)?,
                     _ => object.eval(row)?.get(&key)?,
                 }
             }

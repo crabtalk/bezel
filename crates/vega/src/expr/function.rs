@@ -2,7 +2,7 @@
 
 use crate::{
     expr::{
-        Error, Row, array,
+        Context, Error, array,
         date::{self, Field},
         parse::Node,
         string as text,
@@ -91,6 +91,16 @@ pub(crate) enum Function {
     UtcFormat,
     TimeParse,
     UtcParse,
+    Bandspace,
+    Bandwidth,
+    Domain,
+    Range,
+    Scale,
+    /// The encoders' `_scale`, `_bandwidth` and `_range`.
+    EncodeScale,
+    EncodeBandwidth,
+    EncodeRange,
+    Flush,
 }
 
 impl FromStr for Function {
@@ -174,6 +184,15 @@ impl FromStr for Function {
             "utcFormat" => Self::UtcFormat,
             "timeParse" => Self::TimeParse,
             "utcParse" => Self::UtcParse,
+            "bandspace" => Self::Bandspace,
+            "bandwidth" => Self::Bandwidth,
+            "domain" => Self::Domain,
+            "range" => Self::Range,
+            "scale" => Self::Scale,
+            "_scale" => Self::EncodeScale,
+            "_bandwidth" => Self::EncodeBandwidth,
+            "_range" => Self::EncodeRange,
+            "flush" => Self::Flush,
             _ => match name.strip_prefix("utc") {
                 Some(field) => match field.parse()? {
                     Field::Time => return Err(()),
@@ -186,7 +205,7 @@ impl FromStr for Function {
 }
 
 impl Function {
-    pub(crate) fn call(self, args: &[Node], row: &Row) -> Result<Value, Error> {
+    pub(crate) fn call(self, args: &[Node], row: &Context<'_, '_>) -> Result<Value, Error> {
         if let Self::If = self {
             let [test, then, otherwise] = args else {
                 unreachable!("`if` parses with three arguments");
@@ -201,7 +220,57 @@ impl Function {
             .iter()
             .map(|arg| arg.eval(row))
             .collect::<Result<Vec<_>, _>>()?;
-        self.apply(&args)
+        let arg = |i: usize| args.get(i).unwrap_or(&UNDEFINED);
+        let scale = || (row.scale)(&arg(0).to_string());
+        let numbers = |values: Vec<f64>| -> Value {
+            values
+                .into_iter()
+                .map(Value::Number)
+                .collect::<Vec<_>>()
+                .into()
+        };
+        Ok(match self {
+            Self::Bandspace => {
+                let n = |i: usize| match arg(i).to_number() {
+                    n if n.is_nan() => 0.0,
+                    n => n,
+                };
+                Value::Number(d3::scale::Band::space(n(0) as usize, n(1), n(2)))
+            }
+            Self::Bandwidth | Self::EncodeBandwidth => {
+                Value::Number(scale().map_or(0.0, |s| s.bandwidth()))
+            }
+            Self::Domain => scale().map_or_else(|| Vec::new().into(), |s| s.domain().into()),
+            Self::Range | Self::EncodeRange => {
+                scale().map_or_else(|| Vec::new().into(), |s| numbers(s.range()))
+            }
+            Self::Scale | Self::EncodeScale => {
+                scale().map_or(Value::Undefined, |s| s.apply(arg(1)))
+            }
+            Self::Flush => {
+                let threshold = arg(2);
+                let zero = matches!(threshold, Value::Number(n) if *n == 0.0);
+                let range = array::items(arg(0), "flush")?;
+                match (range.first(), range.last()) {
+                    _ if !threshold.truthy() && !zero => arg(5).clone(),
+                    (Some(a), Some(b)) if !matches!(b, Value::Undefined) => {
+                        let (mut a, mut b) = (a.to_number(), b.to_number());
+                        if b < a {
+                            (a, b) = (b, a);
+                        }
+                        let (t, value) = (threshold.to_number(), arg(1).to_number());
+                        let (l, r) = ((value - a).abs(), (b - value).abs());
+                        match () {
+                            _ if l < r && l <= t => arg(3).clone(),
+                            _ if r <= t => arg(4).clone(),
+                            _ => arg(5).clone(),
+                        }
+                    }
+                    _ => arg(5).clone(),
+                }
+            }
+            _ => return self.apply(&args),
+        })
     }
 
     fn apply(self, args: &[Value]) -> Result<Value, Error> {
@@ -371,6 +440,15 @@ impl Function {
                     None => Value::Null,
                 }
             }
+            Self::Bandspace
+            | Self::Bandwidth
+            | Self::Domain
+            | Self::Range
+            | Self::Scale
+            | Self::EncodeScale
+            | Self::EncodeBandwidth
+            | Self::EncodeRange
+            | Self::Flush => unreachable!("read in `call`, with the context"),
         })
     }
 

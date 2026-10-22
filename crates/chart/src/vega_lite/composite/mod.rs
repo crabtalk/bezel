@@ -13,7 +13,6 @@
 
 use crate::{
     model::{Kind, Orient},
-    path::Path,
     transform::{Aggregate, Bin, Measure, Op, TimeUnit, Transform},
     vega_lite::{
         dataflow::{Formula, Step},
@@ -26,6 +25,7 @@ use crate::{
 use gpui::SharedString;
 use serde_json::{Map, Value};
 use std::{fmt, str::FromStr};
+use vega::path::Path;
 
 mod boxplot;
 mod errorband;

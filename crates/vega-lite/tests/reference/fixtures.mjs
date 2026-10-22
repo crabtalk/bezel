@@ -1,4 +1,4 @@
-// Runs each `*.vl.json` spec in ../transform through Vega-Lite and Vega,
+// Runs each `*.vl.json` spec in bezel-chart's tests/transform through Vega-Lite and Vega,
 // and writes the data each mark draws, in mark order, to `<name>.vega.json`,
 // a time as milliseconds since the epoch; and the domain of each of its
 // discrete scales, by scale name, to `<name>.domains.json` where it has one,
@@ -14,7 +14,7 @@ import { join } from 'node:path';
 import { compile } from 'vega-lite';
 import { parse, randomLCG, setRandom, View } from 'vega';
 
-const dir = join(import.meta.dirname, '..', 'transform');
+const dir = join(import.meta.dirname, '..', '..', '..', 'chart', 'tests', 'transform');
 
 // The datasets marks read, in paint order. A faceted group (a line or area
 // split by colour) reads its facet's source.

@@ -4,7 +4,6 @@
 
 use crate::{
     data::Data,
-    expr::{Expr, Row},
     model::{
         Align, Baseline, Cap, Dir, Extent, Interpolate, Invalid, Join, LineBreak, Mark, Orient,
         Overlay, Properties,
@@ -13,9 +12,9 @@ use crate::{
 };
 use gpui::SharedString;
 
-use crate::value::Value as ExprValue;
 use serde_json::{Map, Value, json};
 use std::{fmt, str::FromStr};
+use vega::{expr::Expr, value::Value as ExprValue};
 
 /// Mark properties that are channels' values, and the channel each sets.
 const CHANNELS: [(&str, &str); 25] = [
@@ -329,19 +328,8 @@ fn line_break(value: &Value) -> Option<Option<LineBreak>> {
     match value {
         Value::String(separator) => Some(text(separator)),
         Value::Object(def) if def.len() == 1 => {
-            let row = Row {
-                data: &Data::new(),
-                index: 0,
-                params: &[],
-            };
-            match def
-                .get("expr")?
-                .as_str()?
-                .parse::<Expr>()
-                .ok()?
-                .eval(&row)
-                .ok()?
-            {
+            let expr = def.get("expr")?.as_str()?.parse::<Expr>().ok()?;
+            match Data::new().eval(&expr, 0).ok()? {
                 ExprValue::String(separator) => Some(text(&separator)),
                 ExprValue::RegExp(regexp) => Some(Some(LineBreak::Pattern {
                     source: regexp.source.clone().into(),

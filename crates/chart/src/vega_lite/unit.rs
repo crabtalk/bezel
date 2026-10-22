@@ -6,11 +6,7 @@ use crate::{
     model::{Chart, Domain, Kind, Mark, Range},
     transform::{Bins, Random},
     vega_lite::{
-        encoding::{self, Def},
-        field::{self, Derive},
-        mark,
-        sort::{self, DomainSort},
-        union::Layered,
+        encoding, encoding::Def, field, field::Derive, mark, sort, sort::DomainSort, union::Layered,
     },
 };
 use gpui::SharedString;

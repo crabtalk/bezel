@@ -12,11 +12,14 @@
 use crate::{
     data::Column,
     model::{Channel, Chart, Encode, Layer, Mark, Position, ScaleType, Stack},
+    plan,
     plan::{
-        self, Body, Font, Hit, Hover, Link, Marks, Rect, Series, Slice, Text,
-        domain::{self, Colors, Discrete},
-        look::{self, Groups, Look},
-        scales::{self, Context, Role},
+        Body, Font, Hit, Hover, Link, Marks, Rect, Series, Slice, Text, domain,
+        domain::{Colors, Discrete},
+        look,
+        look::{Groups, Look},
+        scales,
+        scales::{Context, Role},
     },
 };
 use d3::{scale::Band, shape::curve::Curve};

@@ -8,7 +8,8 @@ use crate::{
     model::Orient,
     transform::Op,
     vega_lite::{
-        composite::{self, Extract, Factory, Unit},
+        composite,
+        composite::{Extract, Factory, Unit},
         dataflow::Step,
         encoding, format,
         view::{Body, View},

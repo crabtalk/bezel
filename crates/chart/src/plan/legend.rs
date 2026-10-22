@@ -5,18 +5,23 @@
 //! discretizing one; then where each stands beside the plot.
 
 use crate::{
+    model,
     model::{
-        self, Align, Anchor, Baseline, Channel, Chart, Datum, Encode, Format, GridAlign, Kind,
-        Layer, LegendKind, LegendOrient, Mark, Orient, Overlap, ScaleType, Shape, Side, TickCount,
+        Align, Anchor, Baseline, Channel, Chart, Datum, Encode, Format, GridAlign, Kind, Layer,
+        LegendKind, LegendOrient, Mark, Orient, Overlap, ScaleType, Shape, Side, TickCount,
     },
     plan::{
         Fill, Frame, Glyph, Gradient, Ink, Label, Legend, Paint, Rect, Stroke, Swatch, axis,
         domain::{Colors, Discrete, LayerColor},
-        layout::{self, Layout},
-        look::{self, Amount, Dashes, Shapes},
-        scales::{self, ColorScale, Colored, Role as ScaleRole, Steps},
+        layout,
+        layout::Layout,
+        look,
+        look::{Amount, Dashes, Shapes},
+        scales,
+        scales::{ColorScale, Colored, Role as ScaleRole, Steps},
     },
-    scale::{self, Count, TickFormat},
+    scale,
+    scale::{Count, TickFormat},
     time,
 };
 use d3::scale::{Continuous, Transform};

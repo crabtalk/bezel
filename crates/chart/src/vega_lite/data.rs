@@ -8,14 +8,16 @@
 use crate::{
     data::{Column, Data, Name},
     model::Kind,
-    path::Path,
     time,
-    vega_lite::format::{self, Format, Row},
+    vega_lite::{
+        format,
+        format::{Format, Row},
+    },
 };
 use gpui::SharedString;
 
-use crate::value::Value as JsValue;
 use serde_json::{Map, Number, Value};
+use vega::{path::Path, value::Value as JsValue};
 
 /// What a `data` object may carry.
 const DATA: [&str; 7] = [

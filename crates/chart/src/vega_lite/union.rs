@@ -10,10 +10,7 @@ use crate::{
     data::{Column, Data, Name},
     model::{Chart, Domain, ScaleType, Sort},
     transform::{Op, Random},
-    vega_lite::{
-        encoding::{self, Def},
-        sort::{self, DomainSort},
-    },
+    vega_lite::{encoding, encoding::Def, sort, sort::DomainSort},
 };
 use gpui::SharedString;
 

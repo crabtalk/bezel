@@ -3,10 +3,10 @@
 use crate::{
     data::{Column, Data},
     transform::{Groups, curve},
-    value::Value,
 };
 use d3::format::number;
 use gpui::SharedString;
+use vega::value::Value;
 
 /// A fit of `field` on `on` per group, sampled along `on`: one row per
 /// sample, or with `params` one per group. A group with no more rows than

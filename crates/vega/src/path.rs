@@ -7,7 +7,7 @@ use std::{ops::Deref, str::FromStr};
 
 /// The keys a field name steps through, outermost first.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Path(Vec<String>);
+pub struct Path(Vec<String>);
 
 impl FromStr for Path {
     /// vega-util's message for an unclosed bracket or quote, or a `]` with
@@ -92,28 +92,27 @@ impl Deref for Path {
 impl Path {
     /// The value at the end of the path from `value`, JavaScript's
     /// `value[key]…`.
-    pub(crate) fn get(&self, value: &Value) -> Result<Value, TypeError> {
+    pub fn get(&self, value: &Value) -> Result<Value, TypeError> {
         self.0
             .iter()
             .try_fold(value.clone(), |value, key| value.get(&key.as_str().into()))
     }
 }
 
-#[cfg(feature = "vega-lite")]
 impl Path {
     /// Vega-Lite's `removePathFromField`: the keys joined by `.`.
-    pub(crate) fn flat(&self) -> String {
+    pub fn flat(&self) -> String {
         self.0.join(".")
     }
 
     /// The JSON at the end of the path from `value`. An array takes its key
     /// as an index.
-    pub(crate) fn json<'a>(&self, value: &'a serde_json::Value) -> Option<&'a serde_json::Value> {
+    pub fn json<'a>(&self, value: &'a serde_json::Value) -> Option<&'a serde_json::Value> {
         self.0.iter().try_fold(value, step)
     }
 
     /// The JSON at the end of the path from a JSON object's fields.
-    pub(crate) fn field<'a>(
+    pub fn field<'a>(
         &self,
         row: &'a serde_json::Map<String, serde_json::Value>,
     ) -> Option<&'a serde_json::Value> {
@@ -122,7 +121,6 @@ impl Path {
     }
 }
 
-#[cfg(feature = "vega-lite")]
 fn step<'a>(value: &'a serde_json::Value, key: &String) -> Option<&'a serde_json::Value> {
     match value {
         serde_json::Value::Object(object) => object.get(key),

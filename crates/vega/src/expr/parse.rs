@@ -8,7 +8,6 @@ use d3::{
     format::{number, number::Number},
     string,
 };
-use gpui::SharedString;
 use std::{f64::consts, sync::Arc};
 
 #[derive(Clone, Debug)]
@@ -17,7 +16,7 @@ pub(crate) enum Node {
     Array(Vec<Node>),
     Object(Vec<(Arc<str>, Node)>),
     Datum,
-    Param(SharedString),
+    Param(Arc<str>),
     Member(Box<Node>, Box<Node>),
     Unary(Unary, Box<Node>),
     Binary(Binary, Box<Node>, Box<Node>),

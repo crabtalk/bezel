@@ -1,0 +1,15 @@
+bar
+bar_color_disabled_scale
+bar_conditional_opacity
+bar_config_no_zero
+bar_default_tooltip_title_null
+bar_gantt
+bar_gantt_config_no_zero
+bar_multi_values_per_categories
+bar_negative
+bar_ranged_not_binned
+bar_tooltip
+bar_tooltip_multi
+bar_tooltip_title
+text_tooltip_image
+tick_width_band

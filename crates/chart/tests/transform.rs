@@ -1,18 +1,20 @@
 //! Each `tests/transform/<case>.vl.json` imported and compared with the data
 //! Vega computes for it, `<case>.vega.json`, and with the domains of its
-//! discrete scales, `<case>.domains.json` (see `tests/vega`).
+//! discrete scales, `<case>.domains.json`, written by `bezel-vega-lite`'s
+//! `tests/reference/fixtures.mjs`.
 
 use chart::{
     Chart, Column, Data, Transform,
     model::Side,
-    plan::{self, Metrics},
+    plan,
+    plan::Metrics,
     transform::{Density, Quantile, Random, Regression},
-    value::Value as JsValue,
     vega_lite,
 };
 use d3::format::number::Number as JsNumber;
 use serde_json::{Map, Value};
 use std::{fs, path::Path};
+use vega::value::Value as JsValue;
 
 /// Relative to the larger of 1 and the expected value.
 const TOLERANCE: f64 = 1e-9;

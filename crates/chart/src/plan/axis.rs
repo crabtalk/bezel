@@ -7,16 +7,14 @@
 //! unless its `titleAngle` is written.
 
 use crate::{
+    model,
     model::{
-        self, Align, Anchor, Baseline, Cap, Channel, Datum, Format, Kind, Line, Mark, Overlap,
-        Side, TickBand, TickCount, TickStyle,
+        Align, Anchor, Baseline, Cap, Channel, Datum, Format, Kind, Line, Mark, Overlap, Side,
+        TickBand, TickCount, TickStyle,
     },
-    plan::{
-        Axis, Ink, Label, Paint, Rect, Rule, Stroke,
-        layout::{self, Layout},
-        look,
-    },
-    scale::{self, Count, TickFormat},
+    plan::{Axis, Ink, Label, Paint, Rect, Rule, Stroke, layout, layout::Layout, look},
+    scale,
+    scale::{Count, TickFormat},
 };
 use d3::{
     format::number::Number as JsNumber,

@@ -29,7 +29,7 @@ vega-lite = ["dep:serde_json"]
 serde_json = { workspace = true, optional = true, features = ["preserve_order"] }
 gpui.workspace = true
 d3.workspace = true
-regex.workspace = true
+vega.workspace = true
 # `extra` reads SVG path data, for a symbol drawn from a path.
 lyon = { workspace = true, features = ["extra"] }
 theme.workspace = true
@@ -37,6 +37,8 @@ theme.workspace = true
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
 image.workspace = true
+serde_json.workspace = true
+vega-lite.workspace = true
 
 [[test]]
 name = "vega_lite"
@@ -44,8 +46,4 @@ required-features = ["vega-lite"]
 
 [[test]]
 name = "transform"
-required-features = ["vega-lite"]
-
-[[test]]
-name = "expr"
 required-features = ["vega-lite"]

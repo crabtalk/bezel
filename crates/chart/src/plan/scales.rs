@@ -9,11 +9,7 @@ use crate::{
         Channel, Domain, Format, Kind, Layer, Mark, NamedRange, Nice, Orient, Position, Range,
         Scale, ScaleType, Scheme,
     },
-    plan::{
-        Ink,
-        domain::{self, Discrete},
-        invalid,
-    },
+    plan::{Ink, domain, domain::Discrete, invalid},
     scale::TickFormat,
 };
 use d3::{

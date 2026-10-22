@@ -1,6 +1,6 @@
 use chart::{Channel, Chart, Column, Data, Encode, Kind, Mark, Name};
 
-use chart::value::Value;
+use vega::value::Value;
 
 fn sales() -> Data {
     Data::new()

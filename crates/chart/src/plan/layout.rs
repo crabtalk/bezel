@@ -5,7 +5,8 @@
 
 use crate::{
     model::{Align, Dir, Lettering, Side},
-    plan::{self, Axis, Face, Ink, Label, Metrics, Paint, Rect, look},
+    plan,
+    plan::{Axis, Face, Ink, Label, Metrics, Paint, Rect, look},
 };
 use gpui::{FontStyle, FontWeight, SharedString};
 

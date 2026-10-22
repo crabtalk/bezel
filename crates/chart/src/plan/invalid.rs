@@ -5,10 +5,7 @@
 use crate::{
     data::{Column, Data},
     model::{Chart, Domain, Encode, Invalid, Kind, Layer, ScaleType},
-    plan::{
-        domain::Discrete,
-        scales::{self, Role},
-    },
+    plan::{domain::Discrete, scales, scales::Role},
 };
 use gpui::SharedString;
 use std::borrow::Cow;

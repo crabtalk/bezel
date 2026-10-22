@@ -1,26 +1,50 @@
-use chart::{
-    Column, Data,
-    expr::{Error, Expr, Row},
-    time::{DAY, HOUR, MINUTE, SECOND},
+use d3::time::{date, date::LocalZone};
+use vega::{
+    expr::{Context, Error, Expr},
     value::Value,
 };
-use d3::time::{date, date::LocalZone};
-use gpui::SharedString;
 
-fn data() -> Data {
-    Data::new()
-        .number("x", [1.0, f64::NAN])
-        .text("name", ["Ann", "Bob"])
+const SECOND: f64 = 1000.0;
+const MINUTE: f64 = 60.0 * SECOND;
+const HOUR: f64 = 60.0 * MINUTE;
+const DAY: f64 = 24.0 * HOUR;
+
+fn object(fields: &[(&str, Value)]) -> Value {
+    Value::Object(
+        fields
+            .iter()
+            .map(|(key, value)| ((*key).into(), value.clone()))
+            .collect(),
+    )
 }
 
-fn try_eval(source: &str, index: usize, params: &[(SharedString, Value)]) -> Result<Value, Error> {
-    let data = data();
-    let row = Row {
-        data: &data,
-        index,
-        params,
+/// Two rows: `x` 1 and `null`, `name` "Ann" and "Bob".
+fn rows() -> [Value; 2] {
+    [
+        object(&[("x", 1.0.into()), ("name", "Ann".into())]),
+        object(&[("x", Value::Null), ("name", "Bob".into())]),
+    ]
+}
+
+/// `source` on `datum`, a bare name read from `params`.
+fn eval_on(source: &str, datum: &Value, params: &[(&str, Value)]) -> Result<Value, Error> {
+    let param = |name: &str| {
+        params
+            .iter()
+            .find(|(param, _)| *param == name)
+            .map(|(_, value)| value.clone())
+            .unwrap_or_default()
     };
-    source.parse::<Expr>()?.eval(&row)
+    let context = Context {
+        datum,
+        param: &param,
+        scale: &|_| None,
+    };
+    source.parse::<Expr>()?.eval(&context)
+}
+
+fn try_eval(source: &str, index: usize, params: &[(&str, Value)]) -> Result<Value, Error> {
+    eval_on(source, &rows()[index], params)
 }
 
 fn eval(source: &str) -> Value {
@@ -226,17 +250,11 @@ fn datum_reads_arrays_and_objects_in_values() {
         ]
         .into(),
     );
-    let data = Data::new()
-        .with("info", [info.clone(), Value::Null].into_iter().collect())
-        .number("x", [1.0, 2.0]);
-    let eval = |source: &str, index: usize| {
-        let row = Row {
-            data: &data,
-            index,
-            params: &[],
-        };
-        source.parse::<Expr>().unwrap().eval(&row)
-    };
+    let rows = [
+        object(&[("info", info.clone()), ("x", 1.0.into())]),
+        object(&[("info", Value::Null), ("x", 2.0.into())]),
+    ];
+    let eval = |source: &str, index: usize| eval_on(source, &rows[index], &[]);
     assert_eq!(eval("datum.info", 0), Ok(info.clone()));
     assert_eq!(eval("datum.info.tags[1]", 0), Ok("q".into()));
     assert_eq!(eval("isArray(datum.info.tags)", 0), Ok(true.into()));
@@ -246,14 +264,10 @@ fn datum_reads_arrays_and_objects_in_values() {
         "null has no properties"
     );
     assert_eq!(eval("datum", 0).unwrap().get(&"info".into()), Ok(info));
-    // What an expression makes stays an array or object in a column.
-    let made: Column = (0..data.len())
-        .map(|index| eval("[datum.x, {a: datum.x}]", index).unwrap())
-        .collect();
-    let Column::Value(made) = made else {
-        panic!("arrays are values");
-    };
-    assert_eq!(made[1].to_string(), "2,[object Object]");
+    assert_eq!(
+        eval("[datum.x, {a: datum.x}]", 1).unwrap().to_string(),
+        "2,[object Object]"
+    );
 }
 
 #[test]
@@ -275,10 +289,7 @@ fn datum_reads_the_row() {
 
 #[test]
 fn bare_names_are_params() {
-    let params = [
-        ("width".into(), Value::Number(100.0)),
-        ("label".into(), "w".into()),
-    ];
+    let params = [("width", Value::Number(100.0)), ("label", "w".into())];
     assert_eq!(try_eval("width / 2", 0, &params), Ok(Value::Number(50.0)));
     assert_eq!(try_eval("label + width", 0, &params), Ok("w100".into()));
     assert_eq!(try_eval("height", 0, &params), Ok(Value::Undefined));
@@ -336,7 +347,7 @@ fn parse_errors() {
         "foo(1)".parse::<Expr>().unwrap_err(),
         Error::Function("foo".to_string())
     );
-    for name in ["scale", "data", "indata", "vlSelectionTest"] {
+    for name in ["data", "indata", "vlSelectionTest"] {
         assert_eq!(
             format!("{name}(1)").parse::<Expr>().unwrap_err(),
             Error::Function(name.to_string())

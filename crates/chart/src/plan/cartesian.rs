@@ -2,21 +2,26 @@
 //! over an x and a y axis, either of which may be discrete or missing.
 
 use crate::{
-    data::{self, Column, Data},
+    data,
+    data::{Column, Data},
     decimate,
     model::{
         Align, Baseline, Channel, Chart, Domain, Encode, Extent, Kind, Layer, Mark, Orient,
         Overlay, Position, Properties, ScaleType, Stack,
     },
+    plan,
     plan::{
-        self, Area, Bands, Bar, Body, Font, Hit, Hover, Image, Ink, Link, Marks, Rect, Series,
-        Symbol, Text, Trace, arcs,
-        axis::{self, Scaled, Ticked},
-        domain::{self, Colors, Discrete},
+        Area, Bands, Bar, Body, Font, Hit, Hover, Image, Ink, Link, Marks, Rect, Series, Symbol,
+        Text, Trace, arcs, axis,
+        axis::{Scaled, Ticked},
+        domain,
+        domain::{Colors, Discrete},
         invalid,
         layout::Layout,
-        look::{self, Groups, Look},
-        scales::{self, Context, Role},
+        look,
+        look::{Groups, Look},
+        scales,
+        scales::{Context, Role},
     },
 };
 use d3::{

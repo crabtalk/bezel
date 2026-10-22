@@ -5,8 +5,8 @@ use crate::{
     data::{Column, Name, Text},
     model::{Chart, Domain, Encode, Mark, Range, Scale, ScaleType, Sort},
     plan::{
-        Color, Ink, invalid,
-        scales::{self, ColorScale, Role},
+        Color, Ink, invalid, scales,
+        scales::{ColorScale, Role},
     },
 };
 use d3::format::number::Number as JsNumber;

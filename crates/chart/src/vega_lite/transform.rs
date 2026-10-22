@@ -6,7 +6,7 @@ use crate::{
     transform::{
         Aggregate, Density, Loess, Measure, Method, Op, Quantile, Regression, Resolve, Transform,
     },
-    vega_lite::field::{self, Derive},
+    vega_lite::{field, field::Derive},
 };
 use gpui::SharedString;
 use serde_json::{Map, Value};
