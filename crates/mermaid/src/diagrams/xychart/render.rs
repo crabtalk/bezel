@@ -1,7 +1,7 @@
 //! Pele's `diagrams/xychart/render.ts`.
 
 use crate::geom::{Point, Size};
-use js::{math, number::Number};
+use d3::format::{number, number::Number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
@@ -151,15 +151,15 @@ impl Render for XyChartModel {
         }
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
-        let tiny = math::round(size * 0.75);
+        let small = number::round(size * 0.875);
+        let tiny = number::round(size * 0.75);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let natural = dimension(chart.width, 700.0);
         let width = ctx.cap_width(natural, 240.0, 0.0);
         // A narrower chart is not as much shorter, so that the plot keeps room
         // for its marks.
-        let height = math::round(dimension(chart.height, 500.0) * 0.6f64.max(width / natural));
+        let height = number::round(dimension(chart.height, 500.0) * 0.6f64.max(width / natural));
         let horizontal =
             self.orientation.or(chart.chart_orientation) == Some(Orientation::Horizontal);
         // The value of a bar is always written past its end, which is what
@@ -239,8 +239,8 @@ impl Render for XyChartModel {
                 hi = 0.0;
             }
             if bars > 0 {
-                lo = math::min(lo, 0.0);
-                hi = math::max(hi, 0.0);
+                lo = number::min(lo, 0.0);
+                hi = number::max(hi, 0.0);
             }
             if lo == hi {
                 if lo == 0.0 {
@@ -262,7 +262,7 @@ impl Render for XyChartModel {
                 *hi = tick_value(step, (tick_index(step, *hi) - 1e-9).ceil());
             }
             let (lo, hi) = (*lo, *hi);
-            ticks_between(math::min(lo, hi), math::max(lo, hi), step)
+            ticks_between(number::min(lo, hi), number::max(lo, hi), step)
                 .into_iter()
                 .map(|value| Mark {
                     at: (value - lo) / (hi - lo),
@@ -417,7 +417,7 @@ impl Render for XyChartModel {
                                 10f64.min((length / if horizontal { 32.0 } else { 80.0 }).floor()),
                             ),
                         );
-                        for value in ticks_between(math::min(x0, x1), math::max(x0, x1), step) {
+                        for value in ticks_between(number::min(x0, x1), number::max(x0, x1), step) {
                             marks.push(Mark {
                                 at: inset + ((value - x0) / (x1 - x0)) * (1.0 - 2.0 * inset),
                                 label: text(Some(&Number(value).to_string()), small, 4000.0),
@@ -521,12 +521,12 @@ impl Render for XyChartModel {
         if bottom_labels && legend_space + reach == 0.0 {
             let mut over: f64 = 0.0;
             for mark in &bottom_marks {
-                over = math::max(
+                over = number::max(
                     over,
                     mark.at * plot_width + mark.label.width / 2.0 - plot_width,
                 );
             }
-            plot_width = math::max(1.0, plot_width - over);
+            plot_width = number::max(1.0, plot_width - over);
         }
         let right = left + plot_width;
 
@@ -540,7 +540,7 @@ impl Render for XyChartModel {
             }
         };
         let scale = |value: f64| -> f64 { (value - lo) / (hi - lo) };
-        let clamp = |v: f64| -> f64 { math::min(math::max(v, 0.0), 1.0) };
+        let clamp = |v: f64| -> f64 { number::min(number::max(v, 0.0), 1.0) };
 
         // A line across the plot at a place on the value axis.
         let rule = |v: f64| {
@@ -661,8 +661,8 @@ impl Render for XyChartModel {
                     };
                     let c = place(i, n);
                     let v = clamp(scale(value));
-                    let from = math::min(base, v);
-                    let to = math::max(base, v);
+                    let from = number::min(base, v);
+                    let to = number::max(base, v);
                     let (corner, size) = if horizontal {
                         (
                             Point::new(at(c, from).x, at(c, 0.0).y + offset),
@@ -758,8 +758,8 @@ impl Render for XyChartModel {
                     if dv != 0.0 {
                         let a = -pv / dv;
                         let b = (1.0 - pv) / dv;
-                        t0 = math::max(t0, math::min(a, b));
-                        t1 = math::min(t1, math::max(a, b));
+                        t0 = number::max(t0, number::min(a, b));
+                        t1 = number::min(t1, number::max(a, b));
                     } else if !visible {
                         t0 = 2.0;
                     }
@@ -804,7 +804,7 @@ impl Render for XyChartModel {
                     } else {
                         (
                             Point::new(
-                                math::max(math::min(center.x, right - half), left + half),
+                                number::max(number::min(center.x, right - half), left + half),
                                 center.y - 6.0 - label.height / 2.0,
                             ),
                             Anchor::Middle,

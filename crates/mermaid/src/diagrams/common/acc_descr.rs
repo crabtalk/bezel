@@ -2,7 +2,10 @@
 //! `accDescr {` that never closes, because `accDescr` is also a name there.
 //! Pele's `diagrams/common/accDescr.ts`.
 
-use crate::diagrams::common::tokens::{self, Heading, Scanner, TokenType};
+use crate::diagrams::common::{
+    tokens,
+    tokens::{Heading, Scanner, TokenType},
+};
 
 /// The braced form scans for its closing brace. Once none is found there is
 /// none further on, so later braced descriptions fail without scanning the

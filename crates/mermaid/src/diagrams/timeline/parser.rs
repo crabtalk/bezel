@@ -6,9 +6,9 @@ use crate::{
     detect::Kind,
     diagrams::common::scan::T,
     geom::Direction,
-    string,
     token::{Stream, after_keyword},
 };
+use d3::string;
 
 const STATEMENT: &str = "'EOF', 'SPACE', 'NEWLINE', 'title', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'section', 'period', 'event'";
 

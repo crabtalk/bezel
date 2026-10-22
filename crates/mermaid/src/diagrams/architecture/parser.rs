@@ -1,6 +1,7 @@
 //! Pele's `diagrams/architecture/parser.ts`.
 
-use crate::{string, util::chars::inner};
+use crate::util::chars::inner;
+use d3::string;
 use serde::Serialize;
 
 use crate::{

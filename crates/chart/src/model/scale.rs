@@ -6,8 +6,8 @@ use crate::{
     model::{Position, Shape},
     transform::Bins,
 };
+use d3::{color::Rgb, interpolate, scheme, time};
 use gpui::{Hsla, SharedString};
-use js::{color::Rgb, interpolate, scheme, time};
 use std::{str::FromStr, sync::Arc};
 
 #[derive(Clone, Debug, Default, PartialEq)]

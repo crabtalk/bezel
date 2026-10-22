@@ -15,8 +15,10 @@ use crate::{
         format, guide,
     },
 };
+use d3::{
+    format::number::Number as JsNumber, interpolate::Interpolate, scheme as palette, time::Unit,
+};
 use gpui::{FontStyle, FontWeight, Hsla, SharedString};
-use js::{interpolate::Interpolate, number::Number as JsNumber, scheme as palette, time::Unit};
 use serde_json::{Map, Value};
 use std::{fmt, str::FromStr};
 

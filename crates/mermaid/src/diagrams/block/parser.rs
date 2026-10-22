@@ -5,8 +5,8 @@ use super::{
     tokens::T,
     types::{Block, BlockKind, BlockModel, Columns, EdgeLine, Statement},
 };
-use crate::{Error, detect::Kind, string, token::Stream};
-use js::number;
+use crate::{Error, detect::Kind, token::Stream};
+use d3::{format::number, string};
 
 const STATEMENT_START: &str = "'NODE_ID', 'COLUMNS', 'SPACE_BLOCK', 'BLOCK_DIAGRAM_KEY', 'id-block', 'classDef', 'class', 'style'";
 

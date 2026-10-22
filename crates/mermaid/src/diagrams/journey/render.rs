@@ -1,7 +1,10 @@
 //! Pele's `diagrams/journey/render.ts`.
 
-use crate::{geom::Point, string, svg::builder::EscText};
-use js::{math, number::Number};
+use crate::{geom::Point, svg::builder::EscText};
+use d3::{
+    format::{number, number::Number},
+    string,
+};
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
@@ -124,8 +127,8 @@ impl JourneyModel {
 
     fn draw(&self, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
-        let tiny = math::round(size * 0.75);
+        let small = number::round(size * 0.875);
+        let tiny = number::round(size * 0.75);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let p = crate::PREFIX;
@@ -162,7 +165,7 @@ impl JourneyModel {
         let pitch = card_w + GAP;
         let plot_w = if n > 0 { n as f64 * pitch - GAP } else { 0.0 };
 
-        let line_h = math::round(small * 1.5);
+        let line_h = number::round(small * 1.5);
         let limit = plot_w.max(240.0);
         let mut legend: Vec<LegendItem> = Vec::new();
         let mut legend_w: f64 = 0.0;
@@ -438,7 +441,7 @@ impl JourneyModel {
     /// The journey as a column of steps.
     fn draw_down(&self, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
+        let small = number::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let p = crate::PREFIX;

@@ -2,9 +2,8 @@
 //! heavy variants) into the indentation the grammar reads. Pele's
 //! `diagrams/treeview/boxDrawing.ts`.
 
-use crate::{string, util::chars};
+use d3::{format::number, string};
 use indexmap::IndexMap;
-use js::number;
 use regex::{Captures, Regex};
 use std::sync::LazyLock;
 
@@ -34,13 +33,13 @@ fn is_box(c: char) -> bool {
 
 /// A line of nothing but whitespace and rails.
 fn is_decoration(line: &str) -> bool {
-    !line.is_empty() && line.chars().all(|c| chars::is_space(c) || is_rail(c))
+    !line.is_empty() && line.chars().all(|c| string::is_space(c) || is_rail(c))
 }
 
 static RE_LINE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
         r"(?-u:\b)(?i-u:line)[{}]+([0-9]+)(?-u:\b)",
-        chars::SPACE
+        string::SPACE
     ))
     .expect("pattern")
 });
@@ -167,14 +166,14 @@ pub fn preprocess_box_drawing(input: &str) -> Result<PreprocessResult, Error> {
             }
             keep(INDENT_UNIT.repeat(depth) + content, i, &mut line_map);
         } else if !normalized.is_empty()
-            && normalized.chars().all(|c| chars::is_space(c) || is_box(c))
+            && normalized.chars().all(|c| string::is_space(c) || is_box(c))
         {
             continue;
         } else if normalized.contains(is_box) {
             // A name that happens to contain a box character, such as
             // "Section ─ A.txt", is a root item.
             keep(line.to_string(), i, &mut line_map);
-        } else if normalized.starts_with(chars::is_space) {
+        } else if normalized.starts_with(string::is_space) {
             return Err(fail(
                 i + 1,
                 "Unexpected indentation without box-drawing characters. In box-drawing format, use ├── or └── prefixes for indented nodes.",

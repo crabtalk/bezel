@@ -1,7 +1,7 @@
 //! Pele's `diagrams/state/render.ts`.
 
 use crate::svg::builder::rect;
-use js::{math, number};
+use d3::format::number;
 use std::{
     cmp::Ordering,
     collections::HashMap,
@@ -334,7 +334,7 @@ impl<'a> Scene<'a> {
             if (delta.abs() - extent / 2.0).abs() >= 0.5 {
                 continue;
             }
-            *end.along_mut(axis) -= (math::sign(delta) * (extent - drawn_extent)) / 2.0;
+            *end.along_mut(axis) -= (number::sign(delta) * (extent - drawn_extent)) / 2.0;
             if bar && breadth > drawn_extent {
                 *end.along_mut(across) = other
                     .along(across)
@@ -351,7 +351,7 @@ impl StateModel {
         let p = crate::PREFIX;
         let graph = &self.graph;
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
+        let small = number::round(size * 0.875);
         let measure = ctx.host;
         let wrap_width = positive(config.wrapping_width, 200.0);
         let pad = ctx.options.padding.unwrap_or(8.0);
@@ -895,7 +895,7 @@ impl StateModel {
                             .min(8.0 + k * 6.0)
                             .max(2.0);
                         let reach = LOOP + k * 8.0;
-                        let trim = Marker::trim_of(end_marker) / math::hypot(&[reach, spread]);
+                        let trim = Marker::trim_of(end_marker) / number::hypot(&[reach, spread]);
                         // Offsets are given for a loop on the right and turned
                         // a quarter for one below.
                         let Point { x: ax, y: ay } = a.center;
@@ -918,7 +918,7 @@ impl StateModel {
                                 py(-reach, -spread) - py(0.0, 0.0),
                             ),
                         };
-                        let len = number::or(math::hypot(&[lp.end_dir.x, lp.end_dir.y]), 1.0);
+                        let len = number::or(number::hypot(&[lp.end_dir.x, lp.end_dir.y]), 1.0);
                         lp.end_dir.x /= len;
                         lp.end_dir.y /= len;
                         path = lp;

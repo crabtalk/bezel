@@ -1,7 +1,8 @@
 //! The graph flowchart and agentflow build, and the operations their shared
 //! productions perform on it.
 
-use crate::{json::JsValue, string};
+use crate::json::JsValue;
+use d3::string;
 use indexmap::{IndexMap, IndexSet};
 use serde::Serialize;
 

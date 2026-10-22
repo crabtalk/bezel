@@ -1,8 +1,11 @@
 //! The colours, fonts and user styles of a drawing, as CSS. Pele's
 //! `svg/theme.ts`, with `--bezel-*` for `--pele-*`.
 
-use crate::{string, svg::builder::Esc, util::chars};
-use js::number::{self, Number};
+use crate::svg::builder::Esc;
+use d3::{
+    format::{number, number::Number},
+    string,
+};
 use regex::Regex;
 use std::{borrow::Cow, collections::HashSet, fmt::Write as _, sync::LazyLock};
 
@@ -56,13 +59,13 @@ const TEXT_PROPS: [&str; 9] = [
 /// A list of font names, quoted or not, and nothing that could end the
 /// declaration it is put in.
 static RE_FAMILIES: LazyLock<Regex> = LazyLock::new(|| {
-    let s = format!("[{}]", chars::SPACE);
+    let s = format!("[{}]", string::SPACE);
     let family =
         r#"(?:"[^"'\\\n<>{}();:@]*"|'[^"'\\\n<>{}();:@]*'|[\p{L}\p{N}_-][\p{L}\p{N}_ .-]*)"#;
     Regex::new(&format!("^{s}*{family}(?:{s}*,{s}*{family})*{s}*$")).expect("pattern")
 });
 static RE_UNSAFE: LazyLock<Regex> = LazyLock::new(|| {
-    let s = format!("[{}]", chars::SPACE);
+    let s = format!("[{}]", string::SPACE);
     Regex::new(&format!(
         r"(?i-u:url){s}*\(|(?i-u:expression){s}*\(|(?i-u:javascript):|[<>{{}};\\]|@(?i-u:import)|(?i-u:image-set)|/\*"
     ))
@@ -449,7 +452,7 @@ pub fn resolve_style_over(base: &[String], over: &[String]) -> ResolvedStyle {
 /// start with.
 pub fn node_class_names(raw: &str) -> String {
     let rest = raw.strip_prefix("default").map_or(raw, |rest| {
-        rest.strip_prefix(chars::is_space).unwrap_or(rest)
+        rest.strip_prefix(string::is_space).unwrap_or(rest)
     });
     class_names(rest)
 }

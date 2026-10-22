@@ -1,8 +1,8 @@
 //! Pele's `diagrams/c4/db.ts`.
 
-use crate::{diagrams::common::db::Titles, json::JsonNumber, string};
+use crate::{diagrams::common::db::Titles, json::JsonNumber};
+use d3::{format::number, string};
 use indexmap::IndexMap;
-use js::number;
 use serde::{
     Serialize, Serializer,
     ser::{Error as _, SerializeMap},

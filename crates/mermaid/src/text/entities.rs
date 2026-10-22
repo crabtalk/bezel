@@ -7,7 +7,7 @@ use std::{
     sync::{LazyLock, OnceLock},
 };
 
-use js::number::{self, Number};
+use d3::format::{number, number::Number};
 
 /// Every entity name Pele reads, with its code point.
 const NAMED: &str = concat!(

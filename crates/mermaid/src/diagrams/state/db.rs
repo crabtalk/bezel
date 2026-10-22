@@ -3,7 +3,7 @@
 //! `stateDiagram-v2`. The legacy version, which numbers `[*]` states, is not
 //! ported.
 
-use crate::string;
+use d3::string;
 use indexmap::IndexMap;
 
 use super::{

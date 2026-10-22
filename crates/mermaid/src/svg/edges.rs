@@ -1,7 +1,7 @@
 //! Edges: the path of a route, its markers, its label, and loops. Pele's
 //! `svg/edges.ts`.
 
-use js::{math, number};
+use d3::format::number;
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
@@ -270,14 +270,14 @@ pub fn route_path(
         let (a, b) = (pts[i].at, pts[j].at);
         if !straight(pts, i.max(j)) {
             return if axis == Axis::Y {
-                Point::new(0.0, number::or(math::sign(b.y - a.y), 1.0))
+                Point::new(0.0, number::or(number::sign(b.y - a.y), 1.0))
             } else {
-                Point::new(number::or(math::sign(b.x - a.x), 1.0), 0.0)
+                Point::new(number::or(number::sign(b.x - a.x), 1.0), 0.0)
             };
         }
         let dx = b.x - a.x;
         let dy = b.y - a.y;
-        let len = number::or(math::hypot(&[dx, dy]), 1.0);
+        let len = number::or(number::hypot(&[dx, dy]), 1.0);
         Point::new(dx / len, dy / len)
     };
     let start_dir = unit(&pts, 0, 1, pts[1].axis);
@@ -356,9 +356,9 @@ pub fn route_path(
             let along = if down { p.y - at.y } else { p.x - at.x };
             let k = along.abs() * ease(if down { p.x - at.x } else { p.y - at.y }, along);
             let u = if down {
-                Point::new(0.0, math::sign(along) * k)
+                Point::new(0.0, number::sign(along) * k)
             } else {
-                Point::new(math::sign(along) * k, 0.0)
+                Point::new(number::sign(along) * k, 0.0)
             };
             let _ = write!(d, "C{} {} {}", at + u, p - u, p);
             at = p;
@@ -463,7 +463,7 @@ pub fn loop_path(
     let half = (if sideways { w } else { h }) / 2.0;
     let spread = (half - 4.0).min(8.0 + k * 6.0);
     let reach = base + k * 8.0;
-    let len = number::or(math::hypot(&[reach, spread]), 1.0);
+    let len = number::or(number::hypot(&[reach, spread]), 1.0);
     // Local frame: `out` points away from the node, `along` runs along its
     // side.
     let at = |out: f64, along: f64| {

@@ -1,11 +1,15 @@
 //! Pele's `diagrams/gantt/db.ts`.
 
-use crate::{diagrams::common::db::Titles, json::JsonNumber, string, util::chars};
-use indexmap::{IndexMap, IndexSet};
-use js::{
-    date::{self, Date, LocalZone},
-    number::{self, Number},
+use crate::{diagrams::common::db::Titles, json::JsonNumber};
+use d3::{
+    format::{number, number::Number},
+    string,
+    time::{
+        date,
+        date::{Date, LocalZone},
+    },
 };
+use indexmap::{IndexMap, IndexSet};
 use regex::Regex;
 use serde::{Serialize, Serializer, ser::SerializeStruct};
 use std::sync::LazyLock;
@@ -29,20 +33,20 @@ static RE_NUMERIC_FORMAT: LazyLock<Regex> =
 static RE_TAG: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
         r"^[{s}]*(active|done|crit|milestone|vert)[{s}]*$",
-        s = chars::SPACE
+        s = string::SPACE
     ))
     .expect("pattern")
 });
 static RE_AFTER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(r"^after[{}]+([0-9A-Z_a-z -]+)", chars::SPACE)).expect("pattern")
+    Regex::new(&format!(r"^after[{}]+([0-9A-Z_a-z -]+)", string::SPACE)).expect("pattern")
 });
 static RE_UNTIL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(r"^until[{}]+([0-9A-Z_a-z -]+)", chars::SPACE)).expect("pattern")
+    Regex::new(&format!(r"^until[{}]+([0-9A-Z_a-z -]+)", string::SPACE)).expect("pattern")
 });
 static RE_DURATION: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([0-9]+(?:\.[0-9]+)?)([Mdhmswy]|ms)$").expect("pattern"));
 static RE_TOKEN_SPLIT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(&format!("[{},]+", chars::SPACE)).expect("pattern"));
+    LazyLock::new(|| Regex::new(&format!("[{},]+", string::SPACE)).expect("pattern"));
 
 /// The one place the current time is read.
 pub fn clock(now: Option<f64>) -> f64 {

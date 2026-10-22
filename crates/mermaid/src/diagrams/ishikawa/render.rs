@@ -16,7 +16,7 @@ use crate::{
     },
     text::{Host, Label, Style},
 };
-use js::{math, number::Number};
+use d3::format::{number, number::Number};
 use std::fmt::Write as _;
 
 /// How far a bone moves toward the tail for each unit it rises from the
@@ -93,7 +93,7 @@ impl Category {
         small: f64,
     ) -> Self {
         let label = Label::layout(Some(&nodes.get(node).text), false, measure, size, 180.0, 0);
-        let line_height = math::round(small * 1.5);
+        let line_height = number::round(small * 1.5);
         let mut bones: Vec<Bone> = Vec::new();
         let mut rows: Vec<usize> = Vec::new();
         let mut stack: Vec<Frame> = Vec::new();
@@ -197,7 +197,7 @@ impl Render for IshikawaDb {
 impl IshikawaDb {
     fn draw_fishbone(&self, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
+        let small = number::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let p = crate::PREFIX;
@@ -441,7 +441,7 @@ impl IshikawaDb {
     /// The outline drawn as an indented list, for a drawing turned to fit.
     fn draw_outline(&self, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
+        let small = number::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let p = crate::PREFIX;

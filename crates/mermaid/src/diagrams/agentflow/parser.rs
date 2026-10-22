@@ -14,8 +14,8 @@ use crate::{
         tokens::T,
     },
     error::Error,
-    util::chars,
 };
+use d3::string;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -57,7 +57,7 @@ static DIALECT: Dialect = Dialect {
 /// Mermaid trims spaces and tabs between a closing brace and the end of its
 /// line before parsing.
 static RE_BRACE_TRAIL: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(&format!(r"\}}[{}--\n]*\n", chars::SPACE)).expect("pattern"));
+    LazyLock::new(|| Regex::new(&format!(r"\}}[{}--\n]*\n", string::SPACE)).expect("pattern"));
 
 struct Frame {
     global: bool,

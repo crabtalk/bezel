@@ -1,7 +1,7 @@
-//! Colours between bezel-js's d3-color and gpui.
+//! Colours between bezel-d3's d3-color and gpui.
 
+use d3::color::Rgb;
 use gpui::{Hsla, Rgba};
-use js::color::Rgb;
 
 /// `rgb` as gpui paints it, its channels held in range. A colour with no
 /// channels or opacity, as `transparent` has none, is transparent.

@@ -1,16 +1,18 @@
 //! The built-in functions, by Vega's names.
 
-use crate::expr::{
-    Error, Row, array,
-    date::{self, Field},
-    parse::Node,
-    string as text,
+use crate::{
+    expr::{
+        Error, Row, array,
+        date::{self, Field},
+        parse::Node,
+        string as text,
+    },
+    value::{Value, regexp::RegExp},
 };
-use js::{
-    date::{Date, LocalZone},
-    format::{InvalidSpecifier, NumberFormat},
-    math, number, string,
-    value::{RegExp, Value},
+use d3::{
+    format::{InvalidSpecifier, NumberFormat, number},
+    string,
+    time::date::{Date, LocalZone},
 };
 use std::{
     collections::hash_map::RandomState,
@@ -121,7 +123,7 @@ impl FromStr for Function {
             "exp" => Self::Math(f64::exp),
             "floor" => Self::Math(f64::floor),
             "log" => Self::Math(f64::ln),
-            "round" => Self::Math(math::round),
+            "round" => Self::Math(number::round),
             "sin" => Self::Math(f64::sin),
             "sqrt" => Self::Math(f64::sqrt),
             "tan" => Self::Math(f64::tan),
@@ -238,21 +240,21 @@ impl Function {
             Self::IsFinite => number(0).is_finite().into(),
             Self::Math(f) => Value::Number(f(number(0))),
             Self::Atan2 => Value::Number(number(0).atan2(number(1))),
-            Self::Clamp => Value::Number(math::max(number(1), math::min(number(2), number(0)))),
-            Self::Hypot => Value::Number(math::hypot(
+            Self::Clamp => Value::Number(number::max(number(1), number::min(number(2), number(0)))),
+            Self::Hypot => Value::Number(number::hypot(
                 &args.iter().map(Value::to_number).collect::<Vec<_>>(),
             )),
             Self::Max => Value::Number(
                 args.iter()
                     .map(Value::to_number)
-                    .fold(f64::NEG_INFINITY, math::max),
+                    .fold(f64::NEG_INFINITY, number::max),
             ),
             Self::Min => Value::Number(
                 args.iter()
                     .map(Value::to_number)
-                    .fold(f64::INFINITY, math::min),
+                    .fold(f64::INFINITY, number::min),
             ),
-            Self::Pow => Value::Number(math::pow(number(0), number(1))),
+            Self::Pow => Value::Number(number::pow(number(0), number(1))),
             // Uniform in `[0, 1)`. Not for cryptography.
             Self::Random => {
                 let bits = RandomState::new().build_hasher().finish();
@@ -349,7 +351,7 @@ impl Function {
                     Value::RegExp(regexp) => regexp.clone(),
                     _ => RegExp::new(&a.to_string(), "")?.into(),
                 };
-                regexp.regex.test(&b.to_string()).into()
+                regexp.test(&b.to_string()).into()
             }
             Self::Format => {
                 let specifier = b.to_string();

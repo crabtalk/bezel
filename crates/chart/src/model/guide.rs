@@ -3,12 +3,11 @@
 //! channel, field type and mark.
 
 use crate::model::{Align, Baseline, Cap, Datum, Orient, Shape};
-use gpui::{FontStyle, FontWeight, Hsla, SharedString};
-use js::{
-    date::LocalZone,
+use d3::{
     format::{NumberFormat, Specifier},
-    time::Unit,
+    time::{Unit, date::LocalZone},
 };
+use gpui::{FontStyle, FontWeight, Hsla, SharedString};
 use std::{fmt, sync::Arc};
 
 /// A side of the plot.

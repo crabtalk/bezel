@@ -9,7 +9,8 @@ use super::{
     db::IshikawaDb,
     lexer::{T, tokenize},
 };
-use crate::{detect::Kind, error::Error, string, token::Stream};
+use crate::{detect::Kind, error::Error, token::Stream};
+use d3::string;
 
 const STOP: &str = "'SPACELINE', 'NL', 'EOF'";
 const STOPS: [T; 3] = [T::Spaceline, T::Nl, T::Eof];

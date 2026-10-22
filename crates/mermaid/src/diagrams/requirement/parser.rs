@@ -6,7 +6,8 @@ use super::{
     tokens::T,
     types::{Relationship, RequirementType, Risk, VerifyMethod},
 };
-use crate::{detect::Kind, error::Error, geom::Direction, string, token::Stream};
+use crate::{detect::Kind, error::Error, geom::Direction, token::Stream};
+use d3::string;
 
 const REQUIREMENT_TYPES: [(T, RequirementType); 6] = [
     (T::Requirement, RequirementType::Requirement),

@@ -1,7 +1,7 @@
 //! Pele's `diagrams/flowchart/render.ts`.
 
 use crate::svg::theme::node_class_names;
-use js::{math, number::Number};
+use d3::format::{number, number::Number};
 use std::{borrow::Cow, collections::HashMap, fmt::Write as _};
 
 use super::{
@@ -259,7 +259,7 @@ impl<H: Host> FlowRenderer<'_, H> {
             variant.prepare(&mut graph);
         }
         let size = ctx.options.font_size;
-        let edge_size = math::round(size * 0.875);
+        let edge_size = number::round(size * 0.875);
         let measure = ctx.host;
         let wrap_width = positive(flow.wrapping_width, 200.0).min(if variant.is_some() && tight {
             100.0

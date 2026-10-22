@@ -3,8 +3,9 @@
 use super::tokens::T;
 use crate::{
     token::{Acc, Cursor, Token},
-    util::{chars, chars::digits_end},
+    util::chars::digits_end,
 };
+use d3::string;
 
 /// Jison's start conditions.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -31,7 +32,7 @@ const DIRECTIONS: [&str; 6] = ["right", "left", "x", "y", "up", "down"];
 
 /// Whether `c` ends a node id: ( ) [ { } < > - : = and whitespace.
 fn ends_id(c: char) -> bool {
-    matches!(c, '(' | ')' | '[' | '{' | '}' | '<' | '>' | '-' | ':' | '=') || chars::is_space(c)
+    matches!(c, '(' | ')' | '[' | '{' | '}' | '<' | '>' | '-' | ':' | '=') || string::is_space(c)
 }
 
 struct Lexer<'s> {
@@ -152,13 +153,13 @@ impl<'s> Lexer<'s> {
 
     /// Whether the character at `at` is not a word character.
     fn boundary(&self, at: usize) -> bool {
-        !self.cur.char_at(at).is_some_and(chars::is_word)
+        !self.cur.char_at(at).is_some_and(string::is_word)
     }
 
     fn initial(&mut self, c: char) -> bool {
         let src = self.cur.src;
         let p = self.cur.p;
-        if chars::is_space(c) {
+        if string::is_space(c) {
             self.cur.p = self.cur.space_end(p);
             return true;
         }

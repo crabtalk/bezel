@@ -2,7 +2,8 @@
 //! it, and the `parse` applied to them.
 
 use crate::{path::Path, time, vega_lite::dsv};
-use js::value::Value as JsValue;
+
+use crate::value::Value as JsValue;
 use serde_json::{Map, Number, Value};
 use std::str::FromStr;
 

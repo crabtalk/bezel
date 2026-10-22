@@ -17,10 +17,9 @@ use super::{
 use crate::{
     detect::Kind,
     error::Error,
-    string,
     token::{Stream, after_keyword},
 };
-use js::number::Number;
+use d3::{format::number::Number, string};
 
 const SIGNAL_TOKENS: &str = "'SOLID_OPEN_ARROW', 'DOTTED_OPEN_ARROW', 'SOLID_ARROW', 'DOTTED_ARROW', 'SOLID_CROSS', 'DOTTED_CROSS', 'SOLID_POINT', 'DOTTED_POINT'";
 

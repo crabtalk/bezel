@@ -1,7 +1,7 @@
 //! Pele's `diagrams/agentflow/lexer.ts`. Positions are byte offsets; the
 //! columns in `locs` count UTF-16 units, as Jison does.
 
-use crate::{string, util::chars};
+use d3::string;
 use std::borrow::Cow;
 
 use super::types::Loc;
@@ -262,7 +262,7 @@ impl<'s> Lexer<'s> {
                 self.emit(T::Comment, end);
                 return true;
             }
-            Some(c) if chars::is_space(c) => {
+            Some(c) if string::is_space(c) => {
                 if self.link() {
                     return true;
                 }
@@ -316,7 +316,7 @@ impl<'s> Lexer<'s> {
         while let Some(ch) = self.at(q) {
             if ch == '"'
                 || (ch == '-' && self.at(q + 1) == Some('-'))
-                || (chars::is_space(ch) && self.arrow_end(q).is_some())
+                || (string::is_space(ch) && self.arrow_end(q).is_some())
             {
                 break;
             }

@@ -4,8 +4,8 @@ use crate::{
     data::Data,
     transform::{Groups, curve},
 };
+use d3::array;
 use gpui::SharedString;
-use js::array;
 use std::f64::consts::PI;
 
 /// A smoothed density of `field`'s values per group, sampled along their

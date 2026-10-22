@@ -32,7 +32,7 @@
 //! 8. The drawing stays compact. A gap between ranks grows only to hold the
 //!    levels in it, or to let curves that cross do so at a clear angle.
 
-use js::{math, number};
+use d3::format::number;
 use std::{
     collections::{HashMap, HashSet},
     ops::Range,
@@ -2921,7 +2921,7 @@ fn reach(points: &[Point; SAMPLES + 1], line: &[Point; SAMPLES + 1]) -> f64 {
             let length = dx * dx + dy * dy;
             let length = number::or(length, 1.0);
             let t = 0f64.max(1f64.min(((p.x - a.x) * dx + (p.y - a.y) * dy) / length));
-            let d = math::hypot(&[p.x - a.x - t * dx, p.y - a.y - t * dy]);
+            let d = number::hypot(&[p.x - a.x - t * dx, p.y - a.y - t * dy]);
             if d < least {
                 least = d;
             }

@@ -1,6 +1,6 @@
 //! Why a diagram did not draw.
 
-use crate::string;
+use d3::string;
 use std::fmt;
 
 use serde::Serialize;

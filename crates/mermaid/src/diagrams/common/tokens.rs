@@ -2,10 +2,11 @@
 //! Token types are tried in order and the first match wins, as in
 //! Chevrotain. Pele's `diagrams/common/tokens.ts`.
 
-use crate::{
-    string,
-    util::chars::{self, char_at, digits_end},
+use crate::util::{
+    chars,
+    chars::{char_at, digits_end},
 };
+use d3::string;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -307,7 +308,7 @@ fn fence_end(src: &str, at: usize) -> Option<usize> {
     } else {
         rest.chars()
             .next()
-            .is_none_or(chars::is_space)
+            .is_none_or(string::is_space)
             .then_some(at)
     }
 }
@@ -448,7 +449,7 @@ pub fn keyword<K>(word: &'static str) -> TokenType<K> {
 fn keyword_end(src: &str, p: usize, word: &str) -> Option<usize> {
     let end = p + src[p..].starts_with(word).then_some(word.len())?;
     let rest = &src[end..];
-    (rest.starts_with("%%") || rest.chars().next().is_none_or(chars::is_space)).then_some(end)
+    (rest.starts_with("%%") || rest.chars().next().is_none_or(string::is_space)).then_some(end)
 }
 
 /// Mermaid's `INT`, `0|[1-9][0-9]*(?!\.)`: a run of digits not followed by
@@ -517,7 +518,7 @@ pub fn decimal(signed: bool, lone_zero: bool) -> Scanner {
 static RE_ACC_DESCR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
         r"accDescr(?:[\t ]*:([^\n\r]*)|[{}]*\{{([^}}]*)\}})",
-        chars::SPACE
+        string::SPACE
     ))
     .expect("pattern")
 });
@@ -567,13 +568,13 @@ fn without_leading_space(text: &str) -> String {
     let mut rest = text.chars().peekable();
     while let Some(&c) = rest.peek() {
         if line_start {
-            while rest.next_if(|&c| chars::is_space(c)).is_some() {}
+            while rest.next_if(|&c| string::is_space(c)).is_some() {}
             line_start = false;
             continue;
         }
         rest.next();
         out.push(c);
-        line_start = chars::is_line_end(c);
+        line_start = string::is_line_end(c);
     }
     out
 }
@@ -584,7 +585,7 @@ fn without_trailing_space(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut at = 0;
     while let Some(c) = text[at..].chars().next() {
-        if !chars::is_space(c) {
+        if !string::is_space(c) {
             out.push(c);
             at += c.len_utf8();
             continue;
@@ -594,7 +595,7 @@ fn without_trailing_space(text: &str) -> String {
             Some(run)
         } else {
             text[at + c.len_utf8()..run]
-                .rfind(|c: char| chars::is_line_end(c))
+                .rfind(|c: char| string::is_line_end(c))
                 .map(|end| at + c.len_utf8() + end)
         };
         match cut {

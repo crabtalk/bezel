@@ -1,6 +1,6 @@
 //! Pele's `diagrams/venn/layout.ts`.
 
-use crate::string;
+use d3::string;
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},

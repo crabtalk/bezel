@@ -3,9 +3,10 @@
 use crate::{
     data::{Column, Data},
     transform::{Groups, curve},
+    value::Value,
 };
+use d3::format::number;
 use gpui::SharedString;
-use js::{math, value::Value};
 
 /// A fit of `field` on `on` per group, sampled along `on`: one row per
 /// sample, or with `params` one per group. A group with no more rows than
@@ -211,7 +212,7 @@ impl Fit {
                     out[i] += v;
                     for j in 1..=i {
                         c *= (i + 1 - j) as f64 / j as f64;
-                        out[i - j] += v * math::pow(-ux, j as f64) * c;
+                        out[i - j] += v * number::pow(-ux, j as f64) * c;
                     }
                 }
                 out[0] += uy;

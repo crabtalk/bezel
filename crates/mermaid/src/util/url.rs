@@ -1,8 +1,8 @@
 //! The URLs a diagram links to and shows images from. Pele's `util/url.ts`,
 //! after `@braintree/sanitize-url`, which Mermaid applies to click targets.
 
-use crate::{string, util::chars};
-use js::number::Number;
+use crate::util::chars;
+use d3::{format::number::Number, string};
 use regex::{Captures, Regex};
 use std::{fmt, sync::LazyLock};
 
@@ -35,7 +35,7 @@ static RE_SCHEME_NAME: LazyLock<Regex> =
 /// line that has one, through its last `:` or `&colon;` after the line's
 /// first character.
 fn scheme(text: &str) -> Option<&str> {
-    text.split(chars::is_line_end).find_map(|line| {
+    text.split(string::is_line_end).find_map(|line| {
         (1..line.len())
             .rev()
             .filter(|&at| line.is_char_boundary(at))

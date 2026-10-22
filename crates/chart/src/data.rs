@@ -4,9 +4,10 @@ use crate::{
     path::Path,
     time,
     transform::{Random, Transform},
+    value::Value,
 };
+use d3::format::number::Number as JsNumber;
 use gpui::SharedString;
-use js::{number::Number as JsNumber, value::Value};
 use std::{
     borrow::Cow,
     collections::HashMap,

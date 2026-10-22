@@ -1,6 +1,6 @@
 //! Pele's `diagrams/class/db.ts`.
 
-use crate::string;
+use d3::string;
 use indexmap::{IndexMap, IndexSet};
 
 use crate::geom::Direction;

@@ -18,12 +18,12 @@ use crate::{
     },
     scale::{self, Count, TickFormat},
 };
-use gpui::SharedString;
-use js::{
-    date::LocalZone,
-    number::Number as JsNumber,
+use d3::{
+    format::number::Number as JsNumber,
     scale::{Band, Continuous, Transform},
+    time::date::LocalZone,
 };
+use gpui::SharedString;
 
 /// Vega's axis defaults, in pixels.
 const TICK_SIZE: f32 = 5.0;

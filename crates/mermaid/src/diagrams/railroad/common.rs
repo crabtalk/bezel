@@ -9,7 +9,8 @@ use crate::{
     detect::Kind,
     diagrams::common::{
         acc_descr::acc_descr as common_acc_descr,
-        tokens::{self, Header, Kinds, Reader, TokenType},
+        tokens,
+        tokens::{Header, Kinds, Reader, TokenType},
     },
     error::Error,
     util::chars::inner,

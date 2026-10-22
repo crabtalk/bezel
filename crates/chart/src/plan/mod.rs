@@ -50,8 +50,8 @@ use crate::{
     },
     plan::{domain::Colors, layout::Layout, title::Heading},
 };
+use d3::shape::curve::Curve;
 use gpui::{FontStyle, FontWeight, Hsla, SharedString};
-use js::curve::Curve;
 use std::{f32::consts::TAU, sync::Arc};
 use theme::Theme;
 

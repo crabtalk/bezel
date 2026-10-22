@@ -1,7 +1,7 @@
 //! The `<svg>` element around a drawing. Pele's `svg/root.ts`.
 
 use crate::svg::builder::{Esc, EscText};
-use js::number::Number;
+use d3::format::number::Number;
 use std::{fmt::Write as _, sync::LazyLock};
 
 use memchr::memmem::Finder;

@@ -1,8 +1,8 @@
 //! Pele's `diagrams/pie/model.ts`.
 
 use crate::{diagrams::common::db::Titles, json};
+use d3::format::number::Number;
 use indexmap::IndexMap;
-use js::number::Number;
 use serde::Serialize;
 
 use super::parser::PieAst;

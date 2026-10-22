@@ -1,7 +1,7 @@
 //! Pele's `diagrams/pie/render.ts`.
 
 use crate::{geom::Point, json::JsValue};
-use js::{math, number::Number};
+use d3::format::{number, number::Number};
 
 use crate::svg::builder::{EscText, fragment};
 use serde::Deserialize;
@@ -150,7 +150,7 @@ impl PieModel {
     ) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
+        let small = number::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
 

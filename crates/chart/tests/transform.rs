@@ -7,9 +7,10 @@ use chart::{
     model::Side,
     plan::{self, Metrics},
     transform::{Density, Quantile, Random, Regression},
+    value::Value as JsValue,
     vega_lite,
 };
-use js::{number::Number as JsNumber, value::Value as JsValue};
+use d3::format::number::Number as JsNumber;
 use serde_json::{Map, Value};
 use std::{fs, path::Path};
 

@@ -1,6 +1,7 @@
 //! What the flowchart parser builds. Pele's `diagrams/flowchart/db.ts`.
 
-use crate::{json::JsValue, string};
+use crate::json::JsValue;
+use d3::string;
 use serde::{Serialize, Serializer, ser::SerializeMap};
 
 use super::{

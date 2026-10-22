@@ -1,0 +1,30 @@
+[package]
+name = "bezel-d3"
+description = "Ports of d3-array, d3-color, d3-format, d3-interpolate, d3-path, d3-scale, d3-shape, d3-time, d3-time-format and Vega's colour schemes, with JavaScript's number, string and Date semantics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme = "README.md"
+exclude = ["tests/"]
+keywords.workspace = true
+categories.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "d3"
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+# The clock and the local zone are the page's, through `Date`.
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+chrono = { workspace = true, features = ["wasmbind"] }

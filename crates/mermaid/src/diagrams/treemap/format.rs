@@ -1,6 +1,6 @@
 //! Pele's `diagrams/treemap/format.ts`.
 
-use js::number::Number;
+use d3::format::number::Number;
 use regex::Regex;
 use std::sync::LazyLock;
 

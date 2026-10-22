@@ -2,10 +2,12 @@
 
 use crate::{
     geom::{Point, Size},
-    string,
     svg::builder::Esc,
 };
-use js::{math, number::Number};
+use d3::{
+    format::{number, number::Number},
+    string,
+};
 use std::{collections::HashMap, fmt::Write as _};
 
 use super::{
@@ -34,8 +36,8 @@ impl PacketModel {
     fn draw(&self, config: &PacketConfig, ctx: &Ctx<'_, impl Host>, down: bool) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let label_size = math::round(size * 0.875);
-        let bit_size = math::round(size * 0.625);
+        let label_size = number::round(size * 0.875);
+        let bit_size = number::round(size * 0.625);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
 
@@ -180,7 +182,7 @@ impl PacketModel {
                         string::trim(&decode_entities(label)),
                         max,
                         label_size,
-                        math::round(size * 0.5),
+                        number::round(size * 0.5),
                         &*measure,
                         0,
                     )

@@ -3,7 +3,7 @@
 //! a step sits level with the steps that happen at the same time in other
 //! lanes, and each node stays inside its own lane.
 
-use js::{math, number};
+use d3::format::number;
 use std::collections::HashSet;
 
 use super::{
@@ -493,8 +493,9 @@ impl Lanes<'_> {
                     // The edge crosses from its first lane to its last one
                     // evenly along the way.
                     lane_[d] = lane_[a]
-                        + math::round(((lane_[b] - lane_[a]) * (r - ra)) as f64 / (rb - ra) as f64)
-                            as i32;
+                        + number::round(
+                            ((lane_[b] - lane_[a]) * (r - ra)) as f64 / (rb - ra) as f64,
+                        ) as i32;
                     dummy[d] = true;
                     if r == label_rank {
                         size[d] = e.label.w;
@@ -934,7 +935,7 @@ impl Lanes<'_> {
                 let aa = router.amid(a);
                 let ba = router.amid(b);
                 let dc = (bc - ac).signum();
-                let da = math::sign(ba - aa);
+                let da = number::sign(ba - aa);
                 let first = [
                     Point::new(ac + dc * size[a] / 2.0, aa),
                     Point::new(bc, aa),

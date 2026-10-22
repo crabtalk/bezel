@@ -1,7 +1,7 @@
 //! Pele's `diagrams/agentflow/render.ts`.
 
 use crate::svg::theme::node_class_names;
-use js::math;
+use d3::format::number;
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -200,7 +200,7 @@ impl AgentflowDb {
         let p = crate::PREFIX;
         let graph = &self.graph;
         let size = ctx.options.font_size;
-        let edge_size = math::round(size * 0.875);
+        let edge_size = number::round(size * 0.875);
         let measure = ctx.host;
         let wrap_width = positive(config.wrapping_width, 120.0);
         let min_width = positive(config.min_node_width, 120.0);

@@ -13,7 +13,8 @@ use crate::{
     vega_lite::format::{self, Format, Row},
 };
 use gpui::SharedString;
-use js::value::Value as JsValue;
+
+use crate::value::Value as JsValue;
 use serde_json::{Map, Number, Value};
 
 /// What a `data` object may carry.

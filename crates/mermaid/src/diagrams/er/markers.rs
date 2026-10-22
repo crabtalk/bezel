@@ -1,7 +1,7 @@
 //! Pele's `diagrams/er/markers.ts`.
 
 use crate::geom::Point;
-use js::number::Number;
+use d3::format::number::Number;
 use std::fmt;
 
 use super::types::Cardinality;

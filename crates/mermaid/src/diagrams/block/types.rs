@@ -5,7 +5,8 @@
 //! Pele shares between the copies of a space block are entries of
 //! [`BlockModel::class_lists`].
 
-use crate::{diagrams::common::style_class::StyleClass, json::JsonNumber, string};
+use crate::{diagrams::common::style_class::StyleClass, json::JsonNumber};
+use d3::string;
 use indexmap::{IndexMap, IndexSet};
 use serde::{
     Serialize, Serializer,

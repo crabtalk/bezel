@@ -14,9 +14,10 @@ use crate::{
         invalid,
         scales::{self, ColorScale, Colored, Context, Role, Steps},
     },
+    value::regexp::RegExp,
 };
+use d3::{format::number::Number as JsNumber, scale::Continuous};
 use gpui::{Hsla, SharedString};
-use js::{number::Number as JsNumber, regex::Regex, scale::Continuous};
 use std::{cmp::Ordering, collections::HashMap, sync::Arc};
 
 /// Vega-Lite's ranges for its numeric channels.
@@ -452,12 +453,18 @@ impl Look {
         // Lines broken where the layer's `line_break` says, one to a line
         // of the text.
         let regex = match &p.line_break {
-            Some(LineBreak::Pattern { source, flags }) => Some(Regex::try_new(source, flags).ok()?),
+            Some(LineBreak::Pattern { source, flags }) => Some(RegExp::new(source, flags).ok()?),
             _ => None,
         };
         let broken = |text: SharedString| -> SharedString {
             match (&p.line_break, &regex) {
-                (_, Some(regex)) => regex.split_str(&text).join("\n").into(),
+                (_, Some(regex)) => regex
+                    .split(&text)
+                    .into_iter()
+                    .map(|piece| piece.unwrap_or(""))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+                    .into(),
                 (Some(LineBreak::Text(separator)), _) => text
                     .split(separator.as_ref())
                     .collect::<Vec<_>>()

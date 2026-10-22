@@ -7,10 +7,7 @@ use crate::{
     geom::{Point, Size},
     svg::edges::Marker,
 };
-use js::{
-    math,
-    number::{self, Number},
-};
+use d3::format::{number, number::Number};
 use std::{
     collections::HashSet,
     fmt::{self, Write as _},
@@ -174,7 +171,7 @@ impl Numbering {
             } else if m.kind.is_line() {
                 index[i] = current;
                 shown[i] = visible || always;
-                current = math::round((current + step) * 100.0) / 100.0;
+                current = number::round((current + step) * 100.0) / 100.0;
             }
         }
         Numbering { index, shown }
@@ -439,8 +436,8 @@ impl SequenceModel {
     fn draw(&self, conf: &SequenceConfig, ctx: &Ctx<'_, impl Host>, tight: bool) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
-        let tiny = math::round(size * 0.75);
+        let small = number::round(size * 0.875);
+        let tiny = number::round(size * 0.75);
         let measurer = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let mirror = conf.mirror_actors != Some(false);
@@ -448,7 +445,7 @@ impl SequenceModel {
         let actor_margin =
             option(conf.actor_margin, 40.0).min(if tight { 8.0 } else { f64::INFINITY });
         let min_w = option(conf.width, 64.0).min(if tight { 48.0 } else { f64::INFINITY });
-        let min_h = option(conf.height, math::round(size * 1.5) + 20.0);
+        let min_h = option(conf.height, number::round(size * 1.5) + 20.0);
         let wrap_w = option(conf.width, 160.0).min(if tight {
             32f64.max(
                 (ctx.options.max_width.unwrap_or(320.0) - 2.0 * pad)

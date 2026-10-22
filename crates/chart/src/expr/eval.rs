@@ -8,7 +8,8 @@ use crate::{
     },
 };
 use gpui::SharedString;
-use js::value::Value;
+
+use crate::value::Value;
 use std::cmp::Ordering;
 
 /// What an expression reads: `datum` is row `index` of `data`, and a bare

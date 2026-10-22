@@ -13,9 +13,9 @@ use crate::{
         TokenType, directive, keyword, single_line_comment, token_kinds, yaml,
     },
     error::Error,
-    string,
-    util::{chars, chars::inner},
+    util::chars::inner,
 };
+use d3::string;
 
 token_kinds! {
     enum Token {
@@ -64,7 +64,7 @@ fn special_sequence(src: &str, at: usize) -> Option<usize> {
         match c {
             '?' => return solid.then_some(at + 1 + i + 1),
             ';' => return None,
-            _ => solid = solid || !chars::is_space(c),
+            _ => solid = solid || !string::is_space(c),
         }
     }
     None

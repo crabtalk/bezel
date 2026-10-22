@@ -2,10 +2,9 @@
 //! `diagrams/gantt/axis.ts`.
 
 use crate::diagrams::gantt::dates::Weekday;
-use js::{
-    date::LocalZone,
-    number,
-    time::{Interval, Unit},
+use d3::{
+    format::number,
+    time::{Interval, Unit, date::LocalZone},
 };
 use regex::Regex;
 use std::sync::LazyLock;

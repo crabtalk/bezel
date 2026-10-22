@@ -1,6 +1,6 @@
 //! Pele's `diagrams/block/arrows.ts`.
 
-use crate::string;
+use d3::string;
 use std::fmt::Write as _;
 
 use crate::{

@@ -1,10 +1,7 @@
 //! Pele's `diagrams/wardley/parser.ts`.
 
-use crate::{
-    string,
-    util::chars::{self, digits_end},
-};
-use js::number;
+use crate::util::{chars, chars::digits_end};
+use d3::{format::number, string};
 
 use crate::{
     detect::Kind,
@@ -91,7 +88,8 @@ fn word(name: &'static str, text: &'static str) -> TokenType<Token> {
 /// `accDescr`.
 fn name_end(src: &str, p: usize) -> Option<usize> {
     let s = &src.as_bytes()[p..];
-    let title = s.starts_with(b"title") && src[p + 5..].chars().next().is_some_and(chars::is_space);
+    let title =
+        s.starts_with(b"title") && src[p + 5..].chars().next().is_some_and(string::is_space);
     if title || s.starts_with(b"accTitle") || s.starts_with(b"accDescr") {
         return None;
     }

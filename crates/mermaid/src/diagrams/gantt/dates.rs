@@ -5,11 +5,10 @@
 //! is accepted only when formatting the parsed result gives back the input.
 //! Pele's `diagrams/gantt/dates.ts`.
 
-use crate::{string, util::chars};
-use js::{
-    date::{self, Date},
-    math,
-    number::{self, Number},
+use d3::{
+    format::{number, number::Number},
+    string,
+    time::{date, date::Date},
 };
 use regex::{Captures, Regex};
 use std::{cell::RefCell, rc::Rc, sync::LazyLock};
@@ -73,7 +72,7 @@ static RE_FORMAT: LazyLock<Regex> = LazyLock::new(|| {
 static RE_TOKENS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
         r"(\[[^\[]*\])|([-_:/.,(){}]+)|(A|a|Q|YYYY|YY?|ww?|MM?M?M?|Do|DD?|hh?|HH?|mm?|ss?|S{{1,3}}|z|ZZ?)",
-        chars::SPACE
+        string::SPACE
     ))
     .expect("pattern")
 });
@@ -90,7 +89,7 @@ static MATCH_SIGNED: LazyLock<Regex> =
 static MATCH_OFFSET: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[+-][0-9]{2}:?(?:[0-9]{2})?|Z").expect("pattern"));
 static MATCH_WORD: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(r"[0-9]*[^-_:/,(){}0-9]+", chars::SPACE)).expect("pattern")
+    Regex::new(&format!(r"[0-9]*[^-_:/,(){}0-9]+", string::SPACE)).expect("pattern")
 });
 static RE_OFFSET_PARTS: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"[+-]|[0-9]{2}").expect("pattern"));
@@ -152,7 +151,7 @@ fn ordinal(n: f64) -> String {
 }
 
 fn utc_offset(date: Date) -> f64 {
-    let offset = -math::round(date.timezone_offset() / 15.0) * 15.0;
+    let offset = -number::round(date.timezone_offset() / 15.0) * 15.0;
     if offset == 0.0 { 0.0 } else { offset }
 }
 
@@ -206,8 +205,8 @@ pub(crate) fn add(date: Date, amount: f64, unit: Unit) -> Date {
     match unit {
         Unit::Month => set_calendar(date, |d| d.set_month(date.month() + amount)),
         Unit::Y => set_calendar(date, |d| d.set_full_year(date.full_year() + amount)),
-        Unit::D => add_days(date, math::round(amount)),
-        Unit::W => add_days(date, math::round(7.0 * amount)),
+        Unit::D => add_days(date, number::round(amount)),
+        Unit::W => add_days(date, number::round(7.0 * amount)),
         Unit::H => date.at(date.time() + amount * 3_600_000.0),
         Unit::M => date.at(date.time() + amount * 60_000.0),
         Unit::S => date.at(date.time() + amount * 1000.0),

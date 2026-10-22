@@ -9,8 +9,8 @@ use chart::{
     plan::Metrics,
     vega_lite,
 };
+use d3::time::Unit;
 use gpui::{FontWeight, Rgba};
-use js::time::Unit;
 
 fn spec(x: &str, color: &str, title: &str) -> String {
     format!(

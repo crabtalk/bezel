@@ -4,7 +4,7 @@ use crate::{
     geom::{Direction, Point, Size},
     svg::{builder::rewrite, edges::Curve},
 };
-use js::number::Number;
+use d3::format::number::Number;
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},

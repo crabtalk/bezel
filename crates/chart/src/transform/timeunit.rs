@@ -7,11 +7,11 @@
 //! start of such a year in the 1900s for `week`, `day` and `dayofyear`.
 
 use crate::data::Data;
-use gpui::SharedString;
-use js::{
+use d3::time::{
+    Interval, Unit,
     date::{Date, LocalZone},
-    time::{Interval, Unit},
 };
+use gpui::SharedString;
 
 /// The year a time unit without one floors into.
 const REFERENCE_YEAR: f64 = 2012.0;

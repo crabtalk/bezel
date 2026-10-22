@@ -1,7 +1,8 @@
 //! Jison's `.*direction\s+TB[^\n]*` rules and their siblings, which a lexer
 //! tries at every position of `INITIAL`.
 
-use crate::{string, util::chars::starts_with_caseless};
+use crate::util::chars::starts_with_caseless;
+use d3::string;
 
 /// The direction rules of one grammar, in its order, each a kind and the
 /// direction it names after `direction`, and what earlier

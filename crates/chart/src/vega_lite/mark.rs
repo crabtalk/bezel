@@ -12,7 +12,8 @@ use crate::{
     vega_lite::encoding,
 };
 use gpui::SharedString;
-use js::value::Value as ExprValue;
+
+use crate::value::Value as ExprValue;
 use serde_json::{Map, Value, json};
 use std::{fmt, str::FromStr};
 

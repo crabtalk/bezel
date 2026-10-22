@@ -3,8 +3,11 @@
 //! scalars. Ported from Pele's `util/yaml.ts`.
 
 use super::config::{Map, Value};
-use crate::{json, json::JsValue, string, util::chars};
-use js::number::{self, Number};
+use crate::{json, json::JsValue};
+use d3::{
+    format::{number, number::Number},
+    string,
+};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -93,7 +96,7 @@ fn blanks_end(bytes: &[u8], from: usize) -> usize {
 
 /// Whether `c` ends a plain scalar after a `:`.
 fn ends_plain(c: char) -> bool {
-    chars::is_space(c) || matches!(c, ',' | '[' | ']' | '{' | '}')
+    string::is_space(c) || matches!(c, ',' | '[' | ']' | '{' | '}')
 }
 
 fn leading(line: &str) -> usize {
@@ -132,7 +135,7 @@ fn split_key(line: &str) -> Option<(&str, usize)> {
         }
     } else {
         let first_char = line.chars().next()?;
-        if chars::is_space(first_char) || "#:,[]{}&*!|>'\"%@`".contains(first_char) {
+        if string::is_space(first_char) || "#:,[]{}&*!|>'\"%@`".contains(first_char) {
             return None;
         }
         if first == b'-'
@@ -301,7 +304,7 @@ fn skip(s: &str, mut pos: usize) -> usize {
         if is_blank(c) {
             pos += 1;
         } else if c == b'#'
-            && (pos == 0 || s[..pos].chars().next_back().is_some_and(chars::is_space))
+            && (pos == 0 || s[..pos].chars().next_back().is_some_and(string::is_space))
         {
             pos = s[pos..].find('\n').map_or(s.len(), |nl| pos + nl);
         } else {
@@ -422,7 +425,7 @@ fn flow(s: &str, pos: usize, stops: &str, depth: usize) -> Result<(Value, usize)
         {
             break;
         }
-        if c == b'#' && end > pos && s[..end].chars().next_back().is_some_and(chars::is_space) {
+        if c == b'#' && end > pos && s[..end].chars().next_back().is_some_and(string::is_space) {
             let nl = s[end..].find('\n').map_or(s.len(), |nl| end + nl);
             return Ok((scalar(&fold(string::trim(&s[pos..end]))), nl));
         }
@@ -749,5 +752,5 @@ pub fn parse_yaml(src: &str) -> std::result::Result<Value, YamlError> {
 fn is_block_header(rest: &str) -> bool {
     let tail = rest[1..].trim_start_matches(|c: char| c == '-' || c == '+' || c.is_ascii_digit());
     let tail = string::trim_start(tail);
-    tail.is_empty() || (tail.starts_with('#') && !tail.contains(chars::is_line_end))
+    tail.is_empty() || (tail.starts_with('#') && !tail.contains(string::is_line_end))
 }

@@ -1,7 +1,7 @@
 //! Pele's `diagrams/treemap/parser.ts`.
 
-use crate::util::{chars, chars::inner};
-use js::number;
+use crate::util::chars::inner;
+use d3::{format::number, string};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -27,7 +27,7 @@ token_kinds! {
             "CLASS_DEF",
             &format!(
                 r"classDef[{s}]+[a-zA-Z_][a-zA-Z0-9_]+(?:[{s}]+[^;\r\n]*)?;?",
-                s = chars::SPACE
+                s = string::SPACE
             ),
             None,
         ),
@@ -47,7 +47,7 @@ token_kinds! {
 static RE_CLASS_DEF: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
         r"classDef[{s}]+([A-Z_a-z][0-9A-Z_a-z]+)(?:[{s}]+([^\n\r;]*))?;?",
-        s = chars::SPACE
+        s = string::SPACE
     ))
     .expect("pattern")
 });

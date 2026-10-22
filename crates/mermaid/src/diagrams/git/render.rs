@@ -2,10 +2,7 @@
 
 use super::GitGraphConfig;
 use crate::geom::{Direction, Point, Size};
-use js::{
-    math,
-    number::{self, Number},
-};
+use d3::format::{number, number::Number};
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
@@ -178,7 +175,7 @@ impl GitModel {
     ) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.75);
+        let small = number::round(size * 0.75);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
 
@@ -194,7 +191,7 @@ impl GitModel {
             lane_of.insert(name, index);
         }
         let lane_count = self.lanes.len();
-        let medium = math::round(size * 0.875);
+        let medium = number::round(size * 0.875);
         // Mermaid writes branch names, tags, and commit ids as plain text, so
         // tags in them show as written.
         let names: Vec<Label> = self

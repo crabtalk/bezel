@@ -5,9 +5,9 @@ use crate::{
     Error,
     detect::Kind,
     diagrams::common::scan::T,
-    string,
     token::{Stream, after_keyword},
 };
+use d3::string;
 
 const STATEMENT: &str = "'EOF', 'SPACE', 'NEWLINE', 'title', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'section', 'taskName'";
 

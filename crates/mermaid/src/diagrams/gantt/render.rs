@@ -1,13 +1,12 @@
 //! Pele's `diagrams/gantt/render.ts`.
 
-use crate::{config::clamped, geom::Point, svg::builder::rewrite, util::chars};
-use indexmap::IndexMap;
-use js::{
-    date::{Date, LocalZone},
-    math,
-    number::{self, Number},
-    time,
+use crate::{config::clamped, geom::Point, svg::builder::rewrite};
+use d3::{
+    format::{number, number::Number},
+    string, time,
+    time::date::{Date, LocalZone},
 };
+use indexmap::IndexMap;
 use regex::Regex;
 use std::{fmt::Write as _, sync::LazyLock};
 
@@ -34,7 +33,7 @@ const MIN_PLOT: f64 = 240.0;
 const LABEL_GAP: f64 = 8.0;
 
 static RE_BREAK: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(&format!(r"(?i-u:<br)[{}]*/?>", chars::SPACE)).expect("pattern"));
+    LazyLock::new(|| Regex::new(&format!(r"(?i-u:<br)[{}]*/?>", string::SPACE)).expect("pattern"));
 
 /// A task label sits on one row, so only its first line is kept.
 fn one_line(raw: &str, measure: &impl Host, size: f64) -> Label {
@@ -159,16 +158,16 @@ impl Render for GanttDb {
         let p = crate::PREFIX;
 
         let label_size =
-            clamped(config.font_size, 4.0, 72.0).unwrap_or_else(|| math::round(size * 0.8125));
+            clamped(config.font_size, 4.0, 72.0).unwrap_or_else(|| number::round(size * 0.8125));
         let section_size = clamped(config.section_font_size, 4.0, 72.0).unwrap_or(label_size);
-        let tick_size = math::round(size * 0.75);
+        let tick_size = number::round(size * 0.75);
         let bar_height = clamped(config.bar_height, 4.0, 400.0)
-            .unwrap_or_else(|| math::round(label_size * 1.85));
+            .unwrap_or_else(|| number::round(label_size * 1.85));
         let bar_gap =
-            clamped(config.bar_gap, 0.0, 400.0).unwrap_or_else(|| math::round(bar_height / 4.0));
+            clamped(config.bar_gap, 0.0, 400.0).unwrap_or_else(|| number::round(bar_height / 4.0));
         let row_height = bar_height + bar_gap;
         let section_styles =
-            math::round(clamped(config.number_section_styles, 1.0, 1000.0).unwrap_or(4.0));
+            number::round(clamped(config.number_section_styles, 1.0, 1000.0).unwrap_or(4.0));
         let compact = self.display_mode == "compact";
         let top_axis = self.top_axis || config.top_axis == Some(true);
 
@@ -313,7 +312,7 @@ impl Render for GanttDb {
             }
         };
 
-        let tick_height = math::round(tick_size * 1.75);
+        let tick_height = number::round(tick_size * 1.75);
         let top_padding = clamped(config.top_padding, 0.0, 2000.0);
         let grid_start = clamped(config.grid_line_start_padding, 0.0, 2000.0);
         let head_height = pad + title_height + if top_axis { tick_height } else { 0.0 };
@@ -456,7 +455,7 @@ impl Render for GanttDb {
         let mut vert_labels = String::new();
         let mut vert_ends: Vec<f64> = Vec::new();
         let vert_top = plot_bottom + tick_height + 4.0;
-        let vert_line = math::round(label_size * 1.5);
+        let vert_line = number::round(label_size * 1.5);
         let mut sorted_verts = verts.clone();
         sorted_verts.sort_by(|&a, &b| {
             number::compare(time(tasks[a].start_time) - time(tasks[b].start_time))

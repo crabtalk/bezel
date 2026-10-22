@@ -1,10 +1,7 @@
 //! Pele's `diagrams/quadrant/render.ts`.
 
 use crate::geom::{Point, Rect};
-use js::{
-    math,
-    number::{self, Number},
-};
+use d3::format::{number, number::Number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
@@ -98,12 +95,12 @@ impl QuadrantModel {
     fn draw(&self, config: &QuadrantConfig, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let axis_size = math::round(size * 0.875);
-        let point_size = math::round(size * 0.75);
+        let axis_size = number::round(size * 0.875);
+        let point_size = number::round(size * 0.75);
         let measure = ctx.host;
-        let natural = math::round(100f64.max(capped(config.chart_width, 500.0, 0.0, 4000.0)));
-        let width = math::round(ctx.cap_width(natural, 280.0, 0.0));
-        let height = math::round(
+        let natural = number::round(100f64.max(capped(config.chart_width, 500.0, 0.0, 4000.0)));
+        let width = number::round(ctx.cap_width(natural, 280.0, 0.0));
+        let height = number::round(
             (100f64.max(capped(config.chart_height, 500.0, 0.0, 4000.0)) * width) / natural,
         );
         let outer = capped(

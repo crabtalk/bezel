@@ -2,10 +2,12 @@
 
 use crate::{
     geom::{Point, Size},
-    string,
     text::Label,
 };
-use js::{math, number::Number};
+use d3::{
+    format::{number, number::Number},
+    string,
+};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
@@ -58,9 +60,9 @@ impl TreemapModel {
     fn draw(&self, config: &TreemapConfig, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
-        let tiny = math::round(size * 0.75);
-        let least = math::round(size * 0.5625);
+        let small = number::round(size * 0.875);
+        let tiny = number::round(size * 0.75);
+        let least = number::round(size * 0.5625);
         let measure = ctx.host;
         let pad = ctx
             .options
@@ -69,12 +71,12 @@ impl TreemapModel {
 
         // Mermaid sizes the diagram as ten times `nodeWidth` by ten times
         // `nodeHeight`.
-        let width = math::round(ctx.cap_width(
+        let width = number::round(ctx.cap_width(
             capped(config.node_width, 64.0, 1.0, 400.0) * 10.0,
             200.0,
             2.0 * pad,
         ));
-        let height = math::round(capped(config.node_height, 40.0, 1.0, 400.0) * 10.0);
+        let height = number::round(capped(config.node_height, 40.0, 1.0, 400.0) * 10.0);
         let show_values = config.show_values != Some(false);
         let format = Formatter::new(config.value_format.as_deref().unwrap_or(","));
         let (all, placed) = self.layout(
@@ -205,7 +207,7 @@ impl TreemapModel {
             if let Some(label) = label {
                 let cx = num(x + w / 2.0);
                 let cy = y + h / 2.0;
-                let value_size = least.max(math::round(label.size * 0.8));
+                let value_size = least.max(number::round(label.size * 0.8));
                 let lines = (label.size + value_size) * LINE;
                 if !value.is_empty()
                     && lines <= h - 4.0

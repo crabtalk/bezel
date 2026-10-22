@@ -1,8 +1,8 @@
 //! Vega-Lite's `loess` transform: locally-weighted regression.
 
 use crate::{data::Data, transform::Groups};
+use d3::array;
 use gpui::SharedString;
-use js::array;
 
 /// Robustness iterations after the first fit.
 const ITERATIONS: usize = 2;

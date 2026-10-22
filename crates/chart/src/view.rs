@@ -11,6 +11,7 @@ use crate::{
     model::{Align, Baseline, Cap, Chart, Encoding, Join, Mark, Properties, Shape, Title},
     plan::{self, Face, Fill, Glyph, Label, Marks, Metrics, Paint, Plan, Rect, Slice, Tip},
 };
+use d3::shape::{arc::Sector, curve::Curve, path::Segment};
 use gpui::{
     App, Bounds, ContentMask, Corners, CursorStyle, DispatchPhase, Element, ElementId, FillOptions,
     Font, FontStyle, Global, GlobalElementId, Hitbox, HitboxBehavior, Hsla, InspectorElementId,
@@ -19,7 +20,6 @@ use gpui::{
     Style, StyleRefinement, Styled, TextAlign, TextRun, Window, fill, linear_color_stop,
     linear_gradient, point, px, relative, size,
 };
-use js::{arc::Sector, curve::Curve, path::Segment};
 use lyon::tessellation::{LineCap, LineJoin};
 use std::{cell::Cell, collections::HashMap, f32::consts::PI, rc::Rc, sync::Arc};
 use theme::{TextStyle, Theme};

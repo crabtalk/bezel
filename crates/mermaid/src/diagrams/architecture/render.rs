@@ -8,7 +8,7 @@ use crate::{
         edges::Marker,
     },
 };
-use js::{math, number::Number};
+use d3::format::{number, number::Number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{
@@ -205,7 +205,7 @@ fn path_data(d: &mut String, points: &[Point], start_trim: f64, end_trim: f64) {
     let mut p = points.to_vec();
     let n = p.len();
     let mut trim = |at: usize, toward: usize, amount: f64| {
-        let len = math::hypot(&[p[toward].x - p[at].x, p[toward].y - p[at].y]);
+        let len = number::hypot(&[p[toward].x - p[at].x, p[toward].y - p[at].y]);
         let t = amount.min(0f64.max(len - 1.0));
         if len > 0.0 && t > 0.0 {
             let step = (p[toward] - p[at]) / len * t;
@@ -217,8 +217,8 @@ fn path_data(d: &mut String, points: &[Point], start_trim: f64, end_trim: f64) {
     let _ = write!(d, "M{}", p[0]);
     for i in 1..n - 1 {
         let (into, out) = (p[i] - p[i - 1], p[i + 1] - p[i]);
-        let before = math::hypot(&[into.x, into.y]);
-        let after = math::hypot(&[out.x, out.y]);
+        let before = number::hypot(&[into.x, into.y]);
+        let after = number::hypot(&[out.x, out.y]);
         let r = CORNER.min(before / 2.0).min(after / 2.0);
         if r < 0.5 {
             let _ = write!(d, "L{}", p[i]);
@@ -271,7 +271,7 @@ impl ArchitectureModel {
         let group_pad = clamped(config.padding, 0.0, 256.0)
             .unwrap_or(20.0)
             .min(if tight { 12.0 } else { f64::INFINITY });
-        let small = math::round(size * 0.875);
+        let small = number::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let half = icon_size / 2.0;
@@ -336,7 +336,7 @@ impl ArchitectureModel {
         let gap = if tight {
             24f64.max(2.0 * STUB)
         } else {
-            40f64.max(math::round(icon_size * 0.75))
+            40f64.max(number::round(icon_size * 0.75))
         };
         let mut gap_x = vec![gap; c_count];
         let mut gap_y = vec![gap; r_count];
@@ -405,7 +405,7 @@ impl ArchitectureModel {
         let mut col_r = vec![0.0; c_count];
         let mut row_t = vec![0.0; r_count];
         let mut row_b = vec![0.0; r_count];
-        let badge = math::round(size * 1.25);
+        let badge = number::round(size * 1.25);
         let group_wrap = if tight {
             80f64.max(ctx.title_room() / 2.0)
         } else {
@@ -763,7 +763,7 @@ impl ArchitectureModel {
 
         let mut nodes_out = String::new();
         let glyph = icon_size * 0.5;
-        let text_size = 6f64.max(math::round(size * 0.75));
+        let text_size = 6f64.max(number::round(size * 0.75));
         let icon_text_attrs = format!(
             " class=\"{p}-icon-text\" font-size=\"{}\"",
             Number(text_size)
@@ -841,8 +841,8 @@ impl ArchitectureModel {
         let title_height = title.spaced_height(12.0);
         let width = ((max_x - min_x).max(title.width) + 2.0 * pad).ceil();
         let height = (max_y - min_y + title_height + 2.0 * pad).ceil();
-        let ox = math::round((width - (max_x - min_x)) / 2.0 - min_x);
-        let oy = math::round(pad + title_height - min_y);
+        let ox = number::round((width - (max_x - min_x)) / 2.0 - min_x);
+        let oy = number::round(pad + title_height - min_y);
         let mut content = String::with_capacity(
             clusters.len() + edges_out.len() + labels_out.len() + nodes_out.len() + 1024,
         );

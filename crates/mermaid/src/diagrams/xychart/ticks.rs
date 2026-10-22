@@ -1,6 +1,6 @@
 //! Pele's `diagrams/xychart/ticks.ts`.
 
-use js::math;
+use d3::format::number;
 
 /// A step of 1, 2 or 5 times a power of ten that divides `span` into about
 /// `count` parts. A step below one comes back as the negative of its inverse,
@@ -44,11 +44,11 @@ pub fn tick_value(step: f64, index: f64) -> f64 {
 
 /// The multiples of a step from `lo` to `hi`, both included.
 pub fn ticks_between(lo: f64, hi: f64, step: f64) -> Vec<f64> {
-    let mut first = math::round(tick_index(step, lo));
+    let mut first = number::round(tick_index(step, lo));
     if tick_value(step, first) < lo {
         first += 1.0;
     }
-    let mut last = math::round(tick_index(step, hi));
+    let mut last = number::round(tick_index(step, hi));
     if tick_value(step, last) > hi {
         last -= 1.0;
     }

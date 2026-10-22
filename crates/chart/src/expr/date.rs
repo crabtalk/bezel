@@ -1,11 +1,10 @@
-//! Vega's date functions on `js::date`, and its time units as d3-time
+//! Vega's date functions on `d3::date`, and its time units as d3-time
 //! intervals.
 
-use crate::expr::Error;
-use js::{
+use crate::{expr::Error, value::Value};
+use d3::time::{
+    Interval, Unit,
     date::{Date, LocalZone},
-    time::{Interval, Unit},
-    value::Value,
 };
 use std::str::FromStr;
 

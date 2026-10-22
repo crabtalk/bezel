@@ -12,7 +12,7 @@ use crate::{
         view::{Body, View},
     },
 };
-use js::number::Number as JsNumber;
+use d3::format::number::Number as JsNumber;
 use serde_json::{Map, Value, json};
 
 impl Unit {

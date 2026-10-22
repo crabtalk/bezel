@@ -1,7 +1,10 @@
 //! Pele's `diagrams/kanban/render.ts`.
 
-use crate::{geom::Point, string};
-use js::{math, number::Number};
+use crate::geom::Point;
+use d3::{
+    format::{number, number::Number},
+    string,
+};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
@@ -218,9 +221,9 @@ impl Render for KanbanModel {
     fn render(&self, config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
         let conf = &config.kanban;
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
-        let line = math::round(size * 1.5);
-        let small_line = math::round(small * 1.5);
+        let small = number::round(size * 0.875);
+        let line = number::round(size * 1.5);
+        let small_line = number::round(small * 1.5);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let p = crate::PREFIX;

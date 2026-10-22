@@ -4,7 +4,7 @@ use crate::{
     geom::{Point, Size},
     text::Label,
 };
-use js::{math, number::Number};
+use d3::format::{number, number::Number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
@@ -45,7 +45,7 @@ fn text_option(value: Option<&Value>) -> String {
 /// left as they are.
 fn rounded(value: f64) -> f64 {
     if value.abs() < 1e15 {
-        math::round(value * 100.0) / 100.0
+        number::round(value * 100.0) / 100.0
     } else {
         value
     }
@@ -132,7 +132,7 @@ impl SankeyModel {
     ) -> Result<Rendered, Error> {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
+        let small = number::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
 

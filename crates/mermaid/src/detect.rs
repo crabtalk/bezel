@@ -1,6 +1,7 @@
 //! Which diagram a source is, from its first keyword.
 
-use crate::{string, util::chars};
+use crate::util::chars;
+use d3::string;
 use serde::{Serialize, Serializer};
 
 /// Every diagram type Mermaid 12.1 registers, by the name Pele gives it.
@@ -131,7 +132,7 @@ fn bounded(head: &str, word: &str) -> bool {
         && !head[word.len()..]
             .bytes()
             .next()
-            .is_some_and(chars::is_word)
+            .is_some_and(string::is_word)
 }
 
 /// Whether `head` starts with `word`, given in lower case, in either case.
@@ -182,7 +183,7 @@ static DETECTORS: [(Kind, Test); 34] = [
     (Kind::Radar, |h| h.starts_with("radar-beta")),
     // `ishikawa(-beta)?\b`: a `-` after the name is a boundary already.
     (Kind::Ishikawa, |h| {
-        caseless(h, "ishikawa") && !h[8..].bytes().next().is_some_and(chars::is_word)
+        caseless(h, "ishikawa") && !h[8..].bytes().next().is_some_and(string::is_word)
     }),
     (Kind::Treemap, |h| h.starts_with("treemap")),
     (Kind::Railroad, |h| {
@@ -197,12 +198,12 @@ static DETECTORS: [(Kind, Test); 34] = [
         h.strip_prefix("cynefin-beta").is_some_and(|rest| {
             rest.chars()
                 .next()
-                .is_none_or(|c| c == ':' || chars::is_space(c))
+                .is_none_or(|c| c == ':' || string::is_space(c))
         })
     }),
     (Kind::Usecase, |h| {
         h.strip_prefix("usecase-beta")
-            .is_some_and(|rest| rest.chars().next().is_none_or(chars::is_space))
+            .is_some_and(|rest| rest.chars().next().is_none_or(string::is_space))
     }),
 ];
 

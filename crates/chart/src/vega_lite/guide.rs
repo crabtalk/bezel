@@ -15,10 +15,11 @@ use crate::{
     },
     time,
     transform::Part,
+    value::Value as ExprValue,
     vega_lite::{datetime, encoding},
 };
+use d3::{format::Specifier, time::Unit};
 use gpui::SharedString;
-use js::{format::Specifier, time::Unit, value::Value as ExprValue};
 use serde_json::{Map, Value};
 use std::sync::Arc;
 

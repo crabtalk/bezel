@@ -2,7 +2,7 @@
 
 use super::PacketConfig;
 use crate::{config::capped, diagrams::common::db::Titles, json};
-use js::number::Number;
+use d3::format::number::Number;
 use serde::Serialize;
 
 use super::parser::PacketAst;

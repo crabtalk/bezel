@@ -4,8 +4,9 @@ use super::tokens::{QUADRANTS, T};
 use crate::{
     diagrams::common::chart::{ChartRules, ChartState},
     token::{Cursor, Token},
-    util::{chars, chars::digits_end},
+    util::chars::digits_end,
 };
+use d3::string;
 
 /// Jison's start conditions.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -94,7 +95,7 @@ impl Lexer<'_> {
         }
         let e = q + 1;
         if let Some(dot) = self.cur.char_at(e)
-            && !chars::is_line_end(dot)
+            && !string::is_line_end(dot)
             && dot.len_utf16() == 1
             && self
                 .cur
@@ -131,7 +132,7 @@ impl Lexer<'_> {
                 true
             }
             S::ClassName => {
-                if !chars::is_word(c) {
+                if !string::is_word(c) {
                     return false;
                 }
                 let end = self.cur.word_end(p);
@@ -250,7 +251,7 @@ impl Lexer<'_> {
         }
         // A point's `: [`, with any whitespace before, between and after, line
         // breaks included.
-        if c == ':' || chars::is_space(c) {
+        if c == ':' || string::is_space(c) {
             let cur = &self.cur;
             let colon = if c == ':' {
                 p

@@ -1,7 +1,7 @@
 //! The title and accessibility text every diagram's database keeps. Pele's
 //! `diagrams/common/commonDb.ts`.
 
-use crate::{string, util::chars};
+use d3::string;
 use regex::Regex;
 use serde::Serialize;
 use std::sync::LazyLock;
@@ -9,7 +9,7 @@ use std::sync::LazyLock;
 use crate::svg::root::Accessible;
 
 static RE_INDENT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(&format!(r"\n[{}]+", chars::SPACE)).expect("pattern"));
+    LazyLock::new(|| Regex::new(&format!(r"\n[{}]+", string::SPACE)).expect("pattern"));
 
 /// `accTitle` text without its leading whitespace.
 pub fn acc_title(text: &str) -> String {

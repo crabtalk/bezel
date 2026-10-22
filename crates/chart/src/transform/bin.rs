@@ -1,8 +1,8 @@
 //! Vega-Lite's `bin` transform: Vega's `bin` over Vega-Lite's defaults.
 
 use crate::data::Data;
+use d3::format::number;
 use gpui::SharedString;
-use js::math;
 
 /// Vega's epsilon against floating point error at a bin's edge.
 const EPSILON: f64 = 1e-14;
@@ -140,7 +140,8 @@ impl Bin {
             }
             (None, None) => {
                 let level = (maxbins.ln() / logb).ceil();
-                let mut step = minstep.max(math::pow(base, math::round(span.ln() / logb) - level));
+                let mut step =
+                    minstep.max(number::pow(base, number::round(span.ln() / logb) - level));
                 while (span / step).ceil() > maxbins {
                     step *= base;
                 }
@@ -159,7 +160,7 @@ impl Bin {
         } else {
             (-v / logb).trunc() + 1.0
         };
-        let eps = math::pow(base, -precision - 1.0);
+        let eps = number::pow(base, -precision - 1.0);
         if self.nice {
             let v = (min / step + eps).floor() * step;
             min = if min < v { v - step } else { v };
@@ -182,7 +183,7 @@ impl Bin {
                 v if v < start => f64::NEG_INFINITY,
                 v if v > stop => f64::INFINITY,
                 v => {
-                    let v = math::max(start, math::min(v, stop - step));
+                    let v = number::max(start, number::min(v, stop - step));
                     start + step * (EPSILON + (v - start) / step).floor()
                 }
             })

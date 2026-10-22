@@ -2,9 +2,9 @@
 
 use crate::{
     diagrams::common::{db::Titles, tokens::Header},
-    string,
     util::chars::starts_with_caseless,
 };
+use d3::string;
 use indexmap::IndexMap;
 use serde::{Serialize, Serializer, ser::SerializeMap};
 

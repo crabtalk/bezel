@@ -4,7 +4,7 @@
 //! Pele has no browser, so it knows the color keywords and the rgb() and hsl()
 //! notations. Other functions, such as calc() and var(), are not recognized.
 
-use crate::{string, util::chars};
+use d3::string;
 use regex::Regex;
 use std::{collections::HashSet, sync::LazyLock};
 
@@ -216,7 +216,7 @@ static RE_TERM: LazyLock<Regex> = LazyLock::new(|| {
     .expect("pattern")
 });
 static RE_SPACES: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(&format!("[{}]+", chars::SPACE)).expect("pattern"));
+    LazyLock::new(|| Regex::new(&format!("[{}]+", string::SPACE)).expect("pattern"));
 
 #[derive(Clone, Copy, PartialEq)]
 enum K {

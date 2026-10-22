@@ -2,15 +2,13 @@
 //! `tickCount`, `tickValues`, `validTicks` and `tickFormat`.
 
 use crate::model::{Format, TickCount};
-use gpui::SharedString;
-use js::{
+use d3::{
     array,
-    date::LocalZone,
-    format::NumberFormat,
-    number::Number as JsNumber,
+    format::{NumberFormat, number::Number as JsNumber},
     scale::{Continuous, Transform},
-    time::Interval,
+    time::{Interval, date::LocalZone},
 };
+use gpui::SharedString;
 
 /// How many ticks a continuous scale gives: about a count, or one on each
 /// step of an interval on a time scale.

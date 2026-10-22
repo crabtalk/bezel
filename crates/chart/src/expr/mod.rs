@@ -18,12 +18,11 @@
 //! Not here: the statistical functions, and every function that reads a
 //! runtime (scales, data sets, selections, view state).
 
-use crate::expr::parse::{Node, Parser};
-pub use eval::Row;
-use js::{
-    regex,
-    value::{TypeError, Value},
+use crate::{
+    expr::parse::{Node, Parser},
+    value::{TypeError, Value, regexp::SyntaxError},
 };
+pub use eval::Row;
 use std::{fmt, str::FromStr};
 
 mod array;
@@ -81,8 +80,8 @@ impl From<TypeError> for Error {
 }
 
 /// `new RegExp`'s `SyntaxError`.
-impl From<regex::Error> for Error {
-    fn from(error: regex::Error) -> Self {
+impl From<SyntaxError> for Error {
+    fn from(error: SyntaxError) -> Self {
         Self::Runtime(error.to_string())
     }
 }

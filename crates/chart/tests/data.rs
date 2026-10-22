@@ -1,5 +1,6 @@
 use chart::{Channel, Chart, Column, Data, Encode, Kind, Mark, Name};
-use js::value::Value;
+
+use chart::value::Value;
 
 fn sales() -> Data {
     Data::new()

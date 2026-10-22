@@ -1,6 +1,7 @@
 //! Pele's `diagrams/sequence/db.ts`.
 
-use crate::{diagrams::common::db::Titles, json, json::JsValue, string, util::chars};
+use crate::{diagrams::common::db::Titles, json, json::JsValue};
+use d3::string;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -17,7 +18,7 @@ use super::{
 use crate::{config::Value, detect::Kind, error::Error, yaml::parse_yaml};
 
 static RE_BOX_FUNCTION: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(r"^(?:rgba?|hsla?)[{}]*\(", chars::SPACE)).expect("pattern")
+    Regex::new(&format!(r"^(?:rgba?|hsla?)[{}]*\(", string::SPACE)).expect("pattern")
 });
 /// The line terminators other than a line feed.
 const LINE_TERMINATORS: [char; 3] = ['\r', '\u{2028}', '\u{2029}'];
@@ -43,7 +44,7 @@ fn split_box(text: &str) -> Option<(&str, &str)> {
     if text.contains(LINE_TERMINATORS) {
         return None;
     }
-    let word = text.bytes().take_while(|&b| chars::is_word(b)).count();
+    let word = text.bytes().take_while(|&b| string::is_word(b)).count();
     Some((&text[..word], &text[word..]))
 }
 

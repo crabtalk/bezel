@@ -8,7 +8,8 @@ use super::{
         StateNote, StateStmt, Stmt, StyleStmt,
     },
 };
-use crate::{detect::Kind, error::Error, geom::Direction, string, token::Stream};
+use crate::{detect::Kind, error::Error, geom::Direction, token::Stream};
+use d3::string;
 
 const STATEMENT: &str = "'NL', 'ID', 'HIDE_EMPTY', 'scale', 'COMPOSIT_STATE', 'STATE_DESCR', 'FORK', 'JOIN', 'CHOICE', 'CONCURRENT', 'note', 'acc_title', 'acc_descr', 'acc_descr_multiline_value', 'CLICK', 'classDef', 'style', 'class', 'direction_tb', 'direction_bt', 'direction_rl', 'direction_lr', 'EDGE_STATE'";
 

@@ -1,11 +1,8 @@
 //! Pele's `diagrams/requirement/lexer.ts`.
 
 use super::tokens::{KEYWORDS, T};
-use crate::{
-    string,
-    token::{Acc, Cursor, Token},
-    util::chars,
-};
+use crate::token::{Acc, Cursor, Token};
+use d3::string;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -25,7 +22,7 @@ const LONGEST_KEYWORD: usize = 22;
 static RE_DIRECTION: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
         r"(?i-u:direction)[{}]+(?i-u:(TB)|(BT)|(RL)|LR)",
-        chars::SPACE
+        string::SPACE
     ))
     .expect("pattern")
 });
@@ -93,7 +90,7 @@ impl<'s> Lexer<'s> {
             && src
                 .get(p + 1..p + 5)
                 .is_some_and(|rest| rest.eq_ignore_ascii_case("itle"))
-            && self.cur.char_at(p + 5).is_some_and(chars::is_space)
+            && self.cur.char_at(p + 5).is_some_and(string::is_space)
         {
             let from = self.cur.after(p + 5);
             let q = src[from..].find(['#', '\n', ';']).map_or(n, |at| from + at);
@@ -121,7 +118,7 @@ impl<'s> Lexer<'s> {
             }
         }
         if self.dirs.iter().any(|list| !list.is_empty())
-            && !chars::is_line_end(c)
+            && !string::is_line_end(c)
             && self.direction()
         {
             return true;
@@ -140,7 +137,7 @@ impl<'s> Lexer<'s> {
             }
             return self.emit(T::Newline, q);
         }
-        if chars::is_space(c) {
+        if string::is_space(c) {
             self.cur.p = self.cur.space_end(p);
             return true;
         }
@@ -149,7 +146,7 @@ impl<'s> Lexer<'s> {
             return true;
         }
 
-        if chars::is_word(c) {
+        if string::is_word(c) {
             let mut q = self.cur.word_end(p);
             if q - p <= LONGEST_KEYWORD {
                 let word = src[p..q].to_ascii_lowercase();
@@ -187,7 +184,7 @@ impl<'s> Lexer<'s> {
     fn style(&mut self, c: char) -> bool {
         let p = self.cur.p;
         match c {
-            _ if chars::is_word(c) => {
+            _ if string::is_word(c) => {
                 let q = self.cur.word_end(p);
                 self.emit(T::Alpha, q)
             }

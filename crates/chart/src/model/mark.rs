@@ -2,8 +2,8 @@
 //! definition that no channel carries.
 
 use crate::model::Encoding;
+use d3::shape::curve::Curve;
 use gpui::{FontStyle, FontWeight, SharedString};
-use js::curve::Curve;
 use std::str::FromStr;
 
 /// Mark types by their Vega-Lite names.

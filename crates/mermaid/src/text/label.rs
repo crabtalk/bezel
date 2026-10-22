@@ -6,8 +6,7 @@ use super::{
     icons::icon_markup,
     measure::{Host, Style},
 };
-use crate::{string, util::chars};
-use js::math;
+use d3::{format::number, string};
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -20,13 +19,13 @@ const CLOSE: &str = r"、。，．：；！？）］｝」』】〕〉》〙〗�
 const OPEN: &str = r"（［｛「『【〔〈《〘〖(\[{";
 
 static RE_BREAK: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(r"(?i-u:<br)[{}]*/?>|(?i-u:\\n)|\n", chars::SPACE)).expect("pattern")
+    Regex::new(&format!(r"(?i-u:<br)[{}]*/?>|(?i-u:\\n)|\n", string::SPACE)).expect("pattern")
 });
 /// A tag at the start of the text.
 static RE_TAG: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
         r"^</?([a-zA-Z][0-9A-Z_a-z-]*)(?:[{}][^<>]*)?/?>",
-        chars::SPACE
+        string::SPACE
     ))
     .expect("pattern")
 });
@@ -37,7 +36,7 @@ static RE_MARKUP: LazyLock<Regex> =
 static RE_CJK: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(&format!("[{CJK}]")).expect("pattern"));
 static RE_PIECE: LazyLock<Regex> = LazyLock::new(|| {
-    let s = chars::SPACE;
+    let s = string::SPACE;
     Regex::new(&format!(
         r"[{s}]*(?:[{OPEN}]*[{CJK}][{CLOSE}]*|[^{s}{CJK}]+[{CLOSE}]*)[{s}]*|[{s}]+"
     ))
@@ -204,11 +203,11 @@ fn inline(line: &mut Vec<Span>, source: &str, markdown: bool, base: u8, host: &i
                 ch.to_string()
             };
             let can_open = open
-                && next.is_some_and(|c| !chars::is_space(c))
+                && next.is_some_and(|c| !string::is_space(c))
                 && source[i + len..].contains(&marker);
-            let can_close = !open && prev.is_some_and(|c| !chars::is_space(c));
+            let can_close = !open && prev.is_some_and(|c| !string::is_space(c));
             let wordy =
-                ch == '_' && prev.is_some_and(chars::is_word) && next.is_some_and(chars::is_word);
+                ch == '_' && prev.is_some_and(string::is_word) && next.is_some_and(string::is_word);
             if (can_open || can_close) && !wordy {
                 push_icons(line, &text, style, host);
                 text.clear();
@@ -342,7 +341,7 @@ impl Label {
         let Some(raw) = raw.filter(|raw| !raw.is_empty()) else {
             return Label::default();
         };
-        let line_height = math::round(size * LINE_HEIGHT);
+        let line_height = number::round(size * LINE_HEIGHT);
 
         if !RE_MARKUP.is_match(raw) && !raw.contains('&') && !raw.contains('ﬂ') {
             let text = string::trim(raw);

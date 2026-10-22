@@ -2,13 +2,12 @@
 
 use crate::{
     geom::{Point, Size},
-    string,
     svg::{
         builder::{Esc, EscText, TITLE, fragment},
         edges::Marker,
     },
 };
-use js::math;
+use d3::{format::number, string};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Write as _},
@@ -203,11 +202,11 @@ impl EventModelingModel {
     fn draw_lanes(&self, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let name_size = math::round(size * 0.875);
-        let small = math::round(size * 0.8125);
-        let mono = math::round(size * 0.75);
-        let mono_step = math::round(mono * 1.4);
-        let small_step = math::round(small * 1.5);
+        let name_size = number::round(size * 0.875);
+        let small = number::round(size * 0.8125);
+        let mono = number::round(size * 0.75);
+        let mono_step = number::round(mono * 1.4);
+        let small_step = number::round(small * 1.5);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
 
@@ -587,8 +586,8 @@ impl EventModelingModel {
     fn draw_cards(&self, ctx: &Ctx<'_, impl Host>) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
-        let mono = math::round(size * 0.75);
+        let small = number::round(size * 0.875);
+        let mono = number::round(size * 0.75);
         let pad = ctx.options.padding.unwrap_or(8.0);
         let measure = ctx.host;
         let room = 160f64.max(ctx.options.max_width.unwrap_or(320.0) - 2.0 * pad);

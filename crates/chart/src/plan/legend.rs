@@ -19,8 +19,8 @@ use crate::{
     scale::{self, Count, TickFormat},
     time,
 };
+use d3::scale::{Continuous, Transform};
 use gpui::SharedString;
-use js::scale::{Continuous, Transform};
 
 /// Vega's legend defaults, in pixels.
 const SYMBOL_SIZE: f32 = 100.0;

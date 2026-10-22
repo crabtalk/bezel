@@ -9,8 +9,8 @@ use chart::{
     transform::Bins,
     vega_lite,
 };
+use d3::interpolate;
 use gpui::Rgba;
-use js::interpolate;
 
 /// `chart` at 400 by 300, its text 10 pixels and every label 10 wide.
 fn laid_out(chart: &Chart) -> Plan {

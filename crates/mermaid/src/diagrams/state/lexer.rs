@@ -3,13 +3,10 @@
 
 use super::tokens::T;
 use crate::{
-    string,
     token::{Cursor, Token},
-    util::{
-        chars,
-        chars::{digits_end, starts_with_caseless, width_at},
-    },
+    util::chars::{digits_end, starts_with_caseless, width_at},
 };
+use d3::string;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -187,7 +184,7 @@ impl<'s> Lexer<'s> {
 
     /// [`Lexer::word`] with no word character after it.
     fn keyword(&self, word: &str, at: usize) -> bool {
-        self.word(word, at) && !self.at(at + word.len()).is_some_and(chars::is_word)
+        self.word(word, at) && !self.at(at + word.len()).is_some_and(string::is_word)
     }
 
     fn ws_end(&self, q: usize) -> usize {
@@ -196,7 +193,7 @@ impl<'s> Lexer<'s> {
 
     /// The end of the run of whitespace at `q` that holds no line feed.
     fn blank_end(&self, q: usize) -> usize {
-        self.cur.until(q, |c| c == '\n' || !chars::is_space(c))
+        self.cur.until(q, |c| c == '\n' || !string::is_space(c))
     }
 
     fn eol(&self, q: usize) -> usize {
@@ -327,11 +324,11 @@ impl<'s> Lexer<'s> {
                 self.emit(T::Nl, p, end);
                 return Ok(());
             }
-            if chars::is_space(c) {
+            if string::is_space(c) {
                 self.cur.p = self.ws_end(p);
                 return Ok(());
             }
-        } else if c != '\n' && chars::is_space(c) {
+        } else if c != '\n' && string::is_space(c) {
             self.cur.p = self.blank_end(p + c.len_utf8());
             return Ok(());
         }
@@ -449,7 +446,7 @@ impl<'s> Lexer<'s> {
         }
         let end = self
             .cur
-            .until(p, |c| matches!(c, ':' | '-' | '{') || chars::is_space(c));
+            .until(p, |c| matches!(c, ':' | '-' | '{') || string::is_space(c));
         if end > p {
             self.emit_id(p, end);
             return Ok(());
@@ -497,7 +494,7 @@ impl<'s> Lexer<'s> {
     fn state(&mut self, c: char) -> Result<(), String> {
         let src = self.cur.src;
         let p = self.cur.p;
-        if c != '\n' && chars::is_space(c) {
+        if c != '\n' && string::is_space(c) {
             self.cur.p = self.blank_end(p + c.len_utf8());
             return Ok(());
         }
@@ -534,11 +531,11 @@ impl<'s> Lexer<'s> {
             self.cur.state = S::Struct;
             return Ok(());
         }
-        if chars::is_word(c) {
+        if string::is_word(c) {
             let first = self.cur.word_end(p);
             let second = self.ws_end(first);
             if second > first
-                && self.at(second).is_some_and(chars::is_word)
+                && self.at(second).is_some_and(string::is_word)
                 && let Some(brace) = self.next_brace.at(src, second + 1)
                 && brace < self.line_end(second)
             {
@@ -550,7 +547,7 @@ impl<'s> Lexer<'s> {
         }
         let end = self
             .cur
-            .until(p + c.len_utf8(), |c| c == '{' || chars::is_space(c));
+            .until(p + c.len_utf8(), |c| c == '{' || string::is_space(c));
         self.emit(T::CompositState, p, end);
         Ok(())
     }
@@ -677,7 +674,7 @@ impl<'s> Lexer<'s> {
                 self.cur.state = S::ClassStyle;
             }
             S::Style => {
-                let ids_end = self.cur.until(p, |c| !(chars::is_word(c) || c == ','));
+                let ids_end = self.cur.until(p, |c| !(string::is_word(c) || c == ','));
                 let end = self.ws_end(ids_end);
                 if ids_end == p || end == ids_end {
                     return Err(String::new());
@@ -703,7 +700,7 @@ impl<'s> Lexer<'s> {
                 let q = self.ws_end(p);
                 let end = self
                     .cur
-                    .until(q, |c| c == ':' || c == '-' || chars::is_space(c));
+                    .until(q, |c| c == ':' || c == '-' || string::is_space(c));
                 if end == q {
                     return Err(String::new());
                 }

@@ -9,9 +9,8 @@ use crate::{
     },
     error::Error,
     geom::Direction,
-    util::chars,
 };
-use js::number;
+use d3::{format::number, string};
 
 token_kinds! {
     enum Token {
@@ -39,7 +38,7 @@ token_kinds! {
         // Without a closing brace the block form scans to the end of the
         // text, and a brace is not a token on its own, so the first failure
         // is final.
-        AccDescr = acc_descr().opener(&format!(r"[\t ]*accDescr[{}]*\{{", chars::SPACE)),
+        AccDescr = acc_descr().opener(&format!(r"[\t ]*accDescr[{}]*\{{", string::SPACE)),
         AccTitle = acc_title(),
         Title = title(),
         Int = int(),

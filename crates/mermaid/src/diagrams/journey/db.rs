@@ -1,8 +1,8 @@
 //! Pele's `diagrams/journey/db.ts`.
 
-use crate::{diagrams::common::db::Titles, json, string};
+use crate::{diagrams::common::db::Titles, json};
+use d3::{format::number::Number, string};
 use indexmap::IndexSet;
-use js::number::Number;
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

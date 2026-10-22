@@ -1,7 +1,8 @@
 //! One line of text fitted into a width. Pele's
 //! `diagrams/common/fit-text.ts`.
 
-use crate::{string, text::Host};
+use crate::text::Host;
+use d3::string;
 
 pub struct Fitted {
     pub text: String,

@@ -1,7 +1,7 @@
 //! Pele's `diagrams/wardley/render.ts`.
 
 use crate::{config::within, geom::Point, svg::edges::Marker};
-use js::{math, number::Number};
+use d3::format::{number, number::Number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{
@@ -218,8 +218,8 @@ impl WardleyModel {
         let p = crate::PREFIX;
         let built = &self.built;
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.8125);
-        let tiny = math::round(size * 0.6875);
+        let small = number::round(size * 0.8125);
+        let tiny = number::round(size * 0.6875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
 
@@ -448,7 +448,8 @@ impl WardleyModel {
                 let label = labels
                     .entry(at.node)
                     .or_insert_with(|| text(&node.label, small, Some(anchor_width), Style::BOLD));
-                return 1.0 / math::hypot(&[u.x / (label.width / 2.0 + 5.0), u.y / (small * 0.8)]);
+                return 1.0
+                    / number::hypot(&[u.x / (label.width / 2.0 + 5.0), u.y / (small * 0.8)]);
             }
             if node.is_pipeline_parent == Some(true) {
                 return SQUARE / SQRT_2;
@@ -494,7 +495,7 @@ impl WardleyModel {
             let from = &positions[fi];
             let to = &positions[ti];
             let d = to.at - from.at;
-            let distance = math::hypot(&[d.x, d.y]);
+            let distance = number::hypot(&[d.x, d.y]);
             if distance < 0.01 {
                 continue;
             }
@@ -568,7 +569,7 @@ impl WardleyModel {
             };
             let target = trend.target.project(plot);
             let d = target - origin.at;
-            let distance = math::hypot(&[d.x, d.y]);
+            let distance = number::hypot(&[d.x, d.y]);
             let start = if distance > 0.0 {
                 reach(origin, d / distance)
             } else {

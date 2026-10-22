@@ -9,16 +9,15 @@ use chart::{
     scale::Ticks,
     time,
 };
-use gpui::{Hsla, Rgba};
-use js::{
+use d3::{
     color::Rgb,
-    curve::Curve,
-    date::LocalZone,
     interpolate,
     scale::{Continuous, Transform},
     scheme::Scheme,
-    time::Unit,
+    shape::curve::Curve,
+    time::{Unit, date::LocalZone},
 };
+use gpui::{Hsla, Rgba};
 
 const SIZE: [f32; 2] = [400.0, 300.0];
 const LINE: f32 = 14.0;

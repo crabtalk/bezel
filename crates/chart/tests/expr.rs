@@ -2,12 +2,10 @@ use chart::{
     Column, Data,
     expr::{Error, Expr, Row},
     time::{DAY, HOUR, MINUTE, SECOND},
-};
-use gpui::SharedString;
-use js::{
-    date::{self, LocalZone},
     value::Value,
 };
+use d3::time::{date, date::LocalZone};
+use gpui::SharedString;
 
 fn data() -> Data {
     Data::new()

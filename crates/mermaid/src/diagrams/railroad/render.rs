@@ -5,7 +5,7 @@ use crate::{
     geom::Point,
     text::Label,
 };
-use js::{math, number::Number};
+use d3::format::{number, number::Number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{collections::HashMap, fmt::Write as _};
@@ -660,11 +660,11 @@ impl RailroadDb {
         let size = if font_size > 0.0 {
             font_size
         } else {
-            math::round(base * 0.875)
+            number::round(base * 0.875)
         };
         let head_size = if font_size > 0.0 { font_size } else { base };
         let padding = capped_option(config.padding, 0.0, 200.0);
-        let line_height = math::round(size * 1.5);
+        let line_height = number::round(size * 1.5);
         let measurer = ctx.host;
         let m = Metrics {
             measure: measurer,
@@ -709,7 +709,7 @@ impl RailroadDb {
             Style::BOLD,
         );
         let title_height = title.spaced_height(16.0);
-        let head_height = math::round(head_size * 1.5);
+        let head_height = number::round(head_size * 1.5);
 
         let mut drawn = Drawn {
             m: &m,

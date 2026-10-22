@@ -4,10 +4,7 @@ use crate::{
     geom::{Point, Size},
     svg::{builder::rewrite, edges::Marker},
 };
-use js::{
-    math,
-    number::{self, Number},
-};
+use d3::format::{number, number::Number};
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Write as _},
@@ -131,8 +128,8 @@ struct Bounds {
 
 impl Bounds {
     fn grow(&mut self, (lo, hi): Area) {
-        self.min = Point::new(math::min(self.min.x, lo.x), math::min(self.min.y, lo.y));
-        self.max = Point::new(math::max(self.max.x, hi.x), math::max(self.max.y, hi.y));
+        self.min = Point::new(number::min(self.min.x, lo.x), number::min(self.min.y, lo.y));
+        self.max = Point::new(number::max(self.max.x, hi.x), number::max(self.max.y, hi.y));
     }
 }
 
@@ -140,11 +137,11 @@ impl Bounds {
 fn covered(taken: &[Area], (lo, hi): Area) -> f64 {
     let mut area = 0.0;
     for (t0, t1) in taken {
-        let w = math::min(hi.x, t1.x) - math::max(lo.x, t0.x);
+        let w = number::min(hi.x, t1.x) - number::max(lo.x, t0.x);
         if w <= 0.0 {
             continue;
         }
-        let h = math::min(hi.y, t1.y) - math::max(lo.y, t0.y);
+        let h = number::min(hi.y, t1.y) - number::max(lo.y, t0.y);
         if h > 0.0 {
             area += w * h;
         }
@@ -163,7 +160,7 @@ fn around(p: Point) -> Area {
 fn offset(value: Option<f64>) -> f64 {
     match value {
         Some(value) if number::truthy(value) => {
-            math::max(-MAX_OFFSET, math::min(MAX_OFFSET, value))
+            number::max(-MAX_OFFSET, number::min(MAX_OFFSET, value))
         }
         _ => 0.0,
     }
@@ -184,7 +181,7 @@ impl C4Model {
         let measurer = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let room =
-            tight.then(|| math::max(80.0, ctx.options.max_width.unwrap_or(320.0) - 2.0 * pad));
+            tight.then(|| number::max(80.0, ctx.options.max_width.unwrap_or(320.0) - 2.0 * pad));
         let mut layout = db.layout(measurer, size, small, room, gap);
         let root = layout.order[0];
 
@@ -267,8 +264,8 @@ impl C4Model {
             );
             let (a0, a1) = r.along;
             bounds.grow((
-                Point::new(math::min(a0.x, a1.x), math::min(a0.y, a1.y)),
-                Point::new(math::max(a0.x, a1.x), math::max(a0.y, a1.y)),
+                Point::new(number::min(a0.x, a1.x), number::min(a0.y, a1.y)),
+                Point::new(number::max(a0.x, a1.x), number::max(a0.y, a1.y)),
             ));
             if start_arrow && careful {
                 taken.push(around(r.path.start));
@@ -344,7 +341,7 @@ impl C4Model {
                 r.room,
                 Style::ITALIC,
             );
-            let lw = math::max(label.width, techn.width) + 8.0;
+            let lw = number::max(label.width, techn.width) + 8.0;
             let lh = label.height + techn.height;
             if lh == 0.0 {
                 continue;
@@ -355,7 +352,7 @@ impl C4Model {
             let (n, (a0, a1)) = (r.normal, r.along);
             let beside = n.x.abs() * (lw / 2.0) + n.y.abs() * (lh / 2.0) + 2.0;
             let aside = if number::truthy(r.lean) {
-                math::max(0.0, math::min(r.lean, beside - 14.0))
+                number::max(0.0, number::min(r.lean, beside - 14.0))
             } else {
                 beside
             };
@@ -433,7 +430,7 @@ impl C4Model {
             min: Point { x: min_x, y: min_y },
             max: Point { x: max_x, y: max_y },
         } = bounds;
-        let inner = math::max(max_x - min_x, title.width);
+        let inner = number::max(max_x - min_x, title.width);
         let width = (inner + 2.0 * pad).ceil();
         let height = (max_y - min_y + title_height + 2.0 * pad).ceil();
         let ox = pad - min_x + (inner - (max_x - min_x)) / 2.0;

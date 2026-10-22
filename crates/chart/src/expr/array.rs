@@ -3,8 +3,9 @@
 use crate::{
     expr::{Error, string},
     path::Path,
+    value::Value,
 };
-use js::{math, number, value::Value};
+use d3::format::number;
 use std::cmp::Ordering;
 
 /// `value`'s items, or the TypeError calling array method `name` on it throws.
@@ -147,7 +148,7 @@ pub(crate) fn sequence(args: &[Value]) -> Value {
     };
     // JavaScript's `Math.max(0, n) | 0`, which also makes `NaN` and infinite
     // counts 0.
-    let count = number::to_int32(math::max(0.0, ((stop - start) / step).ceil()));
+    let count = number::to_int32(number::max(0.0, ((stop - start) / step).ceil()));
     let count = count.max(0) as usize;
     (0..count)
         .map(|i| Value::Number(start + i as f64 * step))

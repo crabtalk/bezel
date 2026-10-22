@@ -9,7 +9,7 @@ use crate::{
         edges::Curve,
     },
 };
-use js::{math, number::Number};
+use d3::format::{number, number::Number};
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},
@@ -786,7 +786,7 @@ impl ErModel {
                 let dx = (route[last].at.x - route[0].at.x).abs();
                 let dy = (route[last].at.y - route[0].at.y).abs();
                 let direct = route.len() == 2
-                    && (dx < 0.01 || dy < 0.01 || math::hypot(&[dx, dy]) <= 3.0 * MARKER_LENGTH);
+                    && (dx < 0.01 || dy < 0.01 || number::hypot(&[dx, dy]) <= 3.0 * MARKER_LENGTH);
                 let stub = if direct { 0.0 } else { MARKER_LENGTH };
                 let path = route_path(&route, Curve::Smooth, stub, stub, None, None);
                 let _ = if stub > 0.0 {

@@ -3,12 +3,11 @@
 use crate::{
     config::capped,
     geom::{Axis, Point, Side, Size},
-    string,
     svg::builder::rewrite,
 };
-use js::{
-    math,
-    number::{self, Number},
+use d3::{
+    format::{number, number::Number},
+    string,
 };
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
@@ -173,11 +172,11 @@ impl View {
         let hw = self.size.w / 2.0;
         let hh = self.size.h / 2.0;
         let mut k = if self.is_round() {
-            hw / number::or(math::hypot(&[dx, dy]), 1.0)
+            hw / number::or(number::hypot(&[dx, dy]), 1.0)
         } else if self.is_diamond() {
             1.0 / number::or(dx.abs() / hw + dy.abs() / hh, 1.0)
         } else {
-            math::min(
+            number::min(
                 if dx == 0.0 {
                     f64::INFINITY
                 } else {
@@ -214,7 +213,7 @@ impl View {
         // hit unless all four corners are on one side.
         let dx = x2 - x1;
         let dy = y2 - y1;
-        let side = |x: f64, y: f64| math::sign(dx * (y - y1) - dy * (x - x1));
+        let side = |x: f64, y: f64| number::sign(dx * (y - y1) - dy * (x - x1));
         let first = side(l, t);
         first == 0.0 || side(r, t) != first || side(r, b) != first || side(l, b) != first
     }
@@ -223,11 +222,14 @@ impl View {
     /// block, or around the matching point on a round or diamond outline.
     fn loop_arc(&self, k: f64) -> Arc {
         let (Point { x, y }, hw, hh) = (self.center, self.size.w / 2.0, self.size.h / 2.0);
-        let r = math::max(1.0, math::min(math::min(10.0 + 5.0 * (k - 1.0), hw), hh));
+        let r = number::max(
+            1.0,
+            number::min(number::min(10.0 + 5.0 * (k - 1.0), hw), hh),
+        );
         if self.is_round() {
             let px = x + hw * FRAC_1_SQRT_2;
             let py = y - hw * FRAC_1_SQRT_2;
-            let half = 2.0 * math::min(1.0, r / (2.0 * hw)).asin();
+            let half = 2.0 * number::min(1.0, r / (2.0 * hw)).asin();
             let angle = |at: f64| (y - hw * at.sin() - py).atan2(x + hw * at.cos() - px);
             return Arc {
                 center: Point::new(px, py),
@@ -273,8 +275,8 @@ impl Arc {
         let ey = py + r * a2.sin();
         // Each marker lies along the chord it covers, so it follows the curve
         // instead of the tangent at its tip.
-        let sl = math::hypot(&[sx - x1, sy - y1]);
-        let el = math::hypot(&[ex - x2, ey - y2]);
+        let sl = number::hypot(&[sx - x1, sy - y1]);
+        let el = number::hypot(&[ex - x2, ey - y2]);
         EdgePath {
             d: format!(
                 "M{},{}A{},{} 0 {} 1 {},{}",
@@ -339,10 +341,10 @@ impl Router<'_> {
         let tr = t.center.x + t.size.w / 2.0;
         let tt = t.center.y - t.size.h / 2.0;
         let tb = t.center.y + t.size.h / 2.0;
-        let x1 = math::max(sl, tl);
-        let x2 = math::min(sr, tr);
-        let y1 = math::max(st, tt);
-        let y2 = math::min(sb, tb);
+        let x1 = number::max(sl, tl);
+        let x2 = number::min(sr, tr);
+        let y1 = number::max(st, tt);
+        let y2 = number::min(sb, tb);
         let over_x = x2 - x1 > 6.0;
         let over_y = y2 - y1 > 6.0;
 
@@ -356,7 +358,7 @@ impl Router<'_> {
             let down = o.y + outer.size.h / 2.0 - (i.y + inner.size.h / 2.0);
             let left = i.x - inner.size.w / 2.0 - (o.x - outer.size.w / 2.0);
             let right = o.x + outer.size.w / 2.0 - (i.x + inner.size.w / 2.0);
-            let least = math::min(math::min(up, down), math::min(left, right));
+            let least = number::min(number::min(up, down), number::min(left, right));
             let mut points = if least == down {
                 vec![
                     Point::new(i.x, inner.edge_y(i.x, 1.0)),
@@ -384,8 +386,11 @@ impl Router<'_> {
             return points;
         }
         if over_x {
-            let margin = math::min(6.0, (x2 - x1) / 2.0);
-            let x = math::min(math::max((x1 + x2) / 2.0 + shift, x1 + margin), x2 - margin);
+            let margin = number::min(6.0, (x2 - x1) / 2.0);
+            let x = number::min(
+                number::max((x1 + x2) / 2.0 + shift, x1 + margin),
+                x2 - margin,
+            );
             let down = if t.center.y > s.center.y { 1.0 } else { -1.0 };
             return vec![
                 Point::new(x, s.edge_y(x, down)),
@@ -393,8 +398,11 @@ impl Router<'_> {
             ];
         }
         if over_y {
-            let margin = math::min(6.0, (y2 - y1) / 2.0);
-            let y = math::min(math::max((y1 + y2) / 2.0 + shift, y1 + margin), y2 - margin);
+            let margin = number::min(6.0, (y2 - y1) / 2.0);
+            let y = number::min(
+                number::max((y1 + y2) / 2.0 + shift, y1 + margin),
+                y2 - margin,
+            );
             let right = if t.center.x > s.center.x { 1.0 } else { -1.0 };
             return vec![
                 Point::new(s.edge_x(y, right), y),
@@ -476,12 +484,12 @@ fn trace(p: &[Point], mut start_trim: f64, mut end_trim: f64) -> EdgePath {
     let Point { x: ex, y: ey } = p[n - 1];
     let mut ax = p[1].x - sx;
     let mut ay = p[1].y - sy;
-    let first = math::hypot(&[ax, ay]);
+    let first = number::hypot(&[ax, ay]);
     ax /= number::or(first, 1.0);
     ay /= number::or(first, 1.0);
     let mut bx = ex - p[n - 2].x;
     let mut by = ey - p[n - 2].y;
-    let last = math::hypot(&[bx, by]);
+    let last = number::hypot(&[bx, by]);
     bx /= number::or(last, 1.0);
     by /= number::or(last, 1.0);
     if n == 2 && start_trim + end_trim > first {
@@ -489,17 +497,17 @@ fn trace(p: &[Point], mut start_trim: f64, mut end_trim: f64) -> EdgePath {
         start_trim *= scale;
         end_trim *= scale;
     }
-    start_trim = math::min(start_trim, first);
-    end_trim = math::min(end_trim, last);
+    start_trim = number::min(start_trim, first);
+    end_trim = number::min(end_trim, last);
     let mut d = format!(
         "M{},{}",
         num(sx + ax * start_trim),
         num(sy + ay * start_trim)
     );
     if n == 3 {
-        let r = math::max(
+        let r = number::max(
             0.0,
-            math::min(math::min(CORNER, first - start_trim), last - end_trim),
+            number::min(number::min(CORNER, first - start_trim), last - end_trim),
         );
         let bend = p[1];
         let _ = write!(

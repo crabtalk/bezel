@@ -1,7 +1,7 @@
 //! Layout of a graph whose nodes may be nested in groups, each group laid out
 //! with [`layered`] in its own direction.
 
-use js::number;
+use d3::format::number;
 use std::collections::HashMap;
 
 use crate::{

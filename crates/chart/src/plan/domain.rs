@@ -9,8 +9,8 @@ use crate::{
         scales::{self, ColorScale, Role},
     },
 };
+use d3::format::number::Number as JsNumber;
 use gpui::{Hsla, SharedString};
-use js::number::Number as JsNumber;
 use std::{collections::HashMap, sync::Arc};
 
 /// A missing code in a discrete column.

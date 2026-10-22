@@ -3,7 +3,7 @@
 //! `diagrams/cynefin/boundaries.ts`.
 
 use crate::{geom::Point, svg::builder::fragment};
-use js::number;
+use d3::format::number;
 use std::fmt;
 
 pub const FOLD: WaveOptions = WaveOptions {

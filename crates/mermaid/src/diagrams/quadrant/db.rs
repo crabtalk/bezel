@@ -1,8 +1,11 @@
 //! Pele's `diagrams/quadrant/db.ts`.
 
-use crate::{json, string};
+use crate::json;
+use d3::{
+    format::{number, number::Number},
+    string,
+};
 use indexmap::IndexMap;
-use js::number::{self, Number};
 use serde::Serialize;
 
 use crate::{detect::Kind, diagrams::common::db::Titles, error::Error};

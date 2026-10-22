@@ -7,8 +7,8 @@ use crate::{
     transform::{Bin, Op, Part, TimeUnit},
     vega_lite::format,
 };
+use d3::format::number::Number as JsNumber;
 use gpui::SharedString;
-use js::number::Number as JsNumber;
 use serde_json::{Map, Value};
 
 /// Vega-Lite's name for the count of a group's rows.

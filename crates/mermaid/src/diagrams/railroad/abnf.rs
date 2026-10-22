@@ -2,7 +2,7 @@
 //! semicolon. Pele's `diagrams/railroad/abnf.ts`.
 
 use crate::util::chars::inner;
-use js::number;
+use d3::format::number;
 
 use super::{
     common::{

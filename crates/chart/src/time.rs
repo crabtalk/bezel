@@ -1,6 +1,6 @@
 //! Times as milliseconds since the Unix epoch, read on the UTC calendar.
 
-use js::date::LocalZone;
+use d3::time::date::LocalZone;
 
 pub const SECOND: f64 = 1_000.0;
 pub const MINUTE: f64 = 60.0 * SECOND;

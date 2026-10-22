@@ -1,6 +1,6 @@
 //! Pele's `diagrams/class/members.ts`.
 
-use crate::{string, util::chars};
+use d3::string;
 use serde::{Serialize, Serializer};
 use std::fmt::Write as _;
 
@@ -108,7 +108,7 @@ pub struct DisplayDetails {
 /// The end of the line at `from` of `input`.
 fn line_end(input: &str, from: usize) -> usize {
     input[from..]
-        .find(|c: char| chars::is_line_end(c))
+        .find(|c: char| string::is_line_end(c))
         .map_or(input.len(), |at| from + at)
 }
 
@@ -173,7 +173,7 @@ impl ClassMember {
             self.parameters = string::trim(&input[open + 1..close]).to_string();
             let mut rest = close + 1;
             if let Some(c) = input[rest..].chars().next()
-                && (Classifier::parse(c).is_some() || chars::is_space(c))
+                && (Classifier::parse(c).is_some() || string::is_space(c))
             {
                 self.classifier = Classifier::parse(c);
                 rest += c.len_utf8();

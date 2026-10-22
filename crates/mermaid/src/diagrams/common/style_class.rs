@@ -1,6 +1,6 @@
 //! A `classDef`: the styles it gives a node, and those it gives its text.
 
-use crate::string;
+use d3::string;
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

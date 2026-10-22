@@ -3,8 +3,8 @@
 use crate::{
     diagrams::common::{db::Titles, style_class::StyleClass},
     geom::Direction,
-    string,
 };
+use d3::string;
 use indexmap::{IndexMap, IndexSet};
 use serde::{Serialize, Serializer};
 

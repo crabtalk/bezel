@@ -13,6 +13,7 @@ pub mod plan;
 pub mod scale;
 pub mod time;
 pub mod transform;
+pub mod value;
 #[cfg(feature = "vega-lite")]
 pub mod vega_lite;
 pub mod view;

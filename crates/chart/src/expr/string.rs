@@ -1,7 +1,8 @@
 //! Vega's string functions. Lengths and indices count UTF-16 code units, as
 //! JavaScript's do.
 
-use js::{string, value::Value};
+use crate::value::Value;
+use d3::string;
 
 fn units(text: &str) -> Vec<u16> {
     text.encode_utf16().collect()
@@ -106,7 +107,7 @@ pub(crate) fn truncate(text: &str, length: f64, align: &Value, ellipsis: &Value)
 /// expression, else the first match or occurrence of the string.
 pub(crate) fn replace(text: &str, pattern: &Value, replacement: &str) -> String {
     match pattern {
-        Value::RegExp(regexp) => regexp.regex.replace_str(text, replacement),
+        Value::RegExp(regexp) => regexp.replace(text, replacement),
         pattern => string::replace(text, &pattern.to_string(), replacement),
     }
 }
@@ -120,7 +121,6 @@ pub(crate) fn split(text: &str, separator: &Value, limit: &Value) -> Value {
     let pieces: Vec<Option<String>> = match separator {
         _ if limit == 0 => Vec::new(),
         Value::RegExp(regexp) => regexp
-            .regex
             .split(text)
             .into_iter()
             .take(limit)

@@ -19,11 +19,11 @@ use crate::{
         scales::{self, Context, Role},
     },
 };
-use gpui::SharedString;
-use js::{
-    curve::Curve,
+use d3::{
     scale::{Band, Continuous},
+    shape::curve::Curve,
 };
+use gpui::SharedString;
 use std::{
     collections::{HashMap, HashSet},
     mem,

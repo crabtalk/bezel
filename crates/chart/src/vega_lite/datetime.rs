@@ -1,7 +1,7 @@
 //! Vega-Lite's [DateTime](https://vega.github.io/vega-lite/docs/datetime.html)
 //! object: a time from calendar fields.
 
-use js::date::Date;
+use d3::time::date::Date;
 use serde_json::{Map, Value};
 
 use crate::time;

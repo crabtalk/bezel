@@ -1,7 +1,7 @@
 //! Writing SVG: escaping, coordinates, and a measured label as `<text>`.
 //! Pele's `svg/builder.ts`.
 
-use js::{math, number::Number};
+use d3::format::{number, number::Number};
 use std::{
     borrow::Cow,
     fmt::{self, Write},
@@ -103,13 +103,13 @@ pub fn push_num(out: &mut String, value: f64) {
     let mut buf = [0u8; 16];
     match digits(value, &mut buf) {
         Some(text) => out.push_str(text),
-        None => out.push_str(&Number(math::round(value * 100.0) / 100.0).to_string()),
+        None => out.push_str(&Number(number::round(value * 100.0) / 100.0).to_string()),
     }
 }
 
 /// `value` to two decimals in `buf`, or `None` past what `buf` holds.
 fn digits(value: f64, buf: &mut [u8; 16]) -> Option<&str> {
-    let n = math::round(value * 100.0);
+    let n = number::round(value * 100.0);
     if n == 0.0 {
         return Some("0");
     }
@@ -201,7 +201,7 @@ impl fmt::Display for Num {
         let mut buf = [0u8; 16];
         match digits(self.0, &mut buf) {
             Some(text) => f.write_str(text),
-            None => f.write_str(&Number(math::round(self.0 * 100.0) / 100.0).to_string()),
+            None => f.write_str(&Number(number::round(self.0 * 100.0) / 100.0).to_string()),
         }
     }
 }

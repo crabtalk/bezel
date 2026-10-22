@@ -7,7 +7,8 @@ use super::{
     util::chars::{self, is_inline_space, width_at},
     yaml::parse_yaml,
 };
-use crate::{json, json::JsValue, string};
+use crate::{json, json::JsValue};
+use d3::string;
 use regex::{Captures, Regex};
 use std::{ops::Range, sync::LazyLock};
 
@@ -46,7 +47,7 @@ pub fn cleanup_comments(text: &str) -> String {
             line = end;
             continue;
         }
-        match text[line..].find(|c: char| chars::is_line_end(c)) {
+        match text[line..].find(|c: char| string::is_line_end(c)) {
             Some(n) => line += n + width_at(text, line + n),
             None => break,
         }
@@ -73,7 +74,7 @@ impl<'t> Directive<'t> {
         let word = |at: usize| {
             at + bytes[at..]
                 .iter()
-                .take_while(|&&b| chars::is_word(b))
+                .take_while(|&&b| string::is_word(b))
                 .count()
         };
         loop {
@@ -103,7 +104,7 @@ impl<'t> Directive<'t> {
                     }
                     match text[at..].chars().next() {
                         Some('\r') if bytes.get(at + 1) == Some(&b'\n') => at += 2,
-                        Some(c) if !chars::is_line_end(c) => at += c.len_utf8(),
+                        Some(c) if !string::is_line_end(c) => at += c.len_utf8(),
                         Some('\n') => at += 1,
                         _ => break,
                     }
@@ -137,7 +138,7 @@ impl<'t> Directive<'t> {
 fn breaks_in_space(text: &str, from: usize) -> impl Iterator<Item = usize> + '_ {
     text[from..]
         .char_indices()
-        .take_while(|&(_, c)| chars::is_space(c))
+        .take_while(|&(_, c)| string::is_space(c))
         .filter(|&(_, c)| matches!(c, '\n' | '\r'))
         .map(move |(at, _)| from + at)
 }
@@ -332,7 +333,7 @@ fn drop_color_semicolons(text: &str, keyword: &str) -> String {
                     hash = Some(j);
                     break;
                 }
-            } else if chars::is_space(c) {
+            } else if string::is_space(c) {
                 after_colon = false;
             }
         }

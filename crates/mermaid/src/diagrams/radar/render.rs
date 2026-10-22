@@ -1,7 +1,10 @@
 //! Pele's `diagrams/radar/render.ts`.
 
 use crate::config::capped;
-use js::{curve::Curve, math, number::Number, path::Segment};
+use d3::{
+    format::{number, number::Number},
+    shape::{curve::Curve, path::Segment},
+};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::{
@@ -28,7 +31,7 @@ use crate::{
 const GAP: f64 = 24.0;
 
 fn relative_radius(value: f64, min: f64, max: f64, radius: f64) -> f64 {
-    let clipped = math::min(math::max(value, min), max);
+    let clipped = number::min(number::max(value, min), max);
     (radius * (clipped - min)) / (max - min)
 }
 
@@ -155,7 +158,7 @@ impl RadarModel {
     ) -> Rendered {
         let p = crate::PREFIX;
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
+        let small = number::round(size * 0.875);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
 

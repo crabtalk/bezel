@@ -3,9 +3,11 @@
 use crate::{
     geom::{Direction, Point, RoutePoint, Side, Size},
     svg::{edges::Curve, theme::node_class_names},
-    util::chars,
 };
-use js::{math, number::Number};
+use d3::{
+    format::{number, number::Number},
+    string,
+};
 use regex::{Captures, Regex};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
@@ -62,7 +64,7 @@ static RE_MARKUP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[&<>\\]").expe
 static RE_EDGE_CLASSES: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
         r"^default relationship relationship-[^{s}]+[{s}]?",
-        s = chars::SPACE
+        s = string::SPACE
     ))
     .expect("pattern")
 });
@@ -376,8 +378,8 @@ impl UsecaseModel {
         let p = crate::PREFIX;
         let graph = self.graph();
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
-        let tiny = math::round(size * 0.8125);
+        let small = number::round(size * 0.875);
+        let tiny = number::round(size * 0.8125);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let root_dir = if turned {
@@ -470,7 +472,7 @@ impl UsecaseModel {
                         let value = text(Some(&row.value), false, measure, small, 260.0, base);
                         view.key_w = view.key_w.max(key.width);
                         value_w = value_w.max(value.width);
-                        view.size.h += value.height.max(math::round(small * 1.5)) + ROW_PAD;
+                        view.size.h += value.height.max(number::round(small * 1.5)) + ROW_PAD;
                         view.rows.push((key, value));
                     }
                     // The root of an empty object has a value and no key, and
@@ -478,7 +480,7 @@ impl UsecaseModel {
                     if view.key_w > 0.0 {
                         view.key_w += 2.0 * CELL_PAD;
                     }
-                    view.head_h = view.label.height.max(math::round(font_size * 1.5)) + ROW_PAD;
+                    view.head_h = view.label.height.max(number::round(font_size * 1.5)) + ROW_PAD;
                     view.size.w = (view.label.width + 2.0 * CELL_PAD)
                         .max(if view.rows.is_empty() {
                             0.0
@@ -788,7 +790,7 @@ impl UsecaseModel {
                 );
                 let mut y = head_y;
                 for (key, value) in &view.rows {
-                    let row_h = value.height.max(math::round(small * 1.5)) + ROW_PAD;
+                    let row_h = value.height.max(number::round(small * 1.5)) + ROW_PAD;
                     let _ = write!(
                         nodes_out,
                         "{}{}",
@@ -909,7 +911,7 @@ impl UsecaseModel {
                 let reach = LOOP + k * 8.0;
                 let a = view.anchor(c, side, -spread);
                 let b = view.anchor(c, side, spread);
-                let len = math::hypot(&[reach, spread]);
+                let len = number::hypot(&[reach, spread]);
                 let u = if sideways {
                     Point::new(spread / len, reach / len)
                 } else {

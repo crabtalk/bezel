@@ -3,9 +3,14 @@
 use crate::{
     data::{Column, Data, Name, Text},
     transform::{Groups, Random},
+    value::Value,
+};
+use d3::{
+    array,
+    format::{number, number::Number as JsNumber},
+    string,
 };
 use gpui::SharedString;
-use js::{array, math, number::Number as JsNumber, string, value::Value};
 use std::{borrow::Cow, cmp::Ordering, collections::HashSet, fmt, str::FromStr};
 
 /// Resamples per bootstrap confidence interval, and its alpha.
@@ -415,7 +420,7 @@ impl Running {
         random: &mut Random,
     ) -> Option<f64> {
         let valid = self.valid;
-        let dev = math::max(0.0, self.dev);
+        let dev = number::max(0.0, self.dev);
         let some = |v: f64| (valid > 0.0).then_some(v);
         match op {
             Op::Count => Some(rows.len() as f64),
@@ -432,7 +437,7 @@ impl Running {
             Op::Min => self.least.map(|(_, v)| v),
             Op::Max => self.most.map(|(_, v)| v),
             Op::Exponential => {
-                some(self.exp * (1.0 - self.exponent) / (1.0 - math::pow(self.exponent, valid)))
+                some(self.exp * (1.0 - self.exponent) / (1.0 - number::pow(self.exponent, valid)))
             }
             Op::Exponentialb => some(self.exp * (1.0 - self.exponent)),
             Op::Distinct => {

@@ -1,12 +1,14 @@
 //! Source text to a syntax tree, by JavaScript's grammar and precedence.
 
-use crate::expr::{Error, function::Function};
-use gpui::SharedString;
-use js::{
-    number::{self, Number},
-    string,
-    value::{RegExp, Value},
+use crate::{
+    expr::{Error, function::Function},
+    value::{Value, regexp::RegExp},
 };
+use d3::{
+    format::{number, number::Number},
+    string,
+};
+use gpui::SharedString;
 use std::{f64::consts, sync::Arc};
 
 #[derive(Clone, Debug)]

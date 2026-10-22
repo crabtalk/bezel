@@ -2,7 +2,7 @@
 //! `splitAccessPath` reads it: `a.b`, `a[0]`, `a["b"]` and `a['b']`, with
 //! `\` escaping the character after it.
 
-use js::value::{TypeError, Value};
+use crate::value::{TypeError, Value};
 use std::{ops::Deref, str::FromStr};
 
 /// The keys a field name steps through, outermost first.

@@ -1,7 +1,7 @@
 //! Pele's `diagrams/state/graph.ts`: Mermaid's dataFetcher, which walks the
 //! documents and resolves them into the nodes and edges that are drawn.
 
-use crate::string;
+use d3::string;
 use std::collections::HashMap;
 
 use indexmap::IndexMap;

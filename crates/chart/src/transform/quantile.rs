@@ -1,8 +1,8 @@
 //! Vega-Lite's `quantile` transform.
 
 use crate::{data::Data, transform::Groups};
+use d3::array;
 use gpui::SharedString;
-use js::array;
 
 /// Quantiles of `field`'s values per group: one row per probability.
 #[derive(Clone, Debug, PartialEq)]

@@ -6,7 +6,8 @@ use super::{
     tokens::T,
     types::{ClassRelation, LineType, Relation, RelationEnd, RelationType},
 };
-use crate::{detect::Kind, error::Error, geom::Direction, string, token::Stream};
+use crate::{detect::Kind, error::Error, geom::Direction, token::Stream};
+use d3::string;
 
 const NAME_TOKENS: &str = "'UNICODE_TEXT', 'NUM', 'ALPHA', 'MINUS', 'BQUOTE_STR'";
 

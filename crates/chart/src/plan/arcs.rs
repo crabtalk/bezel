@@ -19,8 +19,8 @@ use crate::{
         scales::{self, Context, Role},
     },
 };
+use d3::{scale::Band, shape::curve::Curve};
 use gpui::SharedString;
-use js::{curve::Curve, scale::Band};
 use std::{collections::HashMap, f32::consts::TAU};
 
 /// A radius for each row, in pixels: a value, or a field through its

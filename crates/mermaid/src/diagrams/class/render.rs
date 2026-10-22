@@ -2,12 +2,11 @@
 
 use crate::{
     geom::{Axis, Direction, Point, RoutePoint, Side, Size},
-    string,
     svg::edges::Curve,
 };
-use js::{
-    math,
-    number::{self, Number},
+use d3::{
+    format::{number, number::Number},
+    string,
 };
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
@@ -398,7 +397,7 @@ fn straighten(
     let at = if first { 0 } else { route.len() - 1 };
     let next = if first { 1 } else { at - 1 };
     let reach = (route[next].at.along(along) - route[at].at.along(along)).abs();
-    let length = math::min(
+    let length = number::min(
         if across == Axis::Y {
             room + 10.0
         } else {
@@ -449,10 +448,10 @@ impl Cards {
             text: decode_entities(raw),
             at: Point::new(cx, cy),
         });
-        self.min.x = math::min(self.min.x, cx - width / 2.0);
-        self.max.x = math::max(self.max.x, cx + width / 2.0);
-        self.min.y = math::min(self.min.y, cy - tiny_height / 2.0);
-        self.max.y = math::max(self.max.y, cy + tiny_height / 2.0);
+        self.min.x = number::min(self.min.x, cx - width / 2.0);
+        self.max.x = number::max(self.max.x, cx + width / 2.0);
+        self.min.y = number::min(self.min.y, cy - tiny_height / 2.0);
+        self.max.y = number::max(self.max.y, cy + tiny_height / 2.0);
     }
 }
 
@@ -756,7 +755,7 @@ impl ClassModel {
                 gaps[j] = gap;
                 total += gap;
             }
-            let scale = math::min(1.0, (length - 24.0) / total);
+            let scale = number::min(1.0, (length - 24.0) / total);
             if scale <= 0.0 {
                 continue;
             }

@@ -14,10 +14,7 @@ use crate::{
     },
     text::{Label, Style, has_icon},
 };
-use js::{
-    math,
-    number::{self, Number},
-};
+use d3::format::{number, number::Number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::fmt::Write as _;
@@ -156,7 +153,7 @@ impl MindmapModel {
                 } else {
                     0.0
                 };
-            let th = label.height.max(math::round(size * 1.5));
+            let th = label.height.max(number::round(size * 1.5));
             let mut shape = node.kind.shape().or_else(|| (i == 0).then_some(ROOT_SHAPE));
             // In an outline the root heads a column, and the trunk drops from
             // under its left end. The root is a pill there unless it is a box

@@ -1,11 +1,11 @@
 //! JSON values as JavaScript reads them, and numbers, indices and dates
 //! written as `JSON.stringify` writes them, for `serialize_with`.
 
-use indexmap::IndexMap;
-use js::{
-    date::LocalZone,
-    number::{self, Number},
+use d3::{
+    format::{number, number::Number},
+    time::date::LocalZone,
 };
+use indexmap::IndexMap;
 use serde::{Serialize, Serializer};
 use serde_json::{Map, Value};
 use std::fmt::Write as _;

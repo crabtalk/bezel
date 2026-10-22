@@ -5,7 +5,7 @@ use crate::{
     Error, Kind,
     geom::{Point, Size},
 };
-use js::number::Number;
+use d3::format::number::Number;
 
 const MAX_SPAN: f64 = 1000.0;
 

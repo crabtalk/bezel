@@ -1,11 +1,8 @@
 //! Labels laid out as journey and timeline draw them, and cut to fit a box.
 //! Pele's `diagrams/common/fit.ts`.
 
-use crate::{
-    string,
-    text::{Host, Label},
-    util::chars,
-};
+use crate::text::{Host, Label};
+use d3::string;
 use regex::Regex;
 use std::sync::LazyLock;
 
@@ -14,7 +11,7 @@ use std::sync::LazyLock;
 static RE_UNIT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
         r"(?i-u:<br)[{}]*/?>|ﬂ°°?[0-9A-Z_a-z]+¶ß|&#?[0-9A-Z_a-z]+;|(?s:.)",
-        chars::SPACE
+        string::SPACE
     ))
     .expect("pattern")
 });

@@ -1,6 +1,7 @@
 //! What the agentflow parser builds. Pele's `diagrams/agentflow/db.ts`.
 
-use crate::{json::JsValue, string, util::chars};
+use crate::json::JsValue;
+use d3::string;
 use indexmap::{IndexMap, IndexSet};
 use regex::Regex;
 use serde::{Serialize, Serializer, ser::SerializeMap};
@@ -48,7 +49,7 @@ const TOOL_SHAPES: [&str; 5] = [
 ];
 
 static RE_BLOCK_SCALAR: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(&format!(r":[{s}]*[>|][0-9+-]*[{s}]*$", s = chars::SPACE)).expect("pattern")
+    Regex::new(&format!(r":[{s}]*[>|][0-9+-]*[{s}]*$", s = string::SPACE)).expect("pattern")
 });
 static RE_TRAILING_COMMA: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r",([\t ]*)$").expect("pattern"));

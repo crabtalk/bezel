@@ -11,8 +11,8 @@ use crate::{
         },
     },
     error::Error,
-    util::chars,
 };
+use d3::string;
 
 token_kinds! {
     enum Token {
@@ -61,7 +61,7 @@ token_kinds! {
         AccDescr = acc_descr("EM_ACC_DESCR"),
         AccTitle = acc_title().named("EM_ACC_TITLE"),
         Title = title().named("EM_TITLE"),
-        Ws = TokenType::regex("EM_WS", &format!("[{}]+", chars::SPACE), None).hidden(),
+        Ws = TokenType::regex("EM_WS", &format!("[{}]+", string::SPACE), None).hidden(),
         Yaml = yaml().named("EM_YAML"),
         Directive = directive().named("EM_DIRECTIVE"),
         Comment = single_line_comment().named("EM_SINGLE_LINE_COMMENT"),

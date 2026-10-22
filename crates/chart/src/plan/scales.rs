@@ -1,6 +1,6 @@
 //! Each channel's scale as Vega-Lite defaults it and Vega builds it: its
 //! type, domain and range for positions, numbers, colours, shapes and
-//! dashes, through bezel-js's d3-scale.
+//! dashes, through bezel-d3's d3-scale.
 
 use crate::{
     color,
@@ -16,9 +16,8 @@ use crate::{
     },
     scale::TickFormat,
 };
-use js::{
+use d3::{
     color::Rgb,
-    date::LocalZone,
     format::NumberFormat,
     interpolate::Interpolate,
     scale::{
@@ -26,7 +25,7 @@ use js::{
         Transform,
     },
     scheme,
-    time::Interval,
+    time::{Interval, date::LocalZone},
 };
 use std::sync::Arc;
 

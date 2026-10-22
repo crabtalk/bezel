@@ -5,12 +5,11 @@ use crate::{
     model::{Axis, Domain, Legend, Nice, Scale, Stack},
     time,
 };
-use gpui::SharedString;
-use js::{
-    date::LocalZone,
-    format::{NumberFormat, Specifier},
-    number::Number as JsNumber,
+use d3::{
+    format::{NumberFormat, Specifier, number::Number as JsNumber},
+    time::date::LocalZone,
 };
+use gpui::SharedString;
 use std::{borrow::Cow, sync::Arc};
 
 /// A field, or a datum, read as `kind` and placed by `scale`.

@@ -5,18 +5,17 @@ use crate::{
     data::Data,
     expr::{self, Expr, Row},
     transform::{Aggregate, Bin, Bins, Measure, Op, Part, Random, TimeUnit, Transform},
+    value::Value,
     vega_lite::{
         encoding::Def,
         field::{self, Derive},
     },
 };
-use gpui::SharedString;
-use js::{
-    date::LocalZone,
+use d3::{
     format::NumberFormat,
-    time::{Interval, Unit},
-    value::Value,
+    time::{Interval, Unit, date::LocalZone},
 };
+use gpui::SharedString;
 use std::str::FromStr;
 
 /// Vega-Lite's dash between a bin's edges in its text range.

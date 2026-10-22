@@ -1,7 +1,7 @@
 //! Pele's `diagrams/venn/render.ts`.
 
 use crate::{geom::Point, json::JsValue};
-use js::{math, number::Number};
+use d3::format::{number, number::Number};
 
 use crate::svg::builder::EscText;
 use indexmap::{IndexMap, IndexSet};
@@ -58,8 +58,8 @@ fn key_of(ids: &[String]) -> String {
 impl Render for VennDb {
     fn render(&self, _config: &Config, ctx: &Ctx<'_, impl Host>) -> Result<Rendered, Error> {
         let size = ctx.options.font_size;
-        let small = math::round(size * 0.875);
-        let tiny = math::round(size * 0.8125);
+        let small = number::round(size * 0.875);
+        let tiny = number::round(size * 0.8125);
         let measure = ctx.host;
         let pad = ctx.options.padding.unwrap_or(8.0);
         let p = crate::PREFIX;

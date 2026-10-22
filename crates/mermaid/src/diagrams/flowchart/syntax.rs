@@ -8,9 +8,9 @@ use super::{
 use crate::{
     detect::Kind,
     error::Error,
-    string,
     token::{Stream, Token, expecting},
 };
+use d3::string;
 
 const ID: [T; 11] = [
     T::Num,

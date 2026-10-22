@@ -2,8 +2,8 @@
 
 use super::GitGraphConfig;
 use crate::diagrams::common::db::Titles;
+use d3::format::number;
 use indexmap::IndexMap;
-use js::number;
 use serde::Serialize;
 use serde_repr::Serialize_repr;
 

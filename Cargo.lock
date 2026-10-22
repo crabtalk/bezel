@@ -560,11 +560,20 @@ dependencies = [
 name = "bezel-chart"
 version = "0.2.19"
 dependencies = [
+ "bezel-d3",
  "bezel-gpui",
- "bezel-js",
  "bezel-theme",
  "image",
  "lyon",
+ "regex",
+ "serde_json",
+]
+
+[[package]]
+name = "bezel-d3"
+version = "0.2.19"
+dependencies = [
+ "chrono",
  "serde_json",
 ]
 
@@ -903,14 +912,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bezel-js"
-version = "0.2.19"
-dependencies = [
- "chrono",
- "serde_json",
-]
-
-[[package]]
 name = "bezel-markdown"
 version = "0.2.19"
 dependencies = [
@@ -930,7 +931,7 @@ dependencies = [
 name = "bezel-mermaid"
 version = "0.2.19"
 dependencies = [
- "bezel-js",
+ "bezel-d3",
  "chrono",
  "indexmap 2.14.0",
  "memchr",

@@ -7,9 +7,9 @@ use crate::{
         tokens::{Header, Reader, TokenType, acc_title, keyword, title, token_kinds},
     },
     error::Error,
-    string,
     util::chars::{char_at, inner},
 };
+use d3::string;
 
 token_kinds! {
     enum Token {

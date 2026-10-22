@@ -3,7 +3,7 @@
 //! indented `text` continues a set, and the statements are what tell the
 //! model so. Pele's `diagrams/venn/parser.ts`.
 
-use js::number;
+use d3::format::number;
 use std::borrow::Cow;
 
 use super::{
