@@ -5,9 +5,8 @@
 //!   [`Appearance`];
 //! - keystroke → PTY byte encoding (printables, control keys, arrows/nav
 //!   escape sequences, Ctrl- combos, Alt prefixing);
-//! - the 12 ms input coalescer, the 4 ms output batch and the 80 ms resize
-//!   debounce constant (the host drives the timers; the buffer logic here is
-//!   pure);
+//! - the 12 ms input coalescer and the 80 ms resize debounce constant (the
+//!   host drives the timers; the buffer logic here is pure);
 //! - [`TerminalElement`] — a custom gpui element that measures cell metrics
 //!   from the real mono font (the "font probe"), reports the resulting
 //!   cols×rows back to the host through its grid callback, and paints the
@@ -82,75 +81,6 @@ impl InputCoalescer {
 
     pub fn is_empty(&self) -> bool {
         self.pending.is_empty()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Output batch (pure buffer; the host owns the 4 ms timer)
-// ---------------------------------------------------------------------------
-
-/// Window over which PTY output is held and fed as one run.
-pub const OUTPUT_BATCH_MS: u64 = 4;
-/// Held bytes at which [`OutputBatch::push`] hands them back without waiting
-/// for the window to end.
-pub const OUTPUT_BATCH_LIMIT: usize = 256 * 1024;
-
-/// What [`OutputBatch::push`] asks of the host.
-#[derive(Debug, PartialEq, Eq)]
-pub enum Batched {
-    /// The first chunk after idle. Feed it now, then start an
-    /// [`OUTPUT_BATCH_MS`] timer that calls [`OutputBatch::tick`].
-    Open(Vec<u8>),
-    /// Held for the timer already running.
-    Held,
-    /// The held bytes reached [`OUTPUT_BATCH_LIMIT`]. Feed them now; the
-    /// timer keeps running.
-    Full(Vec<u8>),
-}
-
-/// Groups PTY output into one feed per window. The first chunk after idle is
-/// fed at once; what arrives while the window is open is held until
-/// [`OutputBatch::tick`]. A window that ends with nothing held closes the
-/// batch, and the next chunk opens a new one.
-#[derive(Debug, Default)]
-pub struct OutputBatch {
-    pending: Vec<u8>,
-    open: bool,
-}
-
-impl OutputBatch {
-    pub fn push(&mut self, bytes: Vec<u8>) -> Batched {
-        if bytes.is_empty() {
-            return Batched::Held;
-        }
-        if !self.open {
-            self.open = true;
-            return Batched::Open(bytes);
-        }
-        if self.pending.is_empty() {
-            self.pending = bytes;
-        } else {
-            self.pending.extend_from_slice(&bytes);
-        }
-        if self.pending.len() >= OUTPUT_BATCH_LIMIT {
-            return Batched::Full(std::mem::take(&mut self.pending));
-        }
-        Batched::Held
-    }
-
-    /// The window ended. `Some` is the held bytes: feed them and start the
-    /// timer again. `None` closes the batch; start no timer.
-    pub fn tick(&mut self) -> Option<Vec<u8>> {
-        if self.pending.is_empty() {
-            self.open = false;
-            return None;
-        }
-        Some(std::mem::take(&mut self.pending))
-    }
-
-    /// Whether a timer should be running.
-    pub fn is_open(&self) -> bool {
-        self.open
     }
 }
 
