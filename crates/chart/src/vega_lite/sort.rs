@@ -4,13 +4,14 @@
 use crate::{
     data::Data,
     model::Sort,
-    transform::{Aggregate, Measure, Op, Random},
+    transform::{Aggregate, Measure, Op},
     vega_lite::{
         encoding::{Def, SortBy},
         field::Derive,
     },
 };
 use gpui::SharedString;
+use vega::statistics::Random;
 
 /// Channels that split a stack.
 pub(crate) const STACK_BY: [&str; 9] = [

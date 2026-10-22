@@ -1,9 +1,10 @@
-use crate::spec::Many;
+use crate::spec::{Many, Transform};
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 
-/// A data set: inline `values`, a `url`, or derived from a `source`, run
-/// through its `transform`s.
+/// A data set: inline `values`, a `url`, or derived from one or more
+/// `source`s, run through its `transform`s.
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Data {
@@ -13,66 +14,46 @@ pub struct Data {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub source: Option<String>,
+    pub source: Option<Many<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub format: Option<Json>,
+    pub format: Option<Format>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub transform: Vec<Transform>,
 }
 
-/// A data transform, by its `type`.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum Transform {
-    Stack(Stack),
-    Filter(Filter),
-}
-
-/// `filter`: the tuples `expr` is truthy on.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Filter {
-    pub expr: String,
-}
-
-/// `stack`: `field` summed into `as` within each `groupby` group, in `sort`
-/// order.
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+/// How a data set's text or values become tuples: vega-loader's `read`.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct Stack {
+pub struct Format {
+    /// `json`, `csv`, `tsv`, `dsv` or `topojson`.
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub type_: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub field: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub groupby: Vec<String>,
+    pub parse: Option<Parse>,
+    /// A json format's path to the array of values.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sort: Option<Compare>,
+    pub property: Option<String>,
+    /// A dsv format's delimiter.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub offset: Option<Offset>,
-    #[serde(rename = "as", skip_serializing_if = "Option::is_none")]
-    pub as_: Option<[String; 2]>,
+    pub delimiter: Option<String>,
+    /// A topojson format's object to extract as features.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feature: Option<String>,
+    /// A topojson format's object to extract as a mesh.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mesh: Option<String>,
+}
+
+/// `"auto"`, or a type for each field, by its name.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(untagged)]
+pub enum Parse {
+    Auto(Auto),
+    Fields(IndexMap<String, String>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Offset {
-    Zero,
-    Center,
-    Normalize,
-}
-
-/// A comparator: fields compared in turn, each in its order.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub struct Compare {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub field: Option<Many<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub order: Option<Many<Order>>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Order {
-    Ascending,
-    Descending,
+pub enum Auto {
+    Auto,
 }

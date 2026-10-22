@@ -8,17 +8,20 @@ use crate::{
     encode::Encoder,
     expr::{Context, Expr},
     guide::{axis, truthy},
-    layout,
+    layout, loader,
     path::Path,
     scale::{self, Scale},
     scene::{Item, Mark},
-    spec::{self, Domain, Nice, Range, Sort, Transform},
+    spec::{self, Domain, Nice, Param, Range, SignalRef, Sort},
+    statistics::Random,
+    transform::Tuple,
     value::Value,
 };
 use indexmap::IndexMap;
+use serde::de::DeserializeOwned;
 use serde_json::{Value as Json, json};
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{Cell, OnceCell, RefCell},
     cmp::Ordering,
     collections::HashMap,
 };
@@ -53,7 +56,20 @@ pub struct View<'a> {
     signals: IndexMap<String, SignalDef>,
     signal_values: Vec<OnceCell<Value>>,
     data: IndexMap<String, spec::Data>,
-    data_values: Vec<OnceCell<Vec<Value>>>,
+    data_values: Vec<OnceCell<Result<Vec<Tuple>, Error>>>,
+    /// The values of the signals transforms hold, by name, as their data
+    /// sets compute them.
+    transform_values: RefCell<HashMap<String, Value>>,
+    /// The data set whose transform holds each such signal.
+    transform_signals: HashMap<String, usize>,
+    /// One more than the index of the data set being built; 0 for none. Every
+    /// set before it is built.
+    building: Cell<usize>,
+    /// The last `tupleid` given out.
+    tuple_id: Cell<u64>,
+    /// The last number `identifier` gave out.
+    identifier: Cell<f64>,
+    random: RefCell<Random>,
     scales: IndexMap<String, spec::Scale>,
     scale_values: Vec<OnceCell<Option<Scale>>>,
     /// The first error a lazily computed value met.
@@ -149,12 +165,18 @@ impl<'a> View<'a> {
             }
         }
         let mut data = IndexMap::new();
-        for set in &spec.data {
+        let mut transform_signals = HashMap::new();
+        for (index, set) in spec.data.iter().enumerate() {
             if data.insert(set.name.clone(), set.clone()).is_some() {
                 return Err(Error::Spec(format!(
                     "Duplicate data set name: \"{}\"",
                     set.name
                 )));
+            }
+            for transform in &set.transform {
+                if let Some(signal) = transform.signal() {
+                    transform_signals.insert(signal.to_string(), index);
+                }
             }
         }
         let mut scales = IndexMap::new();
@@ -169,6 +191,12 @@ impl<'a> View<'a> {
         Ok(Self {
             signal_values: (0..signals.len()).map(|_| OnceCell::new()).collect(),
             data_values: (0..data.len()).map(|_| OnceCell::new()).collect(),
+            transform_values: RefCell::default(),
+            transform_signals,
+            building: Cell::new(0),
+            tuple_id: Cell::new(0),
+            identifier: Cell::new(0.0),
+            random: RefCell::default(),
             scale_values: (0..scales.len()).map(|_| OnceCell::new()).collect(),
             spec,
             config,
@@ -188,7 +216,7 @@ impl<'a> View<'a> {
     /// The signal named `name`; `undefined` where there is none.
     pub fn signal(&self, name: &str) -> Value {
         let Some((index, _, def)) = self.signals.get_full(name) else {
-            return Value::Undefined;
+            return self.transform_signal(name);
         };
         self.signal_values[index]
             .get_or_init(|| {
@@ -221,31 +249,135 @@ impl<'a> View<'a> {
             .as_ref()
     }
 
-    /// The tuples of the data set named `name`.
-    pub fn data(&self, name: &str) -> Result<&[Value], Error> {
-        let (index, _, def) = self
+    /// The names of the top-level data sets, in the spec's order.
+    pub fn data_names(&self) -> impl Iterator<Item = &str> {
+        self.data.keys().map(String::as_str)
+    }
+
+    /// The tuples of the data set named `name`. Data sets compute in the
+    /// spec's order, each before any after it.
+    pub fn data(&self, name: &str) -> Result<&[Tuple], Error> {
+        let index = self
             .data
-            .get_full(name)
+            .get_index_of(name)
             .ok_or_else(|| Error::Spec(format!("Undefined data set name: \"{name}\"")))?;
-        Ok(
-            self.data_values[index].get_or_init(|| match self.build_data(def) {
-                Ok(tuples) => tuples,
-                Err(error) => {
-                    self.fail(error);
-                    Vec::new()
-                }
-            }),
-        )
+        for i in 0..=index {
+            let def = &self.data[i];
+            if self.data_values[i].get().is_none() && self.building.get() == i + 1 {
+                return Err(Error::Spec(format!(
+                    "Data set \"{}\" reads itself.",
+                    def.name
+                )));
+            }
+            let tuples = self.data_values[i].get_or_init(|| {
+                let outer = self.building.replace(i + 1);
+                let tuples = self.build_data(def);
+                self.building.set(outer);
+                tuples
+            });
+            if i == index {
+                return tuples.as_deref().map_err(Clone::clone);
+            }
+        }
+        unreachable!("the data set is in range")
+    }
+
+    /// The value of a signal a transform holds; `undefined` where none
+    /// does.
+    fn transform_signal(&self, name: &str) -> Value {
+        if let Some(value) = self.transform_values.borrow().get(name) {
+            return value.clone();
+        }
+        let Some(&index) = self.transform_signals.get(name) else {
+            return Value::Undefined;
+        };
+        if let Err(error) = self.data(self.data.get_index(index).expect("in range").0) {
+            self.fail(error);
+        }
+        self.transform_values
+            .borrow()
+            .get(name)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// vega-dataflow's `ingest`: `datum` with the next `tupleid`.
+    pub(crate) fn ingest(&self, datum: Value) -> Tuple {
+        self.tuple_id.set(self.tuple_id.get() + 1);
+        Tuple {
+            id: self.tuple_id.get(),
+            datum,
+        }
+    }
+
+    /// The next of the view's random numbers, which Vega's `random` draws.
+    pub(crate) fn random(&self) -> f64 {
+        self.random.borrow_mut().draw()
+    }
+
+    /// The datums of the data set named `name`, as the expression `data`
+    /// reads them; none where it fails.
+    fn datums(&self, name: &str) -> Vec<Value> {
+        match self.data(name) {
+            Ok(tuples) => tuples.iter().map(|t| t.datum.clone()).collect(),
+            Err(error) => {
+                self.fail(error);
+                Vec::new()
+            }
+        }
+    }
+
+    /// The next number `identifier` gives out.
+    pub(crate) fn next_identifier(&self) -> f64 {
+        self.identifier.set(self.identifier.get() + 1.0);
+        self.identifier.get()
+    }
+
+    /// A parameter's value: as written, or its signal's, read as `T`.
+    pub(crate) fn param<T: Clone + DeserializeOwned>(&self, param: &Param<T>) -> Result<T, Error> {
+        match param {
+            Param::Value(value) => Ok(value.clone()),
+            Param::Signal(signal) => {
+                let value = self.signal_ref(signal)?;
+                serde_json::from_value(Json::from(&value))
+                    .map_err(|e| Error::Spec(format!("{}: {e}", signal.signal)))
+            }
+        }
+    }
+
+    /// A parameter's value as JavaScript holds it: as written, or its
+    /// signal's.
+    pub(crate) fn param_value(
+        &self,
+        param: &Param<impl Clone + Into<Json>>,
+    ) -> Result<Value, Error> {
+        match param {
+            Param::Value(value) => Ok(Value::from(&value.clone().into())),
+            Param::Signal(signal) => self.signal_ref(signal),
+        }
+    }
+
+    /// A `{signal}` reference's value.
+    pub(crate) fn signal_ref(&self, signal: &SignalRef) -> Result<Value, Error> {
+        self.eval(&self.parse(&signal.signal)?, &Value::Undefined)
+    }
+
+    /// An expression, parsed.
+    pub(crate) fn parse(&self, code: &str) -> Result<Expr, Error> {
+        parse(code)
     }
 
     /// `expr` on `datum`, reading this view's signals and scales.
-    fn eval(&self, expr: &Expr, datum: &Value) -> Result<Value, Error> {
+    pub(crate) fn eval(&self, expr: &Expr, datum: &Value) -> Result<Value, Error> {
         let param = |name: &str| self.signal(name);
         let scale = |name: &str| self.scale(name);
+        let data = |name: &str| self.datums(name);
         let context = Context {
             datum,
             param: &param,
             scale: &scale,
+            data: &data,
+            random: &self.random,
         };
         expr.eval(&context).map_err(Error::Eval)
     }
@@ -261,51 +393,53 @@ impl<'a> View<'a> {
         }
     }
 
-    fn build_data(&self, def: &spec::Data) -> Result<Vec<Value>, Error> {
-        if def.format.is_some() {
-            return Err(Error::Unsupported(format!(
-                "data format on \"{}\"",
-                def.name
-            )));
-        }
-        let mut tuples = if let Some(values) = &def.values {
-            match values {
-                Json::Array(items) => items.iter().map(ingest).collect(),
-                other => vec![ingest(other)],
-            }
+    /// vega-parser's data pipeline: the source's tuples, run through each
+    /// transform. A set derived from others copies their tuples, with ids of
+    /// its own, where a transform modifies them before any generates new
+    /// ones.
+    fn build_data(&self, def: &spec::Data) -> Result<Vec<Tuple>, Error> {
+        let format = def.format.clone().unwrap_or_default();
+        let mut tuples: Vec<Tuple> = if let Some(values) = &def.values {
+            loader::values(values, &format)?
+                .into_iter()
+                .map(|d| self.ingest(ingest(d)))
+                .collect()
         } else if let Some(url) = &def.url {
             let text = (self.loader)(url).ok_or_else(|| Error::Load(url.clone()))?;
-            let json: Json =
-                serde_json::from_str(&text).map_err(|e| Error::Load(format!("{url}: {e}")))?;
-            match &json {
-                Json::Array(items) => items.iter().map(ingest).collect(),
-                other => vec![ingest(other)],
+            loader::read(&text, &format)?
+                .into_iter()
+                .map(|d| self.ingest(ingest(d)))
+                .collect()
+        } else if let Some(sources) = &def.source {
+            let mut tuples = Vec::new();
+            for source in sources.items() {
+                tuples.extend_from_slice(self.data(source)?);
             }
-        } else if let Some(source) = &def.source {
-            self.data(source)?.to_vec()
+            let mut modifies = false;
+            for transform in &def.transform {
+                let metadata = transform.metadata();
+                if metadata.generates {
+                    break;
+                }
+                modifies |= metadata.modifies;
+            }
+            if modifies {
+                tuples = tuples.into_iter().map(|t| self.ingest(t.datum)).collect();
+            }
+            tuples
         } else {
             Vec::new()
         };
         for transform in &def.transform {
-            tuples = self.transform(transform, tuples)?;
+            let (out, value) = transform.run(self, tuples)?;
+            tuples = out;
+            if let (Some(signal), Some(value)) = (transform.signal(), value) {
+                self.transform_values
+                    .borrow_mut()
+                    .insert(signal.to_string(), value);
+            }
         }
         Ok(tuples)
-    }
-
-    fn transform(&self, transform: &Transform, tuples: Vec<Value>) -> Result<Vec<Value>, Error> {
-        Ok(match transform {
-            Transform::Filter(filter) => {
-                let expr = parse(&filter.expr)?;
-                let mut kept = Vec::with_capacity(tuples.len());
-                for tuple in tuples {
-                    if self.eval(&expr, &tuple)?.truthy() {
-                        kept.push(tuple);
-                    }
-                }
-                kept
-            }
-            Transform::Stack(stack) => crate::transform::stack(stack, tuples)?,
-        })
     }
 
     fn build_scale(&self, def: &spec::Scale) -> Result<Scale, Error> {
@@ -423,18 +557,18 @@ impl<'a> View<'a> {
             let mut keys: Vec<Value> = Vec::new();
             let mut seen = HashMap::new();
             for tuple in tuples {
-                let value = path.get(tuple).map_err(|e| Error::Eval(e.into()))?;
+                let value = path.get(&tuple.datum).map_err(|e| Error::Eval(e.into()))?;
                 seen.entry(value.to_string()).or_insert_with(|| {
                     keys.push(value.clone());
                 });
             }
             match &domain.sort {
                 None | Some(Sort::Flag(false)) => {}
-                Some(Sort::Flag(true)) => keys.sort_by(compare),
+                Some(Sort::Flag(true)) => keys.sort_by(Value::ascending),
                 Some(Sort::By(by))
                     if by.op.is_none() && by.field.as_deref().is_none_or(|f| f == "key") =>
                 {
-                    keys.sort_by(compare);
+                    keys.sort_by(Value::ascending);
                     if by.order.as_deref() == Some("descending") {
                         keys.reverse();
                     }
@@ -451,7 +585,7 @@ impl<'a> View<'a> {
                 let path: Path = field.parse().map_err(Error::Spec)?;
                 let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
                 for tuple in tuples {
-                    let v = path.get(tuple).map_err(|e| Error::Eval(e.into()))?;
+                    let v = path.get(&tuple.datum).map_err(|e| Error::Eval(e.into()))?;
                     if v.is_nullish() || matches!(&v, Value::String(s) if s.is_empty()) {
                         continue;
                     }
@@ -567,7 +701,7 @@ impl<'a> View<'a> {
             None => vec![Value::Object(Vec::new().into())],
             Some(name) => match guides.get(name) {
                 Some(tuples) => tuples.clone(),
-                None => self.data(name)?.to_vec(),
+                None => self.data(name)?.iter().map(|t| t.datum.clone()).collect(),
             },
         };
         let style: Vec<String> = def
@@ -590,8 +724,9 @@ impl<'a> View<'a> {
                 datum,
                 ..Item::default()
             };
-            encoder.apply("enter", &mut item, &signal, &scale)?;
-            encoder.apply("update", &mut item, &signal, &scale)?;
+            let data = |name: &str| self.datums(name);
+            encoder.apply("enter", &mut item, &signal, &scale, &data, &self.random)?;
+            encoder.apply("update", &mut item, &signal, &scale, &data, &self.random)?;
             items.push(item);
         }
         let mut mark = Mark {
@@ -758,10 +893,10 @@ fn parse(code: &str) -> Result<Expr, Error> {
 
 /// vega-dataflow's `ingest`: an object as it is, anything else as
 /// `{data: value}`.
-fn ingest(json: &Json) -> Value {
-    match json {
-        Json::Object(_) => Value::from(json),
-        other => Value::Object(vec![("data".into(), Value::from(other))].into()),
+fn ingest(value: Value) -> Value {
+    match value {
+        Value::Object(_) => value,
+        other => Value::Object(vec![("data".into(), other)].into()),
     }
 }
 
@@ -769,26 +904,5 @@ fn numbers(value: Value) -> Vec<f64> {
     match value {
         Value::Array(items) => items.iter().map(Value::to_number).collect(),
         other => vec![other.to_number()],
-    }
-}
-
-/// vega-util's ascending comparator, as `stableCompare` sorts with it.
-pub(crate) fn compare(u: &Value, v: &Value) -> Ordering {
-    let less = (u.compare(v) == Some(Ordering::Less) || u.is_nullish()) && !v.is_nullish();
-    if less {
-        return Ordering::Less;
-    }
-    let greater = (u.compare(v) == Some(Ordering::Greater) || v.is_nullish()) && !u.is_nullish();
-    if greater {
-        return Ordering::Greater;
-    }
-    let u_nan = matches!(u, Value::Number(n) if n.is_nan());
-    let v_nan = matches!(v, Value::Number(n) if n.is_nan());
-    if u_nan && !v_nan {
-        Ordering::Less
-    } else if v_nan && !u_nan {
-        Ordering::Greater
-    } else {
-        Ordering::Equal
     }
 }

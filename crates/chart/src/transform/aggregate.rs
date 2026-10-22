@@ -2,7 +2,7 @@
 
 use crate::{
     data::{Column, Data, Name, Text},
-    transform::{Groups, Random},
+    transform::Groups,
 };
 use d3::{
     array,
@@ -11,7 +11,7 @@ use d3::{
 };
 use gpui::SharedString;
 use std::{borrow::Cow, cmp::Ordering, collections::HashSet, fmt, str::FromStr};
-use vega::value::Value;
+use vega::{statistics::Random, value::Value};
 
 /// Resamples per bootstrap confidence interval, and its alpha.
 const SAMPLES: usize = 1000;

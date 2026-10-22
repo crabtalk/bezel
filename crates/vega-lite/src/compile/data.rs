@@ -44,14 +44,23 @@ pub fn parse(unit: &Unit, scales: &[Component]) -> Result<Data, Error> {
             )
         };
         transform.push(vg::Transform::Stack(vg::Stack {
-            groupby: stack.groupby_fields.clone(),
-            field: Some(field::vg_field(def, &field::Options::default())),
+            groupby: stack
+                .groupby_fields
+                .iter()
+                .cloned()
+                .map(vg::Field::Name)
+                .collect(),
+            field: Some(vg::Field::Name(field::vg_field(
+                def,
+                &field::Options::default(),
+            ))),
             sort: Some(vg::Compare {
                 field: Some(vg::Many::Many(Vec::new())),
                 order: Some(vg::Many::Many(Vec::new())),
             }),
-            as_: Some([name("start"), name("end")]),
-            offset: Some(stack.offset),
+            as_: Some(vg::Param::Value([name("start"), name("end")])),
+            offset: Some(vg::Param::Value(stack.offset)),
+            signal: None,
         }));
     }
     // `FilterInvalidNode`: a mark's invalid mode is `filter` unless it is a
@@ -87,6 +96,7 @@ pub fn parse(unit: &Unit, scales: &[Component]) -> Result<Data, Error> {
     if !filters.is_empty() {
         transform.push(vg::Transform::Filter(vg::Filter {
             expr: filters.join(" && "),
+            signal: None,
         }));
     }
     let main = if transform.is_empty() {
@@ -98,7 +108,7 @@ pub fn parse(unit: &Unit, scales: &[Component]) -> Result<Data, Error> {
     if !transform.is_empty() {
         assembled.push(vg::Data {
             name: main.clone(),
-            source: Some("source_0".into()),
+            source: Some(vg::Many::One("source_0".into())),
             transform,
             ..vg::Data::default()
         });

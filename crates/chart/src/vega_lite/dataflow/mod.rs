@@ -13,7 +13,7 @@
 use crate::{
     data::Data,
     model::Kind,
-    transform::{Bins, Random, Transform},
+    transform::{Bins, Transform},
     vega_lite::{
         sort,
         unit::Unit,
@@ -23,6 +23,7 @@ use crate::{
 use gpui::SharedString;
 pub(crate) use node::{Formula, Node, Step};
 use serde_json::Value;
+use vega::statistics::Random;
 
 mod node;
 mod optimize;

@@ -132,17 +132,16 @@
 
 use crate::{
     model::Chart,
-    transform::Random,
     vega_lite::{data::Sources, dataflow::Tree, view::View},
 };
 use serde_json::{Map, Value};
 use std::str::FromStr;
+use vega::statistics::Random;
 
 mod composite;
 mod data;
 mod dataflow;
 mod datetime;
-mod dsv;
 mod encoding;
 mod field;
 mod format;

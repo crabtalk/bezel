@@ -8,7 +8,6 @@ use crate::{
     spec::Overlap,
     text,
     value::Value,
-    view::compare,
 };
 use serde_json::Value as Json;
 
@@ -228,7 +227,7 @@ pub fn overlap<'s>(
             .strip_prefix("datum.")
             .ok_or_else(|| Error::Unsupported(format!("overlap order {order}")))?;
         let key = |i: usize| mark.items[i].datum.get(&field.into()).unwrap_or_default();
-        source.sort_by(|&a, &b| compare(&key(a), &key(b)));
+        source.sort_by(|&a, &b| key(a).ascending(&key(b)));
     }
     for &i in &source {
         mark.items[i].set("opacity", Value::Number(1.0));

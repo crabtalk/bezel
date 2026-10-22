@@ -1,13 +1,11 @@
 //! A table of named, equal-length columns.
 
-use crate::{
-    time,
-    transform::{Random, Transform},
-};
+use crate::{time, transform::Transform};
 use d3::format::number::Number as JsNumber;
 use gpui::SharedString;
 use std::{
     borrow::Cow,
+    cell::RefCell,
     collections::HashMap,
     fmt,
     sync::{
@@ -18,6 +16,7 @@ use std::{
 use vega::{
     expr::{self, Context, Expr},
     path::Path,
+    statistics::Random,
     value::Value,
 };
 
@@ -420,13 +419,21 @@ impl Data {
         })
     }
 
-    /// `expr` on row `row` as its `datum`, with no params and no scales.
-    pub fn eval(&self, expr: &Expr, row: usize) -> Result<Value, expr::Error> {
+    /// `expr` on row `row` as its `datum`, with no params, scales or data
+    /// sets, `random()` drawing from `random`.
+    pub fn eval(
+        &self,
+        expr: &Expr,
+        row: usize,
+        random: &RefCell<Random>,
+    ) -> Result<Value, expr::Error> {
         let datum = self.row(row);
         let context = Context {
             datum: &datum,
             param: &|_| Value::Undefined,
             scale: &|_| None,
+            data: &|_| Vec::new(),
+            random,
         };
         expr.eval(&context)
     }

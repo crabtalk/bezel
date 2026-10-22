@@ -6,17 +6,23 @@ use crate::{
         parse::{Binary, Node, Unary},
     },
     scale::Scale,
+    statistics::Random,
     value::Value,
 };
-use std::cmp::Ordering;
+use std::{cell::RefCell, cmp::Ordering};
 
 /// What an expression reads: `datum`, a bare name through `param` (a
-/// signal, or `item` in an encoder), and a scale by name through `scale`.
+/// signal, or `item` in an encoder), a scale by name through `scale`, and a
+/// data set's tuples by name through `data`.
 #[derive(Clone, Copy)]
 pub struct Context<'a, 's> {
     pub datum: &'a Value,
     pub param: &'a dyn Fn(&str) -> Value,
     pub scale: &'a dyn Fn(&str) -> Option<&'s Scale>,
+    /// The data set's datums, `[]` where there is none.
+    pub data: &'a dyn Fn(&str) -> Vec<Value>,
+    /// What `random()` and the `sample` functions draw from.
+    pub random: &'a RefCell<Random>,
 }
 
 impl Node {

@@ -87,6 +87,26 @@ impl RegExp {
         self.captures_at(text, 0).is_some()
     }
 
+    /// `text.match(re)` for a global pattern: every match, an empty one
+    /// stepping one character on.
+    pub fn matches<'t>(&self, text: &'t str) -> Vec<&'t str> {
+        let mut found = Vec::new();
+        let mut at = 0;
+        while at <= text.len() {
+            let Some(caps) = self.captures_at(text, at) else {
+                break;
+            };
+            let m = caps.get_match();
+            found.push(m.as_str());
+            at = if m.is_empty() {
+                m.end() + text[m.end()..].chars().next().map_or(1, char::len_utf8)
+            } else {
+                m.end()
+            };
+        }
+        found
+    }
+
     /// `text.replace(re, replacement)`: every match when the pattern is
     /// global, else the first, `replacement` read for `$` patterns. An empty
     /// match steps one character on.

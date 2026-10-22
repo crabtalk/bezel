@@ -108,6 +108,28 @@ impl From<&serde_json::Value> for Value {
     }
 }
 
+/// What `JSON.parse(JSON.stringify(value))` holds: `undefined` left out of
+/// an object and `null` in an array, a number that is not finite `null`.
+impl From<&Value> for serde_json::Value {
+    fn from(value: &Value) -> Self {
+        match value {
+            Value::Undefined | Value::Null => Self::Null,
+            Value::Bool(b) => Self::Bool(*b),
+            Value::Number(n) => serde_json::Number::from_f64(*n).map_or(Self::Null, Self::Number),
+            Value::String(s) => Self::String(s.to_string()),
+            Value::Array(items) => Self::Array(items.iter().map(Self::from).collect()),
+            Value::Object(fields) => Self::Object(
+                fields
+                    .iter()
+                    .filter(|(_, v)| !matches!(v, Value::Undefined))
+                    .map(|(k, v)| (k.to_string(), Self::from(v)))
+                    .collect(),
+            ),
+            Value::RegExp(_) => Self::Object(serde_json::Map::new()),
+        }
+    }
+}
+
 impl From<RegExp> for Value {
     fn from(value: RegExp) -> Self {
         Self::RegExp(Arc::new(value))
@@ -260,6 +282,30 @@ impl Value {
         match (self.to_primitive(), other.to_primitive()) {
             (Self::String(a), Self::String(b)) => Some(string::compare(&a, &b)),
             (a, b) => a.to_number().partial_cmp(&b.to_number()),
+        }
+    }
+
+    /// vega-util's `ascending`: `null` and `undefined` first, then by
+    /// JavaScript's `<`, then `NaN` before what `<` cannot order.
+    pub fn ascending(&self, other: &Value) -> Ordering {
+        let (u, v) = (self, other);
+        let less = (u.compare(v) == Some(Ordering::Less) || u.is_nullish()) && !v.is_nullish();
+        if less {
+            return Ordering::Less;
+        }
+        let greater =
+            (u.compare(v) == Some(Ordering::Greater) || v.is_nullish()) && !u.is_nullish();
+        if greater {
+            return Ordering::Greater;
+        }
+        let u_nan = matches!(u, Value::Number(n) if n.is_nan());
+        let v_nan = matches!(v, Value::Number(n) if n.is_nan());
+        if u_nan && !v_nan {
+            Ordering::Less
+        } else if v_nan && !u_nan {
+            Ordering::Greater
+        } else {
+            Ordering::Equal
         }
     }
 

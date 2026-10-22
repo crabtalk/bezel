@@ -3,7 +3,7 @@
 
 use crate::{
     data::Data,
-    transform::{Aggregate, Bin, Bins, Measure, Op, Part, Random, TimeUnit, Transform},
+    transform::{Aggregate, Bin, Bins, Measure, Op, Part, TimeUnit, Transform},
     vega_lite::{encoding::Def, field, field::Derive},
 };
 use d3::{
@@ -12,7 +12,7 @@ use d3::{
 };
 use gpui::SharedString;
 use std::str::FromStr;
-use vega::{expr, expr::Expr, value::Value};
+use vega::{expr, expr::Expr, statistics::Random, value::Value};
 
 /// Vega-Lite's dash between a bin's edges in its text range.
 const DASH: &str = " – ";
@@ -63,20 +63,23 @@ impl Formula {
     /// `NaN` where an aggregated field is missing, as JavaScript's
     /// arithmetic and comparisons with `undefined` are in the formulas the
     /// composite marks write.
-    fn values(&self, data: &Data) -> Vec<Value> {
+    fn values(&self, data: &Data, random: &mut Random) -> Vec<Value> {
+        let shared = std::cell::RefCell::new(std::mem::take(random));
         let aggregated: Vec<Vec<f64>> = self
             .aggregated
             .iter()
             .map(|field| data.numbers(field))
             .collect();
-        (0..data.len())
+        let values = (0..data.len())
             .map(|index| {
                 if aggregated.iter().any(|values| values[index].is_nan()) {
                     return Value::Number(f64::NAN);
                 }
-                data.eval(&self.expr, index).unwrap_or_default()
+                data.eval(&self.expr, index, &shared).unwrap_or_default()
             })
-            .collect()
+            .collect();
+        *random = shared.into_inner();
+        values
     }
 }
 
@@ -456,7 +459,7 @@ impl Node {
             Self::JoinAggregate(op) => op.join(data, random),
             Self::Filter(formula) => {
                 let keep: Vec<usize> = formula
-                    .values(data)
+                    .values(data, random)
                     .iter()
                     .enumerate()
                     .filter(|(_, value)| value.truthy())
@@ -470,7 +473,7 @@ impl Node {
             }
             Self::Calculate(formula, output) => {
                 let values: Vec<f64> = formula
-                    .values(data)
+                    .values(data, random)
                     .iter()
                     .map(|value| match value {
                         Value::Undefined | Value::Null => f64::NAN,

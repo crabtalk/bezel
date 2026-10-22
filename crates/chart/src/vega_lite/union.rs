@@ -9,10 +9,11 @@
 use crate::{
     data::{Column, Data, Name},
     model::{Chart, Domain, ScaleType, Sort},
-    transform::{Op, Random},
+    transform::Op,
     vega_lite::{encoding, encoding::Def, sort, sort::DomainSort},
 };
 use gpui::SharedString;
+use vega::statistics::Random;
 
 /// A layer as Vega-Lite reads it.
 pub(crate) struct Layered {

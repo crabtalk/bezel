@@ -1,14 +1,16 @@
 # bezel-d3
 
-Ports of d3-array's ticks, d3-color, d3-format, d3-interpolate, d3-path, d3-scale, d3-shape's curves and arc, d3-time, d3-time-format and vega-scale's schemes, with JavaScript's numbers, strings and `Date` where Rust's own answer differs and output would come out different. No JavaScript engine and no GUI toolkit; builds for `wasm32-unknown-unknown`.
+Ports of d3-array's ticks, d3-color, d3-dsv, d3-format, d3-interpolate, d3-path, d3-scale, d3-shape's curves and arc, d3-time, d3-time-format and vega-scale's schemes, with JavaScript's numbers, strings, `Date` and `Math` where Rust's own answer differs and output would come out different. No JavaScript engine and no GUI toolkit; builds for `wasm32-unknown-unknown`.
 
 | Module | What it holds |
 | --- | --- |
 | `array` | d3-array's `ticks`, `tickIncrement`, `tickStep`, `nice`, `bisectRight` and `quantileSorted` |
 | `color` | d3-color's `color`: CSS colour keywords, hex, `rgb()`, `rgba()`, `hsl()` and `hsla()` as `Rgb` through `FromStr`; `formatRgb` as `Display`; `Hsl`, `Lab`, `Hcl` and `Cubehelix` through `From` |
+| `dsv` | d3-dsv's `parse` and `parseRows` |
 | `format` | d3-format's `format`, `formatPrefix`, `formatSpecifier` and precisions, en-US |
 | `format::number` | `Number`: `String(x)` as `Display`, `toFixed`, `toExponential`, `toPrecision`, `Number(text)` as `From<&str>`; `parseFloat`, `parseInt`, `ToInt32`, `ToIntegerOrInfinity`, truth; `Math.round`, `Math.sign`, `Math.hypot`, `Math.max`, `Math.min`, `Math.pow` |
 | `interpolate` | d3-interpolate: numbers, `Interpolate` between colours in RGB with gamma, HSL, CIELAB, HCL and Cubehelix, short or long way round, and `piecewise` |
+| `math` | `Math.sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp` and `log` as V8 computes them on arm64: fdlibm with fused multiply-adds |
 | `scale` | d3-scale: `Continuous` (linear, log, pow, sqrt, symlog, time, utc) with ticks and nice domains, `Sequential`, `Diverging`, `Quantile`, `Quantize`, `Threshold`; vega-scale's `Band`, point and `BinOrdinal` |
 | `scheme` | vega-scale's named colour schemes, and how Vega fits one to a scale |
 | `shape::path` | d3-path: `Segment`, the commands d3-shape writes, and `Path`, which joins an arc to the current point |

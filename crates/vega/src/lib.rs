@@ -15,12 +15,15 @@ mod encode;
 pub mod expr;
 mod guide;
 mod layout;
+mod loader;
 pub mod path;
 pub mod scale;
 pub mod scene;
 pub mod spec;
+pub mod statistics;
 pub mod text;
-mod transform;
+pub mod time;
+pub mod transform;
 pub mod value;
 mod view;
 

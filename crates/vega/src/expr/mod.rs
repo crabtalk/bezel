@@ -15,10 +15,11 @@
 //! `timeFormat` and `timeParse` in the host's zone, `utcFormat` and
 //! `utcParse` in UTC. An invalid number format throws.
 //!
-//! The scale functions read scales through the context.
+//! The `Math` functions are [`d3::math`]'s. The scale functions read scales
+//! through the context, `data` and `indata` its data sets, and `random()`
+//! and the `sample` functions draw from its generator.
 //!
-//! Not here: the statistical functions, and the functions that read data
-//! sets, selections or view state.
+//! Not here: the functions that read selections or view state.
 
 use crate::{
     expr::parse::{Node, Parser},

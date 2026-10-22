@@ -1,7 +1,7 @@
 use crate::path::Path;
 use d3::format::number::Number;
 use indexmap::IndexMap;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value as Json;
 
 /// Encoding sets by name (`enter`, `update`, `exit`, …), each a block of
@@ -32,7 +32,7 @@ pub struct Entry {
     /// `Some(Null)` where `value` is written as `null`.
     #[serde(
         default,
-        deserialize_with = "present",
+        deserialize_with = "crate::spec::present",
         skip_serializing_if = "Option::is_none"
     )]
     pub value: Option<Json>,
@@ -95,10 +95,6 @@ pub struct FieldObject {
 pub enum ScaleRef {
     Name(String),
     Ref(Box<FieldObject>),
-}
-
-fn present<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Json>, D::Error> {
-    Json::deserialize(deserializer).map(Some)
 }
 
 /// vega-util's `stringValue`: a string or object as JSON, an array item by

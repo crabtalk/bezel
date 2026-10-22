@@ -26,6 +26,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const specs = join(here, '..', 'corpus', 'specs');
 const loader = vega.loader({ baseURL: join(here, 'node_modules', 'vega-datasets') + '/' });
 
+// `JSON.stringify`'s replacer: a date as its time, before `toJSON` writes it.
+function dates(key, value) {
+  return this[key] instanceof Date ? this[key].getTime() : value;
+}
+
 const [out, ...files] = process.argv.slice(2);
 if (out === undefined) {
   console.error('usage: node reference.mjs <out-dir> [spec…]');
@@ -45,6 +50,8 @@ for (const file of names) {
     writeFileSync(join(out, `${name}.sg.json`), JSON.stringify(JSON.parse(view.scenegraph().toJSON()), null, 1) + '\n');
     const placed = {width: view._viewWidth, height: view._viewHeight, origin: view.origin(), padding: view.padding()};
     writeFileSync(join(out, `${name}.view.json`), JSON.stringify(placed) + '\n');
+    const data = Object.fromEntries((spec.data ?? []).map((d) => [d.name, view.data(d.name)]));
+    writeFileSync(join(out, `${name}.data.json`), JSON.stringify(data, dates) + '\n');
   } catch (error) {
     writeFileSync(join(out, `${name}.error.json`), JSON.stringify({ message: String(error.message ?? error) }) + '\n');
   } finally {

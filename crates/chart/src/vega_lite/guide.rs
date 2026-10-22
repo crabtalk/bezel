@@ -119,7 +119,7 @@ fn relabel(source: &Value) -> Option<Relabel> {
     let expr: Expr = source.as_str()?.parse().ok()?;
     Some(Relabel(Arc::new(move |value, label, index| {
         let data = tick(value, label, index);
-        match data.eval(&expr, 0) {
+        match data.eval(&expr, 0, &Default::default()) {
             Ok(ExprValue::Array(lines)) => lines
                 .iter()
                 .map(ExprValue::to_string)
@@ -138,7 +138,8 @@ fn test(source: &Value) -> Option<Test> {
     let expr: Expr = source.as_str()?.parse().ok()?;
     Some(Test(Arc::new(move |value, label| {
         let data = tick(value, label, 0.0);
-        data.eval(&expr, 0).is_ok_and(|value| value.truthy())
+        data.eval(&expr, 0, &Default::default())
+            .is_ok_and(|value| value.truthy())
     })))
 }
 

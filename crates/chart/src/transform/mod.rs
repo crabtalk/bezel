@@ -9,18 +9,16 @@ pub use density::{Density, Resolve};
 use gpui::SharedString;
 pub use loess::Loess;
 pub use quantile::Quantile;
-pub use random::Random;
-pub use regression::{Method, Regression};
+pub use regression::Regression;
 use std::collections::HashMap;
 pub use timeunit::{Part, TimeUnit};
+use vega::statistics::Random;
 
 mod aggregate;
 mod bin;
-mod curve;
 mod density;
 mod loess;
 mod quantile;
-mod random;
 mod regression;
 mod timeunit;
 

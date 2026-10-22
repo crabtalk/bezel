@@ -4,13 +4,14 @@
 use crate::{
     data::{Column, Data},
     model::{Chart, Domain, Kind, Mark, Range},
-    transform::{Bins, Random},
+    transform::Bins,
     vega_lite::{
         encoding, encoding::Def, field, field::Derive, mark, sort, sort::DomainSort, union::Layered,
     },
 };
 use gpui::SharedString;
 use serde_json::{Map, Value};
+use vega::statistics::Random;
 
 /// A unit read, and where the dataflow gives it its rows.
 pub(crate) struct Unit {

@@ -1,29 +1,33 @@
-//! Delimiter-separated values as d3-dsv's `parse` reads them: the first row
-//! names the fields, a field in double quotes may hold delimiters, line breaks
-//! and `""` for a quote, and a row ends at `\n`, `\r\n` or `\r`.
+//! d3-dsv: delimiter-separated values. A field in double quotes may hold
+//! delimiters, line breaks and `""` for a quote, and a row ends at `\n`,
+//! `\r\n` or `\r`.
 
-use serde_json::{Map, Value};
-
-/// A row per line after the first, every field a string. A field a row lacks
-/// is `""`; of two fields with one name, the later one's value is kept.
-pub(crate) fn parse(text: &str, delimiter: char) -> Vec<Map<String, Value>> {
-    let mut rows = rows(text, delimiter).into_iter();
+/// `dsvFormat(delimiter).parse(text)`: a row per line after the first, which
+/// names the fields, each row its fields in the first line's order. A field
+/// a row lacks is `""`; a name written twice keeps its first place and its
+/// later value.
+pub fn parse(text: &str, delimiter: char) -> Vec<Vec<(String, String)>> {
+    let mut rows = parse_rows(text, delimiter).into_iter();
     let Some(names) = rows.next() else {
         return Vec::new();
     };
     rows.map(|row| {
-        let mut out = Map::new();
+        let mut out: Vec<(String, String)> = Vec::with_capacity(names.len());
         for (index, name) in names.iter().enumerate() {
             let value = row.get(index).cloned().unwrap_or_default();
-            out.insert(name.clone(), Value::String(value));
+            match out.iter_mut().find(|(n, _)| n == name) {
+                Some((_, slot)) => *slot = value,
+                None => out.push((name.clone(), value)),
+            }
         }
         out
     })
     .collect()
 }
 
-/// Each line's fields, a final line break ignored.
-fn rows(text: &str, delimiter: char) -> Vec<Vec<String>> {
+/// `dsvFormat(delimiter).parseRows(text)`: each line's fields, a final line
+/// break ignored.
+pub fn parse_rows(text: &str, delimiter: char) -> Vec<Vec<String>> {
     let text = text.strip_suffix('\n').unwrap_or(text);
     let text = text.strip_suffix('\r').unwrap_or(text);
     let mut rows = Vec::new();

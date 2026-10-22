@@ -1,5 +1,6 @@
-//! A function sampled over an interval, as Vega's `sampleCurve`.
+//! vega-statistics' `sampleCurve`: a function sampled over an interval.
 
+use d3::math;
 use std::f64::consts::PI;
 
 /// Half a degree: a midpoint turning the curve by less is not kept.
@@ -9,7 +10,7 @@ const MIN_RADIANS: f64 = 0.5 * PI / 180.0;
 /// steps, then each step halved while its midpoint bends the curve and stays
 /// at least `1 / max_steps` of the interval from its start. Equal step counts
 /// sample exactly `steps + 1` even points. 0 reads as 25 and 200.
-pub(crate) fn sample(
+pub fn sample(
     f: impl Fn(f64) -> f64,
     [low, high]: [f64; 2],
     min_steps: usize,
@@ -48,8 +49,8 @@ pub(crate) fn sample(
     }
     let sy = 1.0 / (y_max - y_min);
     let angle = |p: [f64; 2], q: [f64; 2], r: [f64; 2]| {
-        let a0 = (sy * (r[1] - p[1])).atan2(sx * (r[0] - p[0]));
-        let a1 = (sy * (q[1] - p[1])).atan2(sx * (q[0] - p[0]));
+        let a0 = math::atan2(sy * (r[1] - p[1]), sx * (r[0] - p[0]));
+        let a1 = math::atan2(sy * (q[1] - p[1]), sx * (q[0] - p[0]));
         (a0 - a1).abs()
     };
 
@@ -67,7 +68,7 @@ pub(crate) fn sample(
 }
 
 /// `[min, max]` of the values that are not `NaN`. `None` if none are.
-pub(crate) fn extent(values: impl IntoIterator<Item = f64>) -> Option<[f64; 2]> {
+pub fn extent(values: impl IntoIterator<Item = f64>) -> Option<[f64; 2]> {
     values
         .into_iter()
         .filter(|v| !v.is_nan())

@@ -1,8 +1,8 @@
 //! A data source's `format`: how its text becomes rows, as vega-loader reads
 //! it, and the `parse` applied to them.
 
-use crate::{time, vega_lite::dsv};
-
+use crate::time;
+use d3::dsv;
 use serde_json::{Map, Number, Value};
 use std::str::FromStr;
 use vega::{path::Path, value::Value as JsValue};
@@ -170,7 +170,18 @@ impl Format {
     /// The rows `text` holds. `None` for text that is not this format.
     pub(crate) fn read(&self, text: &str) -> Option<Vec<Row>> {
         match self.kind {
-            Kind::Dsv(delimiter) => Some(self.parsed(dsv::parse(text, delimiter))),
+            Kind::Dsv(delimiter) => Some(
+                self.parsed(
+                    dsv::parse(text, delimiter)
+                        .into_iter()
+                        .map(|row| {
+                            row.into_iter()
+                                .map(|(k, v)| (k, Value::String(v)))
+                                .collect()
+                        })
+                        .collect(),
+                ),
+            ),
             _ => self.values(&serde_json::from_str(text).ok()?),
         }
     }

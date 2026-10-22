@@ -8,13 +8,13 @@ use chart::{
     model::Side,
     plan,
     plan::Metrics,
-    transform::{Density, Quantile, Random, Regression},
+    transform::{Density, Quantile, Regression},
     vega_lite,
 };
 use d3::format::number::Number as JsNumber;
 use serde_json::{Map, Value};
 use std::{fs, path::Path};
-use vega::value::Value as JsValue;
+use vega::{statistics::Random, value::Value as JsValue};
 
 /// Relative to the larger of 1 and the expected value.
 const TOLERANCE: f64 = 1e-9;

@@ -329,7 +329,7 @@ fn line_break(value: &Value) -> Option<Option<LineBreak>> {
         Value::String(separator) => Some(text(separator)),
         Value::Object(def) if def.len() == 1 => {
             let expr = def.get("expr")?.as_str()?.parse::<Expr>().ok()?;
-            match Data::new().eval(&expr, 0).ok()? {
+            match Data::new().eval(&expr, 0, &Default::default()).ok()? {
                 ExprValue::String(separator) => Some(text(&separator)),
                 ExprValue::RegExp(regexp) => Some(Some(LineBreak::Pattern {
                     source: regexp.source.clone().into(),

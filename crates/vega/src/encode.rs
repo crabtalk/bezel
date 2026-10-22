@@ -8,10 +8,12 @@ use crate::{
     scale::Scale,
     scene::Item,
     spec::{self, Channel, Entry},
+    statistics::Random,
     value::Value,
 };
 use indexmap::IndexMap;
 use serde_json::Value as Json;
+use std::cell::RefCell;
 
 /// A set's channels, in order, with the spatial adjustment its channels
 /// call for.
@@ -71,13 +73,16 @@ impl Encoder {
     }
 
     /// Runs the set named `name` on `item`, reading signals through
-    /// `signal` and scales through `scale`.
+    /// `signal`, scales through `scale` and data through `data`, and drawing
+    /// from `random`.
     pub fn apply<'s>(
         &self,
         name: &str,
         item: &mut Item,
         signal: &dyn Fn(&str) -> Value,
         scale: &dyn Fn(&str) -> Option<&'s Scale>,
+        data: &dyn Fn(&str) -> Vec<Value>,
+        random: &RefCell<Random>,
     ) -> Result<(), Error> {
         let Some(set) = self.sets.get(name) else {
             return Ok(());
@@ -93,6 +98,8 @@ impl Encoder {
                     datum: &item_ref.datum,
                     param: &param,
                     scale,
+                    data,
+                    random,
                 };
                 expr.eval(&context).map_err(Error::Eval)?
             };

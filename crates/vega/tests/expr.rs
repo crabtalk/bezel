@@ -1,4 +1,5 @@
 use d3::time::{date, date::LocalZone};
+use std::cell::RefCell;
 use vega::{
     expr::{Context, Error, Expr},
     value::Value,
@@ -35,10 +36,16 @@ fn eval_on(source: &str, datum: &Value, params: &[(&str, Value)]) -> Result<Valu
             .map(|(_, value)| value.clone())
             .unwrap_or_default()
     };
+    let data = |name: &str| match name {
+        "rows" => rows().to_vec(),
+        _ => Vec::new(),
+    };
     let context = Context {
         datum,
         param: &param,
         scale: &|_| None,
+        data: &data,
+        random: &RefCell::default(),
     };
     source.parse::<Expr>()?.eval(&context)
 }
@@ -347,7 +354,7 @@ fn parse_errors() {
         "foo(1)".parse::<Expr>().unwrap_err(),
         Error::Function("foo".to_string())
     );
-    for name in ["data", "indata", "vlSelectionTest"] {
+    for name in ["vlSelectionTest", "modify"] {
         assert_eq!(
             format!("{name}(1)").parse::<Expr>().unwrap_err(),
             Error::Function(name.to_string())
@@ -448,7 +455,34 @@ fn math() {
         let r = num("random()");
         assert!((0.0..1.0).contains(&r));
     }
-    assert_ne!(num("random()"), num("random()"));
+    // vega-statistics' `randomLCG(123456789)`, drawn in turn.
+    assert_eq!(num("random()"), 0.1374794059141909);
+    assert!(yes("random() != random()"));
+}
+
+#[test]
+fn data_sets_and_distributions() {
+    assert_eq!(num("length(data('rows'))"), 2.0);
+    assert_eq!(show("data('rows')[1].name"), "Bob");
+    assert_eq!(num("length(data('none'))"), 0.0);
+    assert_eq!(num("indata('rows', 'name', 'Ann')"), 1.0);
+    assert!(matches!(
+        eval("indata('rows', 'name', 'Cy')"),
+        Value::Undefined
+    ));
+    assert_eq!(num("quantileNormal(0.5)"), 0.0);
+    assert_eq!(num("cumulativeNormal(0)"), 0.5);
+    assert_eq!(num("quantileUniform(0.25, 0, 8)"), 2.0);
+    assert_eq!(num("densityUniform(3, 10)"), 0.1);
+    assert!(num("quantileUniform(2)").is_nan());
+    let sample = num("sampleUniform(2, 4)");
+    assert!((2.0..4.0).contains(&sample));
+    assert_eq!(show("merge({a: 1}, {b: 2}, {a: 3}).a"), "3");
+    assert_eq!(
+        show("timeUnitSpecifier(['year', 'month', 'date'])"),
+        "%Y-%m-%d"
+    );
+    assert_eq!(show("timeUnitSpecifier(['month', 'hours'])"), "%b %H:00");
 }
 
 #[test]

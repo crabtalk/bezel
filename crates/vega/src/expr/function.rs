@@ -7,20 +7,42 @@ use crate::{
         parse::Node,
         string as text,
     },
+    path::Path,
+    statistics::distribution,
+    time,
     value::{Value, regexp::RegExp},
 };
 use d3::{
     format::{InvalidSpecifier, NumberFormat, number},
-    string,
+    math, string,
     time::date::{Date, LocalZone},
 };
-use std::{
-    collections::hash_map::RandomState,
-    hash::{BuildHasher, Hasher},
-    str::FromStr,
-};
+use std::str::FromStr;
 
 static UNDEFINED: Value = Value::Undefined;
+
+/// A normal distribution's parameters as vega-statistics reads them: a
+/// falsy mean is 0, a missing deviation 1.
+fn normal_params(mean: &Value, stdev: &Value) -> (f64, f64) {
+    let mean = mean.to_number();
+    let mean = if number::truthy(mean) { mean } else { 0.0 };
+    let stdev = if stdev.is_nullish() {
+        1.0
+    } else {
+        stdev.to_number()
+    };
+    (mean, stdev)
+}
+
+/// A uniform distribution's bounds as vega-statistics reads them: one bound
+/// is `[0, bound]`, none `[0, 1]`.
+fn uniform_params(min: &Value, max: &Value) -> (f64, f64) {
+    match (min.is_nullish(), max.is_nullish()) {
+        (_, false) => (min.to_number(), max.to_number()),
+        (false, true) => (0.0, min.to_number()),
+        (true, true) => (0.0, 1.0),
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Function {
@@ -101,6 +123,22 @@ pub(crate) enum Function {
     EncodeBandwidth,
     EncodeRange,
     Flush,
+    Data,
+    Indata,
+    Merge,
+    TimeUnitSpecifier,
+    SampleNormal,
+    CumulativeNormal,
+    DensityNormal,
+    QuantileNormal,
+    SampleLogNormal,
+    CumulativeLogNormal,
+    DensityLogNormal,
+    QuantileLogNormal,
+    SampleUniform,
+    CumulativeUniform,
+    DensityUniform,
+    QuantileUniform,
 }
 
 impl FromStr for Function {
@@ -125,18 +163,18 @@ impl FromStr for Function {
             "isNaN" => Self::IsNaN,
             "isFinite" => Self::IsFinite,
             "abs" => Self::Math(f64::abs),
-            "acos" => Self::Math(f64::acos),
-            "asin" => Self::Math(f64::asin),
-            "atan" => Self::Math(f64::atan),
+            "acos" => Self::Math(math::acos),
+            "asin" => Self::Math(math::asin),
+            "atan" => Self::Math(math::atan),
             "ceil" => Self::Math(f64::ceil),
-            "cos" => Self::Math(f64::cos),
-            "exp" => Self::Math(f64::exp),
+            "cos" => Self::Math(math::cos),
+            "exp" => Self::Math(math::exp),
             "floor" => Self::Math(f64::floor),
-            "log" => Self::Math(f64::ln),
+            "log" => Self::Math(math::log),
             "round" => Self::Math(number::round),
-            "sin" => Self::Math(f64::sin),
+            "sin" => Self::Math(math::sin),
             "sqrt" => Self::Math(f64::sqrt),
-            "tan" => Self::Math(f64::tan),
+            "tan" => Self::Math(math::tan),
             "atan2" => Self::Atan2,
             "clamp" => Self::Clamp,
             "hypot" => Self::Hypot,
@@ -193,6 +231,22 @@ impl FromStr for Function {
             "_bandwidth" => Self::EncodeBandwidth,
             "_range" => Self::EncodeRange,
             "flush" => Self::Flush,
+            "data" => Self::Data,
+            "indata" => Self::Indata,
+            "merge" => Self::Merge,
+            "timeUnitSpecifier" => Self::TimeUnitSpecifier,
+            "sampleNormal" => Self::SampleNormal,
+            "cumulativeNormal" => Self::CumulativeNormal,
+            "densityNormal" => Self::DensityNormal,
+            "quantileNormal" => Self::QuantileNormal,
+            "sampleLogNormal" => Self::SampleLogNormal,
+            "cumulativeLogNormal" => Self::CumulativeLogNormal,
+            "densityLogNormal" => Self::DensityLogNormal,
+            "quantileLogNormal" => Self::QuantileLogNormal,
+            "sampleUniform" => Self::SampleUniform,
+            "cumulativeUniform" => Self::CumulativeUniform,
+            "densityUniform" => Self::DensityUniform,
+            "quantileUniform" => Self::QuantileUniform,
             _ => match name.strip_prefix("utc") {
                 Some(field) => match field.parse()? {
                     Field::Time => return Err(()),
@@ -246,6 +300,35 @@ impl Function {
             }
             Self::Scale | Self::EncodeScale => {
                 scale().map_or(Value::Undefined, |s| s.apply(arg(1)))
+            }
+            Self::Random => Value::Number(row.random.borrow_mut().draw()),
+            Self::Data => (row.data)(&arg(0).to_string()).into(),
+            // The count of the data set's tuples whose field is the value.
+            Self::Indata => {
+                let field: Path = arg(1).to_string().parse().map_err(Error::Runtime)?;
+                let key = arg(2).to_string();
+                let mut count = 0.0;
+                for datum in (row.data)(&arg(0).to_string()) {
+                    if field.get(&datum)?.to_string() == key {
+                        count += 1.0;
+                    }
+                }
+                match count > 0.0 {
+                    true => Value::Number(count),
+                    false => Value::Undefined,
+                }
+            }
+            Self::SampleNormal | Self::SampleLogNormal => {
+                let (mean, stdev) = normal_params(arg(0), arg(1));
+                let mut random = row.random.borrow_mut();
+                match self {
+                    Self::SampleNormal => Value::Number(random.normal(mean, stdev)),
+                    _ => Value::Number(math::exp(mean + random.normal(0.0, 1.0) * stdev)),
+                }
+            }
+            Self::SampleUniform => {
+                let (min, max) = uniform_params(arg(0), arg(1));
+                Value::Number(min + (max - min) * row.random.borrow_mut().draw())
             }
             Self::Flush => {
                 let threshold = arg(2);
@@ -308,7 +391,7 @@ impl Function {
             Self::IsNaN => number(0).is_nan().into(),
             Self::IsFinite => number(0).is_finite().into(),
             Self::Math(f) => Value::Number(f(number(0))),
-            Self::Atan2 => Value::Number(number(0).atan2(number(1))),
+            Self::Atan2 => Value::Number(math::atan2(number(0), number(1))),
             Self::Clamp => Value::Number(number::max(number(1), number::min(number(2), number(0)))),
             Self::Hypot => Value::Number(number::hypot(
                 &args.iter().map(Value::to_number).collect::<Vec<_>>(),
@@ -324,11 +407,6 @@ impl Function {
                     .fold(f64::INFINITY, number::min),
             ),
             Self::Pow => Value::Number(number::pow(number(0), number(1))),
-            // Uniform in `[0, 1)`. Not for cryptography.
-            Self::Random => {
-                let bits = RandomState::new().build_hasher().finish();
-                Value::Number((bits >> 11) as f64 / (1u64 << 53) as f64)
-            }
             Self::Now => Value::Number(Date::now()),
             Self::Datetime => Value::Number(match args.len() {
                 0 => Date::now(),
@@ -448,7 +526,73 @@ impl Function {
             | Self::EncodeScale
             | Self::EncodeBandwidth
             | Self::EncodeRange
-            | Self::Flush => unreachable!("read in `call`, with the context"),
+            | Self::Flush
+            | Self::Random
+            | Self::Data
+            | Self::Indata
+            | Self::SampleNormal
+            | Self::SampleLogNormal
+            | Self::SampleUniform => unreachable!("read in `call`, with the context"),
+            Self::Merge => {
+                let mut merged = Value::Object(Vec::new().into());
+                for source in args {
+                    if let Value::Object(fields) = source {
+                        for (k, v) in fields.iter() {
+                            merged = merged.with_field(k, v.clone());
+                        }
+                    }
+                }
+                merged
+            }
+            Self::TimeUnitSpecifier => {
+                let units: Vec<String> = match a {
+                    Value::Array(items) => items.iter().map(Value::to_string).collect(),
+                    other => vec![other.to_string()],
+                };
+                let specifiers: Vec<(String, String)> = match b {
+                    Value::Object(fields) => fields
+                        .iter()
+                        .filter(|(_, v)| !v.is_nullish())
+                        .map(|(k, v)| (k.to_string(), v.to_string()))
+                        .collect(),
+                    _ => Vec::new(),
+                };
+                time::specifier(&units, &specifiers)
+                    .map_err(|e| Error::Runtime(e.to_string()))?
+                    .into()
+            }
+            Self::CumulativeNormal
+            | Self::DensityNormal
+            | Self::CumulativeLogNormal
+            | Self::DensityLogNormal => {
+                let (mean, stdev) = normal_params(b, c);
+                let x = number(0);
+                Value::Number(match self {
+                    Self::CumulativeNormal => distribution::cumulative_normal(x, mean, stdev),
+                    Self::DensityNormal => distribution::density_normal(x, mean, stdev),
+                    Self::CumulativeLogNormal => {
+                        distribution::cumulative_log_normal(x, mean, stdev)
+                    }
+                    _ => distribution::density_log_normal(x, mean, stdev),
+                })
+            }
+            Self::QuantileNormal | Self::QuantileLogNormal => {
+                let (mean, stdev) = normal_params(b, c);
+                let p = number(0);
+                Value::Number(match self {
+                    Self::QuantileNormal => distribution::quantile_normal(p, mean, stdev),
+                    _ => distribution::quantile_log_normal(p, mean, stdev),
+                })
+            }
+            Self::CumulativeUniform | Self::DensityUniform | Self::QuantileUniform => {
+                let (min, max) = uniform_params(b, c);
+                let x = number(0);
+                Value::Number(match self {
+                    Self::CumulativeUniform => distribution::cumulative_uniform(x, min, max),
+                    Self::DensityUniform => distribution::density_uniform(x, min, max),
+                    _ => distribution::quantile_uniform(x, min, max),
+                })
+            }
         })
     }
 

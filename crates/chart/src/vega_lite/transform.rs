@@ -3,13 +3,12 @@
 //! defaults and output names.
 
 use crate::{
-    transform::{
-        Aggregate, Density, Loess, Measure, Method, Op, Quantile, Regression, Resolve, Transform,
-    },
+    transform::{Aggregate, Density, Loess, Measure, Op, Quantile, Regression, Resolve, Transform},
     vega_lite::{field, field::Derive},
 };
 use gpui::SharedString;
 use serde_json::{Map, Value};
+use vega::statistics::regression::Method;
 
 /// `None` if an op is one the pipeline lacks, or carries a key its op does
 /// not take.
