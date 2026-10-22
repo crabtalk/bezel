@@ -1,10 +1,8 @@
 //! Vega-Lite's `loess` transform: locally-weighted regression.
 
-use crate::{
-    data::Data,
-    transform::{Groups, quantile},
-};
+use crate::{data::Data, transform::Groups};
 use gpui::SharedString;
+use js::array;
 
 /// Robustness iterations after the first fit.
 const ITERATIONS: usize = 2;
@@ -142,7 +140,7 @@ fn smooth(pairs: &[[f64; 2]], bandwidth: f64) -> Vec<[f64; 2]> {
         }
         let mut sorted: Vec<f64> = residuals.iter().copied().filter(|r| !r.is_nan()).collect();
         sorted.sort_by(f64::total_cmp);
-        let median = quantile::sorted_quantile(&sorted, 0.5);
+        let median = array::quantile_sorted(&sorted, 0.5);
         if median.abs() < EPSILON {
             break;
         }

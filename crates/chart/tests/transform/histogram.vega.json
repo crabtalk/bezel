@@ -1,0 +1,49 @@
+[
+ [
+  {
+   "bin_maxbins_10_r": 2,
+   "bin_maxbins_10_r_end": 3,
+   "__count": 7
+  },
+  {
+   "bin_maxbins_10_r": 5,
+   "bin_maxbins_10_r_end": 6,
+   "__count": 10
+  },
+  {
+   "bin_maxbins_10_r": 1,
+   "bin_maxbins_10_r_end": 2,
+   "__count": 5
+  },
+  {
+   "bin_maxbins_10_r": 6,
+   "bin_maxbins_10_r_end": 7,
+   "__count": 10
+  },
+  {
+   "bin_maxbins_10_r": 7,
+   "bin_maxbins_10_r_end": 8,
+   "__count": 4
+  },
+  {
+   "bin_maxbins_10_r": 8,
+   "bin_maxbins_10_r_end": 9,
+   "__count": 9
+  },
+  {
+   "bin_maxbins_10_r": 3,
+   "bin_maxbins_10_r_end": 4,
+   "__count": 7
+  },
+  {
+   "bin_maxbins_10_r": 9,
+   "bin_maxbins_10_r_end": 10,
+   "__count": 1
+  },
+  {
+   "bin_maxbins_10_r": 4,
+   "bin_maxbins_10_r_end": 5,
+   "__count": 7
+  }
+ ]
+]

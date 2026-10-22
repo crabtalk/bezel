@@ -1,6 +1,8 @@
-//! Pie and donut slices: each row's `theta` stacked round the circle, or ranged to
-//! `theta2`, or one band per value; `radius` and `radius2` their outer and
-//! inner edges, and the pad angle taken out between them. A text layer over
+//! Pie and donut slices: each row's `theta` stacked round its range, once
+//! round from twelve o'clock by default, or overlapping from its start
+//! without a stack, or ranged to `theta2`, or one band per value; `radius`
+//! and `radius2` their outer and inner edges through the radius scale, and
+//! the pad angle taken out between them. A text layer over
 //! them stands each row's text at its own slice's middle angle, `radius` out
 //! from the centre. Rows stack into one pie per centre. A layer's centre is
 //! the middle of the chart, or its `x` and `y` in pixels from the top-left
@@ -14,18 +16,20 @@ use js::curve::Curve;
 
 use crate::{
     data::Column,
-    model::{Channel, Chart, Encode, Layer, Mark, Position},
+    model::{Channel, Chart, Encode, Layer, Mark, Position, ScaleType, Stack},
     plan::{
         self, Body, Font, Hit, Hover, Link, Marks, Rect, Series, Slice, Text,
         domain::{self, Colors, Discrete},
         layout::Layout,
         look::{self, Groups, Look},
+        scales::{self, Context, Role},
     },
-    scale::Band,
 };
+use js::scale::Band;
 
-/// A radius for each row, in pixels: a value, or a field through a square
-/// root scale from zero to `outer`. `NaN` for a row with none.
+/// A radius for each row, in pixels: a value, or a field through its
+/// radius scale, `scale`'s where it shares one, from zero to `outer` by
+/// default. `NaN` for a row with none.
 fn radii(
     encode: Option<&Encode<f32>>,
     scale: Option<&Channel>,
@@ -39,17 +43,34 @@ fn radii(
         Some(Encode::Value(pixels)) => vec![*pixels; rows],
         Some(Encode::Scaled(channel)) => {
             let values = channel.numbers(&layer.data)?;
-            let scale = scale.unwrap_or(channel);
-            let (_, hi) = domain::extent(scale.numbers(&layer.data)?.iter().copied());
-            let hi = scale.scale.domain.map_or(hi, |[_, hi]| hi);
-            values
-                .iter()
-                .map(|&v| match hi > 0.0 {
-                    true => outer * (v.max(0.0) / hi).sqrt() as f32,
-                    false => 0.0,
-                })
-                .collect()
+            let scale_channel = scale.unwrap_or(channel);
+            let kind = scales::scale_type(scale_channel, Role::Radius, Mark::Arc, false);
+            if !kind.is_continuous() {
+                return None;
+            }
+            let spanned = scale_channel.spanned(&layer.data)?;
+            let extent = domain::extent(spanned.iter().flat_map(|v| v.iter().copied()));
+            let range = scales::numbers(&scale_channel.scale, [0.0, outer])?;
+            let context = Context {
+                role: Role::Radius,
+                mark: Mark::Arc,
+                orient: None,
+                both_measures: false,
+            };
+            let radius = scales::continuous(scale_channel, kind, &context, extent, range);
+            values.iter().map(|&v| radius.at(v) as f32).collect()
         }
+    })
+}
+
+/// Where a theta channel's range starts and ends: its own, or once round
+/// clockwise from twelve o'clock.
+fn turn(theta: &Channel) -> Option<(f32, f32)> {
+    let range = scales::numbers(&theta.scale, [0.0, TAU])?;
+    let (start, end) = (range[0] as f32, range[range.len() - 1] as f32);
+    Some(match theta.scale.reverse == Some(true) {
+        true => (end, start),
+        false => (start, end),
     })
 }
 
@@ -223,13 +244,16 @@ fn slices(
 
     // Each slice, its series and its read-out, in drawing order.
     let mut slices: Vec<(usize, Slice, SharedString, usize)> = Vec::new();
+    // With no scale, each value is an angle in radians.
+    let identity = theta.scale.kind == Some(ScaleType::Identity);
+    if identity && theta.kind.is_discrete() {
+        return None;
+    }
+    let (from, to) = turn(theta)?;
+    let around = |share: f64| from + (to - from) * share as f32;
     if theta.kind.is_discrete() {
-        let domain = Discrete::of(&theta.column(&layer.data)?, &theta.sort);
-        let band = Band {
-            count: domain.labels.len(),
-            range: (0.0, TAU),
-            padding: 0.0,
-        };
+        let domain = Discrete::of(&theta.column(&layer.data)?, &theta.sort).within(&theta.scale);
+        let band = Band::new(domain.labels.len(), [f64::from(from), f64::from(to)]);
         let readout = |row: usize| -> SharedString {
             match radius_scale.and_then(|c| Some((c, c.column(&layer.data)?))) {
                 Some((channel, Column::Number(values))) => {
@@ -245,24 +269,45 @@ fn slices(
             {
                 continue;
             }
-            let start = band.start(code as usize);
-            let s = slice(row, start, start + band.width());
+            let start = band.at(code as usize) as f32;
+            let s = slice(row, start, start + band.bandwidth() as f32);
             slices.push((groups.codes[row] as usize, s, readout(row), row));
         }
     } else {
         let values = theta.numbers(&layer.data)?;
         if let Some(theta2) = e.theta2.as_ref() {
             let theta2 = theta2.channel()?.numbers(&layer.data)?;
-            let (lo, hi) = domain::extent(values.iter().chain(theta2.iter()).copied());
-            let ticks = domain::continuous(theta, lo, hi, 2);
-            let (d0, d1) = ticks.domain;
-            let angle = |v: f64| ((v - d0) / (d1 - d0)) as f32 * TAU;
+            let spanned = theta.spanned(&layer.data)?;
+            let extent = domain::extent(
+                spanned
+                    .iter()
+                    .flat_map(|v| v.iter())
+                    .chain(theta2.iter())
+                    .copied(),
+            );
+            let kind = scales::scale_type(theta, Role::Theta, Mark::Arc, false);
+            let context = Context {
+                role: Role::Theta,
+                mark: Mark::Arc,
+                orient: None,
+                both_measures: false,
+            };
+            let scale = scales::continuous(
+                theta,
+                kind,
+                &context,
+                extent,
+                vec![f64::from(from), f64::from(to)],
+            );
+            let angle = |v: f64| match identity {
+                true => v as f32,
+                false => scale.at(v) as f32,
+            };
             for row in 0..values.len() {
                 let (v, v2) = (values[row], theta2[row]);
                 if groups.codes[row] == domain::MISSING
                     || v.is_nan()
                     || v2.is_nan()
-                    || d1 == d0
                     || center(row).is_none()
                 {
                     continue;
@@ -275,19 +320,49 @@ fn slices(
             // Each row its own slice, by `order`, or series by series,
             // stacked round its own centre's pie.
             let pie = |row: usize| center(row).map(|[x, y]| (x.to_bits(), y.to_bits()));
+            let overlap = theta.stack == Stack::Off;
             let mut rows: Vec<usize> = (0..values.len())
                 .filter(|&row| {
-                    groups.codes[row] != domain::MISSING && values[row] > 0.0 && pie(row).is_some()
+                    let value = values[row];
+                    let drawn = match identity {
+                        true => !value.is_nan(),
+                        false => value > 0.0,
+                    };
+                    groups.codes[row] != domain::MISSING && drawn && pie(row).is_some()
                 })
                 .collect();
             match &ranks {
                 Some(ranks) => rows.sort_by_key(|&row| ranks[row]),
                 None => rows.sort_by_key(|&row| groups.codes[row]),
             }
-            // Each pie's total, then how far round it the next slice starts.
+            if identity {
+                // Vega's stack of the angles themselves: up from zero, and
+                // a negative one down from it.
+                let mut ends: HashMap<(u32, u32), (f64, f64)> = HashMap::new();
+                for row in rows {
+                    let value = values[row];
+                    let (up, down) = ends.entry(pie(row)?).or_insert((0.0, 0.0));
+                    let start = match (overlap, value < 0.0) {
+                        (true, _) => 0.0,
+                        (false, true) => std::mem::replace(down, *down + value),
+                        (false, false) => std::mem::replace(up, *up + value),
+                    };
+                    let readout = theta.kind.describe(value);
+                    let s = slice(row, start as f32, (start + value) as f32);
+                    slices.push((groups.codes[row] as usize, s, readout.into(), row));
+                }
+                return Some(slices);
+            }
+            // Each pie's total, then how far round it the next slice starts;
+            // unstacked, each slice from the start to its share of the
+            // largest.
             let mut pies: HashMap<(u32, u32), (f64, f64)> = HashMap::new();
             for &row in &rows {
-                pies.entry(pie(row)?).or_insert((0.0, 0.0)).0 += values[row];
+                let (total, _) = pies.entry(pie(row)?).or_insert((0.0, 0.0));
+                *total = match overlap {
+                    true => total.max(values[row]),
+                    false => *total + values[row],
+                };
             }
             for row in rows {
                 let (total, start) = pies.get_mut(&pie(row)?)?;
@@ -295,9 +370,11 @@ fn slices(
                 let end = *start + value / *total;
                 let share = value / *total * 100.0;
                 let readout = format!("{} ({share:.1}%)", theta.kind.describe(value));
-                let s = slice(row, *start as f32 * TAU, end as f32 * TAU);
+                let s = slice(row, around(*start), around(end));
                 slices.push((groups.codes[row] as usize, s, readout.into(), row));
-                *start = end;
+                if !overlap {
+                    *start = end;
+                }
             }
         }
     }

@@ -1,8 +1,9 @@
 // Runs number and time specifiers through the pinned d3-format and
 // d3-time-format, point runs through d3-shape's curves and sectors through its
-// arc, and writes each
-// case and d3's output to `format.json`, `time_format.json` and `shape.json`
-// beside this file. Local time is America/New_York.
+// arc, values through d3-array's ticks, d3-scale's scales, d3-interpolate and
+// vega-scale's schemes and band scales, and writes each case and its output to
+// `format.json`, `time_format.json`, `shape.json` and `scale.json` beside this
+// file. Local time is America/New_York.
 //
 //   npm install && npm run fixtures
 import { writeFileSync } from 'node:fs';
@@ -17,6 +18,12 @@ import {
 } from 'd3-format';
 import { timeFormat, timeParse, utcFormat, utcParse } from 'd3-time-format';
 import * as shape from 'd3-shape';
+import * as array from 'd3-array';
+import * as d3time from 'd3-time';
+import * as d3 from 'd3-scale';
+import * as interpolate from 'd3-interpolate';
+import { scale as vegaScale, scheme, interpolateRange, quantizeInterpolator } from 'vega-scale';
+import { continuous as rampPalettes, discrete as listPalettes } from './node_modules/vega-scale/src/palettes.js';
 
 if (process.env.TZ !== 'America/New_York') throw new Error('run with TZ=America/New_York');
 
@@ -228,4 +235,178 @@ writeFileSync(
     .replace(/(["l]\]),\[(-?\d)/g, '$1,\n[$2') + '\n',
 );
 
-console.log({ curve: curve.length, arc: arc.length, number: number.length, prefix: prefix.length, precision: precision.length, specifier: specifier.length, time: time.length, parse: parse.length });
+// A number as JSON: NaN and the infinities as strings `Number` reads back.
+const figure = (x) => (Number.isFinite(x) ? x : String(x));
+const figures = (xs) => Array.from(xs, figure);
+
+const spans = [
+  [0, 1, 10], [0, 97, 5], [0, 0.3, 3], [0, 25000, 2], [-3.7, 42.1, 7], [1e-7, 3e-6, 5], [100, 0, 4],
+  [0, 0, 5], [1, 1, 3], [0, 1, 0], [-1e9, 1e9, 9], [0.1, 0.4, 0.5], [3, 4, 1.5], [123.456, 789.012, 12],
+  [-0.004, -0.0001, 6], [1e15, 1e16, 3], [NaN, 1, 5], [0, Infinity, 5],
+];
+const ticks = spans.map(([start, stop, count]) => [
+  figure(start), figure(stop), count,
+  figures(array.ticks(start, stop, count)),
+  figure(array.tickIncrement(start, stop, count)),
+  figure(array.tickStep(start, stop, count)),
+  figures(array.nice(start, stop, count)),
+]);
+
+// Each continuous scale: its kind and parameter, domain, range, clamp and
+// round; where each input lands and each output inverts to; ticks at each
+// count and the domain nice at each.
+const inputs = [-1000, -10, -1, -0.5, 0, 0.001, 0.5, 1, 2.5, 3, 7, 10, 42, 99.9, 100, 250, 1e4, NaN];
+const counts = [1, 2, 5, 10, 17];
+const configs = [
+  ['linear', null, [0, 1], [0, 100]], ['linear', null, [0, 97], [400, 0]], ['linear', null, [10, -10], [0, 1]],
+  ['linear', null, [0, 50, 100], [0, 10, 100]], ['linear', null, [100, 50, 0], [0, 10, 100]], ['linear', null, [3, 3], [0, 10]],
+  ['linear', null, [0, 10, 20, 30], [0, 1]], ['linear', null, [-3.7, 42.1], [0, 300]], ['linear', null, [1e-7, 3e-6], [0, 1]],
+  ['log', 10, [1, 1000], [0, 1]], ['log', 10, [1000, 1], [0, 300]], ['log', 10, [-1000, -1], [0, 1]], ['log', 10, [0.5, 70], [0, 1]],
+  ['log', 2, [1, 100], [0, 1]], ['log', Math.E, [1, 100], [0, 1]], ['log', 3, [2, 500], [0, 1]], ['log', 10, [3, 3.5], [0, 1]],
+  ['log', 10, [1, 1e9], [0, 1]], ['log', 10, [0.001, 0.2], [10, 0]],
+  ['pow', 2, [0, 10], [0, 100]], ['pow', 0.5, [0, 100], [0, 1]], ['pow', 3, [-5, 5], [0, 1]], ['pow', 1, [0, 1], [0, 1]],
+  ['pow', 0.33, [2, 9], [5, 0]], ['symlog', 1, [-100, 100], [0, 1]], ['symlog', 10, [0, 1e4], [0, 300]], ['symlog', 0.5, [-2, 7], [0, 1]],
+];
+const continuous = [];
+for (const [kind, parameter, domain, range] of configs) {
+  for (const [clamp, round] of [[false, false], [true, false], [false, true]]) {
+    const make = () => {
+      const s = kind === 'linear' ? d3.scaleLinear() : kind === 'log' ? d3.scaleLog().base(parameter)
+        : kind === 'pow' ? d3.scalePow().exponent(parameter) : d3.scaleSymlog().constant(parameter);
+      s.domain(domain).range(range).clamp(clamp);
+      if (round) s.interpolate(interpolate.interpolateRound);
+      return s;
+    };
+    const s = make();
+    continuous.push({
+      kind, parameter, domain, range, clamp, round,
+      at: inputs.map((x) => [figure(x), figure(s(x))]),
+      invert: round ? [] : range.concat([-5, 0.25, 50, 1000]).map((y) => [figure(y), figure(s.invert(y))]),
+      ticks: counts.map((count) => [count, figures(s.ticks(count))]),
+      nice: counts.map((count) => [count, figures(make().nice(count).domain())]),
+    });
+  }
+}
+
+const day = 864e5;
+const times = [
+  [Date.UTC(2024, 0, 10), Date.UTC(2024, 11, 20)], [Date.UTC(2020, 5, 1), Date.UTC(2024, 5, 1)],
+  [Date.UTC(2024, 2, 5, 9, 10), Date.UTC(2024, 2, 5, 12, 10)], [Date.UTC(2023, 2, 11), Date.UTC(2023, 2, 14)],
+  [Date.UTC(2023, 10, 4), Date.UTC(2023, 10, 6)], [0, 1500], [Date.UTC(1990, 0, 1), Date.UTC(2030, 0, 1)],
+  [Date.UTC(2024, 0, 1), Date.UTC(2024, 0, 1) + 90 * day], [Date.UTC(2024, 0, 1), Date.UTC(2024, 0, 1) + 20 * day],
+  [Date.UTC(2024, 4, 3, 1, 2, 3, 4), Date.UTC(2024, 4, 3, 1, 2, 9, 7)], [Date.UTC(1000, 0, 1), Date.UTC(2000, 0, 1)],
+  [Date.UTC(2024, 11, 20), Date.UTC(2024, 0, 10)],
+];
+const calendar = [];
+for (const utc of [true, false]) {
+  for (const domain of times) {
+    const make = () => (utc ? d3.scaleUtc() : d3.scaleTime()).domain(domain);
+    calendar.push({
+      utc, domain,
+      ticks: counts.concat([40]).map((count) => [count, make().ticks(count).map(Number)]),
+      nice: counts.map((count) => [count, make().nice(count).domain().map(Number)]),
+      every: [['minute', 15], ['hour', 6], ['day', 1], ['day', 2], ['week', 1], ['week', 2], ['month', 1], ['month', 3], ['year', 1], ['year', 5]].map(([unit, step]) => {
+        const name = (utc ? 'utc' : 'time') + (unit === 'week' ? 'Sunday' : unit[0].toUpperCase() + unit.slice(1));
+        return [unit, step, make().nice(d3time[name].every(step)).domain().map(Number)];
+      }),
+    });
+  }
+}
+
+const band = [];
+for (const type of ['band', 'point']) {
+  for (const count of [0, 1, 2, 5, 12]) {
+    for (const range of [[0, 300], [300, 0], [17, 461.5]]) {
+      for (const [inner, outer, align, round] of [[0, 0, 0.5, false], [0.1, 0.05, 0.5, false], [0.2, 0.5, 0, true], [1, 0.5, 1, false], [0.25, 0.125, 0.5, true], [-1, 2, 0.5, false]]) {
+        const s = vegaScale(type)().domain(Array.from({ length: count }, (_, i) => i)).range(range).round(round).align(align);
+        if (type === 'band') s.paddingInner(inner).paddingOuter(outer); else s.padding(outer);
+        const probes = [-1, 0, 5, 37.5, 150, 299.9, 300, 461.5, 500];
+        band.push({
+          type, count, range, inner: type === 'band' ? inner : 1, outer, align, round,
+          step: figure(s.step()), bandwidth: figure(s.bandwidth()),
+          at: Array.from({ length: count }, (_, i) => figure(s(i))),
+          invert: probes.map((p) => [p, s.invert(p) ?? null]),
+        });
+      }
+    }
+  }
+}
+
+const discretizing = [];
+const probes = [-5, 0, 1, 2.5, 3, 10, 33, 50, 51, 70, 99, 100, 1e3, NaN];
+for (const [values, count] of [[[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 4], [[3, 1, 4, 1, 5, 9, 2, 6, NaN, 5], 3], [[50], 5], [[], 3], [[0, 100], 1]]) {
+  const s = d3.scaleQuantile().domain(values).range(Array.from({ length: count }, (_, i) => i));
+  discretizing.push({ kind: 'quantile', values: figures(values), count, at: probes.map((x) => [figure(x), s(x) ?? null]) });
+}
+for (const [domain, count] of [[[0, 100], 4], [[30, 70], 5], [[10, 0], 3], [[0, 1], 1]]) {
+  const s = d3.scaleQuantize().domain(domain).range(Array.from({ length: count }, (_, i) => i));
+  discretizing.push({ kind: 'quantize', domain, count, at: probes.map((x) => [figure(x), s(x) ?? null]) });
+}
+for (const [domain, count] of [[[30, 70], 3], [[0, 50, 100], 4], [[0, 50, 100], 2], [[10], 5]]) {
+  const s = d3.scaleThreshold().domain(domain).range(Array.from({ length: count }, (_, i) => i));
+  discretizing.push({ kind: 'threshold', domain, count, at: probes.map((x) => [figure(x), s(x) ?? null]) });
+}
+for (const [bins, count] of [[[0, 10, 20, 30, 40], 4], [[0, 10, 20, 30, 40], 2], [[5, 50], 3]]) {
+  const s = vegaScale('bin-ordinal')().domain(bins).range(Array.from({ length: count }, (_, i) => i));
+  discretizing.push({ kind: 'bin-ordinal', bins, count, at: probes.map((x) => [figure(x), s(x) ?? null]) });
+}
+
+const sequential = [];
+for (const [kind, parameter, domain] of [
+  ['linear', null, [0, 100]], ['linear', null, [100, 0]], ['linear', null, [5, 5]], ['log', 10, [1, 1000]], ['log', 10, [-1000, -1]],
+  ['pow', 2, [0, 10]], ['sqrt', null, [0, 100]], ['symlog', 1, [-100, 100]],
+  ['linear', null, [0, 30, 100]], ['linear', null, [100, 30, 0]], ['linear', null, [0, 0, 100]], ['log', 10, [1, 10, 1000]],
+  ['pow', 2, [-10, 0, 10]], ['symlog', 1, [-100, 0, 1000]],
+]) {
+  for (const clamp of [false, true]) {
+    const diverging = domain.length === 3;
+    const name = (diverging ? 'scaleDiverging' : 'scaleSequential') + (kind === 'linear' ? '' : kind[0].toUpperCase() + kind.slice(1));
+    const s = d3[name]((t) => t).domain(domain).clamp(clamp);
+    if (kind === 'log') s.base(parameter);
+    if (kind === 'pow') s.exponent(parameter);
+    if (kind === 'symlog') s.constant(parameter);
+    sequential.push({ kind, parameter, domain, clamp, at: inputs.map((x) => [figure(x), figure(s(x))]) });
+  }
+}
+
+const colors = ['#cfe1f2', '#0a4a90', 'steelblue', 'brown', 'rgba(255, 0, 0, 0.25)', 'hsl(300, 50%, 20%)', 'white', 'black', '#808080', 'transparent'];
+const methods = [['rgb', 1], ['rgb', 2.2], ['rgb', 0.5], ['hsl', null], ['hsl-long', null], ['lab', null], ['hcl', null], ['hcl-long', null], ['cubehelix', 1], ['cubehelix', 3], ['cubehelix-long', 1], ['cubehelix-long', 0.5]];
+const ts = [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1, -0.2, 1.3];
+const between = [];
+for (const [method, gamma] of methods) {
+  const name = 'interpolate' + method.split('-').map((s) => s[0].toUpperCase() + s.slice(1)).join('');
+  const f = gamma == null ? interpolate[name] : interpolate[name].gamma(gamma);
+  for (let i = 0; i < colors.length; i++) {
+    for (const j of [(i + 1) % colors.length, (i + 4) % colors.length]) {
+      const g = f(colors[i], colors[j]);
+      between.push([method, gamma ?? 1, colors[i], colors[j], ts.map((t) => g(t))]);
+    }
+  }
+  const p = interpolate.piecewise(f, ['#440154', 'white', '#21918c', 'orange']);
+  between.push([method, gamma ?? 1, 'piecewise', null, ts.map((t) => p(t))]);
+}
+
+const schemes = [];
+for (const name of [...Object.keys(listPalettes), ...Object.keys(rampPalettes)].sort()) {
+  const s = scheme(name);
+  if (typeof s !== 'function') {
+    schemes.push({ name, colors: s, samples: [] });
+    continue;
+  }
+  const samples = [];
+  for (const [extent, reverse] of [[null, false], [null, true], [[0.2, 0.9], false], [[1, 0], false], [[0.25, 0.75], true]]) {
+    const f = extent || reverse ? interpolateRange(s, reverse ? (extent || [0, 1]).slice().reverse() : extent) : s;
+    samples.push([extent, reverse, ts.map((t) => f(t))]);
+  }
+  const quantized = [1, 3, 5, 9].map((count) => [count, quantizeInterpolator(s, count), quantizeInterpolator(interpolateRange(s, [0.2, 0.8]), count)]);
+  schemes.push({ name, colors: null, samples, quantized });
+}
+
+writeFileSync(
+  join(dir, 'scale.json'),
+  JSON.stringify({ ticks, continuous, time: calendar, band, discretizing, sequential, between, schemes }, null, 0)
+    .replaceAll('],[', '],\n[').replaceAll('},{', '},\n{') + '\n',
+);
+
+console.log({ ticks: ticks.length, continuous: continuous.length, time: calendar.length, band: band.length, discretizing: discretizing.length, sequential: sequential.length, between: between.length, schemes: schemes.length });
+console.log({ curve: curve.length, arc: arc.length, number: number.length, prefix: prefix.length, precision: precision.length, specifier: specifier.length, time: calendar.length, parse: parse.length });

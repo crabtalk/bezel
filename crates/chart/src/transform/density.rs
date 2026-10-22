@@ -2,9 +2,10 @@
 
 use crate::{
     data::Data,
-    transform::{Groups, curve, quantile},
+    transform::{Groups, curve},
 };
 use gpui::SharedString;
+use js::array;
 use std::f64::consts::PI;
 
 /// A smoothed density of `field`'s values per group, sampled along their
@@ -136,8 +137,8 @@ impl Kde {
         };
         let mut sorted = support.to_vec();
         sorted.sort_by(f64::total_cmp);
-        let q1 = quantile::sorted_quantile(&sorted, 0.25);
-        let q3 = quantile::sorted_quantile(&sorted, 0.75);
+        let q1 = array::quantile_sorted(&sorted, 0.25);
+        let q3 = array::quantile_sorted(&sorted, 0.75);
         let iqr = (q3 - q1) / 1.34;
         let truthy = |v: f64| v != 0.0 && !v.is_nan();
         let min = if deviation.is_nan() || iqr.is_nan() {

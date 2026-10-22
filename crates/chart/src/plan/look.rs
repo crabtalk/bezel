@@ -8,16 +8,19 @@ use gpui::{Hsla, SharedString};
 use js::regex::Regex;
 
 use crate::{
-    data::Column,
+    data::{Column, Data},
     model::{
-        Align, Baseline, Cap, Channel, Encode, Join, Kind, Layer, LineBreak, Mark, Shape, Sort,
+        Align, Baseline, Cap, Channel, Domain, Encode, Join, Kind, Layer, LineBreak, Mark,
+        NamedRange, Range, ScaleType, Shape, Sort,
     },
     plan::{
         Font, Ink, Style,
         domain::{self, Colors, Discrete},
+        scales::{self, ColorScale, Colored, Context, Role, Steps},
     },
-    scale::Linear,
+    scale::Ticks,
 };
+use js::scale::Continuous;
 
 /// Vega-Lite's ranges for its numeric channels.
 pub(super) const OPACITY: [f32; 2] = [0.3, 0.8];
@@ -47,8 +50,6 @@ const TEXT_SIZE: f32 = 11.0;
 const REDUCED_OPACITY: f32 = 0.7;
 /// Canvas's miter limit.
 const MITER_LIMIT: f32 = 10.0;
-/// Ticks a continuous legend shows, about.
-const LEGEND_TICKS: usize = 4;
 /// What a text cut short ends in, with no `ellipsis` property.
 const ELLIPSIS: &str = "\u{2026}";
 
@@ -70,95 +71,208 @@ impl<T: Clone> Each<T> {
 
 /// A numeric channel's scale from its field's domain onto a range.
 pub(super) enum Amount {
-    /// Evenly across the range, one step per value.
-    Discrete { domain: Discrete, range: [f32; 2] },
+    /// No scale: each value as it is.
+    Identity(Arc<[f64]>),
+    /// A point scale across the range's ends, or an ordinal one round its
+    /// values.
+    Discrete {
+        domain: Discrete,
+        range: Vec<f64>,
+        ordinal: bool,
+    },
     Continuous {
         values: Arc<[f64]>,
         kind: Kind,
-        linear: Linear,
-        ticks: Vec<f64>,
+        scale: Continuous,
+        /// A binned field's bin edges, which its legend lists.
+        edges: Option<Vec<f64>>,
+    },
+    /// A discretizing scale's steps, each a value of the range.
+    Steps {
+        values: Arc<[f64]>,
+        kind: Kind,
+        steps: Steps,
+        range: Vec<f64>,
     },
 }
 
 impl Amount {
-    /// `channel` over `column` onto `range`. `zero` lets a quantitative
-    /// domain take in zero as the channel's scale says.
+    /// `channel` over `data` in a `mark` layer, onto its range or
+    /// `default`. `size` for the size channel, which takes in zero.
     pub(super) fn of(
         channel: &Channel,
-        column: &Column,
-        range: [f32; 2],
-        zero: bool,
+        data: &Data,
+        default: [f32; 2],
+        mark: Mark,
+        size: bool,
     ) -> Option<Self> {
-        if channel.kind.is_discrete() {
+        let column = &channel.column(data)?;
+        let role = match size {
+            true => Role::Size,
+            false => Role::Amount,
+        };
+        let kind = scales::scale_type(channel, role, mark, false);
+        if kind == ScaleType::Identity {
+            return Some(Amount::Identity(column.numbers()?));
+        }
+        let range = scales::numbers(&channel.scale, default)?;
+        let reverse = channel.scale.reverse == Some(true);
+        if kind.is_discrete() {
+            let mut range = range;
+            if reverse {
+                range.reverse();
+            }
             return Some(Amount::Discrete {
-                domain: Discrete::of(column, &channel.sort),
+                domain: Discrete::of(column, &channel.sort).within(&channel.scale),
                 range,
+                ordinal: kind == ScaleType::Ordinal,
             });
         }
         let Column::Number(values) = column else {
             return None;
         };
-        let (lo, hi) = domain::extent(values.iter().copied());
-        let mut scale = channel.clone();
-        scale.scale.zero &= zero;
-        let ticks = domain::continuous(&scale, lo, hi, LEGEND_TICKS);
+        let spanned: Vec<f64> = channel
+            .spanned(data)?
+            .iter()
+            .flat_map(|values| values.iter().copied())
+            .collect();
+        if kind.is_discretizing() {
+            let count = match &channel.scale.range {
+                Some(_) => range.len(),
+                None => match (kind, &channel.scale.domain) {
+                    (ScaleType::Threshold, Some(Domain::Numbers(cuts))) => cuts.len() + 1,
+                    (ScaleType::Threshold, _) => 3,
+                    _ => scales::STEP_COUNT,
+                },
+            };
+            let mut range = match &channel.scale.range {
+                Some(_) => range,
+                None => (0..count)
+                    .map(|i| {
+                        let t = i as f64 / (count.max(2) - 1) as f64;
+                        range[0] + (range[range.len() - 1] - range[0]) * t
+                    })
+                    .collect(),
+            };
+            if reverse {
+                range.reverse();
+            }
+            let steps = Steps::of(kind, &channel.scale, &spanned, range.len())?;
+            return Some(Amount::Steps {
+                values: values.clone(),
+                kind: channel.kind,
+                steps,
+                range,
+            });
+        }
+        let context = Context {
+            role,
+            mark,
+            orient: None,
+            both_measures: false,
+        };
+        let extent = domain::extent(spanned);
         Some(Amount::Continuous {
             values: values.clone(),
             kind: channel.kind,
-            linear: Linear {
-                domain: ticks.domain,
-                range: (range[0], range[1]),
-            },
-            ticks: ticks.values,
+            scale: scales::continuous(channel, kind, &context, extent, range),
+            edges: scales::edges(&channel.scale),
         })
     }
 
-    fn step(index: usize, count: usize, range: [f32; 2]) -> f32 {
-        match count {
-            0 | 1 => (range[0] + range[1]) / 2.0,
-            _ => range[0] + (range[1] - range[0]) * index as f32 / (count - 1) as f32,
+    /// Value `index` of `count` on a point scale across `range`'s ends, or
+    /// round an ordinal one's values.
+    fn step(index: usize, count: usize, range: &[f64], ordinal: bool) -> f32 {
+        if ordinal {
+            return range[index % range.len()] as f32;
         }
+        let (first, last) = (range[0], range[range.len() - 1]);
+        (match count {
+            0 | 1 => (first + last) / 2.0,
+            _ => first + (last - first) * index as f64 / (count - 1) as f64,
+        }) as f32
     }
 
     /// `NaN` for a missing value.
     pub(super) fn rows(&self) -> Vec<f32> {
         match self {
-            Amount::Discrete { domain, range } => domain
+            Amount::Identity(values) => values.iter().map(|&v| v as f32).collect(),
+            Amount::Discrete {
+                domain,
+                range,
+                ordinal,
+            } => domain
                 .codes
                 .iter()
                 .map(|&code| match code {
                     domain::MISSING => f32::NAN,
-                    code => Self::step(code as usize, domain.labels.len(), *range),
+                    code => Self::step(code as usize, domain.labels.len(), range, *ordinal),
                 })
                 .collect(),
-            Amount::Continuous { values, linear, .. } => values
+            Amount::Continuous { values, scale, .. } => {
+                values.iter().map(|&v| scale.at(v) as f32).collect()
+            }
+            Amount::Steps {
+                values,
+                steps,
+                range,
+                ..
+            } => values
                 .iter()
-                .map(|&v| match v.is_nan() {
-                    true => f32::NAN,
-                    false => linear.at(v),
+                .map(|&v| {
+                    steps
+                        .index(v)
+                        .and_then(|i| range.get(i))
+                        .map_or(f32::NAN, |r| *r as f32)
                 })
                 .collect(),
         }
     }
 
-    /// What a legend shows: each value, or ticks across the domain, and
-    /// where each lands.
+    /// What a legend shows: each value, ticks across the domain, or each
+    /// step, and where each lands.
     pub(super) fn entries(&self) -> Vec<(SharedString, f32)> {
         match self {
-            Amount::Discrete { domain, range } => domain
+            // With no scale, Vega-Lite draws no legend.
+            Amount::Identity(_) => Vec::new(),
+            Amount::Discrete {
+                domain,
+                range,
+                ordinal,
+            } => domain
                 .labels
                 .iter()
                 .enumerate()
-                .map(|(i, label)| (label.clone(), Self::step(i, domain.labels.len(), *range)))
+                .map(|(i, label)| {
+                    (
+                        label.clone(),
+                        Self::step(i, domain.labels.len(), range, *ordinal),
+                    )
+                })
                 .collect(),
+            // Each bin, at where it starts.
             Amount::Continuous {
                 kind,
-                linear,
-                ticks,
+                scale,
+                edges: Some(edges),
                 ..
-            } => ticks
+            } => scales::ranges(*kind, edges)
+                .into_iter()
+                .zip(edges)
+                .map(|(label, &v)| (label, scale.at(v) as f32))
+                .collect(),
+            Amount::Continuous { kind, scale, .. } => Ticks::of(scale, domain::LEGEND_TICKS)
+                .values
                 .iter()
-                .map(|&v| (kind.describe(v).into(), linear.at(v)))
+                .map(|&v| (kind.describe(v).into(), scale.at(v) as f32))
+                .collect(),
+            Amount::Steps {
+                kind, steps, range, ..
+            } => steps
+                .labels(*kind, range.len())
+                .into_iter()
+                .zip(range)
+                .map(|(label, v)| (label, *v as f32))
                 .collect(),
         }
     }
@@ -170,15 +284,14 @@ fn amounts(
     encode: Option<&Encode<f32>>,
     layer: &Layer,
     range: [f32; 2],
-    zero: bool,
+    size: bool,
     default: f32,
 ) -> Option<Each<f32>> {
     Some(match encode {
         None => Each::All(default),
         Some(Encode::Value(value)) => Each::All(*value),
         Some(Encode::Scaled(channel)) => {
-            let column = channel.column(&layer.data)?;
-            let rows = Amount::of(channel, &column, range, zero)?.rows();
+            let rows = Amount::of(channel, &layer.data, range, layer.mark, size)?.rows();
             Each::Rows(
                 rows.into_iter()
                     .map(|v| if v.is_nan() { default } else { v.max(0.0) })
@@ -188,48 +301,50 @@ fn amounts(
     })
 }
 
-/// A discrete field's values per row, each `scheme`'s value at its place.
+/// A shape or dash channel's values per row: each place in its range,
+/// `range` the range at each place, round and round.
 fn cycled<T: Clone>(
     channel: &Channel,
     layer: &Layer,
-    scheme: impl Fn(usize) -> T,
+    range: impl Fn(usize) -> T,
+    count: usize,
     missing: T,
 ) -> Option<Each<T>> {
-    if !channel.kind.is_discrete() {
-        return None;
-    }
-    let domain = Discrete::of(&channel.column(&layer.data)?, &channel.sort);
+    let kind = scales::scale_type(channel, Role::Symbol, layer.mark, false);
+    let places = scales::places(channel, &channel.column(&layer.data)?, kind, count)?;
     Some(Each::Rows(
-        domain
-            .codes
-            .iter()
-            .map(|&code| match code {
-                domain::MISSING => missing.clone(),
-                code => scheme(code as usize),
-            })
+        places
+            .into_iter()
+            .map(|place| place.map_or(missing.clone(), &range))
             .collect(),
     ))
 }
 
-/// A fill or stroke channel: a fixed colour, or a discrete field's values
-/// in the theme's categorical colours.
+/// A fill or stroke channel: a fixed colour, or a field's values through
+/// its colour scale.
 fn inks(encode: Option<&Encode<Hsla>>, layer: &Layer) -> Option<Option<Each<Option<Ink>>>> {
     Some(match encode {
         None => None,
         Some(Encode::Value(color)) => Some(Each::All(Some(Ink::Fixed(*color)))),
-        Some(Encode::Scaled(channel)) => {
-            if !channel.kind.is_discrete() {
-                return None;
-            }
-            let domain = Discrete::of(&channel.column(&layer.data)?, &channel.sort);
-            Some(Each::Rows(
-                domain
-                    .codes
-                    .iter()
-                    .map(|&code| (code != domain::MISSING).then_some(Ink::Category(code as usize)))
-                    .collect(),
-            ))
-        }
+        Some(Encode::Scaled(channel)) => Some(Each::Rows(paints(channel, layer)?)),
+    })
+}
+
+/// Each row's colour through `channel`'s colour scale.
+fn paints(channel: &Channel, layer: &Layer) -> Option<Vec<Option<Ink>>> {
+    if let Some(rows) = scales::named_inks(channel, layer)? {
+        return Some(rows);
+    }
+    Some(match ColorScale::over(channel, layer)? {
+        (palette, Colored::Discrete(domain)) => domain
+            .codes
+            .iter()
+            .map(|&code| match code {
+                domain::MISSING => None,
+                code => palette.discrete(code as usize),
+            })
+            .collect(),
+        (palette, Colored::Numbers(values)) => values.iter().map(|&v| palette.value(v)).collect(),
     })
 }
 
@@ -280,8 +395,8 @@ struct Stroke {
 }
 
 impl Look {
-    /// `None` for a channel over a field `layer` lacks, or one it cannot
-    /// scale: a continuous shape, dash, fill or stroke.
+    /// `None` for a channel over a field `layer` lacks, or a range its
+    /// channel does not take.
     pub(super) fn of(layer: &Layer, band: f32) -> Option<Self> {
         let e = &layer.encoding;
         let p = &layer.properties;
@@ -298,15 +413,49 @@ impl Look {
         let dash = match &e.stroke_dash {
             None => Each::All(None),
             Some(Encode::Value(dash)) => Each::All(solid(dash)),
-            Some(Encode::Scaled(channel)) => cycled(channel, layer, dash, None)?,
+            // With no scale, each row's text is its lengths, separated by
+            // commas.
+            Some(Encode::Scaled(channel)) if channel.scale.kind == Some(ScaleType::Identity) => {
+                Each::Rows(
+                    texts(channel, &channel.column(&layer.data)?)
+                        .iter()
+                        .map(|text| {
+                            let dash: Option<Vec<f32>> =
+                                text.split(',').map(|n| n.trim().parse().ok()).collect();
+                            solid(&dash?)
+                        })
+                        .collect(),
+                )
+            }
+            Some(Encode::Scaled(channel)) => {
+                let dashes = Dashes::of(channel)?;
+                cycled(channel, layer, |i| dashes.nth(i), dashes.len(), None)?
+            }
         };
         let shape = match (layer.mark, &e.shape) {
             (Mark::Circle, _) => Each::All(Shape::Circle),
             (Mark::Square, _) => Each::All(Shape::Square),
             (_, None) => Each::All(Shape::Circle),
-            (_, Some(Encode::Value(shape))) => Each::All(*shape),
+            (_, Some(Encode::Value(shape))) => Each::All(shape.clone()),
+            (_, Some(Encode::Scaled(channel)))
+                if channel.scale.kind == Some(ScaleType::Identity) =>
+            {
+                Each::Rows(
+                    texts(channel, &channel.column(&layer.data)?)
+                        .into_iter()
+                        .map(|name| name.parse().unwrap_or_default())
+                        .collect(),
+                )
+            }
             (_, Some(Encode::Scaled(channel))) => {
-                cycled(channel, layer, Shape::nth, Shape::Circle)?
+                let shapes = Shapes::of(channel)?;
+                cycled(
+                    channel,
+                    layer,
+                    |i| shapes.nth(i),
+                    shapes.len(),
+                    Shape::Circle,
+                )?
             }
         };
         let strings =
@@ -450,9 +599,94 @@ impl Font {
     }
 }
 
-/// The `index`-th of Vega-Lite's dashes, round and round. `None` is solid.
-pub(super) fn dash(index: usize) -> Option<Arc<[f32]>> {
-    solid(DASHES[index % DASHES.len()])
+/// A shape channel's range: its own, or Vega's symbols.
+pub(super) enum Shapes {
+    Symbols,
+    Listed(Vec<Shape>),
+}
+
+impl Shapes {
+    /// `None` for a range of something other than shapes.
+    pub(super) fn of(channel: &Channel) -> Option<Self> {
+        match &channel.scale.range {
+            _ if channel.scale.kind == Some(ScaleType::Identity) => None,
+            None | Some(Range::Named(NamedRange::Symbol)) => Some(Shapes::Symbols),
+            Some(Range::Shapes(shapes)) if !shapes.is_empty() => {
+                Some(Shapes::Listed(shapes.clone()))
+            }
+            Some(_) => None,
+        }
+    }
+
+    pub(super) fn len(&self) -> usize {
+        match self {
+            Shapes::Symbols => Shape::SCHEME.len(),
+            Shapes::Listed(shapes) => shapes.len(),
+        }
+    }
+
+    /// The `index`-th, round and round.
+    pub(super) fn nth(&self, index: usize) -> Shape {
+        match self {
+            Shapes::Symbols => Shape::nth(index),
+            Shapes::Listed(shapes) => shapes[index % shapes.len()].clone(),
+        }
+    }
+}
+
+/// A dash channel's range: its own, or Vega-Lite's dashes.
+pub(super) struct Dashes(Vec<Vec<f32>>);
+
+impl Dashes {
+    /// `None` for a range of something other than dashes.
+    pub(super) fn of(channel: &Channel) -> Option<Self> {
+        match &channel.scale.range {
+            None => Some(Dashes(DASHES.iter().map(|dash| dash.to_vec()).collect())),
+            Some(Range::Dashes(dashes)) if !dashes.is_empty() => Some(Dashes(dashes.clone())),
+            Some(_) => None,
+        }
+    }
+
+    pub(super) fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// The `index`-th, round and round. `None` is solid.
+    pub(super) fn nth(&self, index: usize) -> Option<Arc<[f32]>> {
+        solid(&self.0[index % self.0.len()])
+    }
+}
+
+/// A shape or dash field's values in order, or a discretizing scale's
+/// steps, each with `range`'s value at its place.
+pub(super) fn listed<T>(
+    channel: &Channel,
+    layer: &Layer,
+    range: impl Fn(usize) -> T,
+    count: usize,
+) -> Option<Vec<(SharedString, T)>> {
+    let kind = scales::scale_type(channel, Role::Symbol, layer.mark, false);
+    let column = channel.column(&layer.data)?;
+    let labels = match kind.is_discretizing() {
+        true => {
+            let Column::Number(values) = &column else {
+                return None;
+            };
+            Steps::of(kind, &channel.scale, values, count)?.labels(channel.kind, count)
+        }
+        false => {
+            Discrete::of(&column, &channel.sort)
+                .within(&channel.scale)
+                .labels
+        }
+    };
+    Some(
+        labels
+            .into_iter()
+            .enumerate()
+            .map(|(i, label)| (label, range(i)))
+            .collect(),
+    )
 }
 
 /// `None` for a dash with no gap.

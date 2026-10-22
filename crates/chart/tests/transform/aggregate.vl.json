@@ -1,0 +1,345 @@
+{
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+ "data": {
+  "values": [
+   {
+    "g": "a",
+    "v": 3.1,
+    "u": 1,
+    "w": "a0"
+   },
+   {
+    "g": "a",
+    "v": -1.23,
+    "u": 11,
+    "w": "a1"
+   },
+   {
+    "g": "a",
+    "v": 11.27,
+    "u": 21,
+    "w": "a2"
+   },
+   {
+    "g": "a",
+    "v": -3.19,
+    "u": 31,
+    "w": "a3"
+   },
+   {
+    "g": "a",
+    "v": null,
+    "u": 41,
+    "w": "a4"
+   },
+   {
+    "g": "a",
+    "v": 8.4,
+    "u": 51,
+    "w": "a5"
+   },
+   {
+    "g": "a",
+    "v": 4.14,
+    "u": 61,
+    "w": "a6"
+   },
+   {
+    "g": "a",
+    "v": -3.55,
+    "u": 71,
+    "w": "a7"
+   },
+   {
+    "g": "a",
+    "v": 7.69,
+    "u": 81,
+    "w": "a8"
+   },
+   {
+    "g": "b",
+    "v": -4.06,
+    "u": 1,
+    "w": "b0"
+   },
+   {
+    "g": "b",
+    "v": 5.84,
+    "u": 11,
+    "w": "b1"
+   },
+   {
+    "g": "b",
+    "v": -3.25,
+    "u": 21,
+    "w": "b2"
+   },
+   {
+    "g": "b",
+    "v": -2.73,
+    "u": 31,
+    "w": "b3"
+   },
+   {
+    "g": "b",
+    "v": 5.61,
+    "u": 41,
+    "w": "b4"
+   },
+   {
+    "g": "b",
+    "v": 15.67,
+    "u": 51,
+    "w": "b5"
+   },
+   {
+    "g": "c",
+    "v": null,
+    "u": 1,
+    "w": "c0"
+   },
+   {
+    "g": "c",
+    "v": null,
+    "u": 11,
+    "w": "c1"
+   },
+   {
+    "g": "c",
+    "v": null,
+    "u": 21,
+    "w": "c2"
+   },
+   {
+    "g": "b",
+    "v": "",
+    "u": 99,
+    "w": "b-empty"
+   }
+  ]
+ },
+ "transform": [
+  {
+   "aggregate": [
+    {
+     "op": "count",
+     "as": "n"
+    },
+    {
+     "op": "valid",
+     "field": "v",
+     "as": "valid"
+    },
+    {
+     "op": "missing",
+     "field": "v",
+     "as": "missing"
+    },
+    {
+     "op": "distinct",
+     "field": "v",
+     "as": "distinct"
+    },
+    {
+     "op": "sum",
+     "field": "v",
+     "as": "sum"
+    },
+    {
+     "op": "product",
+     "field": "v",
+     "as": "product"
+    },
+    {
+     "op": "mean",
+     "field": "v",
+     "as": "mean"
+    },
+    {
+     "op": "average",
+     "field": "v",
+     "as": "average"
+    },
+    {
+     "op": "variance",
+     "field": "v",
+     "as": "variance"
+    },
+    {
+     "op": "variancep",
+     "field": "v",
+     "as": "variancep"
+    },
+    {
+     "op": "stdev",
+     "field": "v",
+     "as": "stdev"
+    },
+    {
+     "op": "stdevp",
+     "field": "v",
+     "as": "stdevp"
+    },
+    {
+     "op": "stderr",
+     "field": "v",
+     "as": "stderr"
+    },
+    {
+     "op": "median",
+     "field": "v",
+     "as": "median"
+    },
+    {
+     "op": "q1",
+     "field": "v",
+     "as": "q1"
+    },
+    {
+     "op": "q3",
+     "field": "v",
+     "as": "q3"
+    },
+    {
+     "op": "ci0",
+     "field": "v",
+     "as": "ci0"
+    },
+    {
+     "op": "ci1",
+     "field": "v",
+     "as": "ci1"
+    },
+    {
+     "op": "min",
+     "field": "v",
+     "as": "min"
+    },
+    {
+     "op": "max",
+     "field": "v",
+     "as": "max"
+    },
+    {
+     "op": "mean",
+     "field": "u"
+    },
+    {
+     "op": "count",
+     "field": "u"
+    },
+    {
+     "op": {
+      "exponential": 0.3
+     },
+     "field": "v",
+     "as": "exponential"
+    },
+    {
+     "op": "argmin",
+     "field": "v",
+     "as": "least"
+    },
+    {
+     "op": "argmax",
+     "field": "v",
+     "as": "most"
+    }
+   ],
+   "groupby": [
+    "g"
+   ]
+  }
+ ],
+ "mark": "point",
+ "encoding": {
+  "x": {
+   "field": "g",
+   "type": "nominal"
+  },
+  "y": {
+   "field": "count_u",
+   "type": "quantitative"
+  },
+  "detail": [
+   {
+    "field": "n"
+   },
+   {
+    "field": "valid"
+   },
+   {
+    "field": "missing"
+   },
+   {
+    "field": "distinct"
+   },
+   {
+    "field": "sum"
+   },
+   {
+    "field": "product"
+   },
+   {
+    "field": "mean"
+   },
+   {
+    "field": "average"
+   },
+   {
+    "field": "variance"
+   },
+   {
+    "field": "variancep"
+   },
+   {
+    "field": "stdev"
+   },
+   {
+    "field": "stdevp"
+   },
+   {
+    "field": "stderr"
+   },
+   {
+    "field": "median"
+   },
+   {
+    "field": "q1"
+   },
+   {
+    "field": "q3"
+   },
+   {
+    "field": "ci0"
+   },
+   {
+    "field": "ci1"
+   },
+   {
+    "field": "min"
+   },
+   {
+    "field": "max"
+   },
+   {
+    "field": "mean_u"
+   },
+   {
+    "field": "count_u"
+   },
+   {
+    "field": "exponential"
+   },
+   {
+    "field": "least.u"
+   },
+   {
+    "field": "most.u"
+   },
+   {
+    "field": "most.w"
+   }
+  ]
+ }
+}

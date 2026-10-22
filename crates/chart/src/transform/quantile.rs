@@ -2,6 +2,7 @@
 
 use crate::{data::Data, transform::Groups};
 use gpui::SharedString;
+use js::array;
 
 /// Quantiles of `field`'s values per group: one row per probability.
 #[derive(Clone, Debug, PartialEq)]
@@ -54,29 +55,10 @@ impl Quantile {
                 sorted.sort_by(f64::total_cmp);
                 probs
                     .iter()
-                    .map(|p| [*p, sorted_quantile(&sorted, *p)])
+                    .map(|p| [*p, array::quantile_sorted(&sorted, *p)])
                     .collect()
             })
             .collect();
         groups.table(data, &points, &self.output)
     }
-}
-
-/// The `p`-quantile of ascending `values`, interpolated between the two
-/// nearest ranks (R-7). `NaN` for no values.
-pub(crate) fn sorted_quantile(values: &[f64], p: f64) -> f64 {
-    let n = values.len();
-    if n == 0 || p.is_nan() {
-        return f64::NAN;
-    }
-    if p <= 0.0 || n < 2 {
-        return values[0];
-    }
-    if p >= 1.0 {
-        return values[n - 1];
-    }
-    let i = (n - 1) as f64 * p;
-    let i0 = i.floor();
-    let (value0, value1) = (values[i0 as usize], values[i0 as usize + 1]);
-    value0 + (value1 - value0) * (i - i0)
 }

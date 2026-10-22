@@ -1,12 +1,21 @@
 //! A chart laid out at a size: every mark, axis and label in pixels from the
 //! chart's top-left corner, with no window involved.
 //!
-//! Bars sharing a band and an offset stack, positive values up and negative
-//! down, unless `x2` or `y2` ranges them. Lines, areas and trails join their
-//! series' rows in ascending x, or by `order`, through their interpolation's
-//! curve, and a missing y breaks them. A rule, rect, text, tick, point or
-//! image layer may leave out x or y where another layer has both: a rule or
-//! rect then spans the plot that way, and the others stand at its middle.
+//! Bars and areas stack by their value channel's [`Stack`], as Vega's Stack
+//! does, unless `x2` or `y2` ranges them; other marks stack only where it
+//! asks. A stack is the rows at one place along the shared axis, a band and
+//! an offset for a discrete one, in their series' order down a vertical
+//! stack and along a horizontal one, or by `order`; an area's or line's
+//! series stands at zero where it has no row. Lines, areas and trails join
+//! their series' rows in ascending x, or by `order`, through their
+//! interpolation's curve, and a missing y breaks them. A bar along a
+//! continuous axis without `x2` or `y2` is Vega-Lite's continuous band size
+//! across, and a bar's, area's, line's or trail's `orient` says which of two
+//! continuous axes, or of one alone, it stands along. A bar, rule, rect,
+//! text, tick, point or image layer may leave out x or y: a bar, rule or
+//! rect then spans the plot that way, and the others stand at its middle. A
+//! chart with x alone is laid out along it, as is one with y alone, and x
+//! and y may both be discrete.
 //! A position in pixels places every row of its layer there, and a rect
 //! placed in pixels without its far end reaches the base of the axis: zero,
 //! or the axis's start. `xOffset` and `yOffset` values move a mark, and
@@ -15,13 +24,17 @@
 //! and y give, at the plot's middle without them, half the plot's shorter
 //! side across without a `radius`. A layer's rows split into series by colour, `detail` and `key`, and for a
 //! line, area or bar by every other channel that names a field but shape and
-//! angle. A channel's [`Scale`] and [`Sort`] shape its domain, and its title
+//! angle. A channel's [`Scale`] and [`Sort`] shape its domain and range as
+//! Vega-Lite's defaults and Vega's scales do, and its title
 //! sits under the bottom axis or over the left one. The pointer reads out the
 //! band under it, and the nearest row along the shared axis of each series
-//! of a line, area, trail or point layer placed on scales both ways.
+//! of a line, area, trail or point layer placed on scales both ways. A bar
+//! spanning y to `y2` over a continuous x runs across, and a tick with an
+//! `x2` or `y2` runs to it.
 //!
 //! [`Scale`]: crate::model::Scale
 //! [`Sort`]: crate::model::Sort
+//! [`Stack`]: crate::model::Stack
 
 use std::{f32::consts::TAU, sync::Arc};
 
@@ -31,9 +44,10 @@ use theme::Theme;
 
 use crate::{
     data::Column,
-    model::{Align, Baseline, Cap, Channel, Chart, Dir, Encode, Encoding, Join, Mark, Shape},
+    model::{
+        Align, Baseline, Cap, Channel, Chart, Dir, Encode, Encoding, Join, Mark, ScaleType, Shape,
+    },
     plan::{domain::Colors, layout::Layout},
-    scale::Band,
 };
 
 mod arcs;
@@ -42,6 +56,7 @@ mod domain;
 mod layout;
 mod legend;
 mod look;
+mod scales;
 
 /// Around the whole chart.
 const PAD: f32 = 8.0;
@@ -53,7 +68,6 @@ const LEGEND_GAP: f32 = 16.0;
 /// Roughly how far apart ticks stand along x, and along y.
 const X_SPACING: f32 = 80.0;
 const Y_SPACING: f32 = 40.0;
-const BAND_PADDING: f32 = 0.2;
 /// The least a plot takes either way, at any size.
 const MIN_PLOT: f32 = 16.0;
 /// How far along the shared axis from the hovered point another series'
@@ -466,7 +480,8 @@ struct Hover {
 /// Bars' values by band.
 #[derive(Clone, Debug)]
 struct Bands {
-    band: Band,
+    /// Each band's step along the axis: where it starts and how long it is.
+    cells: Vec<(f32, f32)>,
     vertical: bool,
     across: (f32, f32),
     labels: Vec<SharedString>,
@@ -489,10 +504,10 @@ type Body = (Rect, Vec<Axis>, Vec<Series>, Hover, Vec<Link>);
 
 /// `chart` laid out at `size`, its labels `line` high and as wide as `measure`
 /// says. `None` for what cannot be drawn: a field the data does not hold, a
-/// quantitative field over text, a colour, fill, stroke, shape or dash that
-/// is not discrete, layers that disagree on which axis is discrete, no layer
-/// with both x and y where a layer is placed on a scale, a text at an angle
-/// or with an outline, or a mark without the positions it needs. A size too small to
+/// quantitative field over text, a range of what its channel does not take,
+/// layers that disagree on which axis is discrete, no layer placed on a
+/// scale where a layer is placed in pixels, a text at an angle or with an
+/// outline, or a mark without the positions it needs. A size too small to
 /// hold a plot draws a cramped one, so no size changes whether a chart draws.
 pub fn plan(
     chart: &Chart,
@@ -509,10 +524,13 @@ pub fn plan(
         measure,
     };
     let first_title = |channel: fn(&Encoding) -> Option<&Channel>| {
-        chart
-            .layers
-            .iter()
-            .find_map(|layer| channel(&layer.encoding)?.title.clone())
+        chart.layers.iter().find_map(|layer| {
+            let channel = channel(&layer.encoding)?;
+            // A position with no scale has no axis.
+            (channel.scale.kind != Some(ScaleType::Identity))
+                .then(|| channel.title.clone())
+                .flatten()
+        })
     };
     let title = chart.title.clone().map(|text| layout.line_at(text, PAD));
     let legends = legend::legends(chart, &colors)?
@@ -637,27 +655,30 @@ impl Plan {
         };
         if let Some(bands) = &self.hover.bands {
             let Bands {
-                band,
+                cells,
                 vertical,
                 across,
                 labels,
                 values,
             } = bands;
-            let index = band.index(if *vertical { point[0] } else { point[1] })?;
-            let start = band.range.0 + band.step() * index as f32;
+            let at = if *vertical { point[0] } else { point[1] };
+            let index = cells
+                .iter()
+                .position(|(start, step)| (*start..start + step).contains(&at))?;
+            let (start, step) = cells[index];
             tip.title = labels[index].clone();
             tip.band = Some(match vertical {
                 true => Rect {
                     x: start,
                     y: across.0,
-                    w: band.step(),
+                    w: step,
                     h: across.1 - across.0,
                 },
                 false => Rect {
                     x: across.0,
                     y: start,
                     w: across.1 - across.0,
-                    h: band.step(),
+                    h: step,
                 },
             });
             tip.rows.extend(

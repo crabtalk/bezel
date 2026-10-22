@@ -486,7 +486,7 @@ fn build(chart: &Chart, key: Key, theme: &Theme, window: &mut Window) -> Option<
             Marks::Points(symbols) => {
                 for symbol in symbols {
                     marks.extend(glyph(
-                        symbol.shape,
+                        &symbol.shape,
                         symbol.size,
                         symbol.angle,
                         symbol.at,
@@ -590,7 +590,7 @@ fn build(chart: &Chart, key: Key, theme: &Theme, window: &mut Window) -> Option<
                 border: None,
             }),
             Glyph::Symbol { shape, size, ink } => legends.extend(glyph(
-                *shape,
+                shape,
                 *size,
                 0.0,
                 center,
@@ -822,14 +822,14 @@ fn trail(run: &[([f32; 2], f32)]) -> Option<Path<Pixels>> {
 /// A point's symbol at `at`: a circle as a rounded quad, any other shape as
 /// a path filled and then outlined.
 fn glyph(
-    shape: Shape,
+    shape: &Shape,
     size: f32,
     angle: f32,
     at: [f32; 2],
     fill: Option<Paint>,
     border: Option<(Paint, f32)>,
 ) -> Vec<Op> {
-    if shape == Shape::Circle {
+    if *shape == Shape::Circle {
         let d = size.max(0.0).sqrt();
         return vec![Op::Quad {
             rect: Rect {
@@ -843,29 +843,40 @@ fn glyph(
             border,
         }];
     }
-    let outline: Vec<[f32; 2]> = shape
-        .outline(size, angle)
+    let outlines: Vec<Vec<[f32; 2]>> = shape
+        .outlines(size, angle)
         .into_iter()
-        .map(|[x, y]| [at[0] + x, at[1] + y])
+        .map(|outline| {
+            outline
+                .into_iter()
+                .map(|[x, y]| [at[0] + x, at[1] + y])
+                .collect()
+        })
         .collect();
     let mut ops = Vec::new();
-    if shape == Shape::Stroke {
+    if *shape == Shape::Stroke {
         let paint = border.map(|(paint, _)| paint).or(fill);
         let width = border.map_or(1.0, |(_, width)| width);
         if let Some(paint) = paint {
-            ops.extend(polyline(&outline, width, None).map(|path| Op::Path(path, paint)));
+            for outline in &outlines {
+                ops.extend(polyline(outline, width, None).map(|path| Op::Path(path, paint)));
+            }
         }
         return ops;
     }
     if let Some(paint) = fill {
         let mut builder = PathBuilder::fill();
-        builder.add_polygon(&points(&outline), true);
+        for outline in &outlines {
+            builder.add_polygon(&points(outline), true);
+        }
         ops.extend(builder.build().ok().map(|path| Op::Path(path, paint)));
     }
     if let Some((paint, width)) = border {
-        let mut closed = outline.clone();
-        closed.extend(outline.first());
-        ops.extend(polyline(&closed, width, None).map(|path| Op::Path(path, paint)));
+        for outline in &outlines {
+            let mut closed = outline.clone();
+            closed.extend(outline.first());
+            ops.extend(polyline(&closed, width, None).map(|path| Op::Path(path, paint)));
+        }
     }
     ops
 }

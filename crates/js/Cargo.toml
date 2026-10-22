@@ -1,6 +1,6 @@
 [package]
 name = "bezel-js"
-description = "JavaScript's number, string, regex and Date semantics, and d3-format, d3-shape's curves, d3-time and d3-time-format"
+description = "JavaScript's number, string, regex and Date semantics, and d3-format, d3-scale, d3-interpolate, d3-shape's curves, d3-time, d3-time-format and Vega's colour schemes"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

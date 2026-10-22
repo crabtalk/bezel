@@ -1,6 +1,9 @@
 //! Times as milliseconds since the Unix epoch, read on the UTC calendar.
 
-use js::date::{self, LocalZone};
+use js::{
+    date::{self, LocalZone},
+    time,
+};
 
 pub const SECOND: f64 = 1_000.0;
 pub const MINUTE: f64 = 60.0 * SECOND;
@@ -15,6 +18,25 @@ pub enum Unit {
     Day,
     Month,
     Year,
+}
+
+/// The field that ticks on a d3-time interval of this unit show.
+impl From<time::Unit> for Unit {
+    fn from(unit: time::Unit) -> Self {
+        match unit {
+            time::Unit::Millisecond | time::Unit::Second => Unit::Second,
+            time::Unit::Minute | time::Unit::Hour => Unit::Minute,
+            time::Unit::Day | time::Unit::Week => Unit::Day,
+            time::Unit::Month => Unit::Month,
+            time::Unit::Year => Unit::Year,
+        }
+    }
+}
+
+/// The whole seconds of `ms`, which are all JavaScript's `String(date)`
+/// shows of a date.
+pub fn second(ms: f64) -> f64 {
+    (ms / SECOND).floor()
 }
 
 /// `Date.parse(text)` with UTC as the local zone: a string without an
@@ -60,82 +82,4 @@ fn fields(ms: f64) -> (i64, i64, i64, u32, u32, u32) {
     let (year, month, date) = date::civil_from_days(day as i64);
     let rest = ((ms - day * DAY) / SECOND).floor() as u32;
     (year, month, date, rest / 3_600, rest / 60 % 60, rest % 60)
-}
-
-/// Ticks on calendar boundaries inside `lo..=hi`, about `count` of them, and
-/// the unit to label them with. Weeks start on Monday.
-pub fn ticks(lo: f64, hi: f64, count: usize) -> (Vec<f64>, Unit) {
-    const FIXED: [(f64, Unit); 15] = [
-        (SECOND, Unit::Second),
-        (5.0 * SECOND, Unit::Second),
-        (15.0 * SECOND, Unit::Second),
-        (30.0 * SECOND, Unit::Second),
-        (MINUTE, Unit::Minute),
-        (5.0 * MINUTE, Unit::Minute),
-        (15.0 * MINUTE, Unit::Minute),
-        (30.0 * MINUTE, Unit::Minute),
-        (HOUR, Unit::Minute),
-        (3.0 * HOUR, Unit::Minute),
-        (6.0 * HOUR, Unit::Minute),
-        (12.0 * HOUR, Unit::Minute),
-        (DAY, Unit::Day),
-        (2.0 * DAY, Unit::Day),
-        (7.0 * DAY, Unit::Day),
-    ];
-    const MONTH: f64 = 30.44 * DAY;
-    let target = (hi - lo) / count.max(1) as f64;
-    let mut ticks = Vec::new();
-
-    if let Some(&(step, unit)) = FIXED.iter().find(|(step, _)| *step >= target) {
-        // 1970-01-05 was a Monday.
-        let offset = if step == 7.0 * DAY { 4.0 * DAY } else { 0.0 };
-        let mut at = ((lo - offset) / step).ceil() * step + offset;
-        while at <= hi {
-            ticks.push(at);
-            at += step;
-        }
-        return (ticks, unit);
-    }
-
-    let (year, month, _) = date::civil_from_days((lo / DAY).floor() as i64);
-    if let Some(step) = [1, 3, 6]
-        .into_iter()
-        .find(|&k: &i64| k as f64 * MONTH >= target)
-    {
-        let mut index = year * 12 + month - 1;
-        if month_start(index) < lo {
-            index += 1;
-        }
-        index = (index + step - 1).div_euclid(step) * step;
-        while month_start(index) <= hi {
-            ticks.push(month_start(index));
-            index += step;
-        }
-        return (ticks, Unit::Month);
-    }
-
-    let years = target / (365.25 * DAY);
-    let mut step = 10f64.powf(years.log10().floor()).max(1.0);
-    for factor in [1.0, 2.0, 5.0, 10.0] {
-        if step * factor >= years {
-            step *= factor;
-            break;
-        }
-    }
-    let step = step as i64;
-    let mut year = if (date::days_from_civil(year, 1, 1) as f64 * DAY) < lo {
-        year + 1
-    } else {
-        year
-    };
-    year = (year + step - 1).div_euclid(step) * step;
-    while (date::days_from_civil(year, 1, 1) as f64 * DAY) <= hi {
-        ticks.push(date::days_from_civil(year, 1, 1) as f64 * DAY);
-        year += step;
-    }
-    (ticks, Unit::Year)
-}
-
-fn month_start(index: i64) -> f64 {
-    date::days_from_civil(index.div_euclid(12), index.rem_euclid(12) + 1, 1) as f64 * DAY
 }

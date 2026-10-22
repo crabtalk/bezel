@@ -6,6 +6,7 @@ use gpui::SharedString;
 
 use crate::{
     data::{Column, Data},
+    model::{Domain, Nice, Scale, Stack},
     scale, time,
 };
 
@@ -16,7 +17,9 @@ pub struct Channel {
     pub kind: Kind,
     /// The axis's or legend's title. `None` shows none.
     pub title: Option<SharedString>,
-    pub scale: Scale,
+    pub scale: Box<Scale>,
+    /// How x's or y's values stack.
+    pub stack: Stack,
     /// The order of a discrete field's values. On `order`, the direction rows
     /// are drawn in, whatever the kind.
     pub sort: Sort,
@@ -35,29 +38,6 @@ pub enum Source {
 pub enum Datum {
     Number(f64),
     Text(SharedString),
-}
-
-/// How a continuous field's values map to positions.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Scale {
-    /// Whether a quantitative scale takes in zero. A stack of bars always
-    /// starts at zero.
-    pub zero: bool,
-    /// Fixed `[low, high]`, times in milliseconds since the epoch. Marks
-    /// outside it are drawn past the plot unless their layer has `clip`.
-    pub domain: Option<[f64; 2]>,
-    /// Whether a scale with no fixed domain widens to the ticks either side.
-    pub nice: bool,
-}
-
-impl Default for Scale {
-    fn default() -> Self {
-        Self {
-            zero: true,
-            domain: None,
-            nice: true,
-        }
-    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -124,7 +104,8 @@ impl Channel {
             source,
             kind,
             title: None,
-            scale: Scale::default(),
+            scale: Box::default(),
+            stack: Stack::default(),
             sort: Sort::default(),
         }
     }
@@ -150,18 +131,32 @@ impl Channel {
         self
     }
 
+    pub fn scale(mut self, scale: Scale) -> Self {
+        self.scale = Box::new(scale);
+        self
+    }
+
     pub fn zero(mut self, zero: bool) -> Self {
-        self.scale.zero = zero;
+        self.scale.zero = Some(zero);
         self
     }
 
     pub fn domain(mut self, low: f64, high: f64) -> Self {
-        self.scale.domain = Some([low, high]);
+        self.scale.domain = Some(Domain::Numbers(vec![low, high]));
         self
     }
 
+    /// Ends on round ticks, as Vega-Lite's `nice: true`, or as they are.
     pub fn nice(mut self, nice: bool) -> Self {
-        self.scale.nice = nice;
+        self.scale.nice = Some(match nice {
+            true => Nice::Ticks(10.0),
+            false => Nice::Off,
+        });
+        self
+    }
+
+    pub fn stack(mut self, stack: Stack) -> Self {
+        self.stack = stack;
         self
     }
 
@@ -194,9 +189,19 @@ impl Channel {
     /// Its numbers in each of `data`'s rows. `None` for a field `data` lacks
     /// or holds as text.
     pub fn numbers(&self, data: &Data) -> Option<Arc<[f64]>> {
-        match self.column(data)? {
-            Column::Number(values) => Some(values),
-            Column::Text(_) => None,
+        self.column(data)?.numbers()
+    }
+
+    /// The columns of `data` its continuous scale spans: its numbers, or the
+    /// fields of an unaggregated domain. `None` for a field `data` lacks or
+    /// holds as text.
+    pub fn spanned(&self, data: &Data) -> Option<Vec<Arc<[f64]>>> {
+        match &self.scale.domain {
+            Some(Domain::Unaggregated(fields)) => fields
+                .iter()
+                .map(|field| data.column(field)?.numbers())
+                .collect(),
+            _ => Some(vec![self.numbers(data)?]),
         }
     }
 }

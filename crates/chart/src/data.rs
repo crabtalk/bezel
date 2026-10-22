@@ -1,7 +1,11 @@
 //! A table of named, equal-length columns.
 
-use crate::transform::Transform;
+use crate::{
+    time,
+    transform::{Random, Transform},
+};
 use gpui::SharedString;
+use js::number::Number as JsNumber;
 use std::{
     collections::HashMap,
     sync::{
@@ -24,6 +28,8 @@ pub struct Data(Arc<Table>);
 #[derive(Clone, Debug, Default)]
 struct Table {
     fields: Vec<(SharedString, Column)>,
+    /// The fields whose numbers are dates, as Vega holds them.
+    times: Vec<SharedString>,
     len: usize,
     generation: u64,
 }
@@ -72,6 +78,14 @@ impl<S: Into<SharedString>> FromIterator<S> for Text {
 }
 
 impl Column {
+    /// Its numbers, `None` for text.
+    pub fn numbers(&self) -> Option<Arc<[f64]>> {
+        match self {
+            Column::Number(values) => Some(values.clone()),
+            Column::Text(_) => None,
+        }
+    }
+
     pub fn len(&self) -> usize {
         match self {
             Self::Number(values) => values.len(),
@@ -81,6 +95,17 @@ impl Column {
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+}
+
+/// The key two numbers share where Vega's `groupby` puts them together:
+/// JavaScript writes them alike, -0 as 0 and a `date` to the second.
+/// `u64::MAX` for `NaN`.
+pub fn key(value: f64, date: bool) -> u64 {
+    match (value.is_nan(), date) {
+        (true, _) => u64::MAX,
+        (false, true) => (time::second(value) + 0.0).to_bits(),
+        (false, false) => (value + 0.0).to_bits(),
     }
 }
 
@@ -105,6 +130,7 @@ impl Data {
             );
         }
         table.len = column.len();
+        table.times.retain(|name| *name != field);
         match table.fields.iter_mut().find(|(name, _)| *name == field) {
             Some((_, slot)) => *slot = column,
             None => table.fields.push((field, column)),
@@ -115,6 +141,40 @@ impl Data {
 
     pub fn number(self, field: impl Into<SharedString>, values: impl Into<Arc<[f64]>>) -> Self {
         self.with(field, Column::Number(values.into()))
+    }
+
+    /// Adds `field` as dates, `values` their times: Vega keys a date by its
+    /// text, to the second, where it groups.
+    pub fn times(self, field: impl Into<SharedString>, values: impl Into<Arc<[f64]>>) -> Self {
+        let field = field.into();
+        let mut data = self.number(field.clone(), values);
+        Arc::make_mut(&mut data.0).times.push(field);
+        data
+    }
+
+    /// Whether `field` holds dates.
+    pub fn is_time(&self, field: &str) -> bool {
+        self.0.times.iter().any(|name| name == field)
+    }
+
+    /// Adds `field` as `column`, as dates where `from`'s `field` holds dates.
+    pub fn adopt(self, from: &Data, field: impl Into<SharedString>, column: Column) -> Self {
+        let field = field.into();
+        match (from.is_time(&field), column) {
+            (true, Column::Number(times)) => self.times(field, times),
+            (_, column) => self.with(field, column),
+        }
+    }
+
+    /// Each row's value of `field` as a [`key`], text by its code. `u64::MAX`
+    /// for a missing value, and throughout for a field the table lacks.
+    pub fn keys(&self, field: &str) -> Vec<u64> {
+        let date = self.is_time(field);
+        match self.column(field) {
+            Some(Column::Number(values)) => values.iter().map(|&v| key(v, date)).collect(),
+            Some(Column::Text(text)) => text.codes.iter().map(|&code| u64::from(code)).collect(),
+            None => vec![u64::MAX; self.len()],
+        }
     }
 
     pub fn text<S: Into<SharedString>>(
@@ -133,9 +193,9 @@ impl Data {
             .map(|(_, column)| column)
     }
 
-    /// `field`'s values as numbers, text read as decimal numbers. `NaN` for a
-    /// missing or unreadable value, and for every row of a field the table
-    /// lacks.
+    /// `field`'s values as numbers, text read as JavaScript's `+text` reads
+    /// it. `NaN` for a missing or unreadable value, an empty string, and every
+    /// row of a field the table lacks.
     pub fn numbers(&self, field: &str) -> Vec<f64> {
         match self.column(field) {
             Some(Column::Number(values)) => values.to_vec(),
@@ -143,7 +203,10 @@ impl Data {
                 let names: Vec<f64> = text
                     .names
                     .iter()
-                    .map(|name| name.trim().parse().unwrap_or(f64::NAN))
+                    .map(|name| match name.is_empty() {
+                        true => f64::NAN,
+                        false => JsNumber::from(name.as_ref()).0,
+                    })
                     .collect();
                 text.codes
                     .iter()
@@ -154,9 +217,26 @@ impl Data {
         }
     }
 
-    /// The table `pipeline`'s ops make of this one, run in order.
-    pub fn transform(self, pipeline: &[Transform]) -> Self {
-        pipeline.iter().fold(self, |data, op| op.apply(&data))
+    /// `field`'s values at `rows`, in that order. `NaN` throughout for a field
+    /// the table lacks.
+    pub fn take(&self, field: &str, rows: &[usize]) -> Column {
+        match self.column(field) {
+            Some(Column::Text(text)) => {
+                Column::Text(rows.iter().map(|row| text.get(*row).clone()).collect())
+            }
+            Some(Column::Number(values)) => {
+                Column::Number(rows.iter().map(|row| values[*row]).collect())
+            }
+            None => Column::Number(vec![f64::NAN; rows.len()].into()),
+        }
+    }
+
+    /// The table `pipeline`'s ops make of this one, run in order, each
+    /// drawing from `random` where it draws.
+    pub fn transform(self, pipeline: &[Transform], random: &mut Random) -> Self {
+        pipeline
+            .iter()
+            .fold(self, |data, op| op.apply(&data, random))
     }
 
     /// In the order they were first added.

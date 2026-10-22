@@ -1,0 +1,1033 @@
+{
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+ "data": {
+  "values": [
+   {
+    "t": "2012-01-01T00:00:00",
+    "i": 0
+   },
+   {
+    "t": "2012-02-29T13:45:30.123",
+    "i": 1
+   },
+   {
+    "t": "2013-12-31T23:59:59.999",
+    "i": 2
+   },
+   {
+    "t": "2014-06-15T08:05:01",
+    "i": 3
+   },
+   {
+    "t": "2016-01-03",
+    "i": 4
+   },
+   {
+    "t": "2015-12-27T12:00:00",
+    "i": 5
+   },
+   {
+    "t": "2019-03-31T01:30:00",
+    "i": 6
+   },
+   {
+    "t": "2020-07-04T17:20:40.500",
+    "i": 7
+   },
+   {
+    "t": "1999-12-31T23:00:00",
+    "i": 8
+   },
+   {
+    "t": "2001-01-07T00:00:00",
+    "i": 9
+   },
+   {
+    "t": "1970-01-01",
+    "i": 10
+   },
+   {
+    "t": "1969-07-20T20:17:40",
+    "i": 11
+   },
+   {
+    "t": "0045-03-01T00:00:00",
+    "i": 12
+   },
+   {
+    "t": "2023-10-29T02:30:00",
+    "i": 13
+   },
+   {
+    "t": null,
+    "i": 14
+   }
+  ]
+ },
+ "transform": [
+  {
+   "timeUnit": "year",
+   "field": "t",
+   "as": "year"
+  },
+  {
+   "timeUnit": "quarter",
+   "field": "t",
+   "as": "quarter"
+  },
+  {
+   "timeUnit": "month",
+   "field": "t",
+   "as": "month"
+  },
+  {
+   "timeUnit": "week",
+   "field": "t",
+   "as": "week"
+  },
+  {
+   "timeUnit": "day",
+   "field": "t",
+   "as": "day"
+  },
+  {
+   "timeUnit": "dayofyear",
+   "field": "t",
+   "as": "dayofyear"
+  },
+  {
+   "timeUnit": "date",
+   "field": "t",
+   "as": "date"
+  },
+  {
+   "timeUnit": "hours",
+   "field": "t",
+   "as": "hours"
+  },
+  {
+   "timeUnit": "minutes",
+   "field": "t",
+   "as": "minutes"
+  },
+  {
+   "timeUnit": "seconds",
+   "field": "t",
+   "as": "seconds"
+  },
+  {
+   "timeUnit": "milliseconds",
+   "field": "t",
+   "as": "milliseconds"
+  },
+  {
+   "timeUnit": "yearquarter",
+   "field": "t",
+   "as": "yearquarter"
+  },
+  {
+   "timeUnit": "yearquartermonth",
+   "field": "t",
+   "as": "yearquartermonth"
+  },
+  {
+   "timeUnit": "yearmonth",
+   "field": "t",
+   "as": "yearmonth"
+  },
+  {
+   "timeUnit": "yearmonthdate",
+   "field": "t",
+   "as": "yearmonthdate"
+  },
+  {
+   "timeUnit": "yearmonthdatehours",
+   "field": "t",
+   "as": "yearmonthdatehours"
+  },
+  {
+   "timeUnit": "yearmonthdatehoursminutes",
+   "field": "t",
+   "as": "yearmonthdatehoursminutes"
+  },
+  {
+   "timeUnit": "yearmonthdatehoursminutesseconds",
+   "field": "t",
+   "as": "yearmonthdatehoursminutesseconds"
+  },
+  {
+   "timeUnit": "yearweek",
+   "field": "t",
+   "as": "yearweek"
+  },
+  {
+   "timeUnit": "yearweekday",
+   "field": "t",
+   "as": "yearweekday"
+  },
+  {
+   "timeUnit": "yearweekdayhours",
+   "field": "t",
+   "as": "yearweekdayhours"
+  },
+  {
+   "timeUnit": "yearweekdayhoursminutes",
+   "field": "t",
+   "as": "yearweekdayhoursminutes"
+  },
+  {
+   "timeUnit": "yearweekdayhoursminutesseconds",
+   "field": "t",
+   "as": "yearweekdayhoursminutesseconds"
+  },
+  {
+   "timeUnit": "yeardayofyear",
+   "field": "t",
+   "as": "yeardayofyear"
+  },
+  {
+   "timeUnit": "quartermonth",
+   "field": "t",
+   "as": "quartermonth"
+  },
+  {
+   "timeUnit": "monthdate",
+   "field": "t",
+   "as": "monthdate"
+  },
+  {
+   "timeUnit": "monthdatehours",
+   "field": "t",
+   "as": "monthdatehours"
+  },
+  {
+   "timeUnit": "monthdatehoursminutes",
+   "field": "t",
+   "as": "monthdatehoursminutes"
+  },
+  {
+   "timeUnit": "monthdatehoursminutesseconds",
+   "field": "t",
+   "as": "monthdatehoursminutesseconds"
+  },
+  {
+   "timeUnit": "weekday",
+   "field": "t",
+   "as": "weekday"
+  },
+  {
+   "timeUnit": "weekdayhours",
+   "field": "t",
+   "as": "weekdayhours"
+  },
+  {
+   "timeUnit": "weekdayhoursminutes",
+   "field": "t",
+   "as": "weekdayhoursminutes"
+  },
+  {
+   "timeUnit": "weekdayhoursminutesseconds",
+   "field": "t",
+   "as": "weekdayhoursminutesseconds"
+  },
+  {
+   "timeUnit": "dayhours",
+   "field": "t",
+   "as": "dayhours"
+  },
+  {
+   "timeUnit": "dayhoursminutes",
+   "field": "t",
+   "as": "dayhoursminutes"
+  },
+  {
+   "timeUnit": "dayhoursminutesseconds",
+   "field": "t",
+   "as": "dayhoursminutesseconds"
+  },
+  {
+   "timeUnit": "hoursminutes",
+   "field": "t",
+   "as": "hoursminutes"
+  },
+  {
+   "timeUnit": "hoursminutesseconds",
+   "field": "t",
+   "as": "hoursminutesseconds"
+  },
+  {
+   "timeUnit": "minutesseconds",
+   "field": "t",
+   "as": "minutesseconds"
+  },
+  {
+   "timeUnit": "secondsmilliseconds",
+   "field": "t",
+   "as": "secondsmilliseconds"
+  },
+  {
+   "timeUnit": "utcyear",
+   "field": "t",
+   "as": "utcyear"
+  },
+  {
+   "timeUnit": "utcquarter",
+   "field": "t",
+   "as": "utcquarter"
+  },
+  {
+   "timeUnit": "utcmonth",
+   "field": "t",
+   "as": "utcmonth"
+  },
+  {
+   "timeUnit": "utcweek",
+   "field": "t",
+   "as": "utcweek"
+  },
+  {
+   "timeUnit": "utcday",
+   "field": "t",
+   "as": "utcday"
+  },
+  {
+   "timeUnit": "utcdayofyear",
+   "field": "t",
+   "as": "utcdayofyear"
+  },
+  {
+   "timeUnit": "utcdate",
+   "field": "t",
+   "as": "utcdate"
+  },
+  {
+   "timeUnit": "utchours",
+   "field": "t",
+   "as": "utchours"
+  },
+  {
+   "timeUnit": "utcminutes",
+   "field": "t",
+   "as": "utcminutes"
+  },
+  {
+   "timeUnit": "utcseconds",
+   "field": "t",
+   "as": "utcseconds"
+  },
+  {
+   "timeUnit": "utcmilliseconds",
+   "field": "t",
+   "as": "utcmilliseconds"
+  },
+  {
+   "timeUnit": "utcyearquarter",
+   "field": "t",
+   "as": "utcyearquarter"
+  },
+  {
+   "timeUnit": "utcyearquartermonth",
+   "field": "t",
+   "as": "utcyearquartermonth"
+  },
+  {
+   "timeUnit": "utcyearmonth",
+   "field": "t",
+   "as": "utcyearmonth"
+  },
+  {
+   "timeUnit": "utcyearmonthdate",
+   "field": "t",
+   "as": "utcyearmonthdate"
+  },
+  {
+   "timeUnit": "utcyearmonthdatehours",
+   "field": "t",
+   "as": "utcyearmonthdatehours"
+  },
+  {
+   "timeUnit": "utcyearmonthdatehoursminutes",
+   "field": "t",
+   "as": "utcyearmonthdatehoursminutes"
+  },
+  {
+   "timeUnit": "utcyearmonthdatehoursminutesseconds",
+   "field": "t",
+   "as": "utcyearmonthdatehoursminutesseconds"
+  },
+  {
+   "timeUnit": "utcyearweek",
+   "field": "t",
+   "as": "utcyearweek"
+  },
+  {
+   "timeUnit": "utcyearweekday",
+   "field": "t",
+   "as": "utcyearweekday"
+  },
+  {
+   "timeUnit": "utcyearweekdayhours",
+   "field": "t",
+   "as": "utcyearweekdayhours"
+  },
+  {
+   "timeUnit": "utcyearweekdayhoursminutes",
+   "field": "t",
+   "as": "utcyearweekdayhoursminutes"
+  },
+  {
+   "timeUnit": "utcyearweekdayhoursminutesseconds",
+   "field": "t",
+   "as": "utcyearweekdayhoursminutesseconds"
+  },
+  {
+   "timeUnit": "utcyeardayofyear",
+   "field": "t",
+   "as": "utcyeardayofyear"
+  },
+  {
+   "timeUnit": "utcquartermonth",
+   "field": "t",
+   "as": "utcquartermonth"
+  },
+  {
+   "timeUnit": "utcmonthdate",
+   "field": "t",
+   "as": "utcmonthdate"
+  },
+  {
+   "timeUnit": "utcmonthdatehours",
+   "field": "t",
+   "as": "utcmonthdatehours"
+  },
+  {
+   "timeUnit": "utcmonthdatehoursminutes",
+   "field": "t",
+   "as": "utcmonthdatehoursminutes"
+  },
+  {
+   "timeUnit": "utcmonthdatehoursminutesseconds",
+   "field": "t",
+   "as": "utcmonthdatehoursminutesseconds"
+  },
+  {
+   "timeUnit": "utcweekday",
+   "field": "t",
+   "as": "utcweekday"
+  },
+  {
+   "timeUnit": "utcweekdayhours",
+   "field": "t",
+   "as": "utcweekdayhours"
+  },
+  {
+   "timeUnit": "utcweekdayhoursminutes",
+   "field": "t",
+   "as": "utcweekdayhoursminutes"
+  },
+  {
+   "timeUnit": "utcweekdayhoursminutesseconds",
+   "field": "t",
+   "as": "utcweekdayhoursminutesseconds"
+  },
+  {
+   "timeUnit": "utcdayhours",
+   "field": "t",
+   "as": "utcdayhours"
+  },
+  {
+   "timeUnit": "utcdayhoursminutes",
+   "field": "t",
+   "as": "utcdayhoursminutes"
+  },
+  {
+   "timeUnit": "utcdayhoursminutesseconds",
+   "field": "t",
+   "as": "utcdayhoursminutesseconds"
+  },
+  {
+   "timeUnit": "utchoursminutes",
+   "field": "t",
+   "as": "utchoursminutes"
+  },
+  {
+   "timeUnit": "utchoursminutesseconds",
+   "field": "t",
+   "as": "utchoursminutesseconds"
+  },
+  {
+   "timeUnit": "utcminutesseconds",
+   "field": "t",
+   "as": "utcminutesseconds"
+  },
+  {
+   "timeUnit": "utcsecondsmilliseconds",
+   "field": "t",
+   "as": "utcsecondsmilliseconds"
+  },
+  {
+   "timeUnit": {
+    "unit": "month",
+    "step": 3
+   },
+   "field": "t",
+   "as": "m3"
+  },
+  {
+   "timeUnit": {
+    "unit": "yearweek",
+    "step": 2
+   },
+   "field": "t",
+   "as": "w2"
+  },
+  {
+   "timeUnit": {
+    "unit": "utchours",
+    "step": 6
+   },
+   "field": "t",
+   "as": "h6"
+  },
+  {
+   "timeUnit": {
+    "unit": "yearmonthdate",
+    "step": 10,
+    "utc": true
+   },
+   "field": "t",
+   "as": "d10"
+  },
+  {
+   "timeUnit": {
+    "unit": "yearquarter",
+    "step": 2
+   },
+   "field": "t",
+   "as": "q2"
+  }
+ ],
+ "mark": "point",
+ "encoding": {
+  "x": {
+   "field": "i",
+   "type": "quantitative"
+  },
+  "y": {
+   "field": "i",
+   "type": "quantitative"
+  },
+  "detail": [
+   {
+    "field": "year"
+   },
+   {
+    "field": "year_end"
+   },
+   {
+    "field": "quarter"
+   },
+   {
+    "field": "quarter_end"
+   },
+   {
+    "field": "month"
+   },
+   {
+    "field": "month_end"
+   },
+   {
+    "field": "week"
+   },
+   {
+    "field": "week_end"
+   },
+   {
+    "field": "day"
+   },
+   {
+    "field": "day_end"
+   },
+   {
+    "field": "dayofyear"
+   },
+   {
+    "field": "dayofyear_end"
+   },
+   {
+    "field": "date"
+   },
+   {
+    "field": "date_end"
+   },
+   {
+    "field": "hours"
+   },
+   {
+    "field": "hours_end"
+   },
+   {
+    "field": "minutes"
+   },
+   {
+    "field": "minutes_end"
+   },
+   {
+    "field": "seconds"
+   },
+   {
+    "field": "seconds_end"
+   },
+   {
+    "field": "milliseconds"
+   },
+   {
+    "field": "milliseconds_end"
+   },
+   {
+    "field": "yearquarter"
+   },
+   {
+    "field": "yearquarter_end"
+   },
+   {
+    "field": "yearquartermonth"
+   },
+   {
+    "field": "yearquartermonth_end"
+   },
+   {
+    "field": "yearmonth"
+   },
+   {
+    "field": "yearmonth_end"
+   },
+   {
+    "field": "yearmonthdate"
+   },
+   {
+    "field": "yearmonthdate_end"
+   },
+   {
+    "field": "yearmonthdatehours"
+   },
+   {
+    "field": "yearmonthdatehours_end"
+   },
+   {
+    "field": "yearmonthdatehoursminutes"
+   },
+   {
+    "field": "yearmonthdatehoursminutes_end"
+   },
+   {
+    "field": "yearmonthdatehoursminutesseconds"
+   },
+   {
+    "field": "yearmonthdatehoursminutesseconds_end"
+   },
+   {
+    "field": "yearweek"
+   },
+   {
+    "field": "yearweek_end"
+   },
+   {
+    "field": "yearweekday"
+   },
+   {
+    "field": "yearweekday_end"
+   },
+   {
+    "field": "yearweekdayhours"
+   },
+   {
+    "field": "yearweekdayhours_end"
+   },
+   {
+    "field": "yearweekdayhoursminutes"
+   },
+   {
+    "field": "yearweekdayhoursminutes_end"
+   },
+   {
+    "field": "yearweekdayhoursminutesseconds"
+   },
+   {
+    "field": "yearweekdayhoursminutesseconds_end"
+   },
+   {
+    "field": "yeardayofyear"
+   },
+   {
+    "field": "yeardayofyear_end"
+   },
+   {
+    "field": "quartermonth"
+   },
+   {
+    "field": "quartermonth_end"
+   },
+   {
+    "field": "monthdate"
+   },
+   {
+    "field": "monthdate_end"
+   },
+   {
+    "field": "monthdatehours"
+   },
+   {
+    "field": "monthdatehours_end"
+   },
+   {
+    "field": "monthdatehoursminutes"
+   },
+   {
+    "field": "monthdatehoursminutes_end"
+   },
+   {
+    "field": "monthdatehoursminutesseconds"
+   },
+   {
+    "field": "monthdatehoursminutesseconds_end"
+   },
+   {
+    "field": "weekday"
+   },
+   {
+    "field": "weekday_end"
+   },
+   {
+    "field": "weekdayhours"
+   },
+   {
+    "field": "weekdayhours_end"
+   },
+   {
+    "field": "weekdayhoursminutes"
+   },
+   {
+    "field": "weekdayhoursminutes_end"
+   },
+   {
+    "field": "weekdayhoursminutesseconds"
+   },
+   {
+    "field": "weekdayhoursminutesseconds_end"
+   },
+   {
+    "field": "dayhours"
+   },
+   {
+    "field": "dayhours_end"
+   },
+   {
+    "field": "dayhoursminutes"
+   },
+   {
+    "field": "dayhoursminutes_end"
+   },
+   {
+    "field": "dayhoursminutesseconds"
+   },
+   {
+    "field": "dayhoursminutesseconds_end"
+   },
+   {
+    "field": "hoursminutes"
+   },
+   {
+    "field": "hoursminutes_end"
+   },
+   {
+    "field": "hoursminutesseconds"
+   },
+   {
+    "field": "hoursminutesseconds_end"
+   },
+   {
+    "field": "minutesseconds"
+   },
+   {
+    "field": "minutesseconds_end"
+   },
+   {
+    "field": "secondsmilliseconds"
+   },
+   {
+    "field": "secondsmilliseconds_end"
+   },
+   {
+    "field": "utcyear"
+   },
+   {
+    "field": "utcyear_end"
+   },
+   {
+    "field": "utcquarter"
+   },
+   {
+    "field": "utcquarter_end"
+   },
+   {
+    "field": "utcmonth"
+   },
+   {
+    "field": "utcmonth_end"
+   },
+   {
+    "field": "utcweek"
+   },
+   {
+    "field": "utcweek_end"
+   },
+   {
+    "field": "utcday"
+   },
+   {
+    "field": "utcday_end"
+   },
+   {
+    "field": "utcdayofyear"
+   },
+   {
+    "field": "utcdayofyear_end"
+   },
+   {
+    "field": "utcdate"
+   },
+   {
+    "field": "utcdate_end"
+   },
+   {
+    "field": "utchours"
+   },
+   {
+    "field": "utchours_end"
+   },
+   {
+    "field": "utcminutes"
+   },
+   {
+    "field": "utcminutes_end"
+   },
+   {
+    "field": "utcseconds"
+   },
+   {
+    "field": "utcseconds_end"
+   },
+   {
+    "field": "utcmilliseconds"
+   },
+   {
+    "field": "utcmilliseconds_end"
+   },
+   {
+    "field": "utcyearquarter"
+   },
+   {
+    "field": "utcyearquarter_end"
+   },
+   {
+    "field": "utcyearquartermonth"
+   },
+   {
+    "field": "utcyearquartermonth_end"
+   },
+   {
+    "field": "utcyearmonth"
+   },
+   {
+    "field": "utcyearmonth_end"
+   },
+   {
+    "field": "utcyearmonthdate"
+   },
+   {
+    "field": "utcyearmonthdate_end"
+   },
+   {
+    "field": "utcyearmonthdatehours"
+   },
+   {
+    "field": "utcyearmonthdatehours_end"
+   },
+   {
+    "field": "utcyearmonthdatehoursminutes"
+   },
+   {
+    "field": "utcyearmonthdatehoursminutes_end"
+   },
+   {
+    "field": "utcyearmonthdatehoursminutesseconds"
+   },
+   {
+    "field": "utcyearmonthdatehoursminutesseconds_end"
+   },
+   {
+    "field": "utcyearweek"
+   },
+   {
+    "field": "utcyearweek_end"
+   },
+   {
+    "field": "utcyearweekday"
+   },
+   {
+    "field": "utcyearweekday_end"
+   },
+   {
+    "field": "utcyearweekdayhours"
+   },
+   {
+    "field": "utcyearweekdayhours_end"
+   },
+   {
+    "field": "utcyearweekdayhoursminutes"
+   },
+   {
+    "field": "utcyearweekdayhoursminutes_end"
+   },
+   {
+    "field": "utcyearweekdayhoursminutesseconds"
+   },
+   {
+    "field": "utcyearweekdayhoursminutesseconds_end"
+   },
+   {
+    "field": "utcyeardayofyear"
+   },
+   {
+    "field": "utcyeardayofyear_end"
+   },
+   {
+    "field": "utcquartermonth"
+   },
+   {
+    "field": "utcquartermonth_end"
+   },
+   {
+    "field": "utcmonthdate"
+   },
+   {
+    "field": "utcmonthdate_end"
+   },
+   {
+    "field": "utcmonthdatehours"
+   },
+   {
+    "field": "utcmonthdatehours_end"
+   },
+   {
+    "field": "utcmonthdatehoursminutes"
+   },
+   {
+    "field": "utcmonthdatehoursminutes_end"
+   },
+   {
+    "field": "utcmonthdatehoursminutesseconds"
+   },
+   {
+    "field": "utcmonthdatehoursminutesseconds_end"
+   },
+   {
+    "field": "utcweekday"
+   },
+   {
+    "field": "utcweekday_end"
+   },
+   {
+    "field": "utcweekdayhours"
+   },
+   {
+    "field": "utcweekdayhours_end"
+   },
+   {
+    "field": "utcweekdayhoursminutes"
+   },
+   {
+    "field": "utcweekdayhoursminutes_end"
+   },
+   {
+    "field": "utcweekdayhoursminutesseconds"
+   },
+   {
+    "field": "utcweekdayhoursminutesseconds_end"
+   },
+   {
+    "field": "utcdayhours"
+   },
+   {
+    "field": "utcdayhours_end"
+   },
+   {
+    "field": "utcdayhoursminutes"
+   },
+   {
+    "field": "utcdayhoursminutes_end"
+   },
+   {
+    "field": "utcdayhoursminutesseconds"
+   },
+   {
+    "field": "utcdayhoursminutesseconds_end"
+   },
+   {
+    "field": "utchoursminutes"
+   },
+   {
+    "field": "utchoursminutes_end"
+   },
+   {
+    "field": "utchoursminutesseconds"
+   },
+   {
+    "field": "utchoursminutesseconds_end"
+   },
+   {
+    "field": "utcminutesseconds"
+   },
+   {
+    "field": "utcminutesseconds_end"
+   },
+   {
+    "field": "utcsecondsmilliseconds"
+   },
+   {
+    "field": "utcsecondsmilliseconds_end"
+   },
+   {
+    "field": "m3"
+   },
+   {
+    "field": "m3_end"
+   },
+   {
+    "field": "w2"
+   },
+   {
+    "field": "w2_end"
+   },
+   {
+    "field": "h6"
+   },
+   {
+    "field": "h6_end"
+   },
+   {
+    "field": "d10"
+   },
+   {
+    "field": "d10_end"
+   },
+   {
+    "field": "q2"
+   },
+   {
+    "field": "q2_end"
+   }
+  ]
+ }
+}

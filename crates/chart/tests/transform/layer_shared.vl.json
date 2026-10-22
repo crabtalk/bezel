@@ -1,0 +1,18 @@
+{
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+ "data": {"values": [{"k": "c", "g": "q", "v": 9}, {"k": "b", "g": "q", "v": 2}, {"k": "c", "g": "p", "v": 4}, {"k": "d", "g": "r", "v": 1}, {"k": "a", "g": "r", "v": 3}]},
+ "encoding": {
+  "x": {"field": "k", "type": "nominal", "sort": "-y"},
+  "y": {"aggregate": "sum", "field": "v", "type": "quantitative"}
+ },
+ "layer": [
+  {
+   "mark": "bar",
+   "encoding": {"color": {"field": "g", "type": "nominal", "sort": {"op": "max", "field": "v", "order": "descending"}}}
+  },
+  {
+   "mark": "text",
+   "encoding": {"text": {"aggregate": "sum", "field": "v"}, "color": {"field": "g", "type": "nominal", "sort": {"op": "sum", "field": "v", "order": "descending"}}}
+  }
+ ]
+}

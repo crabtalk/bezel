@@ -1,7 +1,13 @@
-//! A spec's `transform` list as a pipeline: `density`, `loess`, `quantile`
-//! and `regression`, each with Vega-Lite's defaults.
+//! A spec's `transform` list as a pipeline: `aggregate`, `bin`, `density`,
+//! `loess`, `quantile`, `regression` and `timeUnit`, each with Vega-Lite's
+//! defaults and output names.
 
-use crate::transform::{Density, Loess, Method, Quantile, Regression, Resolve, Transform};
+use crate::{
+    transform::{
+        Aggregate, Density, Loess, Measure, Method, Op, Quantile, Regression, Resolve, Transform,
+    },
+    vega_lite::field::{self, Derive},
+};
 use gpui::SharedString;
 use serde_json::{Map, Value};
 
@@ -45,6 +51,12 @@ fn op(value: &Value) -> Option<Transform> {
         .then(|| regression(op))?
     } else if op.contains_key("quantile") {
         takes(&["quantile", "groupby", "probs", "step", "as"]).then(|| quantile(op))?
+    } else if op.contains_key("aggregate") {
+        takes(&["aggregate", "groupby"]).then(|| aggregate(op))?
+    } else if op.contains_key("bin") {
+        takes(&["bin", "field", "as"]).then(|| bin(op))?
+    } else if op.contains_key("timeUnit") {
+        takes(&["timeUnit", "field", "as"]).then(|| time_unit(op))?
     } else {
         None
     }
@@ -130,6 +142,96 @@ fn quantile(op: &Map<String, Value>) -> Option<Transform> {
     }
     out.output = output(op, out.output)?;
     Some(Transform::Quantile(out))
+}
+
+/// Its measures grouped by field, each field's in the order met, as
+/// Vega-Lite assembles them; of its counts, the last.
+fn aggregate(op: &Map<String, Value>) -> Option<Transform> {
+    let mut measured: Vec<(Option<SharedString>, Vec<Measure>)> = Vec::new();
+    for def in op.get("aggregate")?.as_array()? {
+        let def = def.as_object()?;
+        if def
+            .keys()
+            .any(|key| !["op", "field", "as"].contains(&key.as_str()))
+        {
+            return None;
+        }
+        let written = match def.get("field") {
+            None => None,
+            Some(name) => Some(name.as_str()?),
+        };
+        let Derive::Aggregate {
+            op,
+            measured: field,
+            param,
+            output,
+        } = field::aggregate_def(def.get("op")?, written)?
+        else {
+            return None;
+        };
+        let output = match (def.get("as"), op, written) {
+            (Some(name), ..) => self::field(name)?,
+            (None, Op::Count, Some(written)) => format!("count_{written}").into(),
+            (None, Op::Count, None) => "count".into(),
+            (None, ..) => output,
+        };
+        let key = field.clone();
+        let slot = match measured.iter_mut().find(|(f, _)| *f == key) {
+            Some((_, measures)) => measures,
+            None => {
+                measured.push((key, Vec::new()));
+                &mut measured.last_mut().expect("just pushed").1
+            }
+        };
+        // A later count names the one count.
+        match slot
+            .iter_mut()
+            .find(|m| op == Op::Count && m.op == Op::Count)
+        {
+            Some(count) => count.output = output,
+            None => slot.push(Measure {
+                op,
+                field,
+                param,
+                output,
+            }),
+        }
+    }
+    Some(Transform::Aggregate(Aggregate {
+        groupby: groupby(op)?,
+        measures: measured.into_iter().flat_map(|(_, m)| m).collect(),
+    }))
+}
+
+/// `as` a name, its end `<name>_end`, or the two names.
+fn bin(op: &Map<String, Value>) -> Option<Transform> {
+    let name = op.get("field")?.as_str()?;
+    let Derive::Bin(mut out) = field::bin_def(op.get("bin")?, name, "")? else {
+        return None;
+    };
+    out.output = names(op.get("as")?)?;
+    Some(Transform::Bin(out))
+}
+
+fn time_unit(op: &Map<String, Value>) -> Option<Transform> {
+    let name = op.get("field")?.as_str()?;
+    let Derive::TimeUnit(mut out) = field::unit_def(op.get("timeUnit")?, name)? else {
+        return None;
+    };
+    out.output = names(op.get("as")?)?;
+    Some(Transform::TimeUnit(out))
+}
+
+/// A start's name and `<name>_end`, or both names.
+fn names(value: &Value) -> Option<[SharedString; 2]> {
+    match value {
+        Value::String(name) => Some([name.clone().into(), format!("{name}_end").into()]),
+        Value::Array(names) => match names.as_slice() {
+            [start, end] => Some([field(start)?, field(end)?]),
+            _ => None,
+        },
+        _ => None,
+    }
 }
 
 fn field(value: &Value) -> Option<SharedString> {

@@ -1,0 +1,39 @@
+{
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+ "data": {
+  "values": [
+   {"g": "a", "h": "p", "v": 3.1, "w": 1},
+   {"g": "a", "h": "q", "v": -1.2, "w": 4},
+   {"g": "a", "h": "p", "v": 11.3, "w": 9},
+   {"g": "a", "h": "q", "v": -3.2, "w": 16},
+   {"g": "b", "h": "p", "v": 8.4, "w": 25},
+   {"g": "b", "h": "p", "v": 4.1, "w": 36},
+   {"g": "b", "h": "q", "v": -3.6, "w": 49}
+  ]
+ },
+ "layer": [
+  {
+   "mark": "point",
+   "encoding": {
+    "x": {"field": "g", "type": "nominal"},
+    "y": {"aggregate": "ci0", "field": "v", "type": "quantitative"},
+    "size": {"aggregate": "ci1", "field": "w", "type": "quantitative"}
+   }
+  },
+  {
+   "transform": [{"aggregate": [{"op": "ci1", "field": "v", "as": "high"}], "groupby": ["g", "h"]}],
+   "mark": "point",
+   "encoding": {
+    "x": {"field": "h", "type": "nominal"},
+    "y": {"aggregate": "ci0", "field": "high", "type": "quantitative"}
+   }
+  },
+  {
+   "mark": "point",
+   "encoding": {
+    "x": {"field": "h", "type": "nominal"},
+    "y": {"aggregate": "ci1", "field": "w", "type": "quantitative"}
+   }
+  }
+ ]
+}

@@ -308,7 +308,7 @@ fn overlay(
         .collect();
     Some(Some(Box::new(Overlay {
         properties,
-        encoding: encoding::read(&values)?,
+        encoding: encoding::read(&values, None)?.0,
     })))
 }
 

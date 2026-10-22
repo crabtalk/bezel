@@ -1,0 +1,34 @@
+[
+ [
+  {
+   "bin_maxbins_5_r": 2,
+   "bin_maxbins_5_r_end": 4,
+   "bin_maxbins_5_r_range": "2 – 4",
+   "__count": 14
+  },
+  {
+   "bin_maxbins_5_r": 4,
+   "bin_maxbins_5_r_end": 6,
+   "bin_maxbins_5_r_range": "4 – 6",
+   "__count": 17
+  },
+  {
+   "bin_maxbins_5_r": 0,
+   "bin_maxbins_5_r_end": 2,
+   "bin_maxbins_5_r_range": "0 – 2",
+   "__count": 5
+  },
+  {
+   "bin_maxbins_5_r": 6,
+   "bin_maxbins_5_r_end": 8,
+   "bin_maxbins_5_r_range": "6 – 8",
+   "__count": 14
+  },
+  {
+   "bin_maxbins_5_r": 8,
+   "bin_maxbins_5_r_end": 10,
+   "bin_maxbins_5_r_range": "8 – 10",
+   "__count": 10
+  }
+ ]
+]

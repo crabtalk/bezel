@@ -99,6 +99,25 @@ pub(crate) fn number_of(value: &Value) -> f64 {
     }
 }
 
+/// JavaScript's `String(value)`: an array's items joined by commas.
+pub(crate) fn string_of(value: &Value) -> String {
+    match value {
+        Value::Null => "null".into(),
+        Value::Bool(flag) => flag.to_string(),
+        Value::Number(n) => JsNumber(n.as_f64().unwrap_or(f64::NAN)).to_string(),
+        Value::String(s) => s.clone(),
+        Value::Array(items) => items
+            .iter()
+            .map(|item| match item {
+                Value::Null => String::new(),
+                item => string_of(item),
+            })
+            .collect::<Vec<_>>()
+            .join(","),
+        Value::Object(_) => "[object Object]".into(),
+    }
+}
+
 fn number(value: f64) -> Value {
     Number::from_f64(value).map_or(Value::Null, Value::Number)
 }

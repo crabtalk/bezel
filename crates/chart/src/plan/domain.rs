@@ -1,15 +1,18 @@
-//! What values a channel takes: a discrete column's values in order, a
-//! continuous one's ticks, and the chart's colours.
+//! What values a channel takes: a discrete column's values in order, and
+//! the chart's colours.
 
 use std::{collections::HashMap, sync::Arc};
 
-use gpui::SharedString;
+use gpui::{Hsla, SharedString};
 
 use crate::{
     data::Column,
-    model::{Channel, Chart, Encode, Kind, Mark, Scale, Sort},
-    plan::{Color, Ink},
-    scale::{self, Ticks},
+    model::{Chart, Domain, Encode, Mark, Range, Scale, ScaleType, Sort},
+    plan::{
+        Color, Ink,
+        scales::{self, ColorScale, Entry, Role},
+    },
+    scale,
 };
 
 /// A missing code in a discrete column.
@@ -81,6 +84,35 @@ impl Discrete {
         }
     }
 
+    /// Its values as `scale` lists them, when it lists them: rows with
+    /// others are missing.
+    pub(super) fn within(self, scale: &Scale) -> Self {
+        let Some(Domain::Values(listed)) = &scale.domain else {
+            return self;
+        };
+        let place: Vec<u32> = self
+            .labels
+            .iter()
+            .map(|label| {
+                listed
+                    .iter()
+                    .position(|name| name == label)
+                    .map_or(MISSING, |at| at as u32)
+            })
+            .collect();
+        Self {
+            labels: listed.clone(),
+            codes: self
+                .codes
+                .iter()
+                .map(|&code| match code {
+                    MISSING => MISSING,
+                    code => place[code as usize],
+                })
+                .collect(),
+        }
+    }
+
     /// Each row's code into `labels`, a domain shared with other layers,
     /// which takes in this one's values it has not met.
     pub(super) fn into_shared(
@@ -108,18 +140,6 @@ impl Discrete {
     }
 }
 
-/// Ticks for a quantitative or temporal channel whose data spans `lo..=hi`.
-pub(super) fn continuous(channel: &Channel, lo: f64, hi: f64, count: usize) -> Ticks {
-    let Scale { zero, domain, nice } = channel.scale;
-    match (channel.kind, domain) {
-        (Kind::Temporal, Some([lo, hi])) => scale::temporal(lo, hi, count),
-        (Kind::Temporal, None) => scale::temporal(lo, hi, count),
-        (_, Some([lo, hi])) => scale::linear(lo, hi, count, false),
-        (_, None) if zero => scale::linear(lo.min(0.0), hi.max(0.0), count, nice),
-        (_, None) => scale::linear(lo, hi, count, nice),
-    }
-}
-
 /// The lowest and highest of `values` that are numbers, `(0, 0)` for none.
 pub(super) fn extent(values: impl IntoIterator<Item = f64>) -> (f64, f64) {
     let (lo, hi) = values
@@ -131,12 +151,18 @@ pub(super) fn extent(values: impl IntoIterator<Item = f64>) -> (f64, f64) {
     if lo > hi { (0.0, 0.0) } else { (lo, hi) }
 }
 
+/// Ticks a continuous legend shows, about.
+pub(super) const LEGEND_TICKS: usize = 4;
+
 /// The chart's colours: every colour field's values across the layers, in
-/// the order met, then one for each layer with no colour field: the theme's
-/// text for a rule or text, the next categorical colour for any other.
+/// the order met, or every value a continuous colour field takes; then one
+/// for each layer with no colour field: the theme's text for a rule or
+/// text, the next categorical colour for any other.
 pub(super) struct Colors {
     pub(super) colors: Vec<Color>,
     pub(super) layers: Vec<LayerColor>,
+    /// A continuous or discretizing colour field's legend.
+    pub(super) legend: Option<Vec<Entry>>,
 }
 
 pub(super) enum LayerColor {
@@ -147,32 +173,119 @@ pub(super) enum LayerColor {
 
 impl Colors {
     pub(super) fn of(chart: &Chart) -> Option<Self> {
-        let mut labels = Vec::new();
-        let mut index = HashMap::new();
-        let mut layers = Vec::with_capacity(chart.layers.len());
-        for layer in &chart.layers {
-            let color = match &layer.encoding.color {
-                Some(Encode::Scaled(color)) => color,
-                _ => {
+        let first = chart
+            .layers
+            .iter()
+            .find_map(|layer| Some((layer.mark, layer.encoding.color.as_ref()?.channel()?)));
+        let mut colors: Vec<Color> = Vec::new();
+        let mut layers: Vec<Option<LayerColor>> = Vec::with_capacity(chart.layers.len());
+        let mut legend = None;
+        let named = first.is_some_and(|(_, channel)| {
+            channel.scale.kind == Some(ScaleType::Identity)
+                || matches!(channel.scale.range, Some(Range::Field(_)))
+        });
+        if let Some((_, channel)) = first.filter(|_| named) {
+            // Each value its own colour, or its rows' in the range field.
+            let mut labels = Vec::new();
+            let mut index = HashMap::new();
+            let mut inks: Vec<Option<Ink>> = Vec::new();
+            for layer in &chart.layers {
+                let Some(Encode::Scaled(color)) = &layer.encoding.color else {
                     layers.push(None);
                     continue;
+                };
+                let rows = scales::named_inks(color, layer)??;
+                let domain =
+                    Discrete::of(&color.column(&layer.data)?, &color.sort).within(&channel.scale);
+                let codes = domain.into_shared(&mut labels, &mut index);
+                inks.resize(labels.len(), None);
+                for (row, &code) in codes.iter().enumerate() {
+                    if code != MISSING && inks[code as usize].is_none() {
+                        inks[code as usize] = rows[row];
+                    }
                 }
-            };
-            if !color.kind.is_discrete() {
-                return None;
+                layers.push(Some(LayerColor::Field(codes)));
             }
-            let domain = Discrete::of(&color.column(&layer.data)?, &color.sort);
-            let codes = domain.into_shared(&mut labels, &mut index);
-            layers.push(Some(LayerColor::Field(codes)));
+            colors = labels
+                .into_iter()
+                .zip(inks)
+                .map(|(name, ink)| Color {
+                    name: Some(name),
+                    ink: ink.unwrap_or(Ink::Fixed(Hsla::transparent_black())),
+                })
+                .collect();
+            // With no scale, Vega-Lite draws no legend.
+            if channel.scale.kind == Some(ScaleType::Identity) {
+                legend = Some(Vec::new());
+            }
+        } else if let Some((mark, channel)) = first {
+            let kind = scales::scale_type(channel, Role::Color, mark, false);
+            if scales::listed(kind, channel) {
+                let mut labels = Vec::new();
+                let mut index = HashMap::new();
+                for layer in &chart.layers {
+                    let Some(Encode::Scaled(color)) = &layer.encoding.color else {
+                        layers.push(None);
+                        continue;
+                    };
+                    let domain = Discrete::of(&color.column(&layer.data)?, &color.sort)
+                        .within(&channel.scale);
+                    let codes = domain.into_shared(&mut labels, &mut index);
+                    layers.push(Some(LayerColor::Field(codes)));
+                }
+                let palette = ColorScale::of(channel, mark, Some(labels.len()), &[])?;
+                colors = labels
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, name)| {
+                        Some(Color {
+                            name: Some(name),
+                            ink: palette.discrete(i)?,
+                        })
+                    })
+                    .collect::<Option<_>>()?;
+            } else {
+                let mut columns = Vec::with_capacity(chart.layers.len());
+                let mut spanned = Vec::new();
+                for layer in &chart.layers {
+                    columns.push(match &layer.encoding.color {
+                        Some(Encode::Scaled(color)) => {
+                            spanned.extend(color.spanned(&layer.data)?);
+                            Some(color.numbers(&layer.data)?)
+                        }
+                        _ => None,
+                    });
+                }
+                let values: Vec<f64> = spanned.iter().flat_map(|v| v.iter().copied()).collect();
+                let palette = ColorScale::of(channel, mark, None, &values)?;
+                let mut index: HashMap<u64, u32> = HashMap::new();
+                for column in columns {
+                    let Some(values) = column else {
+                        layers.push(None);
+                        continue;
+                    };
+                    let codes = values
+                        .iter()
+                        .map(|&v| {
+                            let Some(ink) = palette.value(v) else {
+                                return MISSING;
+                            };
+                            *index.entry(v.to_bits()).or_insert_with(|| {
+                                colors.push(Color {
+                                    name: Some(channel.kind.describe(v).into()),
+                                    ink,
+                                });
+                                colors.len() as u32 - 1
+                            })
+                        })
+                        .collect();
+                    layers.push(Some(LayerColor::Field(codes)));
+                }
+                legend = Some(palette.entries(channel.kind, LEGEND_TICKS));
+            }
+        } else {
+            layers.extend(chart.layers.iter().map(|_| None));
         }
-        let mut colors: Vec<Color> = labels
-            .into_iter()
-            .enumerate()
-            .map(|(i, name)| Color {
-                name: Some(name),
-                ink: Ink::Category(i),
-            })
-            .collect();
         let layers = layers
             .into_iter()
             .zip(&chart.layers)
@@ -188,7 +301,11 @@ impl Colors {
                 })
             })
             .collect();
-        Some(Self { colors, layers })
+        Some(Self {
+            colors,
+            layers,
+            legend,
+        })
     }
 
     pub(super) fn of_row(&self, layer: usize, row: usize) -> Option<usize> {

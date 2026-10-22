@@ -1,9 +1,23 @@
 //! The point mark's symbols, as Vega draws them.
 
-use std::{f32::consts::TAU, str::FromStr};
+use gpui::SharedString;
+use lyon::{
+    extra::parser::{ParserOptions, PathParser, Source},
+    path::{Event, Path, iterator::PathIterator},
+};
+use std::{
+    f32::consts::TAU,
+    hash::{Hash, Hasher},
+    str::FromStr,
+    sync::Arc,
+};
 
-/// A point's symbol, by its Vega name.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+/// How far, in a path symbol's own units, its curves' flattened outlines
+/// stray.
+const TOLERANCE: f32 = 0.001;
+
+/// A point's symbol, by its Vega name, or an SVG path.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Shape {
     #[default]
     Circle,
@@ -22,6 +36,63 @@ pub enum Shape {
     Arrow,
     /// A horizontal line.
     Stroke,
+    Path(Arc<SymbolPath>),
+}
+
+/// SVG path data as a symbol: Vega draws its coordinates times half the
+/// square root of the symbol's size, about its position.
+#[derive(Clone, Debug)]
+pub struct SymbolPath {
+    pub source: SharedString,
+    /// Each subpath, its curves flattened, in the path's own units.
+    rings: Vec<Vec<[f32; 2]>>,
+}
+
+impl PartialEq for SymbolPath {
+    fn eq(&self, other: &Self) -> bool {
+        self.source == other.source
+    }
+}
+
+impl Eq for SymbolPath {}
+
+impl Hash for SymbolPath {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.source.hash(state);
+    }
+}
+
+impl FromStr for SymbolPath {
+    type Err = ();
+
+    /// `Err` for text that is not SVG path data.
+    fn from_str(source: &str) -> Result<Self, ()> {
+        let mut builder = Path::builder_with_attributes(0);
+        PathParser::new()
+            .parse(
+                &ParserOptions::DEFAULT,
+                &mut Source::new(source.chars()),
+                &mut builder,
+            )
+            .map_err(|_| ())?;
+        let mut rings = Vec::new();
+        let mut ring: Vec<[f32; 2]> = Vec::new();
+        for event in builder.build().iter().flattened(TOLERANCE) {
+            match event {
+                Event::Begin { at } => ring = vec![[at.x, at.y]],
+                Event::Line { to, .. } => ring.push([to.x, to.y]),
+                Event::End { .. } => rings.push(std::mem::take(&mut ring)),
+                _ => {}
+            }
+        }
+        if rings.is_empty() {
+            return Err(());
+        }
+        Ok(Self {
+            source: source.to_string().into(),
+            rings,
+        })
+    }
 }
 
 /// `sqrt(3) / 2`.
@@ -46,14 +117,32 @@ impl Shape {
 
     /// The `index`-th of [`Shape::SCHEME`], round and round.
     pub fn nth(index: usize) -> Shape {
-        Shape::SCHEME[index % Shape::SCHEME.len()]
+        Shape::SCHEME[index % Shape::SCHEME.len()].clone()
     }
 
-    /// Its outline at `size` square pixels, about the origin with y down,
-    /// turned `angle` degrees clockwise. [`Shape::Stroke`] is two points, an
-    /// open line; every other outline is closed.
-    pub fn outline(self, size: f32, angle: f32) -> Vec<[f32; 2]> {
+    /// Its outlines at `size` square pixels, about the origin with y down,
+    /// turned `angle` degrees clockwise: one for a named symbol, one per
+    /// subpath for a path. [`Shape::Stroke`] is two points, an open line;
+    /// every other outline is closed.
+    pub fn outlines(&self, size: f32, angle: f32) -> Vec<Vec<[f32; 2]>> {
         let r = size.max(0.0).sqrt() / 2.0;
+        let turn = |points: Vec<[f32; 2]>| -> Vec<[f32; 2]> {
+            if angle == 0.0 {
+                return points;
+            }
+            let (sin, cos) = angle.to_radians().sin_cos();
+            points
+                .into_iter()
+                .map(|[x, y]| [x * cos - y * sin, x * sin + y * cos])
+                .collect()
+        };
+        if let Shape::Path(path) = self {
+            return path
+                .rings
+                .iter()
+                .map(|ring| turn(ring.iter().map(|[x, y]| [x * r, y * r]).collect()))
+                .collect();
+        }
         let h = HALF_SQRT3 * r;
         let o = h - r * TAN30;
         let points: Vec<[f32; 2]> = match self {
@@ -101,22 +190,16 @@ impl Shape {
                 ]
             }
             Shape::Stroke => vec![[-r, 0.0], [r, 0.0]],
+            Shape::Path(_) => Vec::new(),
         };
-        if angle == 0.0 {
-            return points;
-        }
-        let (sin, cos) = angle.to_radians().sin_cos();
-        points
-            .into_iter()
-            .map(|[x, y]| [x * cos - y * sin, x * sin + y * cos])
-            .collect()
+        vec![turn(points)]
     }
 }
 
 impl FromStr for Shape {
     type Err = ();
 
-    /// A Vega symbol name. An SVG path is `Err`.
+    /// A Vega symbol name, or SVG path data.
     fn from_str(name: &str) -> Result<Self, ()> {
         Ok(match name {
             "circle" => Shape::Circle,
@@ -131,7 +214,7 @@ impl FromStr for Shape {
             "wedge" => Shape::Wedge,
             "arrow" => Shape::Arrow,
             "stroke" => Shape::Stroke,
-            _ => return Err(()),
+            path => Shape::Path(Arc::new(path.parse()?)),
         })
     }
 }

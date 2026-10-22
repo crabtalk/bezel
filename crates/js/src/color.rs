@@ -1,8 +1,9 @@
-//! d3-color's `color(specifier)`, as RGB: a CSS colour named, in hex, or in
-//! `rgb()`, `rgba()`, `hsl()` or `hsla()` notation.
+//! d3-color: `color(specifier)` as RGB, a CSS colour named, in hex, or in
+//! `rgb()`, `rgba()`, `hsl()` or `hsla()` notation; the HSL, CIELAB, HCL and
+//! Cubehelix spaces and their conversions; and `formatRgb` as `Display`.
 
-use crate::string;
-use std::str::FromStr;
+use crate::{math, number::Number, string};
+use std::{f64::consts::PI, fmt, str::FromStr};
 
 /// Channels in `0..=255` as written, which may fall outside it, and opacity
 /// in `0..=1`. A colour with opacity at or below zero has `NaN` channels, as
@@ -189,41 +190,6 @@ impl Rgb {
             opacity: 1.0,
         }
     }
-
-    /// d3-color's `hsl(h, s, l, opacity).rgb()`, `s` and `l` in `0..=1`.
-    fn hsla(h: f64, s: f64, l: f64, opacity: f64) -> Self {
-        let (h, s, l) = if opacity <= 0.0 {
-            (f64::NAN, f64::NAN, f64::NAN)
-        } else if l <= 0.0 || l >= 1.0 {
-            (f64::NAN, f64::NAN, l)
-        } else if s <= 0.0 {
-            (f64::NAN, s, l)
-        } else {
-            (h, s, l)
-        };
-        let h = h % 360.0 + if h < 0.0 { 360.0 } else { 0.0 };
-        let s = if h.is_nan() || s.is_nan() { 0.0 } else { s };
-        let m2 = l + if l < 0.5 { l } else { 1.0 - l } * s;
-        let m1 = 2.0 * l - m2;
-        let channel = |h: f64| {
-            let v = if h < 60.0 {
-                m1 + (m2 - m1) * h / 60.0
-            } else if h < 180.0 {
-                m2
-            } else if h < 240.0 {
-                m1 + (m2 - m1) * (240.0 - h) / 60.0
-            } else {
-                m1
-            };
-            v * 255.0
-        };
-        Self {
-            r: channel(if h >= 240.0 { h - 240.0 } else { h + 120.0 }),
-            g: channel(h),
-            b: channel(if h < 120.0 { h + 240.0 } else { h - 120.0 }),
-            opacity,
-        }
-    }
 }
 
 impl FromStr for Rgb {
@@ -312,7 +278,7 @@ impl FromStr for Rgb {
                         4 => number(args[3]).ok_or(())?,
                         _ => 1.0,
                     };
-                    Ok(Self::hsla(h, s / 100.0, l / 100.0, opacity))
+                    Ok(Hsl::hsla(h, s / 100.0, l / 100.0, opacity).into())
                 }
                 _ => Err(()),
             };
@@ -356,4 +322,335 @@ fn number(arg: &str) -> Option<f64> {
 /// A number then `%`, with whitespace either side.
 fn percent(arg: &str) -> Option<f64> {
     number(string::trim(arg).strip_suffix('%')?)
+}
+
+/// `formatRgb`: [`Rgb::written`]'s channels, `rgba()` below full opacity.
+impl fmt::Display for Rgb {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let Rgb { r, g, b, opacity } = self.written();
+        match opacity == 1.0 {
+            true => write!(f, "rgb({r}, {g}, {b})"),
+            false => write!(f, "rgba({r}, {g}, {b}, {})", Number(opacity)),
+        }
+    }
+}
+
+impl Rgb {
+    /// The colour as `formatRgb` writes it, which is how d3-interpolate
+    /// hands a colour on: channels rounded into `0..=255`, `NaN` as 0, and
+    /// opacity held in `0..=1`, `NaN` as 1.
+    pub fn written(self) -> Self {
+        // `|| 0` takes NaN and -0 to 0.
+        let channel = |v: f64| match math::round(v) {
+            v if v.is_nan() || v == 0.0 => 0.0,
+            v => v.clamp(0.0, 255.0),
+        };
+        Self {
+            r: channel(self.r),
+            g: channel(self.g),
+            b: channel(self.b),
+            opacity: match self.opacity.is_nan() {
+                true => 1.0,
+                false => self.opacity.clamp(0.0, 1.0),
+            },
+        }
+    }
+}
+
+const RADIANS: f64 = PI / 180.0;
+const DEGREES: f64 = 180.0 / PI;
+
+/// A colour in HSL, `s` and `l` in `0..=1`. `NaN` hue or saturation where
+/// the colour has none.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hsl {
+    pub h: f64,
+    pub s: f64,
+    pub l: f64,
+    pub opacity: f64,
+}
+
+impl Hsl {
+    /// d3-color's `hsla`: no hue, saturation or lightness for a transparent
+    /// colour, no hue or saturation for black or white, no hue for a grey.
+    pub fn hsla(h: f64, s: f64, l: f64, opacity: f64) -> Self {
+        let (h, s, l) = if opacity <= 0.0 {
+            (f64::NAN, f64::NAN, f64::NAN)
+        } else if l <= 0.0 || l >= 1.0 {
+            (f64::NAN, f64::NAN, l)
+        } else if s <= 0.0 {
+            (f64::NAN, s, l)
+        } else {
+            (h, s, l)
+        };
+        Self { h, s, l, opacity }
+    }
+}
+
+impl From<Rgb> for Hsl {
+    fn from(o: Rgb) -> Self {
+        let (r, g, b) = (o.r / 255.0, o.g / 255.0, o.b / 255.0);
+        let min = math::min(math::min(r, g), b);
+        let max = math::max(math::max(r, g), b);
+        let mut h = f64::NAN;
+        let mut s = max - min;
+        let l = (max + min) / 2.0;
+        if s != 0.0 && !s.is_nan() {
+            h = if r == max {
+                (g - b) / s + if g < b { 6.0 } else { 0.0 }
+            } else if g == max {
+                (b - r) / s + 2.0
+            } else {
+                (r - g) / s + 4.0
+            };
+            s /= if l < 0.5 { max + min } else { 2.0 - max - min };
+            h *= 60.0;
+        } else {
+            s = if l > 0.0 && l < 1.0 { 0.0 } else { h };
+        }
+        Self {
+            h,
+            s,
+            l,
+            opacity: o.opacity,
+        }
+    }
+}
+
+impl From<Hsl> for Rgb {
+    fn from(o: Hsl) -> Self {
+        let h = o.h % 360.0 + if o.h < 0.0 { 360.0 } else { 0.0 };
+        let s = if h.is_nan() || o.s.is_nan() { 0.0 } else { o.s };
+        let l = o.l;
+        let m2 = l + if l < 0.5 { l } else { 1.0 - l } * s;
+        let m1 = 2.0 * l - m2;
+        let channel = |h: f64| {
+            let v = if h < 60.0 {
+                m1 + (m2 - m1) * h / 60.0
+            } else if h < 180.0 {
+                m2
+            } else if h < 240.0 {
+                m1 + (m2 - m1) * (240.0 - h) / 60.0
+            } else {
+                m1
+            };
+            v * 255.0
+        };
+        Self {
+            r: channel(if h >= 240.0 { h - 240.0 } else { h + 120.0 }),
+            g: channel(h),
+            b: channel(if h < 120.0 { h + 240.0 } else { h - 120.0 }),
+            opacity: o.opacity,
+        }
+    }
+}
+
+/// D50 white, as d3-color's CIELAB takes it.
+const XN: f64 = 0.96422;
+const YN: f64 = 1.0;
+const ZN: f64 = 0.82521;
+const T0: f64 = 4.0 / 29.0;
+const T1: f64 = 6.0 / 29.0;
+const T2: f64 = 3.0 * T1 * T1;
+const T3: f64 = T1 * T1 * T1;
+
+/// A colour in CIELAB, under D50 white.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Lab {
+    pub l: f64,
+    pub a: f64,
+    pub b: f64,
+    pub opacity: f64,
+}
+
+fn xyz_to_lab(t: f64) -> f64 {
+    match t > T3 {
+        true => math::pow(t, 1.0 / 3.0),
+        false => t / T2 + T0,
+    }
+}
+
+fn lab_to_xyz(t: f64) -> f64 {
+    match t > T1 {
+        true => t * t * t,
+        false => T2 * (t - T0),
+    }
+}
+
+fn linear_to_rgb(x: f64) -> f64 {
+    255.0
+        * match x <= 0.0031308 {
+            true => 12.92 * x,
+            false => 1.055 * math::pow(x, 1.0 / 2.4) - 0.055,
+        }
+}
+
+fn rgb_to_linear(x: f64) -> f64 {
+    let x = x / 255.0;
+    match x <= 0.04045 {
+        true => x / 12.92,
+        false => math::pow((x + 0.055) / 1.055, 2.4),
+    }
+}
+
+impl From<Rgb> for Lab {
+    fn from(o: Rgb) -> Self {
+        let (r, g, b) = (rgb_to_linear(o.r), rgb_to_linear(o.g), rgb_to_linear(o.b));
+        let y = xyz_to_lab((0.2225045 * r + 0.7168786 * g + 0.0606169 * b) / YN);
+        let (x, z) = match r == g && g == b {
+            true => (y, y),
+            false => (
+                xyz_to_lab((0.4360747 * r + 0.3850649 * g + 0.1430804 * b) / XN),
+                xyz_to_lab((0.0139322 * r + 0.0971045 * g + 0.7141733 * b) / ZN),
+            ),
+        };
+        Self {
+            l: 116.0 * y - 16.0,
+            a: 500.0 * (x - y),
+            b: 200.0 * (y - z),
+            opacity: o.opacity,
+        }
+    }
+}
+
+impl From<Lab> for Rgb {
+    fn from(o: Lab) -> Self {
+        let y = (o.l + 16.0) / 116.0;
+        let x = if o.a.is_nan() { y } else { y + o.a / 500.0 };
+        let z = if o.b.is_nan() { y } else { y - o.b / 200.0 };
+        let (x, y, z) = (XN * lab_to_xyz(x), YN * lab_to_xyz(y), ZN * lab_to_xyz(z));
+        Self {
+            r: linear_to_rgb(3.1338561 * x - 1.6168667 * y - 0.4906146 * z),
+            g: linear_to_rgb(-0.9787684 * x + 1.9161415 * y + 0.0334540 * z),
+            b: linear_to_rgb(0.0719453 * x - 0.2289914 * y + 1.4052427 * z),
+            opacity: o.opacity,
+        }
+    }
+}
+
+/// A colour in CIELCh, hue in degrees. `NaN` hue for a grey.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hcl {
+    pub h: f64,
+    pub c: f64,
+    pub l: f64,
+    pub opacity: f64,
+}
+
+impl From<Lab> for Hcl {
+    fn from(o: Lab) -> Self {
+        if o.a == 0.0 && o.b == 0.0 {
+            let c = if 0.0 < o.l && o.l < 100.0 {
+                0.0
+            } else {
+                f64::NAN
+            };
+            return Self {
+                h: f64::NAN,
+                c,
+                l: o.l,
+                opacity: o.opacity,
+            };
+        }
+        let h = o.b.atan2(o.a) * DEGREES;
+        Self {
+            h: if h < 0.0 { h + 360.0 } else { h },
+            c: (o.a * o.a + o.b * o.b).sqrt(),
+            l: o.l,
+            opacity: o.opacity,
+        }
+    }
+}
+
+impl From<Hcl> for Lab {
+    fn from(o: Hcl) -> Self {
+        if o.h.is_nan() {
+            return Self {
+                l: o.l,
+                a: 0.0,
+                b: 0.0,
+                opacity: o.opacity,
+            };
+        }
+        let h = o.h * RADIANS;
+        Self {
+            l: o.l,
+            a: h.cos() * o.c,
+            b: h.sin() * o.c,
+            opacity: o.opacity,
+        }
+    }
+}
+
+impl From<Rgb> for Hcl {
+    fn from(o: Rgb) -> Self {
+        Lab::from(o).into()
+    }
+}
+
+impl From<Hcl> for Rgb {
+    fn from(o: Hcl) -> Self {
+        Lab::from(o).into()
+    }
+}
+
+const A: f64 = -0.14861;
+const B: f64 = 1.78277;
+const C: f64 = -0.29227;
+const D: f64 = -0.90649;
+const E: f64 = 1.97294;
+const ED: f64 = E * D;
+const EB: f64 = E * B;
+const BC_DA: f64 = B * C - D * A;
+
+/// A colour in Green's Cubehelix, hue in degrees.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Cubehelix {
+    pub h: f64,
+    pub s: f64,
+    pub l: f64,
+    pub opacity: f64,
+}
+
+impl From<Rgb> for Cubehelix {
+    fn from(o: Rgb) -> Self {
+        let (r, g, b) = (o.r / 255.0, o.g / 255.0, o.b / 255.0);
+        let l = (BC_DA * b + ED * r - EB * g) / (BC_DA + ED - EB);
+        let bl = b - l;
+        let k = (E * (g - l) - C * bl) / D;
+        let s = (k * k + bl * bl).sqrt() / (E * l * (1.0 - l));
+        let h = match s != 0.0 && !s.is_nan() {
+            true => k.atan2(bl) * DEGREES - 120.0,
+            false => f64::NAN,
+        };
+        Self {
+            h: if h < 0.0 { h + 360.0 } else { h },
+            s,
+            l,
+            opacity: o.opacity,
+        }
+    }
+}
+
+impl From<Cubehelix> for Rgb {
+    fn from(o: Cubehelix) -> Self {
+        let h = if o.h.is_nan() {
+            0.0
+        } else {
+            (o.h + 120.0) * RADIANS
+        };
+        let l = o.l;
+        let a = if o.s.is_nan() {
+            0.0
+        } else {
+            o.s * l * (1.0 - l)
+        };
+        let (cosh, sinh) = (h.cos(), h.sin());
+        Self {
+            r: 255.0 * (l + a * (A * cosh + B * sinh)),
+            g: 255.0 * (l + a * (C * cosh + D * sinh)),
+            b: 255.0 * (l + a * (E * cosh)),
+            opacity: o.opacity,
+        }
+    }
 }

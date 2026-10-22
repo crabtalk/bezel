@@ -1,0 +1,35 @@
+{
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+ "data": {
+  "values": [
+   {"g": "a", "s": "pear", "v": 1},
+   {"g": "a", "s": "Apple", "v": 2},
+   {"g": "a", "s": "10", "v": 3},
+   {"g": "a", "s": "9", "v": 4},
+   {"g": "a", "s": null, "v": 5},
+   {"g": "b", "s": "zebra", "v": 6},
+   {"g": "b", "s": "éclair", "v": 7},
+   {"g": "b", "s": "Zebra", "v": 8},
+   {"g": "b", "s": "zebra", "v": 9}
+  ]
+ },
+ "transform": [
+  {
+   "aggregate": [
+    {"op": "min", "field": "s", "as": "least"},
+    {"op": "max", "field": "s", "as": "most"},
+    {"op": "argmin", "field": "s", "as": "first"},
+    {"op": "argmax", "field": "s", "as": "last"}
+   ],
+   "groupby": ["g"]
+  }
+ ],
+ "mark": "text",
+ "encoding": {
+  "x": {"field": "g", "type": "nominal"},
+  "y": {"field": "least", "type": "nominal"},
+  "color": {"field": "most", "type": "nominal"},
+  "text": {"field": "first.v", "type": "nominal"},
+  "detail": {"field": "last.v", "type": "nominal"}
+ }
+}

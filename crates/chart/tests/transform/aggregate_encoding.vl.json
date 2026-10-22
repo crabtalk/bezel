@@ -1,0 +1,138 @@
+{
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+ "data": {
+  "values": [
+   {
+    "g": "a",
+    "v": 3.1,
+    "u": 1,
+    "w": "a0"
+   },
+   {
+    "g": "a",
+    "v": -1.23,
+    "u": 11,
+    "w": "a1"
+   },
+   {
+    "g": "a",
+    "v": 11.27,
+    "u": 21,
+    "w": "a2"
+   },
+   {
+    "g": "a",
+    "v": -3.19,
+    "u": 31,
+    "w": "a3"
+   },
+   {
+    "g": "a",
+    "v": 8.4,
+    "u": 51,
+    "w": "a5"
+   },
+   {
+    "g": "a",
+    "v": 4.14,
+    "u": 61,
+    "w": "a6"
+   },
+   {
+    "g": "a",
+    "v": -3.55,
+    "u": 71,
+    "w": "a7"
+   },
+   {
+    "g": "a",
+    "v": 7.69,
+    "u": 81,
+    "w": "a8"
+   },
+   {
+    "g": "b",
+    "v": -4.06,
+    "u": 1,
+    "w": "b0"
+   },
+   {
+    "g": "b",
+    "v": 5.84,
+    "u": 11,
+    "w": "b1"
+   },
+   {
+    "g": "b",
+    "v": -3.25,
+    "u": 21,
+    "w": "b2"
+   },
+   {
+    "g": "b",
+    "v": -2.73,
+    "u": 31,
+    "w": "b3"
+   },
+   {
+    "g": "b",
+    "v": 5.61,
+    "u": 41,
+    "w": "b4"
+   },
+   {
+    "g": "b",
+    "v": 15.67,
+    "u": 51,
+    "w": "b5"
+   }
+  ]
+ },
+ "layer": [
+  {
+   "mark": "bar",
+   "encoding": {
+    "x": {
+     "field": "g",
+     "type": "nominal",
+     "sort": "-y"
+    },
+    "y": {
+     "aggregate": "sum",
+     "field": "v"
+    },
+    "color": {
+     "field": "g"
+    }
+   }
+  },
+  {
+   "mark": "point",
+   "encoding": {
+    "x": {
+     "field": "g",
+     "type": "nominal"
+    },
+    "y": {
+     "field": "u",
+     "aggregate": {
+      "argmax": "v"
+     },
+     "type": "quantitative"
+    },
+    "detail": [
+     {
+      "field": "v",
+      "aggregate": "stdev"
+     },
+     {
+      "field": "v",
+      "aggregate": {
+       "exponentialb": 0.5
+      }
+     }
+    ]
+   }
+  }
+ ]
+}

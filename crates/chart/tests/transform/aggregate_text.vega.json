@@ -1,0 +1,38 @@
+[
+ [
+  {
+   "g": "a",
+   "first": {
+    "g": "a",
+    "s": "10",
+    "v": 3
+   },
+   "last": {
+    "g": "a",
+    "s": "pear",
+    "v": 1
+   },
+   "least": "10",
+   "most": "pear",
+   "first.v": 3,
+   "last.v": 1
+  },
+  {
+   "g": "b",
+   "first": {
+    "g": "b",
+    "s": "Zebra",
+    "v": 8
+   },
+   "last": {
+    "g": "b",
+    "s": "éclair",
+    "v": 7
+   },
+   "least": "Zebra",
+   "most": "éclair",
+   "first.v": 8,
+   "last.v": 7
+  }
+ ]
+]

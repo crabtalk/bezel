@@ -1,149 +1,79 @@
-//! Where values land along a side of the plot, and the ticks that label it.
+//! The ticks that label a continuous scale, and a value read out.
 
 use gpui::SharedString;
+use js::{
+    array,
+    scale::{Continuous, Transform},
+    time as calendar,
+};
 
-use crate::time;
+use crate::{time, transform::Bins};
 
-/// `domain` mapped linearly onto `range`. `range` may run backwards.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Linear {
-    pub domain: (f64, f64),
-    pub range: (f32, f32),
-}
-
-impl Linear {
-    pub fn at(&self, value: f64) -> f32 {
-        let (d0, d1) = self.domain;
-        let t = if d1 == d0 {
-            0.5
-        } else {
-            (value - d0) / (d1 - d0)
-        };
-        self.range.0 + (self.range.1 - self.range.0) * t as f32
-    }
-}
-
-/// `count` equal bands across `range`, which runs forwards. `padding` is the
-/// share of each band left empty, half on either side.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Band {
-    pub count: usize,
-    pub range: (f32, f32),
-    pub padding: f32,
-}
-
-impl Band {
-    pub fn step(&self) -> f32 {
-        (self.range.1 - self.range.0) / self.count.max(1) as f32
-    }
-
-    /// Where band `index`'s filled part starts.
-    pub fn start(&self, index: usize) -> f32 {
-        self.range.0 + self.step() * (index as f32 + self.padding / 2.0)
-    }
-
-    /// The filled part's width.
-    pub fn width(&self) -> f32 {
-        self.step() * (1.0 - self.padding)
-    }
-
-    pub fn center(&self, index: usize) -> f32 {
-        self.range.0 + self.step() * (index as f32 + 0.5)
-    }
-
-    /// The band `position` falls in.
-    pub fn index(&self, position: f32) -> Option<usize> {
-        let index = ((position - self.range.0) / self.step()).floor();
-        (index >= 0.0 && (index as usize) < self.count).then_some(index as usize)
-    }
-}
-
-/// Tick values and their labels, and the domain they span.
+/// Tick values and their labels.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ticks {
-    pub domain: (f64, f64),
     pub values: Vec<f64>,
     pub labels: Vec<SharedString>,
 }
 
-/// About `count` ticks at 1, 2 or 5 times a power of ten. `nice` widens the
-/// domain to the ticks either side of `lo..=hi`; otherwise the domain is
-/// `lo..=hi` and the ticks fall inside it.
-pub fn linear(lo: f64, hi: f64, count: usize, nice: bool) -> Ticks {
-    let (lo, hi) = widen(lo, hi, 1.0);
-    let (factor, power) = increment(lo, hi, count);
-    let value = |index: f64| match power < 0 {
-        true => index / (10f64.powi(-power) / factor),
-        false => index * factor * 10f64.powi(power),
-    };
-    let step = value(1.0);
-    let (first, last) = match nice {
-        true => ((lo / step).floor(), (hi / step).ceil()),
-        false => ((lo / step - 1e-9).ceil(), (hi / step + 1e-9).floor()),
-    };
-    let values: Vec<f64> = (first as i64..=last as i64)
-        .map(|index| value(index as f64))
-        .collect();
-    let magnitude = lo.abs().max(hi.abs());
-    let labels = values
-        .iter()
-        .map(|&v| number(v, power, magnitude).into())
-        .collect();
-    Ticks {
-        domain: match nice {
-            true => (value(first), value(last)),
-            false => (lo, hi),
-        },
-        values,
-        labels,
+impl Ticks {
+    /// About `count` of `scale`'s ticks. A time shows the calendar fields
+    /// its interval steps through; a log scale's tick is read out whole; any
+    /// other number shows as many decimals as the tick step needs, and k, M,
+    /// G or T once the domain reaches ten thousand.
+    pub fn of(scale: &Continuous, count: usize) -> Self {
+        Self::labelled(scale, scale.ticks(count as f64), count)
     }
-}
 
-/// Calendar ticks inside `lo..=hi`, which is the domain as given.
-pub fn temporal(lo: f64, hi: f64, count: usize) -> Ticks {
-    let (lo, hi) = widen(lo, hi, time::DAY);
-    let (values, unit) = time::ticks(lo, hi, count);
-    let labels = values
-        .iter()
-        .map(|&ms| time::label(ms, unit).into())
-        .collect();
-    Ticks {
-        domain: (lo, hi),
-        values,
-        labels,
+    /// Vega's ticks on a scale with `bins`: each edge inside the range,
+    /// labelled for at least as many ticks as there are edges.
+    pub fn binned(scale: &Continuous, bins: Bins, count: usize) -> Self {
+        let (lo, hi) = (scale.domain[0], scale.domain[scale.domain.len() - 1]);
+        let edges = bins.edges(lo, hi);
+        let count = count.max(edges.len());
+        let (r0, r1) = (scale.range[0], scale.range[scale.range.len() - 1]);
+        let (r0, r1) = (r0.min(r1).floor(), r0.max(r1).ceil());
+        let values = edges
+            .into_iter()
+            .filter(|&v| (r0..=r1).contains(&scale.at(v)))
+            .collect();
+        Self::labelled(scale, values, count)
     }
-}
 
-fn widen(lo: f64, hi: f64, unit: f64) -> (f64, f64) {
-    match (lo == hi, lo == 0.0) {
-        (false, _) => (lo, hi),
-        (true, true) => (0.0, unit),
-        (true, false) => (
-            lo - unit.max(lo.abs() / 10.0),
-            hi + unit.max(hi.abs() / 10.0),
-        ),
+    fn labelled(scale: &Continuous, values: Vec<f64>, count: usize) -> Self {
+        let (d0, d1) = match scale.domain.as_slice() {
+            [first, .., last] => (first.min(*last), first.max(*last)),
+            [only] => (*only, *only),
+            [] => (f64::NAN, f64::NAN),
+        };
+        let labels = match &scale.transform {
+            Transform::Time(zone) => {
+                let unit = calendar::tick_interval(d0, d1, count as f64, zone)
+                    .map_or(time::Unit::Day, |interval| interval.unit.into());
+                values
+                    .iter()
+                    .map(|&ms| time::label(ms, unit).into())
+                    .collect()
+            }
+            Transform::Log { .. } => values.iter().map(|&v| value(v).into()).collect(),
+            _ => {
+                let increment = array::tick_increment(d0, d1, count as f64);
+                let power = match increment > 0.0 {
+                    true => increment.log10().floor(),
+                    false => -(-increment).log10().ceil(),
+                };
+                let magnitude = d0.abs().max(d1.abs());
+                values
+                    .iter()
+                    .map(|&v| match power.is_finite() {
+                        true => number(v, power as i32, magnitude).into(),
+                        false => value(v).into(),
+                    })
+                    .collect()
+            }
+        };
+        Self { values, labels }
     }
-}
-
-/// The tick step as `factor * 10^power`, `factor` 1, 2 or 5.
-fn increment(lo: f64, hi: f64, count: usize) -> (f64, i32) {
-    let raw = (hi - lo) / count.max(1) as f64;
-    let mut power = raw.log10().floor() as i32;
-    let error = raw / 10f64.powi(power);
-    let factor = if error >= 50f64.sqrt() {
-        10.0
-    } else if error >= 10f64.sqrt() {
-        5.0
-    } else if error >= 2f64.sqrt() {
-        2.0
-    } else {
-        1.0
-    };
-    if factor == 10.0 {
-        power += 1;
-        return (1.0, power);
-    }
-    (factor, power)
 }
 
 /// A tick on a step of `10^power`: as many decimals as the step needs, and

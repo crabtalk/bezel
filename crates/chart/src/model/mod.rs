@@ -5,17 +5,19 @@ use gpui::{Hsla, SharedString};
 
 use crate::data::Data;
 
-pub use channel::{Channel, Datum, Kind, Scale, Sort, Source};
+pub use channel::{Channel, Datum, Kind, Sort, Source};
 pub use encoding::{Encode, Encoding, Position};
 pub use mark::{
     Align, Baseline, Cap, Dir, Extent, Interpolate, Join, LineBreak, Mark, Orient, Overlay,
     Properties,
 };
+pub use scale::{Domain, NamedRange, Nice, Palette, Range, Scale, ScaleType, Scheme, Stack};
 pub use shape::Shape;
 
 mod channel;
 mod encoding;
 mod mark;
+mod scale;
 mod shape;
 
 #[derive(Clone, Debug)]

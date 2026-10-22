@@ -1,0 +1,168 @@
+[
+ [
+  {
+   "yearmonth_d": 1262304000000,
+   "yearmonth_d_end": 1264982400000,
+   "sum_v": 25
+  },
+  {
+   "yearmonth_d": 1296518400000,
+   "yearmonth_d_end": 1298937600000,
+   "sum_v": 32
+  },
+  {
+   "yearmonth_d": 1330560000000,
+   "yearmonth_d_end": 1333238400000,
+   "sum_v": 39
+  },
+  {
+   "yearmonth_d": 1364774400000,
+   "yearmonth_d_end": 1367366400000,
+   "sum_v": 28
+  },
+  {
+   "yearmonth_d": 1272672000000,
+   "yearmonth_d_end": 1275350400000,
+   "sum_v": 35
+  },
+  {
+   "yearmonth_d": 1306886400000,
+   "yearmonth_d_end": 1309478400000,
+   "sum_v": 42
+  },
+  {
+   "yearmonth_d": 1341100800000,
+   "yearmonth_d_end": 1343779200000,
+   "sum_v": 31
+  },
+  {
+   "yearmonth_d": 1375315200000,
+   "yearmonth_d_end": 1377993600000,
+   "sum_v": 38
+  },
+  {
+   "yearmonth_d": 1283299200000,
+   "yearmonth_d_end": 1285891200000,
+   "sum_v": 36
+  },
+  {
+   "yearmonth_d": 1317427200000,
+   "yearmonth_d_end": 1320105600000,
+   "sum_v": 24
+  },
+  {
+   "yearmonth_d": 1351728000000,
+   "yearmonth_d_end": 1354320000000,
+   "sum_v": 30
+  },
+  {
+   "yearmonth_d": 1385856000000,
+   "yearmonth_d_end": 1388534400000,
+   "sum_v": 36
+  }
+ ],
+ [
+  {
+   "yearquarter_d": 1262304000000,
+   "yearquarter_d_end": 1270080000000,
+   "yearquarter_d_offsetted_rect_start": 1258329600000,
+   "yearquarter_d_offsetted_rect_end": 1266192000000,
+   "mean_v": 3.5714285714285716
+  },
+  {
+   "yearquarter_d": 1293840000000,
+   "yearquarter_d_end": 1301616000000,
+   "yearquarter_d_offsetted_rect_start": 1289865600000,
+   "yearquarter_d_offsetted_rect_end": 1297728000000,
+   "mean_v": 4.571428571428571
+  },
+  {
+   "yearquarter_d": 1325376000000,
+   "yearquarter_d_end": 1333238400000,
+   "yearquarter_d_offsetted_rect_start": 1321401600000,
+   "yearquarter_d_offsetted_rect_end": 1329307200000,
+   "mean_v": 5.571428571428571
+  },
+  {
+   "yearquarter_d": 1364774400000,
+   "yearquarter_d_end": 1372636800000,
+   "yearquarter_d_offsetted_rect_start": 1360886400000,
+   "yearquarter_d_offsetted_rect_end": 1368705600000,
+   "mean_v": 3.9999999999999996
+  },
+  {
+   "yearquarter_d": 1270080000000,
+   "yearquarter_d_end": 1277942400000,
+   "yearquarter_d_offsetted_rect_start": 1266192000000,
+   "yearquarter_d_offsetted_rect_end": 1274011200000,
+   "mean_v": 5
+  },
+  {
+   "yearquarter_d": 1301616000000,
+   "yearquarter_d_end": 1309478400000,
+   "yearquarter_d_offsetted_rect_start": 1297728000000,
+   "yearquarter_d_offsetted_rect_end": 1305547200000,
+   "mean_v": 6
+  },
+  {
+   "yearquarter_d": 1341100800000,
+   "yearquarter_d_end": 1349049600000,
+   "yearquarter_d_offsetted_rect_start": 1337169600000,
+   "yearquarter_d_offsetted_rect_end": 1345075200000,
+   "mean_v": 4.428571428571429
+  },
+  {
+   "yearquarter_d": 1372636800000,
+   "yearquarter_d_end": 1380585600000,
+   "yearquarter_d_offsetted_rect_start": 1368705600000,
+   "yearquarter_d_offsetted_rect_end": 1376611200000,
+   "mean_v": 5.428571428571429
+  },
+  {
+   "yearquarter_d": 1277942400000,
+   "yearquarter_d_end": 1285891200000,
+   "yearquarter_d_offsetted_rect_start": 1274011200000,
+   "yearquarter_d_offsetted_rect_end": 1281916800000,
+   "mean_v": 6
+  },
+  {
+   "yearquarter_d": 1317427200000,
+   "yearquarter_d_end": 1325376000000,
+   "yearquarter_d_offsetted_rect_start": 1313452800000,
+   "yearquarter_d_offsetted_rect_end": 1321401600000,
+   "mean_v": 4
+  },
+  {
+   "yearquarter_d": 1349049600000,
+   "yearquarter_d_end": 1356998400000,
+   "yearquarter_d_offsetted_rect_start": 1345075200000,
+   "yearquarter_d_offsetted_rect_end": 1353024000000,
+   "mean_v": 5
+  },
+  {
+   "yearquarter_d": 1380585600000,
+   "yearquarter_d_end": 1388534400000,
+   "yearquarter_d_offsetted_rect_start": 1376611200000,
+   "yearquarter_d_offsetted_rect_end": 1384560000000,
+   "mean_v": 6
+  }
+ ],
+ [
+  {
+   "utcyear_d": 1262304000000,
+   "max_v": 9
+  },
+  {
+   "utcyear_d": 1293840000000,
+   "max_v": 9
+  },
+  {
+   "utcyear_d": 1325376000000,
+   "max_v": 9
+  },
+  {
+   "utcyear_d": 1356998400000,
+   "max_v": 9
+  }
+ ]
+]

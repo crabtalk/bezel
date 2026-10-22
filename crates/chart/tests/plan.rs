@@ -1,11 +1,24 @@
 use chart::{
-    Channel, Chart, Data, Encode, Encoding, Mark, Position, Properties, Shape, Sort,
+    Channel, Chart, Data, Encode, Encoding, Mark, Position, Properties, Scale, Shape, Sort,
     decimate::m4,
-    model::{Align, Baseline, Dir, Extent, Interpolate, LineBreak, Overlay},
-    plan::{Glyph, Ink, Marks, Side, plan},
-    scale, time,
+    model::{
+        Align, Baseline, Dir, Extent, Interpolate, LineBreak, Nice, Orient, Overlay, Palette,
+        Range, ScaleType, Scheme as ColorScheme, Stack,
+    },
+    plan::{Glyph, Ink, Marks, Rect, Side, plan},
+    scale::{self, Ticks},
+    time,
 };
-use js::curve::Curve;
+use gpui::{Hsla, Rgba};
+use js::{
+    color::Rgb,
+    curve::Curve,
+    date::LocalZone,
+    interpolate,
+    scale::{Continuous, Transform},
+    scheme::Scheme,
+    time::Unit,
+};
 
 const SIZE: [f32; 2] = [400.0, 300.0];
 const LINE: f32 = 14.0;
@@ -25,23 +38,34 @@ fn sales() -> Data {
         .number("sales", [3.0, 2.0, 5.0, -1.0, 4.0])
 }
 
+/// About `count` ticks on a linear axis over `lo..=hi` made nice as Vega
+/// makes it, and its domain.
+fn linear(lo: f64, hi: f64, count: usize) -> (Ticks, Vec<f64>) {
+    let mut scale = Continuous::new(Transform::Linear, vec![lo, hi], vec![0.0, 1.0]);
+    scale.nice(10.0);
+    (Ticks::of(&scale, count), scale.domain)
+}
+
+fn temporal(lo: f64, hi: f64, count: usize) -> Ticks {
+    let scale = Continuous::new(
+        Transform::Time(LocalZone::utc()),
+        vec![lo, hi],
+        vec![0.0, 1.0],
+    );
+    Ticks::of(&scale, count)
+}
+
 #[test]
 fn linear_ticks_are_round_and_cover_the_data() {
-    let ticks = scale::linear(0.0, 97.0, 5, true);
+    let (ticks, domain) = linear(0.0, 97.0, 5);
     assert_eq!(ticks.values, [0.0, 20.0, 40.0, 60.0, 80.0, 100.0]);
-    assert_eq!(ticks.domain, (0.0, 100.0));
-    assert_eq!(
-        scale::linear(0.0, 0.3, 3, true).labels,
-        ["0.0", "0.1", "0.2", "0.3"]
-    );
-    assert_eq!(
-        scale::linear(0.0, 25_000.0, 2, true).labels,
-        ["0", "10k", "20k", "30k"]
-    );
-    assert_eq!(
-        scale::linear(0.0, 4_000.0, 2, true).labels,
-        ["0", "2,000", "4,000"]
-    );
+    assert_eq!(domain, [0.0, 100.0]);
+    assert_eq!(linear(0.0, 0.3, 3).0.labels, ["0.0", "0.1", "0.2", "0.3"]);
+    // Nice to ten ticks, then two of them.
+    let (ticks, domain) = linear(0.0, 25_000.0, 2);
+    assert_eq!(domain, [0.0, 26_000.0]);
+    assert_eq!(ticks.labels, ["0", "10k", "20k"]);
+    assert_eq!(linear(0.0, 4_000.0, 2).0.labels, ["0", "2,000", "4,000"]);
 }
 
 #[test]
@@ -70,20 +94,17 @@ fn time_reads_and_describes_utc() {
 fn time_ticks_land_on_calendar_boundaries() {
     let lo = time::parse("2024-01-10").unwrap();
     let hi = time::parse("2024-12-20").unwrap();
-    let ticks = scale::temporal(lo, hi, 4);
+    let ticks = temporal(lo, hi, 4);
     assert_eq!(ticks.labels, ["Apr", "Jul", "Oct"]);
 
     let (lo, hi) = (
         time::parse("2020-06-01").unwrap(),
         time::parse("2024-06-01").unwrap(),
     );
-    assert_eq!(
-        scale::temporal(lo, hi, 4).labels,
-        ["2021", "2022", "2023", "2024"]
-    );
+    assert_eq!(temporal(lo, hi, 4).labels, ["2021", "2022", "2023", "2024"]);
 
     let lo = time::parse("2024-03-05T09:10").unwrap();
-    let ticks = scale::temporal(lo, lo + 3.0 * time::HOUR, 3);
+    let ticks = temporal(lo, lo + 3.0 * time::HOUR, 3);
     assert_eq!(ticks.labels, ["10:00", "11:00", "12:00"]);
 }
 
@@ -122,8 +143,8 @@ fn bars_stack_up_and_down_from_zero() {
     };
     let (east, west) = (bars(0), bars(1));
     assert_eq!((east.len(), west.len()), (3, 2));
-    // Jan: west sits on east.
-    assert!((west[0].bottom() - east[0].y).abs() < 0.01);
+    // Jan: a vertical stack runs down its colours, so east sits on west.
+    assert!((east[0].bottom() - west[0].y).abs() < 0.01);
     // Feb: west is negative, below zero, where east starts.
     assert!((west[1].y - east[1].bottom()).abs() < 0.01);
     assert!(
@@ -241,9 +262,11 @@ fn an_area_closes_along_zero() {
     let Marks::Areas(areas) = &plan.series[0].marks else {
         panic!()
     };
+    // A stack of one: its base runs under each point, along zero.
     let outline = areas[0].outline();
-    assert_eq!(outline.len(), 5);
+    assert_eq!(outline.len(), 6);
     assert_eq!(outline[3][1], plan.plot.bottom());
+    assert_eq!(outline[5][1], plan.plot.bottom());
 }
 
 #[test]
@@ -306,11 +329,6 @@ fn an_encoding_the_mark_cannot_draw_is_none() {
     assert!(chart(
         Chart::bar(sales())
             .x(Channel::nominal("month"))
-            .y(Channel::nominal("region"))
-    ));
-    assert!(chart(
-        Chart::bar(sales())
-            .x(Channel::nominal("month"))
             .y(Channel::quantitative("missing"))
     ));
     assert!(chart(
@@ -319,9 +337,7 @@ fn an_encoding_the_mark_cannot_draw_is_none() {
             .y(Channel::quantitative("sales"))
     ));
     assert!(chart(
-        Chart::arc(sales())
-            .theta(Channel::quantitative("sales"))
-            .color(Channel::quantitative("sales"))
+        Chart::area(sales()).x(Channel::quantitative("sales"))
     ));
 }
 
@@ -334,9 +350,9 @@ fn no_size_changes_whether_a_chart_draws() {
     assert!(plan.plot.w > 0.0 && plan.plot.h > 0.0);
     assert!(tiny.drawable());
     assert!(
-        !Chart::bar(sales())
-            .x(Channel::nominal("month"))
-            .y(Channel::nominal("region"))
+        !Chart::line(sales())
+            .x(Channel::quantitative("month"))
+            .y(Channel::quantitative("sales"))
             .drawable()
     );
 }
@@ -650,7 +666,7 @@ fn points_take_their_size_shape_and_opacity() {
     };
     let sizes: Vec<f32> = points.iter().map(|p| p.size).collect();
     assert_eq!(sizes, [4.0, 182.5, 361.0]);
-    let shapes: Vec<Shape> = points.iter().map(|p| p.shape).collect();
+    let shapes: Vec<Shape> = points.iter().map(|p| p.shape.clone()).collect();
     assert_eq!(shapes, [Shape::Circle, Shape::Square, Shape::Circle]);
     assert!(points.iter().all(|p| p.style.opacity == 0.5));
     // A shape legend, then a size legend.
@@ -928,9 +944,9 @@ fn bar_corners_round_as_their_properties_say() {
         corner_radius_end: Some(4.0),
         ..Properties::default()
     });
-    // Jan stacks west on east: west's top is the stack's end.
-    assert_eq!(west[0], [4.0, 4.0, 0.0, 0.0]);
-    assert_eq!(east[0], [0.0; 4]);
+    // Jan stacks east on west: east's top is the stack's end.
+    assert_eq!(east[0], [4.0, 4.0, 0.0, 0.0]);
+    assert_eq!(west[0], [0.0; 4]);
     // Feb's west is below zero: its bottom is the end.
     assert_eq!(west[1], [0.0, 0.0, 4.0, 4.0]);
     let (east, _) = corner(Properties {
@@ -1247,4 +1263,484 @@ fn marks_are_cut_off_at_the_plot_only_with_clip() {
     assert_eq!(fixed(false).series[0].clip, None);
     let clipped = fixed(true);
     assert_eq!(clipped.series[0].clip, Some(clipped.plot));
+}
+
+/// `hex` as a fixed ink.
+fn fixed(hex: u32) -> Ink {
+    Ink::Fixed(gpui::rgb(hex).into())
+}
+
+/// A colour d3 hands on, as a fixed ink.
+fn ink(rgb: Rgb) -> Ink {
+    let channel = |v: f64| (v / 255.0) as f32;
+    Ink::Fixed(Hsla::from(Rgba {
+        r: channel(rgb.r),
+        g: channel(rgb.g),
+        b: channel(rgb.b),
+        a: 1.0,
+    }))
+}
+
+fn rects(plan: &chart::Plan) -> Vec<Rect> {
+    plan.series
+        .iter()
+        .flat_map(|s| match &s.marks {
+            Marks::Bars(bars) => bars.iter().map(|bar| bar.rect).collect(),
+            _ => Vec::new(),
+        })
+        .collect()
+}
+
+fn grid() -> Data {
+    Data::new()
+        .text("a", ["p", "p", "q", "q"])
+        .text("b", ["u", "v", "u", "v"])
+        .number("n", [1.0, 2.0, 3.0, 4.0])
+}
+
+#[test]
+fn a_heatmap_fills_the_cells_of_two_discrete_axes() {
+    let heatmap = |mark: Mark| {
+        laid_out(
+            &Chart::new(mark, grid())
+                .x(Channel::nominal("a"))
+                .y(Channel::nominal("b"))
+                .color(Channel::quantitative("n")),
+        )
+    };
+    let plan = heatmap(Mark::Rect);
+    assert_eq!(left_labels(&plan), ["u", "v"]);
+    let cells = rects(&plan);
+    assert_eq!(cells.len(), 4);
+    for cell in &cells {
+        assert!((cell.w - plan.plot.w / 2.0).abs() < 0.01);
+        assert!((cell.h - plan.plot.h / 2.0).abs() < 0.01);
+    }
+    // A rect's quantitative colour runs through Vega's heatmap scheme from
+    // the least value to the most.
+    let first = &plan.series[0];
+    assert_eq!(plan.colors[first.color].ink, fixed(0xeff9bd));
+    let last = plan.series.last().unwrap();
+    assert_eq!(plan.colors[last.color].ink, fixed(0x1c3185));
+    // Its legend reads ticks across the domain in their colours.
+    let legend = &plan.legends[0];
+    assert_eq!(legend.swatches.first().unwrap().label.text, "1");
+    assert_eq!(legend.swatches.last().unwrap().label.text, "4");
+
+    // Text stands at each cell's middle.
+    let plan = laid_out(
+        &Chart::new(Mark::Text, grid())
+            .x(Channel::nominal("a"))
+            .y(Channel::nominal("b"))
+            .text(Channel::quantitative("n")),
+    );
+    let Marks::Texts(texts, _) = &plan.series[0].marks else {
+        panic!()
+    };
+    let (w, h) = (plan.plot.w / 2.0, plan.plot.h / 2.0);
+    assert!((texts[0].at[0] - (plan.plot.x + w / 2.0)).abs() < 0.01);
+    assert!((texts[0].at[1] - (plan.plot.y + h / 2.0)).abs() < 0.01);
+    // A bar over two discrete axes fills its cell too.
+    assert_eq!(rects(&heatmap(Mark::Bar)).len(), 4);
+}
+
+#[test]
+fn one_position_draws_along_its_own_axis() {
+    // Ticks along x alone stand across the plot's middle.
+    let plan = laid_out(&Chart::new(Mark::Tick, xy()).x(Channel::quantitative("x")));
+    assert_eq!(plan.axes.len(), 1);
+    assert_eq!(plan.axes[0].side, Side::Bottom);
+    let ticks = rects(&plan);
+    assert_eq!(ticks.len(), 3);
+    let middle = plan.plot.y + plan.plot.h / 2.0;
+    assert!((ticks[0].y + ticks[0].h / 2.0 - middle).abs() < 0.01);
+    assert!(ticks[0].x < ticks[1].x && ticks[1].x < ticks[2].x);
+
+    // Points down y alone stand at the plot's middle across.
+    let plan = laid_out(&Chart::point(xy()).y(Channel::quantitative("y")));
+    assert_eq!(plan.axes.len(), 1);
+    assert_eq!(plan.axes[0].side, Side::Left);
+    let Marks::Points(points) = &plan.series[0].marks else {
+        panic!()
+    };
+    assert!(
+        points
+            .iter()
+            .all(|p| (p.at[0] - (plan.plot.x + plan.plot.w / 2.0)).abs() < 0.01)
+    );
+
+    // Points along a nominal x alone, at their bands' middles.
+    let plan = laid_out(&Chart::point(xy()).x(Channel::nominal("month")));
+    let bottom = &plan.axes[0];
+    let labels: Vec<_> = bottom
+        .ticks
+        .iter()
+        .filter_map(|t| t.label.as_ref())
+        .map(|l| l.text.to_string())
+        .collect();
+    assert_eq!(labels, ["Jan", "Feb", "Mar"]);
+
+    // Bars along x alone stack across the plot's full height.
+    let plan = laid_out(
+        &Chart::bar(xy())
+            .x(Channel::quantitative("y"))
+            .color(Channel::nominal("month")),
+    );
+    let bars = rects(&plan);
+    assert_eq!(bars.len(), 3);
+    assert!(bars.iter().all(|bar| bar.h == plan.plot.h));
+    let mut bars = bars;
+    bars.sort_by(|a, b| a.x.total_cmp(&b.x));
+    assert!((bars[0].right() - bars[1].x).abs() < 0.01);
+}
+
+#[test]
+fn colours_take_the_spec_s_scheme_or_range_and_the_theme_s_otherwise() {
+    let colored = |color: Channel| {
+        laid_out(
+            &Chart::bar(sales())
+                .x(Channel::nominal("month"))
+                .y(Channel::quantitative("sales"))
+                .color(color),
+        )
+    };
+    let inks = |plan: &chart::Plan| -> Vec<Ink> { plan.colors.iter().map(|c| c.ink).collect() };
+    // Nominal with no range: the theme's categorical colours.
+    assert_eq!(
+        inks(&colored(Channel::nominal("region"))),
+        [Ink::Category(0), Ink::Category(1)]
+    );
+    let scheme = |name: &str| -> Scale {
+        Scale {
+            scheme: Some(name.parse::<Scheme>().unwrap().into()),
+            ..Scale::default()
+        }
+    };
+    assert_eq!(
+        inks(&colored(
+            Channel::nominal("region").scale(scheme("category10"))
+        )),
+        [fixed(0x1f77b4), fixed(0xff7f0e)]
+    );
+    let range = Scale {
+        range: Some(Range::Colors(vec![
+            gpui::rgb(0xff0000).into(),
+            gpui::rgb(0x0000ff).into(),
+        ])),
+        reverse: Some(true),
+        ..Scale::default()
+    };
+    assert_eq!(
+        inks(&colored(Channel::nominal("region").scale(range))),
+        [fixed(0x0000ff), fixed(0xff0000)]
+    );
+    // Ordinal with no range: Vega's blues, sampled once per value.
+    let blues: Scheme = "blues".parse().unwrap();
+    assert_eq!(
+        inks(&colored(Channel::ordinal("region"))),
+        blues
+            .discrete(2, None, false)
+            .into_iter()
+            .map(ink)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn a_quantitative_colour_runs_through_a_ramp() {
+    let plan = laid_out(&mark(Mark::Point).color(Channel::quantitative("y")));
+    // y spans 2 to 5: the ends of Vega's blues.
+    let color_of = |row: f32| {
+        plan.colors
+            .iter()
+            .find(|c| c.name.as_deref() == Some(&*row.to_string()))
+            .unwrap()
+            .ink
+    };
+    assert_eq!(color_of(2.0), fixed(0xcfe1f2));
+    assert_eq!(color_of(5.0), fixed(0x0a4a90));
+    // A diverging scale centres on its middle.
+    let diverging = laid_out(
+        &mark(Mark::Point).color(Channel::quantitative("y").scale(Scale {
+            domain_mid: Some(3.0),
+            ..Scale::default()
+        })),
+    );
+    let middle = diverging
+        .colors
+        .iter()
+        .find(|c| c.name.as_deref() == Some("3"))
+        .unwrap()
+        .ink;
+    let blue_orange: Scheme = "blueorange".parse().unwrap();
+    assert_eq!(middle, ink(blue_orange.at(0.5, Some([1.0, 0.0]), false)));
+    // Quantize steps through the scheme's samples.
+    let quantized = laid_out(
+        &mark(Mark::Point).color(Channel::quantitative("y").scale(Scale {
+            kind: Some(ScaleType::Quantize),
+            ..Scale::default()
+        })),
+    );
+    assert_eq!(quantized.legends[0].swatches.len(), 5);
+}
+
+#[test]
+fn stacks_offset_as_their_channel_says() {
+    let stacked = |stack: Stack| {
+        laid_out(
+            &Chart::bar(sales())
+                .x(Channel::nominal("month"))
+                .y(Channel::quantitative("sales").stack(stack))
+                .color(Channel::nominal("region")),
+        )
+    };
+    // Normalized, every stack reaches the top.
+    let plan = stacked(Stack::Normalize);
+    let tops: Vec<f32> = rects(&plan).iter().map(|r| r.y).collect();
+    let top = tops.iter().copied().fold(f32::INFINITY, f32::min);
+    assert!((top - plan.plot.y).abs() < 0.01);
+    assert_eq!(left_labels(&plan).last().unwrap(), "1.0");
+    // Centred, each stack's middle is the largest one's.
+    let plan = stacked(Stack::Center);
+    let bars = rects(&plan);
+    let middle = |x: f32| {
+        let column: Vec<&Rect> = bars.iter().filter(|r| (r.x - x).abs() < 0.5).collect();
+        let lo = column.iter().map(|r| r.y).fold(f32::INFINITY, f32::min);
+        let hi = column
+            .iter()
+            .map(|r| r.bottom())
+            .fold(f32::NEG_INFINITY, f32::max);
+        (lo + hi) / 2.0
+    };
+    let xs: Vec<f32> = bars.iter().map(|r| r.x).collect();
+    assert!((middle(xs[0]) - middle(xs[1])).abs() < 0.01);
+    // Off, each bar stands from zero, a negative one hanging from it.
+    let plan = stacked(Stack::Off);
+    let bars = rects(&plan);
+    let zero = bars[0].bottom();
+    assert_eq!(
+        bars.iter()
+            .filter(|r| (r.bottom() - zero).abs() < 0.01)
+            .count(),
+        4
+    );
+    assert_eq!(bars.iter().filter(|r| (r.y - zero).abs() < 0.01).count(), 1);
+
+    // Areas stack, a series with no row at a place standing at zero there.
+    let data = Data::new()
+        .number("x", [0.0, 1.0, 2.0, 0.0, 2.0])
+        .number("y", [1.0, 1.0, 1.0, 2.0, 2.0])
+        .text("s", ["a", "a", "a", "b", "b"]);
+    let plan = laid_out(
+        &Chart::area(data)
+            .x(Channel::quantitative("x"))
+            .y(Channel::quantitative("y"))
+            .color(Channel::nominal("s")),
+    );
+    let Marks::Areas(b) = &plan.series[1].marks else {
+        panic!()
+    };
+    assert_eq!(b[0].top.len(), 3);
+}
+
+#[test]
+fn scale_types_and_properties_place_positions() {
+    let data = Data::new()
+        .number("x", [1.0, 10.0, 100.0, 1000.0])
+        .number("y", [1.0, 2.0, 3.0, 4.0]);
+    let plan = laid_out(
+        &Chart::point(data)
+            .x(Channel::quantitative("x").scale(Scale {
+                kind: Some(ScaleType::Log),
+                ..Scale::default()
+            }))
+            .y(Channel::quantitative("y")),
+    );
+    let Marks::Points(points) = &plan.series[0].marks else {
+        panic!()
+    };
+    let gaps: Vec<f32> = points.windows(2).map(|p| p[1].at[0] - p[0].at[0]).collect();
+    assert!(gaps.iter().all(|gap| (gap - gaps[0]).abs() < 0.01));
+    // Each power of ten and its multiples in between.
+    let bottom = plan.axes.iter().find(|a| a.side == Side::Bottom).unwrap();
+    assert_eq!(bottom.ticks.len(), 28);
+
+    // A reversed band scale puts the last value first; padding thins bars.
+    let plan = laid_out(
+        &Chart::bar(sales())
+            .x(Channel::nominal("month").scale(Scale {
+                reverse: Some(true),
+                padding_inner: Some(0.5),
+                ..Scale::default()
+            }))
+            .y(Channel::quantitative("sales")),
+    );
+    let bottom = plan.axes.iter().find(|a| a.side == Side::Bottom).unwrap();
+    let first = bottom.ticks[0].at;
+    assert!(first > bottom.ticks[2].at);
+    let bar = rects(&plan)[0];
+    // Three bands with half of each step empty, a quarter step outside.
+    let step = plan.plot.w / (3.0 - 0.5 + 0.5);
+    assert!((bar.w - step * 0.5).abs() < 0.01);
+}
+
+#[test]
+fn colours_come_unscaled_from_a_field_or_its_range_field() {
+    let data = Data::new()
+        .text("name", ["red", "blue"])
+        .text("tone", ["#00ff00", "#0000ff"])
+        .number("v", [1.0, 2.0]);
+    let inks = |color: Channel| -> Vec<Ink> {
+        let plan = laid_out(
+            &Chart::bar(data.clone())
+                .x(Channel::nominal("name"))
+                .y(Channel::quantitative("v"))
+                .color(color),
+        );
+        plan.colors.iter().map(|c| c.ink).collect()
+    };
+    let identity = Scale {
+        kind: Some(ScaleType::Identity),
+        ..Scale::default()
+    };
+    assert_eq!(
+        inks(Channel::nominal("name").scale(identity)),
+        [fixed(0xff0000), fixed(0x0000ff)]
+    );
+    let field = Scale {
+        range: Some(Range::Field("tone".into())),
+        ..Scale::default()
+    };
+    assert_eq!(
+        inks(Channel::nominal("name").scale(field)),
+        [fixed(0x00ff00), fixed(0x0000ff)]
+    );
+}
+
+#[test]
+fn domain_and_range_ends_move_as_written() {
+    let plan = laid_out(
+        &mark(Mark::Point).y(Channel::quantitative("y").scale(Scale {
+            domain_min: Some(-10.0),
+            domain_max: Some(10.0),
+            ..Scale::default()
+        })),
+    );
+    // No nice past the written ends: 0 sits in the middle.
+    let Marks::Points(points) = &plan.series[0].marks else {
+        panic!()
+    };
+    let middle = plan.plot.y + plan.plot.h / 2.0;
+    let five = middle - plan.plot.h / 2.0 * 0.5;
+    assert!((points[1].at[1] - five).abs() < 0.01);
+
+    // A size range's ends.
+    let plan = laid_out(
+        &mark(Mark::Point).size(Channel::quantitative("y").scale(Scale {
+            range_min: Some(100.0),
+            range_max: Some(200.0),
+            zero: Some(false),
+            ..Scale::default()
+        })),
+    );
+    let Marks::Points(points) = &plan.series[0].marks else {
+        panic!()
+    };
+    assert_eq!(points[0].size, 100.0);
+    assert_eq!(points[1].size, 200.0);
+
+    // x from 20 pixels into the plot.
+    let plan = laid_out(
+        &mark(Mark::Point).x(Channel::quantitative("x").scale(Scale {
+            range_min: Some(20.0),
+            zero: Some(false),
+            nice: Some(Nice::Off),
+            ..Scale::default()
+        })),
+    );
+    let Marks::Points(points) = &plan.series[0].marks else {
+        panic!()
+    };
+    assert!((points[0].at[0] - (plan.plot.x + 20.0)).abs() < 0.01);
+}
+
+#[test]
+fn a_time_domain_is_nice_to_an_interval() {
+    let days: Vec<f64> = [3.0, 40.0]
+        .iter()
+        .map(|d| time::parse("2024-01-01").unwrap() + d * time::DAY)
+        .collect();
+    let data = Data::new().number("t", days).number("v", [1.0, 2.0]);
+    let plan = laid_out(
+        &Chart::point(data)
+            .x(Channel::temporal("t").scale(Scale {
+                nice: Some(Nice::Interval {
+                    unit: Unit::Month,
+                    step: 1.0,
+                }),
+                ..Scale::default()
+            }))
+            .y(Channel::quantitative("v")),
+    );
+    // Jan 1 to Mar 1: the first point a 20th of the way along.
+    let Marks::Points(points) = &plan.series[0].marks else {
+        panic!()
+    };
+    let share = (points[0].at[0] - plan.plot.x) / plan.plot.w;
+    assert!((share - 3.0 / 60.0).abs() < 0.001);
+}
+
+#[test]
+fn a_scheme_of_colours_is_a_ramp() {
+    let scale = Scale {
+        scheme: Some(ColorScheme {
+            palette: Palette::Colors(vec![gpui::rgb(0x000000).into(), gpui::rgb(0xffffff).into()]),
+            extent: None,
+            count: None,
+        }),
+        interpolate: Some(interpolate::Interpolate::Rgb { gamma: 1.0 }),
+        ..Scale::default()
+    };
+    let plan = laid_out(&mark(Mark::Point).color(Channel::quantitative("y").scale(scale)));
+    let ink = |name: &str| {
+        plan.colors
+            .iter()
+            .find(|c| c.name.as_deref() == Some(name))
+            .unwrap()
+            .ink
+    };
+    assert_eq!(ink("2"), fixed(0x000000));
+    assert_eq!(ink("5"), fixed(0xffffff));
+}
+
+#[test]
+fn a_path_symbol_is_drawn_from_its_path() {
+    let star: Shape = "M0,-1L1,1L-1,1Z".parse().unwrap();
+    let outlines = star.outlines(16.0, 0.0);
+    assert_eq!(outlines.len(), 1);
+    // Half the square root of the size: 2 pixels a unit.
+    assert_eq!(outlines[0][0], [0.0, -2.0]);
+    assert!("not a path".parse::<Shape>().is_err());
+}
+
+#[test]
+fn bars_along_a_continuous_axis_are_thin() {
+    let plan = laid_out(&mark(Mark::Bar));
+    let bars = rects(&plan);
+    assert_eq!(bars.len(), 3);
+    assert!(bars.iter().all(|bar| (bar.w - 5.0).abs() < 0.01));
+    // y alone with a horizontal orient: thin bars across the plot.
+    let plan = laid_out(
+        &Chart::bar(xy())
+            .y(Channel::quantitative("y"))
+            .properties(Properties {
+                orient: Some(Orient::Horizontal),
+                ..Properties::default()
+            }),
+    );
+    let bars = rects(&plan);
+    assert!(
+        bars.iter()
+            .all(|bar| bar.w == plan.plot.w && (bar.h - 5.0).abs() < 0.01)
+    );
 }

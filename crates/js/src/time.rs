@@ -2,8 +2,11 @@
 //! ticks d3-scale's time scale chooses. In [`LocalZone::utc`] they are d3's
 //! `utc` intervals.
 
-use crate::date::{Date, LocalZone};
-use std::f64::consts::SQRT_2;
+use crate::{
+    array,
+    date::{Date, LocalZone},
+    number,
+};
 
 const SECOND: f64 = 1000.0;
 const MINUTE: f64 = 60.0 * SECOND;
@@ -80,13 +83,16 @@ impl Unit {
 /// than one.
 #[derive(Clone, Copy, Debug)]
 pub struct Interval {
-    unit: Unit,
+    pub unit: Unit,
     /// The day weeks start on, 0 for Sunday.
     week_start: f64,
-    step: f64,
+    pub step: f64,
     /// The start of the week the epoch is in, from which `every` counts
     /// weeks.
     epoch: f64,
+    /// Whether a day's field is days since the epoch, as d3's `unixDay`
+    /// tests a step, rather than the day of the month.
+    unix: bool,
 }
 
 impl Interval {
@@ -98,6 +104,7 @@ impl Interval {
             week_start,
             step: 1.0,
             epoch: 0.0,
+            unix: false,
         }
     }
 
@@ -124,6 +131,7 @@ impl Interval {
             Unit::Second => (d.time() / SECOND).floor().rem_euclid(60.0),
             Unit::Minute => d.minutes(),
             Unit::Hour => d.hours(),
+            Unit::Day if self.unix => number::to_int32(d.time() / DAY) as f64,
             Unit::Day => d.date() - 1.0,
             Unit::Month => d.month(),
             _ => f64::NAN,
@@ -319,53 +327,55 @@ fn modulo(a: f64, b: f64) -> f64 {
     ((a % b) + b) % b
 }
 
-fn tick_step(start: f64, stop: f64, count: f64) -> f64 {
-    let step = (stop - start) / count.max(0.0);
-    let power = step.log10().floor();
-    let error = step / 10f64.powf(power);
-    let factor = if error >= 50f64.sqrt() {
-        10.0
-    } else if error >= 10f64.sqrt() {
-        5.0
-    } else if error >= SQRT_2 {
-        2.0
-    } else {
-        1.0
+/// d3-time's `tickInterval(start, stop, count)`: the interval about
+/// `count` ticks from `start` to `stop` fall on. `None` where it has none.
+/// In [`LocalZone::utc`], days count from the epoch, as `unixDay`'s do.
+pub fn tick_interval(start: f64, stop: f64, count: f64, zone: &LocalZone) -> Option<Interval> {
+    let target = (stop - start).abs() / count;
+    let i = AUTO.partition_point(|(.., duration)| *duration <= target);
+    let every = |unit: Unit, step: f64| {
+        let step = step.floor();
+        (step.is_finite() && step > 0.0).then(|| Interval::every(unit, step, 0.0, zone))
     };
-    10f64.powf(power) * factor
+    if i == AUTO.len() {
+        return every(
+            Unit::Year,
+            array::tick_step(start / YEAR, stop / YEAR, count),
+        );
+    }
+    if i == 0 {
+        return every(
+            Unit::Millisecond,
+            array::tick_step(start, stop, count).max(1.0),
+        );
+    }
+    let (unit, step, _) = AUTO[if target / AUTO[i - 1].2 < AUTO[i].2 / target {
+        i - 1
+    } else {
+        i
+    }];
+    let interval = every(unit, step)?;
+    Some(Interval {
+        unix: unit == Unit::Day && *zone == LocalZone::utc(),
+        ..interval
+    })
 }
 
-/// About `count` ticks at round times from `start` to `stop`, as d3's time
-/// scale chooses them.
+/// d3-time's `timeTicks(start, stop, count)`, or `utcTicks` in
+/// [`LocalZone::utc`]: about `count` round times from `start` to `stop`
+/// inclusive, in their order.
 pub fn ticks(start: f64, stop: f64, count: f64, zone: &LocalZone) -> Vec<f64> {
-    let target = (stop - start) / count;
-    let mut i = 0;
-    while i < AUTO.len() && AUTO[i].2 <= target {
-        i += 1;
-    }
-    let interval = if i == AUTO.len() {
-        Interval::every(
-            Unit::Year,
-            1f64.max(tick_step(start / YEAR, stop / YEAR, count)),
-            0.0,
-            zone,
-        )
-    } else if i == 0 {
-        Interval::every(
-            Unit::Millisecond,
-            tick_step(start, stop, count).max(1.0),
-            0.0,
-            zone,
-        )
-    } else {
-        let (unit, step, _) = AUTO[if target / AUTO[i - 1].2 < AUTO[i].2 / target {
-            i - 1
-        } else {
-            i
-        }];
-        Interval::every(unit, step, 0.0, zone)
+    let reverse = stop < start;
+    let (start, stop) = match reverse {
+        true => (stop, start),
+        false => (start, stop),
     };
-    interval
-        .ticks(start, stop, 4.0 * count + 8.0, zone)
-        .unwrap_or_default()
+    let mut ticks = match tick_interval(start, stop, count, zone) {
+        Some(interval) => interval.range(start, stop + 1.0, 1.0, zone),
+        None => Vec::new(),
+    };
+    if reverse {
+        ticks.reverse();
+    }
+    ticks
 }

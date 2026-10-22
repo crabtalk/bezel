@@ -1,0 +1,42 @@
+{
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+ "data": {
+  "values": [
+   {"t": "2020-01-01T00:00:00.100Z", "v": 1, "g": "a"},
+   {"t": "2020-01-01T00:00:00.900Z", "v": 2, "g": "a"},
+   {"t": "2020-01-01T00:00:01.000Z", "v": 3, "g": "a"},
+   {"t": "2020-01-01T00:00:01.999Z", "v": 4, "g": "b"},
+   {"t": "2020-01-01T00:00:00.500Z", "v": 5, "g": "b"}
+  ]
+ },
+ "layer": [
+  {
+   "mark": "point",
+   "encoding": {
+    "x": {"field": "g", "type": "nominal"},
+    "y": {"aggregate": "sum", "field": "v", "type": "quantitative"},
+    "detail": {"field": "t", "type": "temporal"}
+   }
+  },
+  {
+   "mark": "point",
+   "encoding": {
+    "x": {"field": "g", "type": "nominal"},
+    "y": {"aggregate": "sum", "field": "v", "type": "quantitative"},
+    "color": {"field": "t", "type": "temporal", "timeUnit": "utcsecondsmilliseconds"}
+   }
+  },
+  {
+   "transform": [
+    {"timeUnit": "utcsecondsmilliseconds", "field": "t", "as": "u"},
+    {"aggregate": [{"op": "count", "as": "n"}, {"op": "distinct", "field": "u", "as": "k"}], "groupby": ["g"]}
+   ],
+   "mark": "point",
+   "encoding": {
+    "x": {"field": "g", "type": "nominal"},
+    "y": {"field": "n", "type": "quantitative"},
+    "size": {"field": "k", "type": "quantitative"}
+   }
+  }
+ ]
+}

@@ -2,6 +2,7 @@
 //! [Vega-Lite](https://vega.github.io/vega-lite/) over columnar [`Data`].
 //! Mark, channel and field type names are Vega-Lite's.
 
+mod color;
 pub mod data;
 pub mod decimate;
 #[cfg(feature = "vega-lite")]
