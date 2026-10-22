@@ -173,7 +173,7 @@ pub fn pivot(view: &View, def: &Pivot, tuples: &[Tuple]) -> Result<Vec<Tuple>, E
             keys.push(k);
         }
     }
-    keys.sort_by(Value::ascending);
+    d3::array::sort_by(&mut keys, Value::ascending);
     if limit > 0.0 {
         keys.truncate(limit as usize);
     }

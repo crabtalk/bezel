@@ -17,7 +17,10 @@ pub use encode::{
     Block, Channel, Encode, Entry, FieldObject, FieldRef, Operand, Rule, ScaleRef, string_value,
 };
 pub use mark::{From, Mark, Overlap};
-pub use scale::{DataDomain, Domain, Nice, Range, Scale, Sort, SortBy, StepRange};
+pub use scale::{
+    Bins, DataDomain, Domain, DomainField, Interpolate, Nice, NiceInterval, Range, Scale,
+    SchemeRange, Sort, SortBy, StepRange,
+};
 pub use transform::{
     Aggregate, Bin, Collect, Compare, Countpattern, Cross, Density, Distribution, Dotbin, Extent,
     Field, Filter, Flatten, Fold, Formula, Identifier, Impute, Joinaggregate, Kde, Loess, Lookup,

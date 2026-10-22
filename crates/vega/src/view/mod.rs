@@ -9,10 +9,9 @@ use crate::{
     expr::{Context, Expr},
     guide::{axis, truthy},
     layout, loader,
-    path::Path,
-    scale::{self, Scale},
+    scale::Scale,
     scene::{Item, Mark},
-    spec::{self, Domain, Nice, Param, Range, SignalRef, Sort},
+    spec::{self, Param, SignalRef},
     statistics::Random,
     transform::Tuple,
     value::Value,
@@ -22,9 +21,10 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value as Json, json};
 use std::{
     cell::{Cell, OnceCell, RefCell},
-    cmp::Ordering,
     collections::HashMap,
 };
+
+mod scale;
 
 /// Reads a data set's `url` to its text; `None` where it cannot.
 pub type Loader<'a> = &'a dyn Fn(&str) -> Option<String>;
@@ -71,7 +71,7 @@ pub struct View<'a> {
     identifier: Cell<f64>,
     random: RefCell<Random>,
     scales: IndexMap<String, spec::Scale>,
-    scale_values: Vec<OnceCell<Option<Scale>>>,
+    scale_values: Vec<OnceCell<Result<Scale, Error>>>,
     /// The first error a lazily computed value met.
     error: RefCell<Option<Error>>,
     /// The bounds of the root group's content, from its origin.
@@ -235,18 +235,33 @@ impl<'a> View<'a> {
             .clone()
     }
 
-    /// The scale named `name`, configured.
+    /// The scale named `name`, configured; `None` where there is none or it
+    /// failed, its error kept for the scenegraph.
     pub fn scale(&self, name: &str) -> Option<&Scale> {
+        match self.try_scale(name)? {
+            Ok(scale) => Some(scale),
+            Err(error) => {
+                self.fail(error);
+                None
+            }
+        }
+    }
+
+    /// The scale named `name`, or why it could not be configured; `None`
+    /// where the spec has no such scale.
+    pub fn try_scale(&self, name: &str) -> Option<Result<&Scale, Error>> {
         let (index, _, def) = self.scales.get_full(name)?;
-        self.scale_values[index]
-            .get_or_init(|| match self.build_scale(def) {
-                Ok(scale) => Some(scale),
-                Err(error) => {
-                    self.fail(error);
-                    None
-                }
-            })
-            .as_ref()
+        Some(
+            self.scale_values[index]
+                .get_or_init(|| self.build_scale(def))
+                .as_ref()
+                .map_err(Clone::clone),
+        )
+    }
+
+    /// The names of the top-level scales, in the spec's order.
+    pub fn scale_names(&self) -> impl Iterator<Item = &str> {
+        self.scales.keys().map(String::as_str)
     }
 
     /// The names of the top-level data sets, in the spec's order.
@@ -440,181 +455,6 @@ impl<'a> View<'a> {
             }
         }
         Ok(tuples)
-    }
-
-    fn build_scale(&self, def: &spec::Scale) -> Result<Scale, Error> {
-        let type_: scale::Type = def
-            .type_
-            .as_deref()
-            .unwrap_or("linear")
-            .parse()
-            .map_err(Error::Spec)?;
-        let number = |value: &Option<Json>| -> Result<Option<f64>, Error> {
-            value
-                .as_ref()
-                .map(|v| self.property(v).map(|v| v.to_number()))
-                .transpose()
-        };
-        let flag = |value: &Option<Json>| -> Result<Option<bool>, Error> {
-            value
-                .as_ref()
-                .map(|v| self.property(v).map(|v| v.truthy()))
-                .transpose()
-        };
-        let mut params = scale::Params {
-            padding: number(&def.padding)?,
-            padding_inner: number(&def.padding_inner)?,
-            padding_outer: number(&def.padding_outer)?,
-            align: number(&def.align)?,
-            round: flag(&def.round)?.unwrap_or(false),
-            reverse: flag(&def.reverse)?.unwrap_or(false),
-            clamp: flag(&def.clamp)?.unwrap_or(false),
-            zero: flag(&def.zero)?,
-            ..scale::Params::default()
-        };
-        params.domain = match &def.domain {
-            None => None,
-            Some(Domain::Signal(s)) => {
-                Some(match self.eval(&parse(&s.signal)?, &Value::Undefined)? {
-                    Value::Array(items) => items.to_vec(),
-                    other => vec![other],
-                })
-            }
-            Some(Domain::Values(values)) => Some(
-                values
-                    .iter()
-                    .map(|v| self.property(v))
-                    .collect::<Result<_, _>>()?,
-            ),
-            Some(Domain::Data(domain)) => Some(self.data_domain(type_, domain)?),
-        };
-        params.nice = match &def.nice {
-            None | Some(Nice::Flag(false)) => None,
-            Some(Nice::Flag(true)) => Some(10.0),
-            Some(Nice::Count(n)) => Some(*n),
-            Some(Nice::Signal(s)) => match self.eval(&parse(&s.signal)?, &Value::Undefined)? {
-                Value::Bool(true) => Some(10.0),
-                v if !v.truthy() => None,
-                v => Some(v.to_number()),
-            },
-        };
-        match &def.range {
-            None => {}
-            Some(Range::Signal(s)) => {
-                params.range = Some(numbers(self.eval(&parse(&s.signal)?, &Value::Undefined)?));
-            }
-            Some(Range::Named(name)) => {
-                let signal = |name: &str| self.signal(name).to_number();
-                params.range = Some(match name.as_str() {
-                    "width" => vec![0.0, signal("width")],
-                    "height" if type_.is_discrete() => vec![0.0, signal("height")],
-                    "height" => vec![signal("height"), 0.0],
-                    other => {
-                        return Err(Error::Unsupported(format!("scale range \"{other}\"")));
-                    }
-                });
-            }
-            Some(Range::Step(step)) => {
-                params.range_step = Some(self.property(&step.step)?.to_number());
-            }
-            Some(Range::Values(values)) => {
-                params.range = Some(
-                    values
-                        .iter()
-                        .map(|v| self.property(v).map(|v| v.to_number()))
-                        .collect::<Result<_, _>>()?,
-                );
-            }
-        }
-        Ok(Scale::new(type_, &params))
-    }
-
-    /// A scale domain read from data: the values of a discrete scale, the
-    /// extent of a continuous one.
-    fn data_domain(
-        &self,
-        type_: scale::Type,
-        domain: &spec::DataDomain,
-    ) -> Result<Vec<Value>, Error> {
-        let data = domain
-            .data
-            .as_deref()
-            .ok_or_else(|| Error::Unsupported("a domain without data".into()))?;
-        let fields: Vec<&str> = match (&domain.field, &domain.fields) {
-            (Some(field), _) => vec![field],
-            (None, Some(fields)) => fields.iter().map(String::as_str).collect(),
-            (None, None) => return Err(Error::Spec("a domain without a field".into())),
-        };
-        let tuples = self.data(data)?;
-        if type_.is_discrete() {
-            if fields.len() > 1 {
-                return Err(Error::Unsupported(
-                    "a discrete domain of several fields".into(),
-                ));
-            }
-            let path: Path = fields[0].parse().map_err(Error::Spec)?;
-            // `countsRef`: one key a distinct value, in order of first sight.
-            let mut keys: Vec<Value> = Vec::new();
-            let mut seen = HashMap::new();
-            for tuple in tuples {
-                let value = path.get(&tuple.datum).map_err(|e| Error::Eval(e.into()))?;
-                seen.entry(value.to_string()).or_insert_with(|| {
-                    keys.push(value.clone());
-                });
-            }
-            match &domain.sort {
-                None | Some(Sort::Flag(false)) => {}
-                Some(Sort::Flag(true)) => keys.sort_by(Value::ascending),
-                Some(Sort::By(by))
-                    if by.op.is_none() && by.field.as_deref().is_none_or(|f| f == "key") =>
-                {
-                    keys.sort_by(Value::ascending);
-                    if by.order.as_deref() == Some("descending") {
-                        keys.reverse();
-                    }
-                }
-                Some(Sort::By(_)) => {
-                    return Err(Error::Unsupported("a domain sorted by an aggregate".into()));
-                }
-            }
-            Ok(keys)
-        } else {
-            // `MultiExtent` over each field's `Extent`.
-            let (mut min, mut max) = (Value::Undefined, Value::Undefined);
-            for field in fields {
-                let path: Path = field.parse().map_err(Error::Spec)?;
-                let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
-                for tuple in tuples {
-                    let v = path.get(&tuple.datum).map_err(|e| Error::Eval(e.into()))?;
-                    if v.is_nullish() || matches!(&v, Value::String(s) if s.is_empty()) {
-                        continue;
-                    }
-                    let v = v.to_number();
-                    if v < lo {
-                        lo = v;
-                    }
-                    if v > hi {
-                        hi = v;
-                    }
-                }
-                let (lo, hi) = if lo.is_finite() && hi.is_finite() {
-                    (Value::Number(lo), Value::Number(hi))
-                } else {
-                    (Value::Undefined, Value::Undefined)
-                };
-                if (min.is_nullish() || lo.compare(&min) == Some(Ordering::Less))
-                    && !lo.is_nullish()
-                {
-                    min = lo;
-                }
-                if (max.is_nullish() || hi.compare(&max) == Some(Ordering::Greater))
-                    && !hi.is_nullish()
-                {
-                    max = hi;
-                }
-            }
-            Ok(vec![min, max])
-        }
     }
 
     /// The scenegraph: the root group mark and everything in it.
@@ -818,7 +658,7 @@ impl<'a> View<'a> {
             .map(|s| self.property(s))
             .transpose()?;
         let count = match min_step {
-            Some(step) if !step.is_nullish() => layout::tick_count(scale, count, step.to_number()),
+            Some(step) if !step.is_nullish() => scale.tick_count(count, Some(step.to_number())),
             _ => count,
         };
         if def.values.is_some() || def.format_type.is_some() {
@@ -897,12 +737,5 @@ fn ingest(value: Value) -> Value {
     match value {
         Value::Object(_) => value,
         other => Value::Object(vec![("data".into(), other)].into()),
-    }
-}
-
-fn numbers(value: Value) -> Vec<f64> {
-    match value {
-        Value::Array(items) => items.iter().map(Value::to_number).collect(),
-        other => vec![other.to_number()],
     }
 }

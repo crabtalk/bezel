@@ -14,7 +14,7 @@
 
 use serde_json::Value as Json;
 use std::{collections::BTreeSet, env, fs, path::Path};
-use vega::{View, spec::Spec};
+use vega::{View, spec::Spec, value::Value};
 
 const JSDELIVR: &str = "https://cdn.jsdelivr.net/npm/vega-datasets@";
 
@@ -113,6 +113,59 @@ fn data_side(mut spec: Json) -> Json {
     Json::Object(std::mem::take(spec))
 }
 
+/// The data side and the scales of a spec.
+fn scale_side(spec: Json) -> Json {
+    let scales = spec.get("scales").cloned();
+    let mut side = data_side(spec);
+    if let Some(scales) = scales {
+        side.as_object_mut()
+            .expect("spec")
+            .insert("scales".into(), scales);
+    }
+    side
+}
+
+/// Our top-level scales as `reference.mjs` writes them: type, domain,
+/// range, bandwidth, and what samples of the domain map to.
+fn scales(view: &View) -> Result<Json, String> {
+    let mut out = serde_json::Map::new();
+    for name in view.scale_names() {
+        let scale = view
+            .try_scale(name)
+            .expect("named")
+            .map_err(|e| e.to_string())?;
+        let domain = scale.domain();
+        let continuous = domain.len() >= 2 && domain.iter().all(|d| matches!(d, Value::Number(_)));
+        let points: Vec<Value> = match continuous {
+            true => {
+                let (d0, d1) = (domain[0].to_number(), domain[domain.len() - 1].to_number());
+                (0..9)
+                    .map(|i| Value::Number(d0 + (i as f64 / 8.0) * (d1 - d0)))
+                    .collect()
+            }
+            false => domain.clone(),
+        };
+        let samples: Vec<Json> = points
+            .iter()
+            .map(|p| Json::Array(vec![Json::from(p), Json::from(&scale.apply(p))]))
+            .collect();
+        let mut entry = serde_json::json!({
+            "type": scale.type_.name(),
+            "domain": Json::from(&Value::from(domain)),
+            "range": Json::from(&Value::from(scale.range())),
+            "samples": samples,
+        });
+        if matches!(
+            scale.type_,
+            vega::scale::Type::Band | vega::scale::Type::Point
+        ) {
+            entry["bandwidth"] = Json::from(scale.bandwidth());
+        }
+        out.insert(name.into(), entry);
+    }
+    Ok(Json::Object(out))
+}
+
 /// Our tuples of each top-level data set, as `JSON.stringify` writes them.
 fn data(view: &View) -> Result<Json, String> {
     let mut sets = serde_json::Map::new();
@@ -204,6 +257,19 @@ fn the_scenegraphs_that_match_are_the_pass_list() {
             })
         },
         scenegraph,
+    );
+}
+
+#[test]
+#[ignore = "needs VEGA_REFERENCE"]
+fn the_scales_that_match_are_the_pass_list() {
+    check(
+        "scales.txt",
+        "scales",
+        0.0,
+        scale_side,
+        |reference, name| read(reference, name, "scales"),
+        scales,
     );
 }
 

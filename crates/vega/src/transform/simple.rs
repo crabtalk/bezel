@@ -34,29 +34,10 @@ pub fn formula(view: &View, def: &Formula, mut tuples: Vec<Tuple>) -> Result<Vec
     Ok(tuples)
 }
 
-/// `[min, max]` of the field read as numbers, null and `""` skipped;
-/// `[undefined, undefined]` where either is not finite.
+/// `[min, max]` of the field read as numbers.
 pub fn extent(view: &View, def: &Extent, tuples: &[Tuple]) -> Result<Value, Error> {
     let field = Accessor::new(view, &def.field)?;
-    let (mut min, mut max) = (f64::INFINITY, f64::NEG_INFINITY);
-    for t in tuples {
-        let v = field.get(view, &t.datum)?;
-        if v.is_nullish() || matches!(&v, Value::String(s) if s.is_empty()) {
-            continue;
-        }
-        let v = v.to_number();
-        if v < min {
-            min = v;
-        }
-        if v > max {
-            max = v;
-        }
-    }
-    Ok(if min.is_finite() && max.is_finite() {
-        vec![Value::Number(min), Value::Number(max)].into()
-    } else {
-        vec![Value::Undefined, Value::Undefined].into()
-    })
+    Ok(super::extent(view, &field, tuples)?.to_vec().into())
 }
 
 pub fn collect(view: &View, def: &Collect, mut tuples: Vec<Tuple>) -> Result<Vec<Tuple>, Error> {

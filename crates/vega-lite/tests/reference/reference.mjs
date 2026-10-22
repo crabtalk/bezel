@@ -31,6 +31,24 @@ function dates(key, value) {
   return this[key] instanceof Date ? this[key].getTime() : value;
 }
 
+// A scale as `scales.json` holds it: its domain values, and for a
+// continuous domain the eight points between its ends, mapped.
+function sample(scale) {
+  const domain = scale.domain();
+  const range = typeof scale.range === 'function' ? scale.range() : undefined;
+  const continuous = domain.length >= 2 && domain.every((d) => typeof d === 'number' || d instanceof Date);
+  const points = continuous
+    ? Array.from({length: 9}, (_, i) => +domain[0] + (i / 8) * (+domain[domain.length - 1] - +domain[0]))
+    : domain;
+  return {
+    type: scale.type,
+    domain,
+    range,
+    bandwidth: scale.bandwidth ? scale.bandwidth() : undefined,
+    samples: points.map((p) => [p, scale(p)]),
+  };
+}
+
 const [out, ...files] = process.argv.slice(2);
 if (out === undefined) {
   console.error('usage: node reference.mjs <out-dir> [spec…]');
@@ -52,6 +70,8 @@ for (const file of names) {
     writeFileSync(join(out, `${name}.view.json`), JSON.stringify(placed) + '\n');
     const data = Object.fromEntries((spec.data ?? []).map((d) => [d.name, view.data(d.name)]));
     writeFileSync(join(out, `${name}.data.json`), JSON.stringify(data, dates) + '\n');
+    const scales = Object.fromEntries((spec.scales ?? []).map((s) => [s.name, sample(view.scale(s.name))]));
+    writeFileSync(join(out, `${name}.scales.json`), JSON.stringify(scales, dates) + '\n');
   } catch (error) {
     writeFileSync(join(out, `${name}.error.json`), JSON.stringify({ message: String(error.message ?? error) }) + '\n');
   } finally {

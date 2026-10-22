@@ -188,7 +188,7 @@ pub fn assemble(scales: &[Component], main: &str) -> Vec<vg::Scale> {
                 }),
                 Domain::Fields(fields) => vg::Domain::Data(vg::DataDomain {
                     data: Some(main.into()),
-                    fields: Some(fields.clone()),
+                    fields: Some(fields.iter().cloned().map(vg::DomainField::Name).collect()),
                     ..Default::default()
                 }),
             }),

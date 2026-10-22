@@ -161,30 +161,6 @@ fn axis(mark: &mut Mark, width: f64, height: f64) -> Bounds {
     bounds
 }
 
-/// vega-scale's `tickCount` with a minimum step between ticks.
-pub fn tick_count(scale: &Scale, count: f64, min_step: f64) -> f64 {
-    let domain = scale.domain();
-    let (Some(first), Some(last)) = (domain.first(), domain.last()) else {
-        return count;
-    };
-    let (a, b) = (first.to_number(), last.to_number());
-    let (lo, hi) = (a.min(b), a.max(b));
-    let steps = ((hi - lo) / min_step).floor();
-    let mut count = count.min(
-        if steps == 0.0 || steps.is_nan() {
-            1.0
-        } else {
-            steps
-        } + 1.0,
-    );
-    if matches!(scale, Scale::Linear(_)) && lo < hi {
-        while count > 1.0 && d3::array::tick_step(lo, hi, count) < min_step {
-            count -= 1.0;
-        }
-    }
-    count
-}
-
 /// Whether `a` and `b` overlap, closer than `sep` pixels.
 fn intersect(a: &Bounds, b: &Bounds, sep: f64) -> bool {
     sep > (b.x1 - a.x2)
@@ -227,7 +203,7 @@ pub fn overlap<'s>(
             .strip_prefix("datum.")
             .ok_or_else(|| Error::Unsupported(format!("overlap order {order}")))?;
         let key = |i: usize| mark.items[i].datum.get(&field.into()).unwrap_or_default();
-        source.sort_by(|&a, &b| key(a).ascending(&key(b)));
+        d3::array::sort_by(&mut source, |&a, &b| key(a).ascending(&key(b)));
     }
     for &i in &source {
         mark.items[i].set("opacity", Value::Number(1.0));
@@ -293,7 +269,7 @@ pub fn overlap<'s>(
         if let (Some(scale), Some(tolerance)) = (scale, tolerance)
             && tolerance >= 0.0
         {
-            let range = scale.range();
+            let range = scale.range_numbers();
             let (r0, r1) = (range[0], range[range.len() - 1]);
             let mut b = Bounds::default();
             match bound.get("orient").and_then(Json::as_str) {

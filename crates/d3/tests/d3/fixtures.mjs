@@ -3,7 +3,8 @@
 // arc, values through d3-array's ticks, d3-scale's scales, d3-interpolate and
 // vega-scale's schemes and band scales, and writes each case and its output to
 // `format.json`, `time_format.json`, `shape.json` and `scale.json` beside this
-// file. Local time is America/New_York.
+// file. Local time is America/New_York. `sort.json` holds arrays sorted by
+// the engine's own `Array.prototype.sort`.
 //
 //   npm install && npm run fixtures
 import { writeFileSync } from 'node:fs';
@@ -410,3 +411,18 @@ writeFileSync(
 
 console.log({ ticks: ticks.length, continuous: continuous.length, time: calendar.length, band: band.length, discretizing: discretizing.length, sequential: sequential.length, between: between.length, schemes: schemes.length });
 console.log({ curve: curve.length, arc: arc.length, number: number.length, prefix: prefix.length, precision: precision.length, specifier: specifier.length, time: calendar.length, parse: parse.length });
+
+// Array.prototype.sort as the engine runs it: arrays of small integers sorted
+// with `inconsistent`, which is not a total order, and with `stable`, which
+// ties items of one last digit.
+const inconsistent = (a, b) => ((a * 31 + b * 17) % 7) - 3;
+const stable = (a, b) => (a % 10) - (b % 10);
+let seed = 7;
+const next = () => (seed = (seed * 16807) % 2147483647);
+const sort = [];
+for (const n of [0, 1, 2, 3, 5, 31, 32, 33, 63, 64, 65, 100, 257, 1000, 3000]) {
+  const input = Array.from({ length: n }, () => next() % 1000);
+  sort.push({ comparator: 'inconsistent', input, output: input.slice().sort(inconsistent) });
+  sort.push({ comparator: 'stable', input, output: input.slice().sort(stable) });
+}
+writeFileSync(join(dir, 'sort.json'), JSON.stringify(sort) + '\n');

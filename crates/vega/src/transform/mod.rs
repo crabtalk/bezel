@@ -9,9 +9,10 @@ use crate::{
     value::Value,
     view::View,
 };
+use d3::array;
 use std::{cmp::Ordering, collections::HashMap};
 
-mod aggregate;
+pub(crate) mod aggregate;
 mod bin;
 mod countpattern;
 mod density;
@@ -273,14 +274,14 @@ impl Comparator {
     }
 
     /// `items` sorted by the tuple each names, stably by `tupleid`.
-    pub fn sort_by<'t, T>(
+    pub fn sort_by<'t, T: Clone>(
         &self,
         view: &View,
         items: &mut [T],
         tuple: impl Fn(&T) -> &'t Tuple,
     ) -> Result<(), Error> {
         let mut error = None;
-        items.sort_by(|a, b| {
+        array::sort_by(items, |a, b| {
             let (a, b) = (tuple(a), tuple(b));
             match self.compare(view, &a.datum, &b.datum) {
                 Ok(Ordering::Equal) => a.id.cmp(&b.id),
@@ -360,6 +361,30 @@ pub(crate) fn partition(
             Ok(Group { dims, rows })
         })
         .collect()
+}
+
+/// The `extent` transform's value: `[min, max]` of `field` read as
+/// numbers, null and `""` skipped; `[undefined, undefined]` where either is
+/// not finite.
+pub(crate) fn extent(view: &View, field: &Accessor, tuples: &[Tuple]) -> Result<[Value; 2], Error> {
+    let (mut min, mut max) = (f64::INFINITY, f64::NEG_INFINITY);
+    for t in tuples {
+        let v = field.get(view, &t.datum)?;
+        if v.is_nullish() || matches!(&v, Value::String(s) if s.is_empty()) {
+            continue;
+        }
+        let v = v.to_number();
+        if v < min {
+            min = v;
+        }
+        if v > max {
+            max = v;
+        }
+    }
+    Ok(match min.is_finite() && max.is_finite() {
+        true => [Value::Number(min), Value::Number(max)],
+        false => [Value::Undefined, Value::Undefined],
+    })
 }
 
 /// The value of an optional parameter, `default` where it is not written.

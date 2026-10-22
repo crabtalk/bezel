@@ -172,8 +172,13 @@ fn pow10(x: f64) -> f64 {
 }
 
 impl Continuous {
-    /// `transform` from `domain` onto `range`, unclamped and unrounded.
+    /// `transform` from `domain` onto `range`, unclamped and unrounded. A
+    /// time scale's domain is held as dates are: whole milliseconds.
     pub fn new(transform: Transform, domain: Vec<f64>, range: Vec<f64>) -> Self {
+        let domain = match &transform {
+            Transform::Time(zone) => domain.iter().map(|&d| zone.date(d).time()).collect(),
+            _ => domain,
+        };
         Self {
             transform,
             domain,

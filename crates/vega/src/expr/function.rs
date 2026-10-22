@@ -276,13 +276,6 @@ impl Function {
             .collect::<Result<Vec<_>, _>>()?;
         let arg = |i: usize| args.get(i).unwrap_or(&UNDEFINED);
         let scale = || (row.scale)(&arg(0).to_string());
-        let numbers = |values: Vec<f64>| -> Value {
-            values
-                .into_iter()
-                .map(Value::Number)
-                .collect::<Vec<_>>()
-                .into()
-        };
         Ok(match self {
             Self::Bandspace => {
                 let n = |i: usize| match arg(i).to_number() {
@@ -296,7 +289,7 @@ impl Function {
             }
             Self::Domain => scale().map_or_else(|| Vec::new().into(), |s| s.domain().into()),
             Self::Range | Self::EncodeRange => {
-                scale().map_or_else(|| Vec::new().into(), |s| numbers(s.range()))
+                scale().map_or_else(|| Vec::new().into(), |s| s.range().into())
             }
             Self::Scale | Self::EncodeScale => {
                 scale().map_or(Value::Undefined, |s| s.apply(arg(1)))
