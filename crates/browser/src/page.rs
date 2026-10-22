@@ -2,6 +2,7 @@ use crate::{ConsoleMessage, DataStore, LoadState, host::Surface};
 use gpui::{AnyWindowHandle, App, Bounds, FocusHandle, Keystroke, Pixels, RenderImage, Window};
 use std::{
     cell::{Cell, RefCell},
+    rc::Rc,
     sync::Arc,
 };
 
@@ -29,6 +30,8 @@ pub(crate) enum Report {
     Console(ConsoleMessage),
     /// A still of the page, taken for a cover; `None` if the capture failed.
     Still(Option<Arc<RenderImage>>),
+    /// The page was built, or failed to be, after the paint that asked for it.
+    Built,
 }
 
 /// Whether something is painted over the page.
@@ -69,6 +72,9 @@ pub(crate) struct Page {
     pub(crate) inspector: Cell<bool>,
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     view: std::cell::OnceCell<Option<wry::WebView>>,
+    /// A build is on its way; see [`Page::request`].
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    building: Cell<bool>,
     /// Where the page last sat; `None` before the first paint and while parked.
     placed: Cell<Option<Bounds<Pixels>>>,
     /// The window the page is in; `None` before the first paint.
@@ -103,6 +109,8 @@ impl Page {
             inspector: Cell::new(false),
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             view: std::cell::OnceCell::new(),
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            building: Cell::new(false),
             placed: Cell::new(None),
             window: Cell::new(None),
             owner: Cell::new(0),
@@ -124,8 +132,8 @@ impl Surface for Page {
         &self.owner
     }
 
-    fn place(&self, bounds: Bounds<Pixels>, window: &Window) {
-        Page::place(self, bounds, window);
+    fn place(this: &Rc<Self>, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
+        Page::place(this, bounds, window, cx);
     }
 
     fn park(&self) {
@@ -233,32 +241,63 @@ impl Page {
             send('error', ['Uncaught (in promise)', event.reason]));
     })();";
 
-    fn place(&self, bounds: Bounds<Pixels>, window: &Window) {
-        self.uncover();
-        let view = self.view.get_or_init(|| self.build(bounds, window));
+    fn place(this: &Rc<Self>, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
+        this.uncover();
+        let Some(view) = this.view.get() else {
+            Self::request(this, bounds, window, cx);
+            return;
+        };
         let Some(view) = view else { return };
-        if self.window.get() != Some(window.window_handle()) {
-            self.give_keys();
-            self.platform.parked();
+        if this.window.get() != Some(window.window_handle()) {
+            this.give_keys();
+            this.platform.parked();
             if !platform::reparent(view, window) {
                 return;
             }
-            self.window.set(Some(window.window_handle()));
-            self.placed.set(None);
+            this.window.set(Some(window.window_handle()));
+            this.placed.set(None);
         }
-        let placed = self.placed.get();
+        let placed = this.placed.get();
         if placed == Some(bounds) {
             return;
         }
         let _ = view.set_bounds(rect(bounds));
         let _ = view.set_visible(true);
-        self.placed.set(Some(bounds));
-        if placed.is_none() && self.focus.is_focused(window) {
-            self.take_keys();
+        this.placed.set(Some(bounds));
+        if placed.is_none() && this.focus.is_focused(window) {
+            this.take_keys();
         }
     }
 
-    fn build(&self, bounds: Bounds<Pixels>, window: &Window) -> Option<wry::WebView> {
+    /// Builds the page in a task of its own, between gpui updates, and reports
+    /// [`Report::Built`] when it lands. The page is built hidden and shown by
+    /// the next [`Page::place`].
+    ///
+    /// On Windows wry starts WebView2 by pumping the thread's messages, and a
+    /// message that enters gpui while the `App` is borrowed aborts the process.
+    fn request(this: &Rc<Self>, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
+        if this.building.replace(true) {
+            return;
+        }
+        let page = this.clone();
+        window
+            .spawn(cx, async move |cx| {
+                let Ok((handle, parent)) =
+                    cx.update(|window, _| (window.window_handle(), Parent::of(window)))
+                else {
+                    return;
+                };
+                let view = parent.and_then(|parent| page.build(bounds, &parent));
+                if view.is_some() {
+                    page.window.set(Some(handle));
+                }
+                let _ = page.view.set(view);
+                let _ = page.reports.try_send(Report::Built);
+            })
+            .detach();
+    }
+
+    fn build(&self, bounds: Bounds<Pixels>, parent: &Parent) -> Option<wry::WebView> {
         let url = self.url.borrow();
         let (ipc, loads, titles, opened) = (
             self.reports.clone(),
@@ -277,6 +316,7 @@ impl Page {
                 .with_incognito(store.incognito)
                 .with_url(url.as_str())
                 .with_bounds(rect(bounds))
+                .with_visible(false)
                 .with_initialization_script(Self::MOVED)
                 .with_ipc_handler(move |request| {
                     let report = match request.body().as_str() {
@@ -319,12 +359,12 @@ impl Page {
             #[cfg(feature = "inspector")]
             let builder = builder.with_devtools(self.inspector.get());
             let builder = platform::store(builder, store.identifier);
-            platform::build(builder, window)?
+            builder
+                .build_as_child(parent)
                 .inspect_err(|error| tracing::warn!(%error, url = %url, "webview: build"))
                 .ok()
         })?;
         self.platform.attach(&view, &self.reports);
-        self.window.set(Some(window.window_handle()));
         Some(view)
     }
 
@@ -461,6 +501,33 @@ impl Page {
             position: wry::dpi::LogicalPosition::new(Self::PARKED, Self::PARKED).into(),
             ..rect(bounds)
         });
+    }
+}
+
+/// The native window a page is built in, by its raw handle: the build runs
+/// while gpui's `Window` is not borrowed.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+struct Parent(raw_window_handle::RawWindowHandle);
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+impl Parent {
+    fn of(window: &Window) -> Option<Self> {
+        raw_window_handle::HasWindowHandle::window_handle(window)
+            .ok()
+            .map(|handle| Self(handle.as_raw()))
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+impl raw_window_handle::HasWindowHandle for Parent {
+    fn window_handle(
+        &self,
+    ) -> Result<raw_window_handle::WindowHandle<'_>, raw_window_handle::HandleError> {
+        // SAFETY: read from a gpui window on this thread in the update just
+        // before the build. On macOS nothing runs between the two. On Windows
+        // the messages WebView2's start pumps can close the window, and a
+        // destroyed HWND fails the build.
+        Ok(unsafe { raw_window_handle::WindowHandle::borrow_raw(self.0) })
     }
 }
 
