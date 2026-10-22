@@ -120,23 +120,21 @@ pub fn frame(child: impl IntoElement, window: &mut Window, cx: &App) -> Div {
 /// The element an app's main view is drawn in.
 ///
 /// Floating, it is a card on the window's chrome, [`Theme::sidebar_bg`],
-/// which its parent paints: half [`Theme::CONTENT_INSET`] of margin on every
-/// side, [`Theme::panel_radius`] corners, a hairline border and
-/// [`Theme::content_bg`] over the chrome. An opaque card casts
+/// which its parent paints: [`Theme::panel_radius`] corners, a hairline border
+/// and [`Theme::content_bg`] over the chrome. An opaque card casts
 /// [`theme::content_shadows`]; under [`Theme::vibrancy`] it casts none, since a
 /// shadow shows through a translucent fill. Flat, it is a plain
 /// [`Theme::window_bg`] fill with none of those.
 ///
-/// The caller sizes it: it is handed back unsized, as a flex row or column
-/// item would want it. The parent of floating cards pads itself by the other
-/// half of the inset, so a card stands the whole inset off the window's edge
-/// and two cards side by side meet the whole inset apart.
+/// The card has no margin. The caller sizes and places it: it is handed back
+/// unsized, as a flex row or column item would want it, and the space around
+/// it — [`Theme::CONTENT_INSET`] off the window's edge and between two cards —
+/// is the parent's padding and gaps.
 pub fn content(floating: bool, cx: &App) -> Div {
     let theme = Theme::of(cx);
     match floating {
         true => div()
             .bg(theme.content_bg())
-            .m(px(Theme::CONTENT_INSET / 2.0))
             .rounded(px(Theme::panel_radius()))
             .border_1()
             .border_color(theme.border)
