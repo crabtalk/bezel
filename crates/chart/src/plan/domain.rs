@@ -1,19 +1,17 @@
 //! What values a channel takes: a discrete column's values in order, and
 //! the chart's colours.
 
-use std::{collections::HashMap, sync::Arc};
-
-use gpui::{Hsla, SharedString};
-
 use crate::{
-    data::Column,
+    data::{Column, Name, Text},
     model::{Chart, Domain, Encode, Mark, Range, Scale, ScaleType, Sort},
     plan::{
-        Color, Ink,
-        scales::{self, ColorScale, Entry, Role},
+        Color, Ink, invalid,
+        scales::{self, ColorScale, Role},
     },
-    scale,
 };
+use gpui::{Hsla, SharedString};
+use js::number::Number as JsNumber;
+use std::{collections::HashMap, sync::Arc};
 
 /// A missing code in a discrete column.
 pub(super) const MISSING: u32 = u32::MAX;
@@ -25,37 +23,61 @@ pub(super) struct Discrete {
 }
 
 impl Discrete {
+    /// Null, undefined, and a number column's `NaN` as null, are values of
+    /// their own, first in ascending order and last in descending order as
+    /// Vega sorts them, in the order met.
     pub(super) fn of(column: &Column, sort: &Sort) -> Self {
-        let (labels, codes, numbers): (Vec<SharedString>, Arc<[u32]>, Option<Vec<f64>>) =
+        let text = |text: &Text| {
+            let labels = text.names.iter().map(|name| name.to_string().into());
+            let nullish = text.names.iter().map(|name| !matches!(name, Name::Text(_)));
+            (
+                labels.collect(),
+                text.codes.clone(),
+                None,
+                nullish.collect(),
+            )
+        };
+        let (labels, codes, numbers, nullish): (Vec<SharedString>, Arc<[u32]>, _, Vec<bool>) =
             match column {
-                Column::Text(text) => (text.names.to_vec(), text.codes.clone(), None),
+                Column::Text(column) => text(column),
+                Column::Value(values) => text(&Text::from(&values[..])),
                 Column::Number(values) => {
                     let mut index = HashMap::new();
                     let mut distinct = Vec::new();
                     let codes = values
                         .iter()
-                        .map(|&v| match v.is_nan() {
-                            true => MISSING,
-                            false => *index.entry(v.to_bits()).or_insert_with(|| {
+                        .map(|&v| {
+                            // Every `NaN` is one value.
+                            let bits = if v.is_nan() { f64::NAN } else { v }.to_bits();
+                            *index.entry(bits).or_insert_with(|| {
                                 distinct.push(v);
                                 distinct.len() as u32 - 1
-                            }),
+                            })
                         })
                         .collect();
-                    let labels = distinct.iter().map(|&v| scale::value(v).into()).collect();
-                    (labels, codes, Some(distinct))
+                    let labels = distinct
+                        .iter()
+                        .map(|&v| match v.is_nan() {
+                            true => Name::Null.to_string().into(),
+                            false => JsNumber(v).to_string().into(),
+                        })
+                        .collect();
+                    let nullish = distinct.iter().map(|v| v.is_nan()).collect();
+                    (labels, codes, Some(distinct), nullish)
                 }
             };
         let mut order: Vec<usize> = (0..labels.len()).collect();
         match sort {
             Sort::Data => return Self { labels, codes },
             Sort::Ascending | Sort::Descending => {
-                order.sort_by(|&a, &b| match &numbers {
-                    Some(values) => values[a].total_cmp(&values[b]),
-                    None => labels[a].cmp(&labels[b]),
-                });
-                if *sort == Sort::Descending {
-                    order.reverse();
+                let ascending = |a: usize, b: usize| match (nullish[a], nullish[b], &numbers) {
+                    (true, _, _) | (_, true, _) => nullish[b].cmp(&nullish[a]),
+                    (.., Some(values)) => values[a].total_cmp(&values[b]),
+                    (.., None) => labels[a].cmp(&labels[b]),
+                };
+                match sort {
+                    Sort::Descending => order.sort_by(|&a, &b| ascending(b, a)),
+                    _ => order.sort_by(|&a, &b| ascending(a, b)),
                 }
             }
             Sort::Explicit(listed) => {
@@ -151,9 +173,6 @@ pub(super) fn extent(values: impl IntoIterator<Item = f64>) -> (f64, f64) {
     if lo > hi { (0.0, 0.0) } else { (lo, hi) }
 }
 
-/// Ticks a continuous legend shows, about.
-pub(super) const LEGEND_TICKS: usize = 4;
-
 /// The chart's colours: every colour field's values across the layers, in
 /// the order met, or every value a continuous colour field takes; then one
 /// for each layer with no colour field: the theme's text for a rule or
@@ -161,8 +180,8 @@ pub(super) const LEGEND_TICKS: usize = 4;
 pub(super) struct Colors {
     pub(super) colors: Vec<Color>,
     pub(super) layers: Vec<LayerColor>,
-    /// A continuous or discretizing colour field's legend.
-    pub(super) legend: Option<Vec<Entry>>,
+    /// A continuous or discretizing colour field's scale.
+    pub(super) palette: Option<ColorScale>,
 }
 
 pub(super) enum LayerColor {
@@ -179,7 +198,7 @@ impl Colors {
             .find_map(|layer| Some((layer.mark, layer.encoding.color.as_ref()?.channel()?)));
         let mut colors: Vec<Color> = Vec::new();
         let mut layers: Vec<Option<LayerColor>> = Vec::with_capacity(chart.layers.len());
-        let mut legend = None;
+        let mut palette = None;
         let named = first.is_some_and(|(_, channel)| {
             channel.scale.kind == Some(ScaleType::Identity)
                 || matches!(channel.scale.range, Some(Range::Field(_)))
@@ -214,10 +233,6 @@ impl Colors {
                     ink: ink.unwrap_or(Ink::Fixed(Hsla::transparent_black())),
                 })
                 .collect();
-            // With no scale, Vega-Lite draws no legend.
-            if channel.scale.kind == Some(ScaleType::Identity) {
-                legend = Some(Vec::new());
-            }
         } else if let Some((mark, channel)) = first {
             let kind = scales::scale_type(channel, Role::Color, mark, false);
             if scales::listed(kind, channel) {
@@ -233,14 +248,14 @@ impl Colors {
                     let codes = domain.into_shared(&mut labels, &mut index);
                     layers.push(Some(LayerColor::Field(codes)));
                 }
-                let palette = ColorScale::of(channel, mark, Some(labels.len()), &[])?;
+                let discrete = ColorScale::of(channel, mark, Some(labels.len()), &[])?;
                 colors = labels
                     .into_iter()
                     .enumerate()
                     .map(|(i, name)| {
                         Some(Color {
                             name: Some(name),
-                            ink: palette.discrete(i)?,
+                            ink: discrete.discrete(i)?,
                         })
                     })
                     .collect::<Option<_>>()?;
@@ -251,23 +266,24 @@ impl Colors {
                     columns.push(match &layer.encoding.color {
                         Some(Encode::Scaled(color)) => {
                             spanned.extend(color.spanned(&layer.data)?);
-                            Some(color.numbers(&layer.data)?)
+                            Some((color.numbers(&layer.data)?, invalid::shown(layer)))
                         }
                         _ => None,
                     });
                 }
                 let values: Vec<f64> = spanned.iter().flat_map(|v| v.iter().copied()).collect();
-                let palette = ColorScale::of(channel, mark, None, &values)?;
+                let scale = ColorScale::of(channel, mark, None, &values)?;
                 let mut index: HashMap<u64, u32> = HashMap::new();
                 for column in columns {
-                    let Some(values) = column else {
+                    let Some((values, shown)) = column else {
                         layers.push(None);
                         continue;
                     };
                     let codes = values
                         .iter()
                         .map(|&v| {
-                            let Some(ink) = palette.value(v) else {
+                            let v = if shown { scale.shown(v) } else { v };
+                            let Some(ink) = scale.value(v) else {
                                 return MISSING;
                             };
                             *index.entry(v.to_bits()).or_insert_with(|| {
@@ -281,7 +297,7 @@ impl Colors {
                         .collect();
                     layers.push(Some(LayerColor::Field(codes)));
                 }
-                legend = Some(palette.entries(channel.kind, LEGEND_TICKS));
+                palette = Some(scale);
             }
         } else {
             layers.extend(chart.layers.iter().map(|_| None));
@@ -304,7 +320,7 @@ impl Colors {
         Some(Self {
             colors,
             layers,
-            legend,
+            palette,
         })
     }
 

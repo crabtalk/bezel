@@ -1,7 +1,10 @@
 //! Vega's array functions, after `vega-util` and `d3-array`.
 
-use crate::expr::{Error, Value, string};
-use js::{math, number};
+use crate::{
+    expr::{Error, string},
+    path::Path,
+};
+use js::{math, number, value::Value};
 use std::cmp::Ordering;
 
 /// `value`'s items, or the TypeError calling array method `name` on it throws.
@@ -125,83 +128,12 @@ pub(crate) fn lerp(items: &[Value], fraction: &Value) -> Value {
 /// Each item's value at `field`, a Vega access path such as `a.b` or
 /// `a["b"][0]`.
 pub(crate) fn pluck(items: &[Value], field: &str) -> Result<Value, Error> {
-    let path = access_path(field)?;
-    items
+    let path: Path = field.parse().map_err(Error::Runtime)?;
+    Ok(items
         .iter()
-        .map(|item| {
-            path.iter()
-                .try_fold(item.clone(), |value, key| value.get(&key.as_str().into()))
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map(Value::from)
-}
-
-/// vega-util's `splitAccessPath`: the keys of a path of dotted names,
-/// bracketed indices and quoted keys, `\` escaping the next character.
-fn access_path(path: &str) -> Result<Vec<String>, Error> {
-    let chars: Vec<char> = path.chars().collect();
-    let text = |from: usize, to: usize| chars[from..to.min(chars.len())].iter().collect::<String>();
-    let mut keys = Vec::new();
-    let (mut quote, mut bracket, mut pending) = (None, 0isize, String::new());
-    let (mut i, mut j) = (0, 0);
-    let push = |keys: &mut Vec<String>, pending: &mut String, i: &mut usize, j: usize| {
-        keys.push(std::mem::take(pending) + &text(*i, j));
-        *i = j + 1;
-    };
-    while j < chars.len() {
-        let c = chars[j];
-        if c == '\\' {
-            pending += &text(i, j);
-            j += 1;
-            i = j;
-        } else if Some(c) == quote {
-            push(&mut keys, &mut pending, &mut i, j);
-            quote = None;
-            bracket = -1;
-        } else if quote.is_some() {
-        } else if i as isize == bracket && (c == '"' || c == '\'') {
-            i = j + 1;
-            quote = Some(c);
-        } else if c == '.' && bracket == 0 {
-            if j > i {
-                push(&mut keys, &mut pending, &mut i, j);
-            } else {
-                i = j + 1;
-            }
-        } else if c == '[' {
-            if j > i {
-                push(&mut keys, &mut pending, &mut i, j);
-            }
-            i = j + 1;
-            bracket = i as isize;
-        } else if c == ']' {
-            if bracket == 0 {
-                return Err(Error::Runtime(format!(
-                    "Access path missing open bracket: {path}"
-                )));
-            }
-            if bracket > 0 {
-                push(&mut keys, &mut pending, &mut i, j);
-            }
-            bracket = 0;
-            i = j + 1;
-        }
-        j += 1;
-    }
-    if bracket != 0 {
-        return Err(Error::Runtime(format!(
-            "Access path missing closing bracket: {path}"
-        )));
-    }
-    if quote.is_some() {
-        return Err(Error::Runtime(format!(
-            "Access path missing closing quote: {path}"
-        )));
-    }
-    if j > i {
-        push(&mut keys, &mut pending, &mut i, j + 1);
-    }
-    Ok(keys)
+        .map(|item| path.get(item))
+        .collect::<Result<Vec<_>, _>>()?
+        .into())
 }
 
 /// d3's `range`: `sequence(stop)`, `sequence(start, stop)` or

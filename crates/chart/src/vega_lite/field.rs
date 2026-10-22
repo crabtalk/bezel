@@ -5,6 +5,7 @@
 use crate::{
     model::Kind,
     transform::{Bin, Op, Part, TimeUnit},
+    vega_lite::format,
 };
 use gpui::SharedString;
 use js::number::Number as JsNumber;
@@ -219,13 +220,12 @@ pub(crate) fn aggregate_def(aggregate: &Value, field: Option<&str>) -> Option<De
         }
         _ => return None,
     };
-    let output = match op {
-        Op::Count => COUNT.into(),
-        _ => output(op, measured.as_ref()?),
+    let output = match (op, &measured) {
+        (Op::Count, _) => COUNT.into(),
+        (_, Some(measured)) => output(op, measured),
+        (Op::Values, None) => op.to_string().into(),
+        (_, None) => return None,
     };
-    if op != Op::Count && measured.is_none() {
-        return None;
-    }
     Some(Derive::Aggregate {
         op,
         measured: measured.filter(|_| op != Op::Count),
@@ -291,7 +291,7 @@ pub(crate) fn bin_def(bin: &Value, field: &str, channel: &str) -> Option<Derive>
     }
     let name: String = params
         .iter()
-        .map(|(key, value)| var_name(&format!("_{key}_{}", string(value))))
+        .map(|(key, value)| var_name(&format!("_{key}_{}", format::js(value))))
         .collect();
     let start = format!("bin{name}_{field}");
     out.output = [start.clone().into(), format!("{start}_end").into()];
@@ -356,8 +356,8 @@ pub(crate) fn unit_def(unit: &Value, field: &str) -> Option<Derive> {
     let named: String = params
         .iter()
         .map(|(key, value)| match key.as_str() {
-            "unit" => var_name(&string(value)),
-            key => var_name(&format!("_{key}_{}", string(value))),
+            "unit" => var_name(&format::js(value).to_string()),
+            key => var_name(&format!("_{key}_{}", format::js(value))),
         })
         .collect();
     let name = if utc { format!("utc{named}") } else { named };
@@ -399,24 +399,5 @@ fn var_name(text: &str) -> String {
     match text.starts_with(|c: char| c.is_ascii_digit()) {
         true => format!("_{name}"),
         false => name,
-    }
-}
-
-/// `${value}` in JavaScript.
-fn string(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.clone(),
-        Value::Number(n) => JsNumber(n.as_f64().unwrap_or(f64::NAN)).to_string(),
-        Value::Bool(flag) => flag.to_string(),
-        Value::Null => "null".into(),
-        Value::Array(items) => items
-            .iter()
-            .map(|item| match item {
-                Value::Null => String::new(),
-                item => string(item),
-            })
-            .collect::<Vec<_>>()
-            .join(","),
-        Value::Object(_) => "[object Object]".into(),
     }
 }

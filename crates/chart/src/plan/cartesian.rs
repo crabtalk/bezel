@@ -11,12 +11,13 @@ use crate::{
     plan::{
         self, Area, Bands, Bar, Body, Font, Hit, Hover, Image, Ink, Link, Marks, Rect, Series,
         Symbol, Text, Trace, arcs,
+        axis::{self, Scaled, Ticked},
         domain::{self, Colors, Discrete},
-        layout::{self, Layout},
+        invalid,
+        layout::Layout,
         look::{self, Groups, Look},
         scales::{self, Context, Role},
     },
-    scale::{self, Ticks},
 };
 use gpui::SharedString;
 use js::{
@@ -141,9 +142,19 @@ struct Read<'a> {
     groups: Groups,
     ranks: Option<Vec<u32>>,
     stacked: Option<Stacked>,
+    /// The rows a path breaks at.
+    breaks: Option<Vec<bool>>,
+    /// Whether it draws an invalid value at its scale's zero or least.
+    shown: bool,
 }
 
 impl Read<'_> {
+    /// Whether row `row` has a place along the shared axis: a missing value
+    /// has one where the layer shows invalid values.
+    fn placed(&self, row: usize) -> bool {
+        self.along.valid(row) || (self.shown && matches!(self.along, Along::Continuous(_)))
+    }
+
     /// The stack row `row` falls in along the shared axis: its band and
     /// offset, or its place.
     fn stack_key(&self, row: usize) -> u64 {
@@ -175,9 +186,13 @@ enum Values {
     Missing,
 }
 
-/// Whether `channel`'s scale spans the values its rows aggregate.
+/// Whether `channel`'s scale spans values other than its own: those its
+/// rows aggregate, or a data domain's.
 fn unaggregated(channel: &Channel) -> bool {
-    matches!(channel.scale.domain, Some(Domain::Unaggregated(_)))
+    matches!(
+        channel.scale.domain,
+        Some(Domain::Unaggregated(_) | Domain::Data(_))
+    )
 }
 
 /// A channel through a scale.
@@ -293,9 +308,7 @@ fn stack(layer: &Read, offset: Stack, vertical: bool, impute: bool) -> Stacked {
     let rows = layer.values.len();
     let groups = &layer.groups;
     let key = |row: usize| -> Option<u64> {
-        if groups.codes[row] == domain::MISSING
-            || !layer.along.valid(row)
-            || layer.values[row].is_nan()
+        if groups.codes[row] == domain::MISSING || !layer.placed(row) || layer.values[row].is_nan()
         {
             return None;
         }
@@ -420,24 +433,6 @@ fn context(layer: &Layer, role: Role) -> Context {
     }
 }
 
-/// The ticks on screen of `channel`'s `scale`: at its bins' edges where it
-/// has bins.
-fn ticks(channel: &Channel, scale: &Continuous, count: usize) -> (Ticks, Vec<f32>) {
-    let ticks = match channel.scale.bins {
-        Some(bins) if channel.kind == Kind::Quantitative => Ticks::binned(scale, bins, count),
-        _ => Ticks::of(scale, count),
-    };
-    let at = ticks.values.iter().map(|&v| scale.at(v) as f32).collect();
-    (ticks, at)
-}
-
-/// Each band's centre.
-fn centres(band: &Band) -> Vec<f32> {
-    (0..band.count)
-        .map(|b| (band.at(b) + band.bandwidth() / 2.0) as f32)
-        .collect()
-}
-
 /// A position range in pixels from `start`, the plot's edge: the scale's
 /// own, `size` long, or `default`, its ends moved to `rangeMin` and
 /// `rangeMax` pixels from `start`.
@@ -453,7 +448,13 @@ fn range(channel: &Channel, start: f32, size: f32, default: [f32; 2]) -> Option<
     })
 }
 
-pub(super) fn cartesian(chart: &Chart, colors: &Colors, layout: &mut Layout) -> Option<Body> {
+/// `titles` are x's and y's axis titles.
+pub(super) fn cartesian(
+    chart: &Chart,
+    colors: &Colors,
+    layout: &mut Layout,
+    titles: [Option<SharedString>; 2],
+) -> Option<Body> {
     // The layers that place both x and y set the axes; y is the shared axis
     // when each has a discrete y over a continuous x, or, with no orient
     // given, is a bar spanning y to y2 over a continuous x. Without such a
@@ -621,7 +622,7 @@ pub(super) fn cartesian(chart: &Chart, colors: &Colors, layout: &mut Layout) -> 
                         .into_shared(&mut labels, &mut index),
                 ),
                 (false, Column::Number(values)) => Along::Continuous(values),
-                (false, Column::Text(_)) => return None,
+                (false, Column::Text(_) | Column::Value(_)) => return None,
             },
             (None, Some(position)) => Along::Pixels(position),
             (None, None) if let Some(channel) = along_identity => {
@@ -705,6 +706,8 @@ pub(super) fn cartesian(chart: &Chart, colors: &Colors, layout: &mut Layout) -> 
             groups: Groups::of(layer, layer_index, colors)?,
             ranks: look::ranks(layer)?,
             stacked: None,
+            breaks: invalid::breaks(layer),
+            shown: invalid::shown(layer),
         });
     }
 
@@ -733,7 +736,7 @@ pub(super) fn cartesian(chart: &Chart, colors: &Colors, layout: &mut Layout) -> 
     let mut extent = Vec::new();
     for layer in read.iter().filter(|layer| !layer.identity) {
         let rows = (0..layer.values.len())
-            .filter(|&row| layer.along.valid(row) && layer.groups.codes[row] != domain::MISSING);
+            .filter(|&row| layer.placed(row) && layer.groups.codes[row] != domain::MISSING);
         match &layer.stacked {
             Some(stacked) => {
                 for row in rows {
@@ -744,6 +747,11 @@ pub(super) fn cartesian(chart: &Chart, colors: &Colors, layout: &mut Layout) -> 
             None => {
                 let values2 = layer.values2.as_ref().and_then(Second::values);
                 let spanned = match &layer.value {
+                    // Values of no row's.
+                    Some(channel) if let Some(Domain::Data(values)) = &channel.scale.domain => {
+                        extent.extend(values.iter());
+                        Vec::new()
+                    }
                     Some(channel) if unaggregated(channel) => channel.spanned(&layer.layer.data)?,
                     _ => vec![layer.values.clone()],
                 };
@@ -804,92 +812,79 @@ pub(super) fn cartesian(chart: &Chart, colors: &Colors, layout: &mut Layout) -> 
         scales::continuous(channel, kind, &context(layer, role), extent, range)
     };
 
-    let mut axes = Vec::new();
-    let (plot, values_scale, along_band, along_scale) = if horizontal {
-        // y down the left, values along the bottom.
-        let (plot, along_band, along_scale) = match shared {
-            Some(shared) if is_discrete => {
-                let measured = layout.measured(&labels);
-                let plot = layout.plot(layout::widest(&measured));
-                let band = band_of(shared, along_role, nested, count, [plot.y, plot.bottom()]);
-                axes.push(layout.left(measured, &centres(&band), plot, false));
-                (plot, Some(band), None)
-            }
-            Some(shared) => {
-                let (top, height) = (layout.top, layout.plot_height().max(plan::MIN_PLOT));
-                let count_y = (height / plan::Y_SPACING).floor().max(2.0) as usize;
-                let range = range(shared.1, top, height, [top + height, top])?;
-                let scale = continuous_of(shared, along_role, along_extent, range);
-                let (ticks, at) = ticks(shared.1, &scale, count_y);
-                let measured = layout.measured(&ticks.labels);
-                let plot = layout.plot(layout::widest(&measured));
-                axes.push(layout.left(measured, &at, plot, false));
-                (plot, None, Some(scale))
-            }
-            None => (layout.plot(0.0), None, None),
-        };
-        let values_scale = match value {
-            Some(value) => {
-                let range = range(value.1, plot.x, plot.w, [plot.x, plot.right()])?;
-                let scale = continuous_of(value, value_role, extent, range);
-                let (ticks, at) = ticks(value.1, &scale, x_count(plot));
-                axes.push(layout.bottom(&ticks.labels, &at, plot, true));
-                Values::Continuous(scale)
-            }
-            None => Values::Missing,
-        };
-        (plot, values_scale, along_band, along_scale)
-    } else {
-        // Values or a second discrete axis up the left, then x along the
-        // bottom.
-        let (top, height) = (layout.top, layout.plot_height().max(plan::MIN_PLOT));
-        let (plot, values_scale) = match value {
-            Some(value) if value_discrete => {
-                let measured = layout.measured(&value_labels);
-                let plot = layout.plot(layout::widest(&measured));
-                let band = band_of(
-                    value,
-                    value_role,
-                    false,
-                    value_labels.len(),
-                    [plot.y, plot.bottom()],
-                );
-                axes.push(layout.left(measured, &centres(&band), plot, false));
-                (plot, Values::Discrete(band))
-            }
-            Some(value) => {
-                let count_y = (height / plan::Y_SPACING).floor().max(2.0) as usize;
-                let range = range(value.1, top, height, [top + height, top])?;
-                let scale = continuous_of(value, value_role, extent, range);
-                let (ticks, at) = ticks(value.1, &scale, count_y);
-                let measured = layout.measured(&ticks.labels);
-                let plot = layout.plot(layout::widest(&measured));
-                axes.push(layout.left(measured, &at, plot, true));
-                (plot, Values::Continuous(scale))
-            }
-            None => (layout.plot(0.0), Values::Missing),
+    let [x_title, y_title] = titles;
+    let (shared_title, value_title) = match horizontal {
+        true => (y_title, x_title),
+        false => (x_title, y_title),
+    };
+    let (plot, (values_scale, along_band, along_scale), axes) = layout.fit(|layout, plot| {
+        let across = [plot.x, plot.right()];
+        let down = [plot.y, plot.bottom()];
+        // A continuous position's range: x rightward, y upward.
+        let continuous_range = |channel: &Channel, x: bool| match x {
+            true => range(channel, plot.x, plot.w, [plot.x, plot.right()]),
+            false => range(channel, plot.y, plot.h, [plot.bottom(), plot.y]),
         };
         let (along_band, along_scale) = match shared {
             Some(shared) if is_discrete => {
-                let band = band_of(shared, along_role, nested, count, [plot.x, plot.right()]);
-                axes.push(layout.bottom(&labels, &centres(&band), plot, false));
-                (Some(band), None)
+                let range = if horizontal { down } else { across };
+                (
+                    Some(band_of(shared, along_role, nested, count, range)),
+                    None,
+                )
             }
             Some(shared) => {
-                let range = range(shared.1, plot.x, plot.w, [plot.x, plot.right()])?;
+                let range = continuous_range(shared.1, !horizontal)?;
                 let scale = continuous_of(shared, along_role, along_extent, range);
-                let (ticks, at) = ticks(shared.1, &scale, x_count(plot));
-                axes.push(layout.bottom(&ticks.labels, &at, plot, false));
                 (None, Some(scale))
             }
             None => (None, None),
         };
-        (plot, values_scale, along_band, along_scale)
-    };
-    // Values first.
-    if horizontal {
-        axes.reverse();
-    }
+        let values_scale = match value {
+            Some(value) if value_discrete => {
+                let range = if horizontal { across } else { down };
+                let band = band_of(value, value_role, false, value_labels.len(), range);
+                Values::Discrete(band)
+            }
+            Some(value) => {
+                let range = continuous_range(value.1, horizontal)?;
+                Values::Continuous(continuous_of(value, value_role, extent, range))
+            }
+            None => Values::Missing,
+        };
+        let mut axes = Vec::new();
+        if let Some((layer, channel)) = value {
+            let ticked = match &values_scale {
+                Values::Discrete(band) => Ticked::Bands(band, &value_labels),
+                Values::Continuous(scale) => Ticked::Continuous(scale),
+                Values::Missing => unreachable!("a value channel has a scale"),
+            };
+            let scaled = Scaled {
+                channel,
+                mark: layer.mark,
+                x: horizontal,
+                ticked,
+                title: value_title.clone(),
+            };
+            axes.extend(axis::axis(layout, &scaled, plot));
+        }
+        if let Some((layer, channel)) = shared {
+            let ticked = match (&along_band, &along_scale) {
+                (Some(band), _) => Ticked::Bands(band, &labels),
+                (_, Some(scale)) => Ticked::Continuous(scale),
+                (None, None) => unreachable!("a shared channel has a scale"),
+            };
+            let scaled = Scaled {
+                channel,
+                mark: layer.mark,
+                x: !horizontal,
+                ticked,
+                title: shared_title.clone(),
+            };
+            axes.extend(axis::axis(layout, &scaled, plot));
+        }
+        Some(((values_scale, along_band, along_scale), axes))
+    })?;
 
     // The plot's extent along the shared axis, and up the value axis.
     let (along_range, value_range) = match horizontal {
@@ -964,6 +959,9 @@ pub(super) fn cartesian(chart: &Chart, colors: &Colors, layout: &mut Layout) -> 
                 }
                 None => cell_of(layer, row).map_or(f32::NAN, |(start, width)| start + width / 2.0),
             },
+            (Along::Continuous(values), Some(scale)) if values[row].is_nan() && layer.shown => {
+                scale.at(invalid::zero_or_min(&scale.domain)) as f32
+            }
             (Along::Continuous(values), Some(scale)) => scale.at(values[row]) as f32,
             (Along::Continuous(_), None) => f32::NAN,
             (Along::Identity(values), _) => identity(values[row], along_axis),
@@ -987,6 +985,10 @@ pub(super) fn cartesian(chart: &Chart, colors: &Colors, layout: &mut Layout) -> 
     };
     // Where `layer`'s value `v` stands up the values.
     let at = |layer: &Read, v: f64| -> f32 {
+        let v = match (&values_scale, v.is_nan() && layer.shown && !layer.identity) {
+            (Values::Continuous(scale), true) => invalid::zero_or_min(&scale.domain),
+            _ => v,
+        };
         if v.is_nan() {
             return f32::NAN;
         }
@@ -1103,7 +1105,7 @@ pub(super) fn cartesian(chart: &Chart, colors: &Colors, layout: &mut Layout) -> 
         if layer.polar {
             // Each row's pie centred where its x and y place it.
             let center = |row: usize| {
-                if !layer.along.valid(row) {
+                if !layer.placed(row) {
                     return None;
                 }
                 let value = value_at(layer, row).unwrap_or(value_mid);
@@ -1141,7 +1143,7 @@ pub(super) fn cartesian(chart: &Chart, colors: &Colors, layout: &mut Layout) -> 
             curve,
             clip: properties.clip.then_some(plot),
         };
-        let valid = |row: usize| groups.codes[row] != domain::MISSING && layer.along.valid(row);
+        let valid = |row: usize| groups.codes[row] != domain::MISSING && layer.placed(row);
         // The extent across its band a band-relative width takes.
         let across = match horizontal {
             true => properties.height,
@@ -1274,7 +1276,7 @@ pub(super) fn cartesian(chart: &Chart, colors: &Colors, layout: &mut Layout) -> 
             for (readouts, totals) in readouts.iter_mut().zip(totals) {
                 for (readout, total) in readouts.iter_mut().zip(totals) {
                     if !total.is_nan() {
-                        *readout = Some(scale::value(total).into());
+                        *readout = Some(Kind::Quantitative.describe(total).into());
                     }
                 }
             }
@@ -1292,7 +1294,17 @@ pub(super) fn cartesian(chart: &Chart, colors: &Colors, layout: &mut Layout) -> 
                         true => (plot.x, plot.right()),
                         false => (plot.y, plot.bottom()),
                     },
-                    labels: labels.clone(),
+                    labels: labels
+                        .iter()
+                        .map(|label| {
+                            let channel = shared.map(|(_, channel)| channel);
+                            let format = channel
+                                .and_then(|channel| channel.axis.as_deref())
+                                .and_then(|axis| axis.format.as_ref());
+                            let kind = channel.map_or(Kind::Nominal, |channel| channel.kind);
+                            axis::discrete(label, kind, format).1.into()
+                        })
+                        .collect(),
                     values: Vec::new(),
                 });
                 for (group, readouts) in readouts.into_iter().enumerate() {
@@ -1468,7 +1480,10 @@ pub(super) fn cartesian(chart: &Chart, colors: &Colors, layout: &mut Layout) -> 
             }
             let group = groups.codes[row];
             let along = place(layer, row);
-            let value = value_at(layer, row).unwrap_or(value_mid);
+            let value = match layer.breaks.as_ref().is_some_and(|breaks| breaks[row]) {
+                true => f32::NAN,
+                false => value_at(layer, row).unwrap_or(value_mid),
+            };
             let bottom = value2_at(layer, row).unwrap_or(base) + layer.shift2[value_axis];
             let [dx, dy] = layer.shift;
             let at = point(along, value);
@@ -1747,9 +1762,4 @@ fn symbols(
             symbol
         })
         .collect()
-}
-
-/// About one tick to [`plan::X_SPACING`] across `plot`.
-fn x_count(plot: Rect) -> usize {
-    (plot.w / plan::X_SPACING).floor().max(2.0) as usize
 }

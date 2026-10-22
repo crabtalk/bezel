@@ -1,15 +1,25 @@
 use chart::{
-    Channel, Column, Datum, Encode, Kind, Mark, Position, Shape, Sort, Source,
+    Channel, Chart, Column, Datum, Encode, Kind, Mark, Plan, Position, Shape, Sort, Source,
     model::{
-        Align, Baseline, Cap, Dir, Domain, Extent, Interpolate, LineBreak, NamedRange, Nice,
-        Palette, Range, ScaleType, Stack,
+        Align, Baseline, Cap, Dir, Domain, Extent, Interpolate, Invalid, LineBreak, NamedRange,
+        Nice, Palette, Range, ScaleType, Side, Stack,
     },
+    plan::Metrics,
     time,
     transform::Bins,
     vega_lite,
 };
 use gpui::Rgba;
 use js::interpolate;
+
+/// `chart` at 400 by 300, its text 10 pixels and every label 10 wide.
+fn laid_out(chart: &Chart) -> Plan {
+    let metrics = Metrics {
+        size: 10.0,
+        line: 10.0,
+    };
+    chart::plan(chart, [400.0, 300.0], metrics, &mut |_, _| 10.0).unwrap()
+}
 
 const BARS: &str = r#"{
   "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
@@ -32,7 +42,10 @@ const BARS: &str = r#"{
 fn a_spec_becomes_columns_named_by_its_encoding() {
     let chart = vega_lite::import(BARS).unwrap();
     assert_eq!(chart.layers[0].mark, Mark::Bar);
-    assert_eq!(chart.title.as_deref(), Some("Sales"));
+    assert_eq!(
+        chart.title.as_ref().map(|title| title.text.as_ref()),
+        Some("Sales")
+    );
     assert_eq!(chart.layers[0].data.len(), 3);
     let Some(Column::Number(sales)) = chart.layers[0].data.column("sales") else {
         panic!()
@@ -42,7 +55,7 @@ fn a_spec_becomes_columns_named_by_its_encoding() {
     let Some(Column::Text(region)) = chart.layers[0].data.column("region") else {
         panic!()
     };
-    assert_eq!(region.get(2), "");
+    assert_eq!(region.get(2), None);
 }
 
 #[test]
@@ -668,25 +681,19 @@ fn a_binned_axis_ticks_each_bins_edge_and_a_bar_spans_its_bin() {
             step: 2.0
         })
     );
-    let plan = chart::plan(&chart, [400.0, 300.0], 10.0, &mut |_| 10.0).unwrap();
-    let bottom = plan
-        .axes
-        .iter()
-        .find(|a| a.side == chart::plan::Side::Bottom)
-        .unwrap();
-    let ticks: Vec<&str> = bottom
-        .ticks
-        .iter()
-        .map(|t| t.label.as_ref().unwrap().text.as_ref())
-        .collect();
-    assert_eq!(ticks, ["0", "2", "4", "6", "8"]);
-    let edges: Vec<f32> = bottom.ticks.iter().map(|t| t.at).collect();
+    let plan = laid_out(&chart);
+    let bottom = plan.axes.iter().find(|a| a.side == Side::Bottom).unwrap();
+    let ticks: Vec<&str> = bottom.labels.iter().map(|l| l.text.as_ref()).collect();
+    // Vega's precision for a tick to each ten pixels, as many as the bins.
+    assert_eq!(ticks, ["0.0", "2.0", "4.0", "6.0", "8.0"]);
+    // The domain line, then a tick at each edge.
+    let edges: Vec<f32> = bottom.rules[1..].iter().map(|r| r.from[0]).collect();
     let chart::plan::Marks::Bars(bars) = &plan.series[0].marks else {
         panic!()
     };
     for bar in bars {
-        assert!(edges.iter().any(|e| (e - bar.rect.x).abs() < 1e-3));
-        assert!((bar.rect.w - (edges[1] - edges[0])).abs() < 1e-3);
+        assert!(edges.iter().any(|e| (e - bar.rect.x).abs() <= 0.5));
+        assert!((bar.rect.w - (edges[1] - edges[0])).abs() <= 1.0);
     }
 }
 
@@ -708,14 +715,13 @@ fn an_unaggregated_domain_spans_the_values_before_aggregation() {
     assert_eq!(data.numbers("min_v"), [0.0, 10.0]);
     assert_eq!(data.numbers("max_v"), [100.0, 20.0]);
     let left = |chart: &chart::Chart| {
-        let plan = chart::plan(chart, [400.0, 300.0], 10.0, &mut |_| 10.0).unwrap();
+        let plan = laid_out(chart);
         let axis = plan
             .axes
             .into_iter()
-            .find(|a| a.side == chart::plan::Side::Left)
+            .find(|a| a.side == Side::Left)
             .unwrap();
-        let last = axis.ticks.last().unwrap().label.clone().unwrap();
-        last.text.to_string()
+        axis.labels.last().unwrap().text.to_string()
     };
     assert_eq!(left(&chart), "100");
     // A count's domain is its own, as Vega-Lite drops `unaggregated` there.
@@ -727,7 +733,7 @@ fn an_unaggregated_domain_spans_the_values_before_aggregation() {
 fn a_position_offset_angle_or_dash_with_no_scale_is_drawn_as_it_is() {
     let plan = |spec: &str| {
         let chart = vega_lite::import(spec).unwrap();
-        chart::plan(&chart, [400.0, 300.0], 10.0, &mut |_| 10.0).unwrap()
+        laid_out(&chart)
     };
     let bars = |plan: &chart::Plan| -> Vec<chart::plan::Bar> {
         plan.series
@@ -755,12 +761,7 @@ fn a_position_offset_angle_or_dash_with_no_scale_is_drawn_as_it_is() {
             .iter()
             .all(|bar| bar.rect.y == unscaled.plot.y)
     );
-    assert!(
-        unscaled
-            .axes
-            .iter()
-            .all(|axis| axis.side != chart::plan::Side::Left)
-    );
+    assert!(unscaled.axes.iter().all(|axis| axis.side != Side::Left));
 
     // A bar runs from its band's start to the offset.
     let offset = plan(
@@ -830,15 +831,12 @@ fn a_histogram_stacks_each_bin_by_colour() {
     }"#,
     )
     .unwrap();
-    let plan = chart::plan(&chart, [400.0, 300.0], 10.0, &mut |_| 10.0).unwrap();
+    let plan = laid_out(&chart);
     // Vega's stack: q from 0 and p on it, in each bin.
     let unit = {
-        let left = plan
-            .axes
-            .iter()
-            .find(|a| a.side == chart::plan::Side::Left)
-            .unwrap();
-        (left.ticks[0].at - left.ticks[2].at) as f64
+        let left = plan.axes.iter().find(|a| a.side == Side::Left).unwrap();
+        // The domain line, then a tick at each value.
+        (left.rules[1].from[1] - left.rules[3].from[1]) as f64
     };
     let mut bars: Vec<(String, f32, f64, f64)> = Vec::new();
     for series in &plan.series {
@@ -881,17 +879,73 @@ fn a_binned_colour_size_or_opacity_lists_its_bins() {
         }"#
         .replace("CHANNEL", channel);
         let chart = vega_lite::import(&spec).unwrap();
-        let plan = chart::plan(&chart, [400.0, 300.0], 10.0, &mut |_| 10.0).unwrap();
-        plan.legends[0]
+        let plan = laid_out(&chart);
+        let legend = &plan.legends[0];
+        legend
             .swatches
             .iter()
-            .map(|swatch| swatch.label.text.to_string())
+            .map(|swatch| &swatch.label)
+            .chain(&legend.labels)
+            .map(|label| label.text.to_string())
             .collect()
     };
     let bins = ["0 – 5", "5 – 10", "10 – 15", "15 – 20"];
-    assert_eq!(legend("color"), bins);
+    // Colour's steps are a discrete gradient, labelled where each but the
+    // first starts.
+    assert_eq!(legend("color"), ["5", "10", "15"]);
     assert_eq!(legend("size"), bins);
     assert_eq!(legend("opacity"), bins);
     // Shape's scale is ordinal, over where each bin starts.
     assert_eq!(legend("shape"), ["0", "5", "10", "15"]);
+}
+
+#[test]
+fn invalid_marks_follow_the_mark_and_domains_the_config_alone() {
+    let mode = |mark: &str, config: &str| {
+        let spec = format!(
+            r#"{{"data": {{"values": [{{"x": 1, "y": 2}}, {{"x": 2, "y": null}}]}},
+              "mark": {mark}, "config": {config},
+              "encoding": {{"x": {{"field": "x", "type": "quantitative"}},
+                            "y": {{"field": "y", "type": "quantitative"}}}}}}"#
+        );
+        vega_lite::import(&spec).map(|chart| chart.layers[0].properties.invalid)
+    };
+    let mark = |kind: &str, invalid: &str| format!(r#"{{"type": "{kind}", "invalid": {invalid}}}"#);
+    // Each is Vega-Lite 6.5's: a mark's own mode parts no domain from its
+    // marks.
+    assert_eq!(
+        mode(&mark("line", r#""break-paths-filter-domains""#), "{}"),
+        Some(None)
+    );
+    assert_eq!(
+        mode(&mark("point", r#""break-paths-show-domains""#), "{}"),
+        Some(None)
+    );
+    assert_eq!(mode(&mark("bar", "null"), "{}"), Some(Some(Invalid::Show)));
+    assert_eq!(
+        mode(&mark("line", r#""filter""#), "{}"),
+        Some(Some(Invalid::Filter))
+    );
+    let config = |invalid: &str| format!(r#"{{"mark": {{"invalid": {invalid}}}}}"#);
+    assert_eq!(
+        mode(r#""line""#, &config(r#""break-paths-filter-domains""#)),
+        Some(Some(Invalid::BreakPathsFilterDomains))
+    );
+    assert_eq!(
+        mode(r#""point""#, &config(r#""break-paths-show-domains""#)),
+        Some(Some(Invalid::BreakPathsShowDomains))
+    );
+    assert_eq!(
+        mode(r#""point""#, &config(r#""break-paths-show-path-domains""#)),
+        Some(None)
+    );
+    // `config.<mark>` over `config.mark`.
+    assert_eq!(
+        mode(
+            r#""line""#,
+            r#"{"line": {"invalid": "filter"}, "mark": {"invalid": "show"}}"#
+        ),
+        Some(Some(Invalid::Filter))
+    );
+    assert_eq!(mode(&mark("line", r#""sometimes""#), "{}"), None);
 }

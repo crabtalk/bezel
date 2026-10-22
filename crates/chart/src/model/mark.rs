@@ -1,12 +1,10 @@
 //! A layer's mark: its type, and the properties of a Vega-Lite mark
 //! definition that no channel carries.
 
-use std::str::FromStr;
-
+use crate::model::Encoding;
 use gpui::{FontStyle, FontWeight, SharedString};
 use js::curve::Curve;
-
-use crate::model::Encoding;
+use std::str::FromStr;
 
 /// Mark types by their Vega-Lite names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -41,6 +39,39 @@ impl Mark {
     pub fn is_symbol(self) -> bool {
         matches!(self, Mark::Point | Mark::Circle | Mark::Square)
     }
+
+    /// Line, area and trail.
+    pub fn is_path(self) -> bool {
+        matches!(self, Mark::Line | Mark::Area | Mark::Trail)
+    }
+
+    /// Vega-Lite's default invalid data mode: a path breaks, the domains
+    /// taking the rows in; any other mark filters.
+    pub fn invalid(self) -> Invalid {
+        match self.is_path() {
+            true => Invalid::BreakPathsShowDomains,
+            false => Invalid::Filter,
+        }
+    }
+}
+
+/// Vega-Lite's invalid data modes: what a layer does with a row whose value
+/// on a quantitative or temporal channel with a continuous scale is null,
+/// `NaN` or infinite. A path is a line, area or trail.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Invalid {
+    /// No mark draws the row and no domain takes it in; a path joins the
+    /// rows either side.
+    Filter,
+    /// A path breaks at the row, which no domain takes in; any other mark
+    /// filters it.
+    BreakPathsFilterDomains,
+    /// A path breaks at the row, and no other mark draws it; every domain
+    /// takes it in.
+    BreakPathsShowDomains,
+    /// The row is drawn, each invalid value as zero where its scale's domain
+    /// spans zero and as the domain's first value otherwise.
+    Show,
 }
 
 /// A mark definition's properties past its type and its channels' values.
@@ -111,6 +142,8 @@ pub struct Properties {
     pub radius2_offset: f32,
     /// Whether the marks are cut off at the plot's edge.
     pub clip: bool,
+    /// `None` is the mark's own, [`Mark::invalid`].
+    pub invalid: Option<Invalid>,
     /// Points drawn over a line or area's points.
     pub point: Option<Box<Overlay>>,
     /// A line drawn along an area's top.
@@ -156,6 +189,20 @@ pub enum Cap {
     Square,
 }
 
+impl FromStr for Cap {
+    type Err = ();
+
+    /// A Vega name.
+    fn from_str(name: &str) -> Result<Self, ()> {
+        Ok(match name {
+            "butt" => Cap::Butt,
+            "round" => Cap::Round,
+            "square" => Cap::Square,
+            _ => return Err(()),
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Join {
     #[default]
@@ -172,6 +219,50 @@ pub enum Dir {
     Ltr,
     /// A text cut short keeps its end.
     Rtl,
+}
+
+impl Dir {
+    /// `content` cut short to fit `limit`, as Vega cuts it: whole if
+    /// narrower than `limit` as `width` measures it, else the most
+    /// characters from the end this keeps that leave room for `ellipsis`
+    /// beside them.
+    pub fn truncated(
+        self,
+        content: &str,
+        limit: f32,
+        ellipsis: &str,
+        mut width: impl FnMut(&str) -> f32,
+    ) -> String {
+        if width(content) < limit {
+            return content.to_string();
+        }
+        let chars: Vec<char> = content.chars().collect();
+        let text = |range: &[char]| range.iter().collect::<String>();
+        let limit = limit - width(ellipsis);
+        let (mut lo, mut hi) = (0, chars.len());
+        match self {
+            Dir::Rtl => {
+                while lo < hi {
+                    let mid = (lo + hi) / 2;
+                    match width(&text(&chars[mid..])) > limit {
+                        true => lo = mid + 1,
+                        false => hi = mid,
+                    }
+                }
+                format!("{ellipsis}{}", text(&chars[lo..]))
+            }
+            Dir::Ltr => {
+                while lo < hi {
+                    let mid = 1 + (lo + hi) / 2;
+                    match width(&text(&chars[..mid])) < limit {
+                        true => lo = mid,
+                        false => hi = mid - 1,
+                    }
+                }
+                format!("{}{ellipsis}", text(&chars[..lo]))
+            }
+        }
+    }
 }
 
 /// What a text's lines break at, as JavaScript's `split` takes it.
@@ -193,6 +284,31 @@ pub enum Align {
     Right,
 }
 
+impl Align {
+    /// How much of a text's width lies left of its anchor.
+    pub fn fraction(self) -> f32 {
+        match self {
+            Align::Left => 0.0,
+            Align::Center => 0.5,
+            Align::Right => 1.0,
+        }
+    }
+}
+
+impl FromStr for Align {
+    type Err = ();
+
+    /// A Vega name.
+    fn from_str(name: &str) -> Result<Self, ()> {
+        Ok(match name {
+            "left" => Align::Left,
+            "center" => Align::Center,
+            "right" => Align::Right,
+            _ => return Err(()),
+        })
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Baseline {
     Top,
@@ -201,6 +317,23 @@ pub enum Baseline {
     Alphabetic,
     LineTop,
     LineBottom,
+}
+
+impl FromStr for Baseline {
+    type Err = ();
+
+    /// A Vega name.
+    fn from_str(name: &str) -> Result<Self, ()> {
+        Ok(match name {
+            "top" => Baseline::Top,
+            "middle" => Baseline::Middle,
+            "bottom" => Baseline::Bottom,
+            "alphabetic" => Baseline::Alphabetic,
+            "line-top" => Baseline::LineTop,
+            "line-bottom" => Baseline::LineBottom,
+            _ => return Err(()),
+        })
+    }
 }
 
 /// Vega's interpolation methods.
@@ -247,6 +380,21 @@ impl Interpolate {
             Interpolate::Monotone => Curve::MonotoneX,
             Interpolate::Natural => Curve::Natural,
         }
+    }
+}
+
+impl FromStr for Invalid {
+    type Err = ();
+
+    /// A Vega-Lite invalid data mode's name.
+    fn from_str(name: &str) -> Result<Self, ()> {
+        Ok(match name {
+            "filter" => Invalid::Filter,
+            "break-paths-filter-domains" => Invalid::BreakPathsFilterDomains,
+            "break-paths-show-domains" => Invalid::BreakPathsShowDomains,
+            "show" => Invalid::Show,
+            _ => return Err(()),
+        })
     }
 }
 

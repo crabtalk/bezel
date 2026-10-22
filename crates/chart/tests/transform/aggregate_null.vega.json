@@ -1,0 +1,25 @@
+[
+ [
+  {
+   "g": "a",
+   "n": 2,
+   "total": 1,
+   "total_start": 0,
+   "total_end": 1
+  },
+  {
+   "g": null,
+   "n": 2,
+   "total": 6,
+   "total_start": 0,
+   "total_end": 6
+  },
+  {
+   "g": "b",
+   "n": 1,
+   "total": 3,
+   "total_start": 0,
+   "total_end": 3
+  }
+ ]
+]

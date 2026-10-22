@@ -11,24 +11,27 @@
 //! in the host's time zone, the `utc` ones in UTC, and a string reads as
 //! `new Date(text)` reads it. A date is a number, so `isDate` is never true.
 //!
-//! Not here: `format`, `timeFormat`, `utcFormat`, `timeParse`, the statistical
-//! functions, and every function that reads a runtime (scales, data sets,
-//! selections, view state).
+//! `format`, `timeFormat` and `timeParse` are d3's with the en-US locale,
+//! `timeFormat` and `timeParse` in the host's zone, `utcFormat` and
+//! `utcParse` in UTC. An invalid number format throws.
+//!
+//! Not here: the statistical functions, and every function that reads a
+//! runtime (scales, data sets, selections, view state).
 
 use crate::expr::parse::{Node, Parser};
 pub use eval::Row;
-pub use regexp::RegExp;
+use js::{
+    regex,
+    value::{TypeError, Value},
+};
 use std::{fmt, str::FromStr};
-pub use value::Value;
 
 mod array;
 mod date;
 mod eval;
 mod function;
 mod parse;
-mod regexp;
 mod string;
-mod value;
 
 /// A parsed expression.
 #[derive(Clone, Debug)]
@@ -70,3 +73,16 @@ impl fmt::Display for Error {
 }
 
 impl std::error::Error for Error {}
+
+impl From<TypeError> for Error {
+    fn from(error: TypeError) -> Self {
+        Self::Runtime(error.0)
+    }
+}
+
+/// `new RegExp`'s `SyntaxError`.
+impl From<regex::Error> for Error {
+    fn from(error: regex::Error) -> Self {
+        Self::Runtime(error.to_string())
+    }
+}

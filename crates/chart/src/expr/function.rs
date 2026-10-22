@@ -1,14 +1,16 @@
 //! The built-in functions, by Vega's names.
 
 use crate::expr::{
-    Error, RegExp, Row, Value, array,
+    Error, Row, array,
     date::{self, Field},
     parse::Node,
     string as text,
 };
 use js::{
     date::{Date, LocalZone},
+    format::{InvalidSpecifier, NumberFormat},
     math, number, string,
+    value::{RegExp, Value},
 };
 use std::{
     collections::hash_map::RandomState,
@@ -82,6 +84,11 @@ pub(crate) enum Function {
     Upper,
     RegExp,
     Test,
+    Format,
+    TimeFormat,
+    UtcFormat,
+    TimeParse,
+    UtcParse,
 }
 
 impl FromStr for Function {
@@ -160,6 +167,11 @@ impl FromStr for Function {
             "upper" => Self::Upper,
             "regexp" => Self::RegExp,
             "test" => Self::Test,
+            "format" => Self::Format,
+            "timeFormat" => Self::TimeFormat,
+            "utcFormat" => Self::UtcFormat,
+            "timeParse" => Self::TimeParse,
+            "utcParse" => Self::UtcParse,
             _ => match name.strip_prefix("utc") {
                 Some(field) => match field.parse()? {
                     Field::Time => return Err(()),
@@ -209,7 +221,7 @@ impl Function {
             }
             Self::ToBoolean if null_or_empty => Value::Null,
             Self::ToBoolean => {
-                let text = matches!(a, Value::String(s) if s == "false" || s == "0");
+                let text = matches!(a, Value::String(s) if &**s == "false" || &**s == "0");
                 (a.truthy() && !text).into()
             }
             Self::ToDate if null_or_empty => Value::Null,
@@ -339,6 +351,24 @@ impl Function {
                 };
                 regexp.regex.test(&b.to_string()).into()
             }
+            Self::Format => {
+                let specifier = b.to_string();
+                let format: NumberFormat = specifier
+                    .parse()
+                    .map_err(|e: InvalidSpecifier| Error::Runtime(e.to_string()))?;
+                format.format(a.to_number()).into()
+            }
+            Self::TimeFormat | Self::UtcFormat => {
+                let zone = self.zone();
+                zone.date(date::time(a)).format(&b.to_string()).into()
+            }
+            Self::TimeParse | Self::UtcParse => {
+                let zone = self.zone();
+                match zone.time_parse(&b.to_string(), &a.to_string()) {
+                    Some(date) => Value::Number(date.time()),
+                    None => Value::Null,
+                }
+            }
         })
     }
 
@@ -346,7 +376,11 @@ impl Function {
     /// the host's.
     fn zone(self) -> LocalZone {
         match self {
-            Self::UtcGet(_) | Self::UtcOffset | Self::UtcSequence => LocalZone::utc(),
+            Self::UtcGet(_)
+            | Self::UtcOffset
+            | Self::UtcSequence
+            | Self::UtcFormat
+            | Self::UtcParse => LocalZone::utc(),
             _ => LocalZone::default(),
         }
     }

@@ -6,19 +6,20 @@ use crate::{
     color,
     data::Column,
     model::{
-        Channel, Domain, Kind, Layer, Mark, NamedRange, Nice, Orient, Position, Range, Scale,
-        ScaleType, Scheme,
+        Channel, Domain, Format, Kind, Layer, Mark, NamedRange, Nice, Orient, Position, Range,
+        Scale, ScaleType, Scheme,
     },
     plan::{
         Ink,
         domain::{self, Discrete},
+        invalid,
     },
-    scale::Ticks,
+    scale::TickFormat,
 };
-use gpui::SharedString;
 use js::{
     color::Rgb,
     date::LocalZone,
+    format::NumberFormat,
     interpolate::Interpolate,
     scale::{
         Band, BinOrdinal, Continuous, Diverging, Quantile, Quantize, Sequential, Threshold,
@@ -34,6 +35,11 @@ use std::sync::Arc;
 const SCHEME_COUNT: usize = 5;
 /// Vega-Lite's `quantileCount` and `quantizeCount`, for a numeric range.
 pub(super) const STEP_COUNT: usize = 4;
+/// Vega's tick count for a quantile or quantize legend's label precision:
+/// 3 ticks, ten times over.
+const THRESHOLD_TICKS: f64 = 30.0;
+/// Vega's tick count for a legend of bins, at the least.
+const LEGEND_TICKS: f64 = 5.0;
 /// Vega-Lite's `pointPadding`.
 const POINT_PADDING: f64 = 0.5;
 /// Vega-Lite's band paddings within a band, by mark, and with an offset
@@ -397,7 +403,8 @@ pub(super) enum Fraction {
     Piecewise(Continuous),
 }
 
-/// What a value of a discretizing scale indexes.
+/// What a value of a discretizing scale indexes. A quantile or quantize
+/// scale keeps its domain's ends.
 #[derive(Clone, Debug)]
 pub(super) enum Steps {
     Quantile(Quantile),
@@ -427,14 +434,13 @@ impl Steps {
                 }
                 lo = scale.domain_min.unwrap_or(lo);
                 hi = scale.domain_max.unwrap_or(hi);
-                let mut quantize = Quantize::new([lo, hi], count);
                 if let Some(Nice::Ticks(ticks)) = scale.nice {
                     let mut linear =
                         Continuous::new(Transform::Linear, vec![lo, hi], vec![0.0, 1.0]);
                     linear.nice(ticks);
-                    quantize = Quantize::new([linear.domain[0], linear.domain[1]], count);
+                    (lo, hi) = (linear.domain[0], linear.domain[1]);
                 }
-                Steps::Quantize(quantize)
+                Steps::Quantize(Quantize::new([lo, hi], count))
             }
             ScaleType::Threshold => Steps::Threshold(Threshold {
                 domain: written.unwrap_or_default(),
@@ -457,31 +463,94 @@ impl Steps {
         }
     }
 
-    /// Each step's label: the values it takes in.
-    pub(super) fn labels(&self, kind: Kind, count: usize) -> Vec<SharedString> {
-        if let Steps::BinOrdinal(scale) = self {
-            return ranges(kind, &scale.bins);
-        }
-        let cuts: &[f64] = match self {
+    /// Vega's `labelValues`: where each step starts, the first at minus
+    /// infinity but a bin's, and where the last ends.
+    pub(super) fn values(&self) -> (Vec<f64>, f64) {
+        let cuts = match self {
             Steps::Quantile(scale) => &scale.thresholds,
             Steps::Quantize(scale) => &scale.thresholds,
             Steps::Threshold(scale) => &scale.domain,
-            Steps::BinOrdinal(scale) => &scale.bins,
+            Steps::BinOrdinal(scale) => {
+                let (last, starts) = scale.bins.split_last().unwrap_or((&f64::NAN, &[]));
+                return (starts.to_vec(), *last);
+            }
         };
-        let cuts = &cuts[..cuts.len().min(count.saturating_sub(1))];
-        (0..=cuts.len())
-            .map(|i| {
-                let text = match (i.checked_sub(1).map(|i| cuts[i]), cuts.get(i)) {
-                    (None, Some(hi)) => format!("< {}", kind.describe(*hi)),
-                    (Some(lo), None) => format!("≥ {}", kind.describe(lo)),
-                    (Some(lo), Some(hi)) => {
-                        format!("{} – {}", kind.describe(lo), kind.describe(*hi))
-                    }
-                    (None, None) => String::new(),
+        let values = std::iter::once(f64::NEG_INFINITY)
+            .chain(cuts.iter().copied())
+            .collect();
+        (values, f64::INFINITY)
+    }
+
+    /// Vega's `labelFraction`'s ends: where a discrete gradient's run starts
+    /// and stops.
+    pub(super) fn ends(&self) -> (f64, f64) {
+        match self {
+            Steps::Quantile(scale) => match scale.domain.as_slice() {
+                [first, .., last] => (*first, *last),
+                [only] => (*only, *only),
+                [] => (0.0, 0.0),
+            },
+            Steps::Quantize(Quantize {
+                domain: [lo, hi], ..
+            }) => (*lo, *hi),
+            Steps::Threshold(scale) => {
+                let domain = &scale.domain;
+                let (lo, hi) = match domain.as_slice() {
+                    [first, .., last] => (*first, *last),
+                    [only] => (*only, *only),
+                    [] => (0.0, 1.0),
                 };
-                text.into()
-            })
-            .collect()
+                let count = domain.len().saturating_sub(1);
+                let adjust = match count {
+                    0 => 0.1,
+                    count => (hi - lo) / count as f64,
+                };
+                (lo - adjust, hi + adjust)
+            }
+            Steps::BinOrdinal(scale) => match scale.bins.as_slice() {
+                [first, .., last] => (*first, *last),
+                _ => (0.0, 1.0),
+            },
+        }
+    }
+
+    /// Vega's `labelFormat` for its legend: `format`, or a quantile or
+    /// quantize scale's precision for its narrowest step, a threshold
+    /// scale's values as written, bins' precision for their step.
+    pub(super) fn label_format(&self, format: Option<&Format>) -> TickFormat {
+        let specifier = match format {
+            Some(Format::Time(time)) => return TickFormat::Time(Some(time.clone())),
+            Some(Format::Number(specifier)) => Some(*specifier),
+            None => None,
+        };
+        let narrowest = |cuts: &[f64]| match cuts {
+            [only] => *only,
+            [] => f64::NAN,
+            cuts => cuts
+                .windows(2)
+                .map(|w| w[1] - w[0])
+                .fold(f64::INFINITY, f64::min),
+        };
+        match self {
+            Steps::Quantile(scale) => TickFormat::Number(NumberFormat::span(
+                0.0,
+                narrowest(&scale.thresholds),
+                THRESHOLD_TICKS,
+                specifier,
+            )),
+            Steps::Quantize(Quantize {
+                domain: [lo, hi], ..
+            }) => TickFormat::Number(NumberFormat::span(0.0, hi - lo, THRESHOLD_TICKS, specifier)),
+            Steps::Threshold(_) => match specifier {
+                Some(specifier) => TickFormat::Number(specifier.into()),
+                None => TickFormat::Plain,
+            },
+            Steps::BinOrdinal(scale) => {
+                let (first, last) = self.ends();
+                let count = (scale.bins.len() as f64).max(LEGEND_TICKS);
+                TickFormat::Number(NumberFormat::span(first, last, count, specifier))
+            }
+        }
     }
 
     /// How many values its range holds by default: a threshold scale's
@@ -503,14 +572,6 @@ pub(super) fn edges(scale: &Scale) -> Option<Vec<f64>> {
         .bins
         .filter(|b| b.start.is_finite() && b.stop.is_finite())?;
     Some(bins.edges(bins.start, bins.stop)).filter(|edges| edges.len() >= 2)
-}
-
-/// Each bin between `edges` as Vega's symbol legend labels it.
-pub(super) fn ranges(kind: Kind, edges: &[f64]) -> Vec<SharedString> {
-    edges
-        .windows(2)
-        .map(|pair| format!("{} – {}", kind.describe(pair[0]), kind.describe(pair[1])).into())
-        .collect()
 }
 
 /// A colour channel's scale.
@@ -543,7 +604,7 @@ pub(super) fn named_inks(channel: &Channel, layer: &Layer) -> Option<Option<Vec<
     Some(Some(
         (0..text.codes.len())
             .map(|row| {
-                let name = text.get(row);
+                let name = text.get(row)?;
                 Some(Ink::Fixed(color::hsla(name.parse().ok()?)))
             })
             .collect(),
@@ -555,9 +616,6 @@ pub(super) enum Colored {
     Discrete(Discrete),
     Numbers(Arc<[f64]>),
 }
-
-/// A legend entry: its ink and label.
-pub(super) type Entry = (Ink, SharedString);
 
 impl ColorScale {
     /// The colours `channel` takes in a `mark` layer: `discrete` its domain
@@ -723,6 +781,30 @@ impl ColorScale {
         }
     }
 
+    /// `value`, or a missing one as Vega-Lite's `show` mode draws it: zero
+    /// where the domain spans zero, else the domain's first value.
+    pub(super) fn shown(&self, value: f64) -> f64 {
+        let domain: &[f64] = match self {
+            _ if !value.is_nan() => return value,
+            ColorScale::Continuous { fraction, .. } => match fraction {
+                Fraction::Sequential(scale) => &scale.domain,
+                Fraction::Diverging(scale) => &scale.domain,
+                Fraction::Piecewise(scale) => &scale.domain,
+            },
+            ColorScale::Steps { steps, .. } => match steps {
+                Steps::Quantile(scale) => &scale.domain,
+                Steps::Quantize(scale) => &scale.domain,
+                Steps::Threshold(scale) => &scale.domain,
+                Steps::BinOrdinal(scale) => &scale.bins,
+            },
+            ColorScale::Discrete(_) => return value,
+        };
+        match domain.is_empty() {
+            true => value,
+            false => invalid::zero_or_min(domain),
+        }
+    }
+
     /// The ink of `value` on a continuous or discretizing scale.
     pub(super) fn value(&self, value: f64) -> Option<Ink> {
         match self {
@@ -739,39 +821,29 @@ impl ColorScale {
         }
     }
 
-    /// A continuous or discretizing scale's legend: ticks across the domain
-    /// in their colours, or each step.
-    pub(super) fn entries(&self, kind: Kind, count: usize) -> Vec<Entry> {
-        match self {
-            ColorScale::Discrete(_) => Vec::new(),
-            ColorScale::Steps { steps, inks } => steps
-                .labels(kind, inks.len())
-                .into_iter()
-                .zip(inks)
-                .map(|(label, ink)| (*ink, label))
-                .collect(),
-            ColorScale::Continuous { fraction, .. } => {
-                let scale = match fraction {
-                    Fraction::Sequential(scale) => Continuous::new(
-                        scale.transform.clone(),
-                        scale.domain.to_vec(),
-                        vec![0.0, 1.0],
-                    ),
-                    Fraction::Diverging(scale) => Continuous::new(
-                        scale.transform.clone(),
-                        vec![scale.domain[0], scale.domain[2]],
-                        vec![0.0, 1.0],
-                    ),
-                    Fraction::Piecewise(scale) => scale.clone(),
-                };
-                let ticks = Ticks::of(&scale, count);
-                ticks
-                    .values
-                    .iter()
-                    .filter_map(|&v| Some((self.value(v)?, kind.describe(v).into())))
-                    .collect()
-            }
-        }
+    /// A continuous scale's domain onto 0 to 1, which its ticks and
+    /// gradient run across. `None` for any other.
+    pub(super) fn continuous(&self) -> Option<Continuous> {
+        let ColorScale::Continuous { fraction, .. } = self else {
+            return None;
+        };
+        Some(match fraction {
+            Fraction::Sequential(scale) => Continuous::new(
+                scale.transform.clone(),
+                scale.domain.to_vec(),
+                vec![0.0, 1.0],
+            ),
+            Fraction::Diverging(scale) => Continuous::new(
+                scale.transform.clone(),
+                vec![scale.domain[0], scale.domain[2]],
+                vec![0.0, 1.0],
+            ),
+            Fraction::Piecewise(scale) => Continuous::new(
+                scale.transform.clone(),
+                vec![scale.domain[0], scale.domain[scale.domain.len() - 1]],
+                vec![0.0, 1.0],
+            ),
+        })
     }
 }
 

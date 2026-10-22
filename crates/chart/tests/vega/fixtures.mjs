@@ -1,7 +1,8 @@
 // Runs each `*.vl.json` spec in ../transform through Vega-Lite and Vega,
 // and writes the data each mark draws, in mark order, to `<name>.vega.json`,
 // a time as milliseconds since the epoch; and the domain of each of its
-// discrete scales, by scale name, to `<name>.domains.json` where it has one.
+// discrete scales, by scale name, to `<name>.domains.json` where it has one,
+// undefined as `"undefined"`.
 // Times are read in UTC, with Vega's random generator seeded as
 // `render.mjs` seeds it.
 //
@@ -42,7 +43,7 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.vl.json')).sort()
   const domains = Object.fromEntries(
     (vega.scales ?? [])
       .filter((scale) => ['band', 'point', 'ordinal'].includes(scale.type))
-      .map((scale) => [scale.name, view.scale(scale.name).domain()]),
+      .map((scale) => [scale.name, view.scale(scale.name).domain().map((v) => (v === undefined ? 'undefined' : v))]),
   );
   if (Object.keys(domains).length > 0) {
     writeFileSync(join(dir, file.replace('.vl.json', '.domains.json')), JSON.stringify(domains, times, 1) + '\n');

@@ -1,0 +1,53 @@
+[
+ [
+  {
+   "g": "a",
+   "rows": [
+    {
+     "g": "a",
+     "v": 1,
+     "w": "x"
+    },
+    {
+     "g": "a",
+     "v": 3,
+     "w": "z"
+    }
+   ],
+   "total": 4,
+   "total_start": 0,
+   "total_end": 4
+  },
+  {
+   "g": "b",
+   "rows": [
+    {
+     "g": "b",
+     "v": 2,
+     "w": "y"
+    },
+    {
+     "g": "b",
+     "v": 5,
+     "w": "y"
+    }
+   ],
+   "total": 7,
+   "total_start": 0,
+   "total_end": 7
+  },
+  {
+   "g": "c",
+   "rows": [
+    {
+     "g": "c",
+     "v": 4,
+     "w": "x"
+    }
+   ],
+   "total": 4,
+   "total_start": 0,
+   "total_end": 4
+  }
+ ]
+]

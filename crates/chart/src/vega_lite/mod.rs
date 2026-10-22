@@ -1,7 +1,11 @@
 //! A [Vega-Lite](https://vega.github.io/vega-lite/) spec as a chart: one
 //! `mark` or a top-level `layer` of them, and an `encoding`. A layer takes the
 //! top level's `data` unless it has its own, and the top level's `encoding`
-//! under its own.
+//! under its own, a channel's field or datum definition over the top level's
+//! definition of it.
+//!
+//! A `boxplot`, `errorbar` or `errorband` mark draws the layer of part marks
+//! Vega-Lite expands it to, over the transforms that compute their fields.
 //!
 //! A mark is a type or a definition, whose properties are those
 //! [`Properties`] holds by their Vega-Lite names, `point` and `line`
@@ -11,11 +15,14 @@
 //! on a line, area or trail with no `point` property draws points over it,
 //! and a point overlay is filled and opaque unless it says otherwise. A
 //! `fill` or `stroke` property that an encoded `color` paints over is
-//! dropped, as are `tooltip`, `invalid`, `aria`, `description`, `cursor`,
-//! `style`, `binSpacing`, `timeUnitBandSize`, `timeUnitBandPosition`, and an
-//! arc's corner-specific radii. `lineBreak` is a string or an `expr` that
-//! needs neither `datum` nor a param and gives a string or a regular
-//! expression.
+//! dropped, as are `tooltip`, `aria`, `description`, `cursor`, `style`,
+//! `binSpacing`, `timeUnitBandSize`, `timeUnitBandPosition`, and an arc's
+//! corner-specific radii. `lineBreak` is a string or an `expr` that needs
+//! neither `datum` nor a param and gives a string or a regular expression.
+//! `invalid` is read with `config.<mark>.invalid`, or else
+//! `config.mark.invalid`, as Vega-Lite 6.5 reads them: the marks by the
+//! mark's own mode or else the config's, the domains by the rows the marks
+//! draw unless the config's mode alone parts them.
 //!
 //! An `encoding` holds the channels [`Encoding`] does, by their Vega-Lite
 //! names, each a `field`, a `datum` or a `value`; `detail` and `order` are a
@@ -47,7 +54,11 @@
 //! each value as it is; a range `{step}` and `domainRaw` answer `None`.
 //! Layers share a discrete channel's domain as Vega-Lite merges theirs.
 //! `stack` is `true`, `"zero"`, `"normalize"`, `"center"`, `false` or
-//! `null`. An `axis` or `legend` gives its `title` and nothing else. A
+//! `null`. An `axis` on `x` or `y` and a `legend` on a colour, size, shape,
+//! dash, stroke width or opacity channel read every property of Vega-Lite's;
+//! `null` draws none. A time unit's guide writes its values in Vega-Lite's
+//! format for the unit. The top level's `title` is a string, lines, or an
+//! object of them and every property of Vega-Lite's. A
 //! missing `type` is Vega-Lite's default: nominal, but quantitative for a
 //! number datum, an aggregate other than `argmin` and `argmax`, a bin or a
 //! numeric scale type, temporal for a time unit or a time scale, ordinal for
@@ -69,9 +80,8 @@
 //! axis ticks every bin's edge. A quantitative bin on `color`, `fill` or
 //! `stroke` takes a bin-ordinal scale, and on another channel with a
 //! continuous scale one from the bins' start to their stop; the legend of
-//! either lists the bins. `timeUnit` with no `unit` and the `values` op
-//! answer `None`. A time unit's dates group to the second, as Vega keys a
-//! date by its text.
+//! either lists the bins. `timeUnit` with no `unit` answers `None`. A time
+//! unit's dates group to the second, as Vega keys a date by its text.
 //!
 //! A colour value is a CSS colour as d3-color reads it, `null` none; a shape
 //! value a Vega symbol name or SVG path data; a `strokeDash` value a list of
@@ -90,8 +100,11 @@
 //! A `transform` list runs as a pipeline over its view's data before encoding,
 //! in order: the top level's before a layer's own, for a layer that takes the
 //! top level's `data`. Its ops are `aggregate`, `bin`, `density`, `loess`,
-//! `quantile`, `regression` without `params` and `timeUnit`, computed by
-//! [`crate::transform`]. A time unit's field is read as times.
+//! `quantile`, `regression` and `timeUnit`, computed by
+//! [`crate::transform`]. A time unit's field is read as times. The ops run
+//! as Vega-Lite's optimized dataflow runs them: once for every layer that
+//! shares them, layers' aggregates over the same groups as one, each drawing
+//! from one generator in the order Vega evaluates them.
 //!
 //! A spec with a transform op the pipeline lacks, nested layers, composed or
 //! faceted views, params, a mark, mark property, channel or channel property
@@ -103,26 +116,29 @@
 //! [`Properties`]: crate::model::Properties
 //! [`plan`]: crate::plan::plan
 //!
-//! A temporal field's strings are read by [`time::parse`]; its numbers are
+//! A temporal field's strings are read by [`crate::time::parse`]; its numbers are
 //! milliseconds since the epoch; so are a time unit's field's. A
 //! quantitative field's strings are read as numbers, but a binned field's,
 //! and an aggregated one's but for `min` and `max`, are kept as text, which
 //! the transforms read as Vega does. Any other field whose values are all
 //! numbers or null is numeric, and text otherwise; a field no channel types
-//! is numeric with empty strings among its numbers as well. Text compares
-//! as strings.
+//! is numeric with empty strings among its numbers as well, text where its
+//! values are all strings or null, and holds its values as they are where
+//! not, as does a field that holds an array or object. Text compares as
+//! strings; its null is a value of its own, `null`, and a row's missing
+//! field another, `undefined`. Layers of one source read a field one way:
+//! as times where any reads it so, and otherwise as the first to type it
+//! does.
 
 use crate::{
-    data::{Column, Data},
-    model::{Chart, Domain, Kind, Range},
-    time,
-    transform::{Random, Transform},
-    vega_lite::{data::Sources, encoding::Def, field::Derive, path::Path, union::Layered},
+    model::Chart,
+    transform::Random,
+    vega_lite::{data::Sources, dataflow::Tree, view::View},
 };
-use gpui::SharedString;
 use serde_json::{Map, Value};
 use std::str::FromStr;
 
+mod composite;
 mod data;
 mod dataflow;
 mod datetime;
@@ -130,15 +146,13 @@ mod dsv;
 mod encoding;
 mod field;
 mod format;
+mod guide;
 mod mark;
-mod path;
+mod sort;
 mod transform;
 mod union;
-
-/// Inside a layer as well as at the top.
-const UNSUPPORTED: [&str; 7] = [
-    "hconcat", "vconcat", "concat", "facet", "repeat", "spec", "params",
-];
+mod unit;
+mod view;
 
 /// A Vega-Lite spec, read as JSON and not yet drawn.
 #[derive(Clone, Debug)]
@@ -184,52 +198,24 @@ impl Spec {
             },
             load,
         };
-        let empty = Map::new();
-        let shared = match spec.get("encoding") {
-            Some(encoding) => encoding.as_object()?,
-            None => &empty,
-        };
-        let units: Vec<&Map<String, Value>> = match spec.get("layer") {
-            Some(layers) => layers
-                .as_array()?
-                .iter()
-                .map(Value::as_object)
-                .collect::<Option<_>>()?,
-            None => vec![spec],
-        };
-        let mut layers = Vec::with_capacity(units.len());
+        let view = View::of(spec)?;
+        let (mut tree, read, units) = Tree::parse(&view, spec.get("config"))?;
+        tree.optimize();
         let mut random = Random::default();
+        let ran = tree.run(
+            &mut |source| {
+                let source = &read[source];
+                sources.table(source.data, &source.reads)
+            },
+            &mut random,
+        )?;
+        let mut layers = Vec::with_capacity(units.len());
         for unit in units {
-            let nested = !std::ptr::eq(unit, spec) && unit.contains_key("layer");
-            if nested || UNSUPPORTED.iter().any(|key| unit.contains_key(*key)) {
-                return None;
-            }
-            let top = std::ptr::eq(unit, spec);
-            let data = unit.get("data").or(spec.get("data"))?;
-            let inherited = (!top && !unit.contains_key("data")).then(|| spec.get("transform"));
-            let mut pipeline = match inherited.flatten() {
-                Some(list) => transform::pipeline(list)?,
-                None => Vec::new(),
-            };
-            // A layer bins its encoding's fields before its own transforms.
-            let bins_at = pipeline.len();
-            if let Some(list) = unit.get("transform") {
-                pipeline.extend(transform::pipeline(list)?);
-            }
-            let bins_at = if top { pipeline.len() } else { bins_at };
-            let mut encoding = shared.clone();
-            if !top && let Some(own) = unit.get("encoding") {
-                encoding.extend(own.as_object()?.clone());
-            }
-            layers.push(layer(
-                unit.get("mark")?,
-                &encoding,
-                data,
-                &sources,
-                &pipeline,
-                bins_at,
-                &mut random,
-            )?);
+            let raw = ran.rows(tree.tap(unit.raw))?.clone();
+            let main = tree.tap(unit.main);
+            let rows = ran.rows(main)?.clone();
+            let bins = |field: &str| ran.bins(&tree, main, field);
+            layers.push(unit.layer(raw, rows, &bins, &mut random)?);
         }
         union::share(&mut layers, &mut random);
         let mut layers = layers.into_iter().map(|layer| layer.chart);
@@ -238,8 +224,7 @@ impl Spec {
             chart = chart.layer(layer);
         }
         chart.title = match spec.get("title") {
-            Some(Value::Object(title)) => title.get("text").and_then(encoding::title),
-            Some(title) => encoding::title(title),
+            Some(title) => guide::title(title)?,
             None => None,
         };
         chart.drawable().then_some(chart)
@@ -250,169 +235,4 @@ impl Spec {
 /// reads. A spec with a `data.url` is `None`: [`Spec::chart`] takes a loader.
 pub fn import(source: &str) -> Option<Chart> {
     source.parse::<Spec>().ok()?.chart(&|_| None)
-}
-
-/// One layer: `mark` drawn from `data` through `pipeline` as `map` says,
-/// the encoding's bins before the op at `bins_at`, its ops drawing from
-/// `random`.
-fn layer(
-    mark: &Value,
-    map: &Map<String, Value>,
-    data: &Value,
-    sources: &Sources,
-    pipeline: &[Transform],
-    bins_at: usize,
-    random: &mut Random,
-) -> Option<Layered> {
-    let (mark, properties, map) = mark::read(mark, map)?;
-    let mut chart = Chart::new(mark, Data::new()).properties(properties);
-    let layer = &mut chart.layers[0];
-    let (encoding, defs) = encoding::read(&map, Some(mark))?;
-    layer.encoding = encoding;
-
-    let rows = sources.rows(data)?;
-    // A time unit's field is read as times wherever it is, and a range
-    // field as the channel's values are, as text.
-    let units = pipeline.iter().filter_map(|op| match op {
-        Transform::TimeUnit(unit) => Some((unit.field.clone(), Some(Kind::Temporal))),
-        _ => None,
-    });
-    let ranges: Vec<(SharedString, Option<Kind>)> = layer
-        .encoding
-        .channels()
-        .iter()
-        .filter_map(|c| match &c.scale.range {
-            Some(Range::Field(field)) => Some((field.clone(), Some(Kind::Nominal))),
-            _ => None,
-        })
-        .collect();
-    let reads: Vec<(SharedString, Option<Kind>)> = defs
-        .iter()
-        .flat_map(Def::reads)
-        .chain(units)
-        .chain(ranges.iter().cloned())
-        .collect();
-    // Each field once, the encoding's read as paths into each row and with
-    // the type they are read as.
-    let mut fields: Vec<(&str, Option<Kind>, bool)> = Vec::new();
-    for (field, kind, path) in reads
-        .iter()
-        .map(|(field, kind)| (field.as_ref(), *kind, true))
-        .chain(
-            rows.iter()
-                .flat_map(|row| row.keys().map(|key| (key.as_str(), None, false))),
-        )
-    {
-        match fields.iter_mut().find(|(name, ..)| *name == field) {
-            // A temporal channel reads its field as times, over any other.
-            Some((_, slot, _)) => {
-                if kind == Some(Kind::Temporal) || slot.is_none() {
-                    *slot = kind;
-                }
-            }
-            None => fields.push((field, kind, path)),
-        }
-    }
-    let mut source = Data::new();
-    for (field, kind, path) in fields {
-        let values: Vec<&Value> = match path {
-            true => {
-                let path: Path = field.parse().ok()?;
-                rows.iter()
-                    .map(|row| path.field(row).unwrap_or(&Value::Null))
-                    .collect()
-            }
-            false => rows
-                .iter()
-                .map(|row| row.get(field).unwrap_or(&Value::Null))
-                .collect(),
-        };
-        source = source.with(field.to_string(), column(&values, kind));
-    }
-    let flow = dataflow::run(source, pipeline, bins_at, &defs, mark, random)?;
-    for (def, order) in defs.iter().zip(flow.orders) {
-        if let (Some(order), Some(channel)) = (
-            order,
-            encoding::scaled_mut(&mut layer.encoding, &def.channel),
-        ) {
-            channel.sort = order;
-        }
-    }
-    for def in &defs {
-        let Derive::Bin(bin) = &def.derive else {
-            continue;
-        };
-        let Some(&(_, bins)) = flow.bins.iter().find(|(start, _)| *start == bin.output[0]) else {
-            continue;
-        };
-        let Some(channel) = encoding::scaled_mut(&mut layer.encoding, &def.channel) else {
-            continue;
-        };
-        if channel.kind == Kind::Quantitative {
-            channel.scale.bins = Some(bins);
-        }
-    }
-    let source = flow.data;
-    let mut data = Data::new();
-    let channels = layer.encoding.channels();
-    let encoded = channels.iter().flat_map(|channel| {
-        let spans = match &channel.scale.domain {
-            Some(Domain::Unaggregated(fields)) => &fields[..],
-            _ => &[],
-        };
-        channel.field().into_iter().chain(spans)
-    });
-    for field in encoded.chain(ranges.iter().map(|(field, _)| field)) {
-        if data.column(field).is_some() {
-            continue;
-        }
-        let column = match source.column(field) {
-            Some(column) => column.clone(),
-            None => Column::Number(vec![f64::NAN; source.len()].into()),
-        };
-        data = data.adopt(&source, field.clone(), column);
-    }
-    layer.data = data;
-    Some(Layered {
-        chart,
-        defs,
-        raw: flow.raw,
-        sorts: flow.sorts,
-    })
-}
-
-/// A field's values as the channel of `kind` that encodes it reads them.
-fn column(values: &[&Value], kind: Option<Kind>) -> Column {
-    let numbers =
-        |read: fn(&Value) -> f64| Column::Number(values.iter().map(|v| read(v)).collect());
-    match kind {
-        Some(Kind::Temporal) => numbers(|value| match value {
-            Value::Number(n) => n.as_f64().unwrap_or(f64::NAN),
-            Value::String(s) => time::parse(s).unwrap_or(f64::NAN),
-            _ => f64::NAN,
-        }),
-        Some(Kind::Quantitative) => numbers(|value| match value {
-            Value::Null => f64::NAN,
-            value => format::number_of(value),
-        }),
-        _ if values.iter().all(|v| v.is_number() || v.is_null()) => {
-            numbers(|value| value.as_f64().unwrap_or(f64::NAN))
-        }
-        // Read as it is, an empty string is missing as null is.
-        None if values
-            .iter()
-            .all(|v| v.is_number() || v.is_null() || v.as_str() == Some("")) =>
-        {
-            numbers(|value| value.as_f64().unwrap_or(f64::NAN))
-        }
-        _ => Column::Text(
-            values
-                .iter()
-                .map(|value| match value {
-                    Value::Null => String::new(),
-                    value => format::string_of(value),
-                })
-                .collect(),
-        ),
-    }
 }

@@ -8,7 +8,7 @@ use crate::{
 };
 use gpui::{Hsla, SharedString};
 use js::{color::Rgb, interpolate, scheme, time};
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Scale {
@@ -141,6 +141,9 @@ pub enum Domain {
     /// row aggregates, the fields that hold them, in place of the channel's
     /// own.
     Unaggregated([SharedString; 2]),
+    /// A continuous scale's data: these values in place of its rows', as
+    /// Vega-Lite takes a domain from a data source of its own.
+    Data(Arc<[f64]>),
 }
 
 #[derive(Clone, Debug, PartialEq)]

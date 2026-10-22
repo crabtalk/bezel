@@ -1,9 +1,10 @@
 # bezel-js
 
-What JavaScript does with numbers, strings, regular expressions and dates, where Rust's own answer differs, and ports of d3-array's ticks, d3-color, d3-format, d3-interpolate, d3-path, d3-scale, d3-shape's curves and arc, d3-time, d3-time-format and vega-scale's schemes. No JavaScript engine and no GUI toolkit; builds for `wasm32-unknown-unknown`.
+JavaScript's values, and what JavaScript does with numbers, strings, regular expressions and dates, where Rust's own answer differs, and ports of d3-array's ticks, d3-color, d3-format, d3-interpolate, d3-path, d3-scale, d3-shape's curves and arc, d3-time, d3-time-format and vega-scale's schemes. No JavaScript engine and no GUI toolkit; builds for `wasm32-unknown-unknown`.
 
 | Module | What it holds |
 | --- | --- |
+| `value` | `Value`: undefined, null, booleans, numbers, strings, arrays, objects and `RegExp` objects, with ToNumber, ToString, ToPrimitive, truth, `==`, `===`, `<`, `+` and property access |
 | `number` | `Number`: `String(x)` as `Display`, `toFixed`, `toExponential`, `toPrecision`, `Number(text)` as `From<&str>`; `parseFloat`, `parseInt`, `ToInt32`, `ToIntegerOrInfinity`, truth |
 | `color` | d3-color's `color`: CSS colour keywords, hex, `rgb()`, `rgba()`, `hsl()` and `hsla()` as `Rgb` through `FromStr`; `formatRgb` as `Display`; `Hsl`, `Lab`, `Hcl` and `Cubehelix` through `From` |
 | `interpolate` | d3-interpolate: numbers, `Interpolate` between colours in RGB with gamma, HSL, CIELAB, HCL and Cubehelix, short or long way round, and `piecewise` |

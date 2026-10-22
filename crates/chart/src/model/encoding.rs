@@ -1,9 +1,8 @@
 //! Which fields, datums and values a layer's marks are drawn from, by
 //! Vega-Lite channel.
 
-use gpui::{Hsla, SharedString};
-
 use crate::model::{Channel, Shape};
+use gpui::{Hsla, SharedString};
 
 /// A channel's data through its scale, or one value in its own range.
 #[derive(Clone, Debug, PartialEq)]
@@ -20,6 +19,13 @@ impl<V> From<Channel> for Encode<V> {
 
 impl<V> Encode<V> {
     pub fn channel(&self) -> Option<&Channel> {
+        match self {
+            Self::Scaled(channel) => Some(channel),
+            Self::Value(_) => None,
+        }
+    }
+
+    pub fn channel_mut(&mut self) -> Option<&mut Channel> {
         match self {
             Self::Scaled(channel) => Some(channel),
             Self::Value(_) => None,

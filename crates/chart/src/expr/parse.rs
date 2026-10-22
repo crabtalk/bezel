@@ -1,18 +1,19 @@
 //! Source text to a syntax tree, by JavaScript's grammar and precedence.
 
-use crate::expr::{Error, RegExp, Value, function::Function};
+use crate::expr::{Error, function::Function};
 use gpui::SharedString;
 use js::{
     number::{self, Number},
     string,
+    value::{RegExp, Value},
 };
-use std::f64::consts;
+use std::{f64::consts, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub(crate) enum Node {
     Literal(Value),
     Array(Vec<Node>),
-    Object(Vec<(SharedString, Node)>),
+    Object(Vec<(Arc<str>, Node)>),
     Datum,
     Param(SharedString),
     Member(Box<Node>, Box<Node>),
@@ -311,12 +312,12 @@ impl<'a> Parser<'a> {
     }
 
     fn object(&mut self) -> Result<Node, Error> {
-        let mut fields: Vec<(SharedString, Node)> = Vec::new();
+        let mut fields: Vec<(Arc<str>, Node)> = Vec::new();
         loop {
             if self.eat("}")? {
                 break;
             }
-            let key: SharedString = match self.next()? {
+            let key: Arc<str> = match self.next()? {
                 (Token::Name(name), _) => name.into(),
                 (Token::String(s), _) => s.into(),
                 (Token::Number(n), _) => Value::Number(n).to_string().into(),

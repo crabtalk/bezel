@@ -99,3 +99,39 @@ fn invalid_specifier_says_which() {
     let error = "xx".parse::<NumberFormat>().unwrap_err();
     assert_eq!(error.to_string(), "invalid format: xx");
 }
+
+/// vega-format's `formatSpan` and `formatFloat`, against what Vega 6.4.0
+/// writes.
+#[test]
+fn spans_and_floats_are_vegas() {
+    let span = |start, stop, count, specifier: Option<&str>, values: &[f64]| -> Vec<String> {
+        let specifier = specifier.map(|s| s.parse::<Specifier>().expect("a specifier"));
+        let format = NumberFormat::span(start, stop, count, specifier);
+        values.iter().map(|&v| format.format(v)).collect()
+    };
+    assert_eq!(
+        span(0.0, 100.0, 10.0, None, &[0.0, 20.0, -40.0, 1000.0]),
+        ["0", "20", "\u{2212}40", "1,000"]
+    );
+    assert_eq!(
+        span(0.0, 1.0, 10.0, None, &[0.0, 0.1, -0.3]),
+        ["0.0", "0.1", "\u{2212}0.3"]
+    );
+    assert_eq!(
+        span(0.0, 26000.0, 5.0, Some("s"), &[0.0, 10000.0, 20000.0]),
+        ["0k", "10k", "20k"]
+    );
+    assert_eq!(span(0.0, 1.0, 5.0, Some("%"), &[0.0, 0.2]), ["0%", "20%"]);
+    assert_eq!(
+        span(0.0, 1000.0, 5.0, Some("e"), &[0.0, 200.0]),
+        ["0e+0", "2e+2"]
+    );
+    let float = NumberFormat::float(None);
+    let floats: Vec<String> = [1.0, 1000.0, 0.5, 1234567.891]
+        .iter()
+        .map(|&v| float.format(v))
+        .collect();
+    assert_eq!(floats, ["1", "1,000", "0.5", "1,234,567.891"]);
+    let fixed = NumberFormat::float(Some(".2f".parse().expect("a specifier")));
+    assert_eq!(fixed.format(1.234), "1.23");
+}

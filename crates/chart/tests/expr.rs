@@ -1,10 +1,13 @@
 use chart::{
-    Data,
-    expr::{Error, Expr, Row, Value},
+    Column, Data,
+    expr::{Error, Expr, Row},
     time::{DAY, HOUR, MINUTE, SECOND},
 };
 use gpui::SharedString;
-use js::date::{self, LocalZone};
+use js::{
+    date::{self, LocalZone},
+    value::Value,
+};
 
 fn data() -> Data {
     Data::new()
@@ -217,6 +220,45 @@ fn constants() {
 }
 
 #[test]
+fn datum_reads_arrays_and_objects_in_values() {
+    let info = Value::Object(
+        [
+            ("size".into(), Value::Number(3.0)),
+            ("tags".into(), vec!["p".into(), "q".into()].into()),
+        ]
+        .into(),
+    );
+    let data = Data::new()
+        .with("info", [info.clone(), Value::Null].into_iter().collect())
+        .number("x", [1.0, 2.0]);
+    let eval = |source: &str, index: usize| {
+        let row = Row {
+            data: &data,
+            index,
+            params: &[],
+        };
+        source.parse::<Expr>().unwrap().eval(&row)
+    };
+    assert_eq!(eval("datum.info", 0), Ok(info.clone()));
+    assert_eq!(eval("datum.info.tags[1]", 0), Ok("q".into()));
+    assert_eq!(eval("isArray(datum.info.tags)", 0), Ok(true.into()));
+    assert_eq!(eval("datum.info", 1), Ok(Value::Null));
+    assert!(
+        eval("datum.info.size", 1).is_err(),
+        "null has no properties"
+    );
+    assert_eq!(eval("datum", 0).unwrap().get(&"info".into()), Ok(info));
+    // What an expression makes stays an array or object in a column.
+    let made: Column = (0..data.len())
+        .map(|index| eval("[datum.x, {a: datum.x}]", index).unwrap())
+        .collect();
+    let Column::Value(made) = made else {
+        panic!("arrays are values");
+    };
+    assert_eq!(made[1].to_string(), "2,[object Object]");
+}
+
+#[test]
 fn datum_reads_the_row() {
     assert_eq!(num("datum.x * 2"), 2.0);
     assert_eq!(show("datum['name']"), "Ann");
@@ -296,16 +338,7 @@ fn parse_errors() {
         "foo(1)".parse::<Expr>().unwrap_err(),
         Error::Function("foo".to_string())
     );
-    for name in [
-        "format",
-        "timeFormat",
-        "utcFormat",
-        "timeParse",
-        "scale",
-        "data",
-        "indata",
-        "vlSelectionTest",
-    ] {
+    for name in ["scale", "data", "indata", "vlSelectionTest"] {
         assert_eq!(
             format!("{name}(1)").parse::<Expr>().unwrap_err(),
             Error::Function(name.to_string())
@@ -684,6 +717,27 @@ fn strings() {
         "hell..."
     );
     assert_eq!(show("truncate('hi', 8)"), "hi");
+}
+
+#[test]
+fn formats_are_d3s() {
+    assert_eq!(show("format(1234.5, ',.2f')"), "1,234.50");
+    assert_eq!(show("format(-0.5, '.0%')"), "\u{2212}50%");
+    assert_eq!(show("format(1500, 's')"), "1.50000k");
+    assert!(matches!(
+        try_eval("format(1, 'bogus')", 0, &[]),
+        Err(Error::Runtime(_))
+    ));
+    let day = utc(2024, 3, 5);
+    assert_eq!(
+        show(&format!("utcFormat({day}, '%b %d, %Y')")),
+        "Mar 05, 2024"
+    );
+    assert_eq!(num("utcParse('2024-03-05', '%Y-%m-%d')"), day);
+    assert_eq!(eval("utcParse('nope', '%Y')"), Value::Null);
+    let noon = local(2024, 2, 5, 12, 0);
+    assert_eq!(show(&format!("timeFormat({noon}, '%I %p')")), "12 PM");
+    assert_eq!(num("timeParse('2024-03-05 12', '%Y-%m-%d %H')"), noon);
 }
 
 #[test]

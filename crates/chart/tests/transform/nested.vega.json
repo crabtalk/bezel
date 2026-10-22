@@ -1,0 +1,41 @@
+[
+ [
+  {
+   "name": "a",
+   "info": {
+    "size": 3,
+    "tags": [
+     "p",
+     "q"
+    ]
+   },
+   "flag": true,
+   "info.size": 3,
+   "info.tags.1": "q"
+  },
+  {
+   "name": "b",
+   "info": {
+    "size": 5,
+    "tags": [
+     "r",
+     "s"
+    ]
+   },
+   "flag": false,
+   "info.size": 5,
+   "info.tags.1": "s"
+  },
+  {
+   "name": "c",
+   "info": {
+    "size": 2,
+    "tags": [
+     "t"
+    ]
+   },
+   "flag": true,
+   "info.size": 2
+  }
+ ]
+]

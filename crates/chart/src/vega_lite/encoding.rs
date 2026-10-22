@@ -7,16 +7,18 @@ use crate::{
         Channel, Datum, Domain, Encode, Encoding, Kind, Mark, Nice, Palette, Position, Range,
         Scale, ScaleType, Scheme, Shape, Sort, Source, Stack,
     },
-    scale, time,
+    time,
     transform::{Bins, Op},
     vega_lite::{
         datetime,
         field::{self, Derive},
+        format, guide,
     },
 };
-use gpui::{Hsla, SharedString};
+use gpui::{FontStyle, FontWeight, Hsla, SharedString};
 use js::{interpolate::Interpolate, number::Number as JsNumber, scheme as palette, time::Unit};
 use serde_json::{Map, Value};
+use std::{fmt, str::FromStr};
 
 /// What a field or datum definition may carry.
 const CHANNEL: [&str; 13] = [
@@ -33,6 +35,17 @@ const CHANNEL: [&str; 13] = [
     "bin",
     "timeUnit",
     "bandPosition",
+];
+/// Channels Vega-Lite draws a legend of.
+const LEGENDS: [&str; 8] = [
+    "color",
+    "fill",
+    "stroke",
+    "size",
+    "shape",
+    "strokeDash",
+    "strokeWidth",
+    "opacity",
 ];
 /// Channels that share their primary's scale and take its type.
 const SECONDARY: [(&str, &str); 4] = [
@@ -292,6 +305,84 @@ pub(crate) fn read(map: &Map<String, Value>, mark: Option<Mark>) -> Option<(Enco
     Some((encoding, r.defs))
 }
 
+/// The type of the field or datum `def` on channel `name`, deriving as
+/// `derive` does: its `type`, the type `inherited` from its primary, or
+/// Vega-Lite's default. `None` for a type it does not take.
+pub(crate) fn kind(
+    def: &Map<String, Value>,
+    name: &str,
+    derive: &Derive,
+    inherited: Option<Kind>,
+) -> Option<Kind> {
+    let scale_type = def
+        .get("scale")
+        .and_then(|scale| scale.get("type"))
+        .and_then(Value::as_str);
+    Some(match (def.get("type"), inherited) {
+        (Some(_), Some(_)) => return None,
+        (None, Some(kind)) => kind,
+        (Some(_), None) if derive.counts() => Kind::Quantitative,
+        (Some(kind), None) => kind.as_str()?.parse().ok()?,
+        (None, None) => match (def.get("datum"), name) {
+            (Some(Value::Object(_)), _) => Kind::Temporal,
+            (Some(Value::Number(_)), _) => Kind::Quantitative,
+            (Some(Value::String(_)), _) => Kind::Nominal,
+            (_, "shape" | "strokeDash") => Kind::Nominal,
+            (_, "order") => Kind::Ordinal,
+            _ if def.get("sort").is_some_and(Value::is_array) => Kind::Ordinal,
+            _ if derive.kind().is_some() => derive.kind()?,
+            _ if scale_type.is_some_and(|t| NUMERIC.contains(&t)) => Kind::Quantitative,
+            _ if matches!(scale_type, Some("time" | "utc")) => Kind::Temporal,
+            _ => Kind::Nominal,
+        },
+    })
+}
+
+/// Vega-Lite's names of the types.
+const KINDS: [(Kind, &str); 4] = [
+    (Kind::Quantitative, "quantitative"),
+    (Kind::Temporal, "temporal"),
+    (Kind::Ordinal, "ordinal"),
+    (Kind::Nominal, "nominal"),
+];
+
+/// A type by its Vega-Lite name.
+impl FromStr for Kind {
+    type Err = ();
+
+    fn from_str(name: &str) -> Result<Self, ()> {
+        KINDS
+            .iter()
+            .find(|(_, n)| *n == name)
+            .map(|(kind, _)| *kind)
+            .ok_or(())
+    }
+}
+
+/// Vega-Lite's name of the type.
+impl fmt::Display for Kind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let (_, name) = KINDS
+            .iter()
+            .find(|(kind, _)| kind == self)
+            .expect("every type is named");
+        f.write_str(name)
+    }
+}
+
+/// Vega-Lite's `isFieldDef`: a field, or a count.
+pub(crate) fn field_def(def: &Map<String, Value>) -> bool {
+    def.get("field")
+        .is_some_and(|value| format::js(value).truthy())
+        || def.get("aggregate").and_then(Value::as_str) == Some("count")
+}
+
+/// Vega-Lite's `isFieldOrDatumDef`.
+pub(crate) fn field_or_datum(def: Option<&Value>) -> bool {
+    def.and_then(Value::as_object)
+        .is_some_and(|def| field_def(def) || def.contains_key("datum"))
+}
+
 /// The channel named `name` that reads a field or datum.
 pub(crate) fn scaled_mut<'a>(e: &'a mut Encoding, name: &str) -> Option<&'a mut Channel> {
     fn scaled<V>(encode: &mut Option<Encode<V>>) -> Option<&mut Channel> {
@@ -412,34 +503,7 @@ impl Reader {
             (Source::Field(field), Some(_)) => Some(field.clone()),
             _ => None,
         };
-        let scale_type = def
-            .get("scale")
-            .and_then(|scale| scale.get("type"))
-            .and_then(Value::as_str);
-        let kind = match (def.get("type"), inherited) {
-            (Some(_), Some(_)) => return None,
-            (None, Some(kind)) => kind,
-            (Some(_), None) if derive.counts() => Kind::Quantitative,
-            (Some(kind), None) => match kind.as_str()? {
-                "quantitative" => Kind::Quantitative,
-                "temporal" => Kind::Temporal,
-                "ordinal" => Kind::Ordinal,
-                "nominal" => Kind::Nominal,
-                _ => return None,
-            },
-            (None, None) => match (&source, name) {
-                _ if def.get("datum").is_some_and(Value::is_object) => Kind::Temporal,
-                (Source::Datum(Datum::Number(_)), _) => Kind::Quantitative,
-                (Source::Datum(Datum::Text(_)), _) => Kind::Nominal,
-                (_, "shape" | "strokeDash") => Kind::Nominal,
-                (_, "order") => Kind::Ordinal,
-                _ if def.get("sort").is_some_and(Value::is_array) => Kind::Ordinal,
-                _ if derive.kind().is_some() => derive.kind()?,
-                _ if scale_type.is_some_and(|t| NUMERIC.contains(&t)) => Kind::Quantitative,
-                _ if matches!(scale_type, Some("time" | "utc")) => Kind::Temporal,
-                _ => Kind::Nominal,
-            },
-        };
+        let kind = kind(def, name, &derive, inherited)?;
         let source = match (kind, source) {
             (Kind::Temporal, Source::Datum(Datum::Text(text))) => {
                 Source::Datum(Datum::Number(time::parse(&text)?))
@@ -508,6 +572,22 @@ impl Reader {
             }
             _ => {}
         }
+        let units = record.derive.units();
+        let parts = units.map(|(parts, _)| parts);
+        let axis = match (name, def.get("axis")) {
+            ("x" | "y", Some(Value::Null)) => None,
+            ("x" | "y", Some(Value::Object(axis))) => Some(guide::axis(axis, kind, units)?),
+            ("x" | "y", None) => Some(guide::axis(&Map::new(), kind, units)?),
+            (_, Some(Value::Object(_) | Value::Null) | None) => None,
+            (_, Some(_)) => return None,
+        };
+        let legend = match (LEGENDS.contains(&name), def.get("legend")) {
+            (true, Some(Value::Null)) => None,
+            (true, Some(Value::Object(legend))) => Some(guide::legend(legend, kind, parts)?),
+            (true, None) => Some(guide::legend(&Map::new(), kind, parts)?),
+            (false, Some(Value::Object(_) | Value::Null) | None) => None,
+            (_, Some(_)) => return None,
+        };
         let mut out = Channel {
             source,
             kind,
@@ -515,6 +595,8 @@ impl Reader {
             scale: Box::default(),
             stack: Stack::Auto,
             sort: Sort::default(),
+            axis: axis.map(Box::new),
+            legend: legend.map(Box::new),
         };
 
         let guide = ["axis", "legend"]
@@ -635,8 +717,10 @@ impl Reader {
                         .iter()
                         .map(|value| match value {
                             Value::String(s) => Some(s.clone().into()),
-                            Value::Number(n) => Some(scale::value(n.as_f64()?).into()),
-                            Value::Object(time) => Some(scale::value(datetime::time(time)?).into()),
+                            Value::Number(n) => Some(JsNumber(n.as_f64()?).to_string().into()),
+                            Value::Object(time) => {
+                                Some(JsNumber(datetime::time(time)?).to_string().into())
+                            }
                             _ => None,
                         })
                         .collect::<Option<_>>()?,
@@ -776,10 +860,10 @@ fn domain(values: &[Value], kind: Kind) -> Option<Domain> {
                 .iter()
                 .map(|value| match value {
                     Value::String(s) => Some(s.clone().into()),
-                    Value::Number(n) => Some(scale::value(n.as_f64()?).into()),
+                    Value::Number(n) => Some(JsNumber(n.as_f64()?).to_string().into()),
                     Value::Bool(b) => Some(b.to_string().into()),
                     Value::Null => Some(SharedString::default()),
-                    Value::Object(time) => Some(scale::value(datetime::time(time)?).into()),
+                    Value::Object(time) => Some(JsNumber(datetime::time(time)?).to_string().into()),
                     Value::Array(_) => None,
                 })
                 .collect::<Option<_>>()?,
@@ -907,18 +991,18 @@ fn down(value: &Value) -> Option<Position> {
 }
 
 /// A CSS colour as d3-color reads it. `null` is no colour.
-fn color(value: &Value) -> Option<Hsla> {
+pub(crate) fn color(value: &Value) -> Option<Hsla> {
     match value {
         Value::Null => Some(Hsla::transparent_black()),
         value => Some(color::hsla(value.as_str()?.parse().ok()?)),
     }
 }
 
-fn shape(value: &Value) -> Option<Shape> {
+pub(crate) fn shape(value: &Value) -> Option<Shape> {
     value.as_str()?.parse().ok()
 }
 
-fn dash(value: &Value) -> Option<Vec<f32>> {
+pub(crate) fn dash(value: &Value) -> Option<Vec<f32>> {
     value.as_array()?.iter().map(number).collect()
 }
 
@@ -943,7 +1027,7 @@ fn text(value: &Value) -> Option<SharedString> {
     }
 }
 
-/// A title: a string, lines joined by spaces, or `null` for none.
+/// A title: a string, lines, or `null` for none.
 pub(crate) fn title(value: &Value) -> Option<SharedString> {
     match value {
         Value::String(text) => Some(text.clone().into()),
@@ -952,9 +1036,29 @@ pub(crate) fn title(value: &Value) -> Option<SharedString> {
                 .iter()
                 .filter_map(Value::as_str)
                 .collect::<Vec<_>>()
-                .join(" ")
+                .join("\n")
                 .into(),
         ),
         _ => None,
     }
+}
+
+/// A CSS font weight: `normal`, `bold` or a number.
+pub(crate) fn font_weight(value: &Value) -> Option<FontWeight> {
+    Some(match value {
+        Value::String(weight) if weight == "normal" => FontWeight::NORMAL,
+        Value::String(weight) if weight == "bold" => FontWeight::BOLD,
+        Value::Number(weight) => FontWeight(weight.as_f64()? as f32),
+        _ => return None,
+    })
+}
+
+/// A CSS font style.
+pub(crate) fn font_style(value: &Value) -> Option<FontStyle> {
+    Some(match value.as_str()? {
+        "normal" => FontStyle::Normal,
+        "italic" => FontStyle::Italic,
+        "oblique" => FontStyle::Oblique,
+        _ => return None,
+    })
 }

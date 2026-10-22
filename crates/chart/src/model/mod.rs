@@ -1,21 +1,24 @@
 //! What a chart draws: layers over shared axes, each one [`Mark`] per row of
 //! its [`Data`], placed by the fields its [`Encoding`] names.
 
-use gpui::{Hsla, SharedString};
-
 use crate::data::Data;
-
 pub use channel::{Channel, Datum, Kind, Sort, Source};
 pub use encoding::{Encode, Encoding, Position};
+use gpui::{Hsla, SharedString};
+pub use guide::{
+    Anchor, Axis, Case, Format, Frame, GridAlign, Legend, LegendKind, LegendOrient, Lettering,
+    Line, Overlap, Ramp, Relabel, Side, Symbols, Test, TickBand, TickCount, TickStyle, Title,
+};
 pub use mark::{
-    Align, Baseline, Cap, Dir, Extent, Interpolate, Join, LineBreak, Mark, Orient, Overlay,
-    Properties,
+    Align, Baseline, Cap, Dir, Extent, Interpolate, Invalid, Join, LineBreak, Mark, Orient,
+    Overlay, Properties,
 };
 pub use scale::{Domain, NamedRange, Nice, Palette, Range, Scale, ScaleType, Scheme, Stack};
 pub use shape::Shape;
 
 mod channel;
 mod encoding;
+mod guide;
 mod mark;
 mod scale;
 mod shape;
@@ -25,7 +28,7 @@ pub struct Chart {
     /// Paint order. Their x scales are one scale, as are their y scales, and
     /// a colour value is one colour across them.
     pub layers: Vec<Layer>,
-    pub title: Option<SharedString>,
+    pub title: Option<Title>,
 }
 
 #[derive(Clone, Debug)]
@@ -34,6 +37,13 @@ pub struct Layer {
     pub mark: Mark,
     pub properties: Properties,
     pub encoding: Encoding,
+}
+
+impl Layer {
+    /// Its invalid data mode: its properties', or its mark's own.
+    pub fn invalid(&self) -> Invalid {
+        self.properties.invalid.unwrap_or(self.mark.invalid())
+    }
 }
 
 impl Chart {
@@ -231,7 +241,7 @@ impl Chart {
         self
     }
 
-    pub fn title(mut self, title: impl Into<SharedString>) -> Self {
+    pub fn title(mut self, title: impl Into<Title>) -> Self {
         self.title = Some(title.into());
         self
     }

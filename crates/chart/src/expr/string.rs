@@ -1,8 +1,7 @@
 //! Vega's string functions. Lengths and indices count UTF-16 code units, as
 //! JavaScript's do.
 
-use crate::expr::Value;
-use js::string;
+use js::{string, value::Value};
 
 fn units(text: &str) -> Vec<u16> {
     text.encode_utf16().collect()
@@ -70,8 +69,8 @@ pub(crate) fn pad(text: &str, length: f64, fill: &Value, align: &Value) -> Strin
     }
     let repeat = |count: f64| fill.repeat(count.floor() as usize);
     match align {
-        Value::String(a) if a == "left" => repeat(n) + text,
-        Value::String(a) if a == "center" => {
+        Value::String(a) if &**a == "left" => repeat(n) + text,
+        Value::String(a) if &**a == "center" => {
             repeat((n / 2.0).trunc()) + text + &repeat((n / 2.0).ceil())
         }
         _ => text.to_string() + &repeat(n),
@@ -93,8 +92,8 @@ pub(crate) fn truncate(text: &str, length: f64, align: &Value, ellipsis: &Value)
         return text.to_string();
     }
     match align {
-        Value::String(a) if a == "left" => ellipsis + &slice(&units, n - l, n),
-        Value::String(a) if a == "center" => {
+        Value::String(a) if &**a == "left" => ellipsis + &slice(&units, n - l, n),
+        Value::String(a) if &**a == "center" => {
             slice(&units, 0.0, (l / 2.0).ceil())
                 + &ellipsis
                 + &slice(&units, n - (l / 2.0).trunc(), n)

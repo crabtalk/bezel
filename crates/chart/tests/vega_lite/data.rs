@@ -19,7 +19,7 @@ fn bars(data: &str, x: &str, y: &str, files: &[(&str, &str)]) -> Option<Chart> {
 fn text(chart: &Chart, field: &str) -> Vec<String> {
     match chart.layers[0].data.column(field) {
         Some(Column::Text(text)) => (0..text.codes.len())
-            .map(|row| text.get(row).to_string())
+            .map(|row| text.get(row).map_or_else(String::new, ToString::to_string))
             .collect(),
         other => panic!("`{field}` is not text: {other:?}"),
     }

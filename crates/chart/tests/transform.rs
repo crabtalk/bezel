@@ -4,16 +4,22 @@
 
 use chart::{
     Chart, Column, Data, Transform,
-    plan::{self, Side},
-    scale,
+    model::Side,
+    plan::{self, Metrics},
     transform::{Density, Quantile, Random, Regression},
     vega_lite,
 };
+use js::{number::Number as JsNumber, value::Value as JsValue};
 use serde_json::{Map, Value};
 use std::{fs, path::Path};
 
 /// Relative to the larger of 1 and the expected value.
 const TOLERANCE: f64 = 1e-9;
+/// Text 10 high on lines 10 apart.
+const METRICS: Metrics = Metrics {
+    size: 10.0,
+    line: 10.0,
+};
 
 fn case(name: &str) {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/transform");
@@ -31,7 +37,8 @@ fn case(name: &str) {
                 .iter()
                 .map(|value| match value {
                     Value::String(text) => text.clone(),
-                    value => scale::value(value.as_f64().expect("a number")),
+                    Value::Null => "null".into(),
+                    value => JsNumber(value.as_f64().expect("a number")).to_string(),
                 })
                 .collect();
             assert_eq!(
@@ -41,8 +48,12 @@ fn case(name: &str) {
             );
         }
     }
-    assert_eq!(chart.layers.len(), expected.len(), "{name}: layers");
-    for (i, (layer, rows)) in chart.layers.iter().zip(&expected).enumerate() {
+    // The rows as drawn, without those the layers' invalid data modes leave
+    // out.
+    let plan = plan::plan(&chart, [100_000.0, 100_000.0], METRICS, &mut |_, _| 1.0).expect("draws");
+    let drawn = plan.chart();
+    assert_eq!(drawn.layers.len(), expected.len(), "{name}: layers");
+    for (i, (layer, rows)) in drawn.layers.iter().zip(&expected).enumerate() {
         assert_eq!(layer.data.len(), rows.len(), "{name} layer {i}: rows");
         for (field, column) in layer.data.fields() {
             for (row, want) in rows.iter().enumerate() {
@@ -63,28 +74,63 @@ fn case(name: &str) {
                         ),
                     },
                     Column::Text(text) => {
-                        assert_eq!(text.get(row), want.as_str().unwrap_or(""), "{at}")
+                        assert_eq!(text.get(row).map(AsRef::as_ref), want.as_str(), "{at}")
                     }
+                    Column::Value(values) => assert!(
+                        same(&values[row], want),
+                        "{at}: {} is not {want}",
+                        values[row]
+                    ),
                 }
             }
         }
     }
 }
 
-/// `field` of a Vega row, a dotted name stepping into an object where the
-/// row has no field of that name.
+/// Whether a JavaScript value is the JSON Vega wrote of it: undefined as
+/// null, numbers to [`TOLERANCE`].
+fn same(value: &JsValue, want: &Value) -> bool {
+    match (value, want) {
+        (JsValue::Undefined | JsValue::Null, Value::Null) => true,
+        (JsValue::Bool(a), Value::Bool(b)) => a == b,
+        (JsValue::Number(a), Value::Number(b)) => {
+            let b = b.as_f64().expect("a number");
+            (a - b).abs() <= TOLERANCE * b.abs().max(1.0)
+        }
+        (JsValue::Number(a), Value::Null) => !a.is_finite(),
+        (JsValue::String(a), Value::String(b)) => **a == **b,
+        (JsValue::Array(a), Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same(a, b))
+        }
+        (JsValue::Object(a), Value::Object(b)) => {
+            let defined = a.iter().filter(|(_, v)| !matches!(v, JsValue::Undefined));
+            defined.clone().count() == b.len()
+                && defined
+                    .into_iter()
+                    .all(|(k, v)| b.get(&**k).is_some_and(|w| same(v, w)))
+        }
+        _ => false,
+    }
+}
+
+/// `field` of a Vega row, a path of dotted names and bracketed indices
+/// stepping into an object where the row has no field of that name.
 fn lookup<'a>(row: &'a Map<String, Value>, field: &str) -> Option<&'a Value> {
     row.get(field).or_else(|| {
-        let (object, rest) = field.split_once('.')?;
+        let path = field.replace('[', ".").replace(']', "");
+        let (object, rest) = path.split_once('.')?;
         rest.split('.')
-            .try_fold(row.get(object)?, |value, key| value.get(key))
+            .try_fold(row.get(object)?, |value, key| match value {
+                Value::Array(items) => items.get(key.parse::<usize>().ok()?),
+                value => value.get(key),
+            })
     })
 }
 
 /// The values of a discrete scale in the order the plan draws them: the
 /// bands along `x` or down `y`, or the colours.
 fn order(chart: &Chart, scale: &str) -> Vec<String> {
-    let plan = plan::plan(chart, [100_000.0, 100_000.0], 10.0, &mut |_| 1.0).expect("draws");
+    let plan = plan::plan(chart, [100_000.0, 100_000.0], METRICS, &mut |_, _| 1.0).expect("draws");
     match scale {
         "color" => plan
             .colors
@@ -102,9 +148,9 @@ fn order(chart: &Chart, scale: &str) -> Vec<String> {
                 .iter()
                 .find(|axis| axis.side == side)
                 .expect("an axis");
-            axis.ticks
+            axis.labels
                 .iter()
-                .map(|tick| tick.label.as_ref().expect("a label").text.to_string())
+                .map(|label| label.text.to_string())
                 .collect()
         }
         _ => panic!("no scale `{scale}`"),
@@ -246,8 +292,6 @@ fn an_op_the_pipeline_lacks_is_none() {
     for lacked in [
         r#"{"filter": "datum.x > 1"}"#,
         r#"{"calculate": "datum.x * 2", "as": "x2"}"#,
-        r#"{"aggregate": [{"op": "values", "field": "y", "as": "y"}], "groupby": ["x"]}"#,
-        r#"{"regression": "y", "on": "x", "params": true}"#,
         r#"{"regression": "y", "on": "x", "method": "constant"}"#,
         r#"{"density": "x", "filter": "datum.x > 1"}"#,
         r#"{"quantile": "x", "probs": "all"}"#,
@@ -295,4 +339,104 @@ fn a_pipeline_runs_over_data_in_order() {
 #[test]
 fn a_layer_bins_its_encoding_before_its_own_transforms() {
     case("layer_bin");
+}
+
+#[test]
+fn a_boxplot_draws_outliers_whiskers_box_and_median() {
+    case("boxplot");
+}
+
+#[test]
+fn a_min_max_boxplot_whiskers_each_group_and_bins_its_other_axis() {
+    case("boxplot_minmax");
+}
+
+#[test]
+fn a_boxplot_layer_takes_its_extent_and_parts() {
+    case("boxplot_layer");
+}
+
+#[test]
+fn an_errorbar_shares_one_bootstrap_with_a_layer_aggregating_alike() {
+    case("errorbar");
+}
+
+#[test]
+fn errorbars_take_every_extent_and_merge_as_vega_lite_merges_them() {
+    case("errorbar_extents");
+}
+
+#[test]
+fn an_errorbar_reads_bounds_or_errors_given_already() {
+    case("errorbar_preaggregated");
+}
+
+#[test]
+fn an_errorband_bounds_an_area_with_borders() {
+    case("errorband");
+}
+
+#[test]
+fn a_one_axis_errorband_is_a_rect_with_rules() {
+    case("errorband_1d");
+}
+
+#[test]
+fn layers_aggregating_by_the_same_fields_merge_their_aggregates() {
+    case("aggregate_merged");
+}
+
+#[test]
+fn layers_share_the_top_levels_transforms() {
+    case("aggregate_shared");
+}
+
+#[test]
+fn an_errorbar_reads_an_error_about_each_value() {
+    case("errorbar_error");
+}
+
+#[test]
+fn regression_params_give_each_groups_coefficients_and_r_squared() {
+    case("regression_params");
+}
+
+#[test]
+fn the_values_op_gives_each_groups_rows() {
+    case("aggregate_values");
+}
+
+#[test]
+fn nested_json_is_kept_and_read_by_path() {
+    case("nested");
+}
+
+#[test]
+fn a_missing_field_groups_apart_from_null() {
+    case("missing");
+}
+
+#[test]
+fn invalid_values_leave_marks_and_domains_by_default() {
+    case("invalid_filter");
+}
+
+#[test]
+fn invalid_values_are_drawn_where_shown() {
+    case("invalid_show");
+}
+
+#[test]
+fn config_gives_a_mark_its_invalid_mode() {
+    case("invalid_config");
+}
+
+#[test]
+fn paths_break_at_invalid_values_or_join_round_them() {
+    case("invalid_paths");
+}
+
+#[test]
+fn null_is_a_group_and_a_category() {
+    case("aggregate_null");
 }

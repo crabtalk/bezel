@@ -1,0 +1,64 @@
+{
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+ "data": {
+  "values": [
+   {
+    "g": "a",
+    "v": 1
+   },
+   {
+    "g": null,
+    "v": 2
+   },
+   {
+    "g": "b",
+    "v": 3
+   },
+   {
+    "g": null,
+    "v": 4
+   },
+   {
+    "g": "a",
+    "v": null
+   }
+  ]
+ },
+ "transform": [
+  {
+   "aggregate": [
+    {
+     "op": "count",
+     "as": "n"
+    },
+    {
+     "op": "sum",
+     "field": "v",
+     "as": "total"
+    }
+   ],
+   "groupby": [
+    "g"
+   ]
+  }
+ ],
+ "mark": "bar",
+ "encoding": {
+  "x": {
+   "field": "g",
+   "type": "nominal"
+  },
+  "y": {
+   "field": "total",
+   "type": "quantitative"
+  },
+  "color": {
+   "field": "g",
+   "type": "nominal"
+  },
+  "tooltip": {
+   "field": "n",
+   "type": "quantitative"
+  }
+ }
+}

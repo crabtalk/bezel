@@ -1,0 +1,62 @@
+{
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+ "data": {
+  "values": [
+   {
+    "a": "p",
+    "b": 3,
+    "c": 1
+   },
+   {
+    "a": "q",
+    "b": null,
+    "c": 2
+   },
+   {
+    "a": "z",
+    "b": null,
+    "c": 3
+   },
+   {
+    "a": null,
+    "b": 4,
+    "c": 4
+   },
+   {
+    "a": "q",
+    "b": 5,
+    "c": null
+   },
+   {
+    "a": "r",
+    "b": "NaN",
+    "c": 6
+   },
+   {
+    "a": "p",
+    "b": 2,
+    "c": 7
+   }
+  ]
+ },
+ "mark": "point",
+ "config": {
+  "mark": {
+   "invalid": "break-paths-show-domains"
+  }
+ },
+ "encoding": {
+  "x": {
+   "field": "a",
+   "type": "nominal"
+  },
+  "y": {
+   "field": "b",
+   "type": "quantitative"
+  },
+  "size": {
+   "field": "c",
+   "type": "quantitative"
+  }
+ }
+}

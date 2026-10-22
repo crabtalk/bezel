@@ -1,9 +1,8 @@
 //! JavaScript values and the abstract operations that convert between them.
 
-use crate::expr::{Error, RegExp};
-use gpui::SharedString;
-use js::{
+use crate::{
     number::{self, Number},
+    regex::{self, Regex},
     string,
 };
 use std::{cmp::Ordering, fmt, ops::Add, sync::Arc};
@@ -17,11 +16,57 @@ pub enum Value {
     Null,
     Bool(bool),
     Number(f64),
-    String(SharedString),
+    String(Arc<str>),
     Array(Arc<[Value]>),
     /// Keys in insertion order, each once.
-    Object(Arc<[(SharedString, Value)]>),
+    Object(Arc<[(Arc<str>, Value)]>),
     RegExp(Arc<RegExp>),
+}
+
+/// A `RegExp` object: its pattern, and the flags it was made with.
+#[derive(Clone, Debug)]
+pub struct RegExp {
+    pub source: String,
+    pub flags: String,
+    pub regex: Regex,
+}
+
+/// A `TypeError` JavaScript throws, by its message.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TypeError(pub String);
+
+impl fmt::Display for TypeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for TypeError {}
+
+impl RegExp {
+    /// `new RegExp(source, flags)`, or the `SyntaxError` it throws.
+    pub fn new(source: &str, flags: &str) -> Result<Self, regex::Error> {
+        Ok(Self {
+            regex: Regex::try_new(source, flags)?,
+            source: source.to_string(),
+            flags: flags.to_string(),
+        })
+    }
+
+    pub fn global(&self) -> bool {
+        self.flags.contains('g')
+    }
+}
+
+impl fmt::Display for RegExp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let source = if self.source.is_empty() {
+            "(?:)"
+        } else {
+            &self.source
+        };
+        write!(f, "/{source}/{}", self.flags)
+    }
 }
 
 /// Structural: arrays and objects by contents, numbers as `f64`.
@@ -54,7 +99,7 @@ impl From<bool> for Value {
 
 impl From<&str> for Value {
     fn from(value: &str) -> Self {
-        Self::String(SharedString::from(value.to_string()))
+        Self::String(value.into())
     }
 }
 
@@ -64,8 +109,8 @@ impl From<String> for Value {
     }
 }
 
-impl From<SharedString> for Value {
-    fn from(value: SharedString) -> Self {
+impl From<Arc<str>> for Value {
+    fn from(value: Arc<str>) -> Self {
         Self::String(value)
     }
 }
@@ -184,11 +229,11 @@ impl Value {
     }
 
     /// JavaScript's `object[key]`.
-    pub fn get(&self, key: &Value) -> Result<Value, Error> {
+    pub fn get(&self, key: &Value) -> Result<Value, TypeError> {
         let name = key.to_string();
         Ok(match self {
             Self::Undefined | Self::Null => {
-                return Err(Error::Runtime(format!(
+                return Err(TypeError(format!(
                     "Cannot read properties of {self} (reading '{name}')"
                 )));
             }
@@ -205,7 +250,7 @@ impl Value {
                 .unwrap_or_default(),
             Self::Object(fields) => fields
                 .iter()
-                .find(|(k, _)| *k == name)
+                .find(|(k, _)| **k == *name)
                 .map(|(_, v)| v.clone())
                 .unwrap_or_default(),
             Self::RegExp(regexp) => match name.as_str() {

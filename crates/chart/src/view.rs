@@ -7,23 +7,22 @@
 //! An image mark paints what the function installed with [`set_image_loader`]
 //! answers for its url, and nothing without one.
 
-use std::{cell::Cell, collections::HashMap, f32::consts::PI, rc::Rc, sync::Arc};
-
+use crate::{
+    model::{Align, Baseline, Cap, Chart, Encoding, Join, Mark, Properties, Shape, Title},
+    plan::{self, Face, Fill, Glyph, Label, Marks, Metrics, Paint, Plan, Rect, Slice, Tip},
+};
 use gpui::{
     App, Bounds, ContentMask, Corners, CursorStyle, DispatchPhase, Element, ElementId, FillOptions,
-    Font, Global, GlobalElementId, Hitbox, HitboxBehavior, Hsla, InspectorElementId, IntoElement,
-    LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, Path, PathBuilder, PathStyle, Pixels,
-    Point, Refineable, RenderImage, ShapedLine, SharedString, StrokeOptions, Style,
-    StyleRefinement, Styled, TextAlign, TextRun, Window, fill, point, px, relative, size,
+    Font, FontStyle, Global, GlobalElementId, Hitbox, HitboxBehavior, Hsla, InspectorElementId,
+    IntoElement, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, Path, PathBuilder,
+    PathStyle, Pixels, Point, Refineable, RenderImage, ShapedLine, SharedString, StrokeOptions,
+    Style, StyleRefinement, Styled, TextAlign, TextRun, Window, fill, linear_color_stop,
+    linear_gradient, point, px, relative, size,
 };
 use js::{arc::Sector, curve::Curve, path::Segment};
 use lyon::tessellation::{LineCap, LineJoin};
+use std::{cell::Cell, collections::HashMap, f32::consts::PI, rc::Rc, sync::Arc};
 use theme::{TextStyle, Theme};
-
-use crate::{
-    model::{Align, Baseline, Cap, Chart, Dir, Encoding, Join, Mark, Properties, Shape},
-    plan::{self, Glyph, Marks, Paint, Plan, Rect, Side, Slice, Tip},
-};
 
 /// The height a chart takes when nothing sizes it.
 const HEIGHT: f32 = 240.0;
@@ -100,7 +99,7 @@ impl IntoElement for ChartView {
 struct Key {
     /// Each layer's data generation, mark, properties and encoding.
     layers: Vec<(u64, Mark, Properties, Encoding)>,
-    title: Option<SharedString>,
+    title: Option<Title>,
     size: [f32; 2],
     font: Font,
     font_size: f32,
@@ -108,16 +107,16 @@ struct Key {
 }
 
 /// A plan and everything painting it needs that does not change with it:
-/// what paints its marks and legends at the chart's own origin, and shaped
-/// labels.
+/// what paints its guides and marks at the chart's own origin.
 struct Built {
     key: Key,
     plan: Plan,
     /// The marks, in paint order, each with where it is cut off.
     marks: Vec<(Option<Rect>, Op)>,
-    legends: Vec<Op>,
-    labels: HashMap<SharedString, ShapedLine>,
-    title: Option<ShapedLine>,
+    /// Axes, legends and the title, under the marks and over them, each
+    /// with where it is cut off.
+    under: Vec<(Option<Rect>, Op)>,
+    over: Vec<(Option<Rect>, Op)>,
     line: f32,
 }
 
@@ -130,6 +129,13 @@ enum Op {
         corners: [f32; 4],
         fill: Option<Paint>,
         border: Option<(Paint, f32)>,
+    },
+    /// A blend from one colour to the other, `angle` degrees clockwise
+    /// from upward.
+    Gradient {
+        rect: Rect,
+        angle: f32,
+        colors: [Hsla; 2],
     },
     /// A shaped line with its top-left at `at`.
     Text {
@@ -164,6 +170,18 @@ impl Op {
                 }
                 window.paint_quad(quad);
             }
+            Op::Gradient {
+                rect,
+                angle,
+                colors: [from, to],
+            } => window.paint_quad(fill(
+                bounds_of(*rect, origin),
+                linear_gradient(
+                    *angle,
+                    linear_color_stop(*from, 0.0),
+                    linear_color_stop(*to, 1.0),
+                ),
+            )),
             Op::Text { line, at } => {
                 let height = line.ascent + line.descent;
                 line.paint(
@@ -387,33 +405,57 @@ impl Element for ChartView {
 
 fn build(chart: &Chart, key: Key, theme: &Theme, window: &mut Window) -> Option<Built> {
     let text_system = window.text_system().clone();
-    let font_size = px(key.font_size);
     let line = TextStyle::Caption.painted_line_height();
-    let shape = |text: SharedString, color: Hsla| {
+    let font_of = |face: &Face| Font {
+        family: face.family.clone().unwrap_or(key.font.family.clone()),
+        weight: face.weight,
+        style: face.style,
+        ..key.font.clone()
+    };
+    let shape = |text: SharedString, face: &Face, color: Hsla| {
         let run = TextRun {
             len: text.len(),
-            font: key.font.clone(),
+            font: font_of(face),
             color,
             background_color: None,
             underline: None,
             strikethrough: None,
         };
-        text_system.shape_line(text, font_size, &[run], None)
+        text_system.shape_line(text, px(face.size), &[run], None)
     };
-    let mut labels = HashMap::new();
-    let mut measure = |text: &str| {
+    let mut widths: HashMap<(SharedString, FaceKey), f32> = HashMap::new();
+    let mut measure = |text: &str, face: &Face| {
         let text = SharedString::from(text.to_string());
-        labels
-            .entry(text.clone())
-            .or_insert_with(|| shape(text, key.colors[1]))
-            .width()
-            .as_f32()
+        *widths
+            .entry((text.clone(), FaceKey::of(face)))
+            .or_insert_with(|| shape(text, face, key.colors[1]).width().as_f32())
     };
-    let plan = plan::plan(chart, key.size, line, &mut measure)?;
-    let title = plan
-        .title
-        .as_ref()
-        .map(|title| shape(title.text.clone(), key.colors[0]));
+    let metrics = Metrics {
+        size: key.font_size,
+        line,
+    };
+    let plan = plan::plan(chart, key.size, metrics, &mut measure)?;
+    // A label's lines, each shaped and set against the others.
+    let text = |label: &Label| -> Vec<Op> {
+        let color = label.paint.on(theme);
+        label
+            .text
+            .split('\n')
+            .enumerate()
+            .filter(|(_, content)| !content.is_empty())
+            .map(|(index, content)| {
+                let shaped = shape(content.to_string().into(), &label.face, color);
+                let width = shaped.width().as_f32();
+                let height = (shaped.ascent + shaped.descent).as_f32();
+                let x = label.at[0] + (label.width - width) * label.align.fraction();
+                let y = label.at[1] + index as f32 * label.line + (label.line - height) / 2.0;
+                Op::Text {
+                    line: Box::new(shaped),
+                    at: [x, y],
+                }
+            })
+            .collect()
+    };
 
     let mut painted = Vec::new();
     for series in &plan.series {
@@ -495,6 +537,7 @@ fn build(chart: &Chart, key: Key, theme: &Theme, window: &mut Window) -> Option<
                             .style
                             .stroke_paint()
                             .map(|paint| (paint, symbol.style.stroke_width)),
+                        None,
                     ));
                 }
             }
@@ -546,7 +589,7 @@ fn build(chart: &Chart, key: Key, theme: &Theme, window: &mut Window) -> Option<
                             continue;
                         }
                         let content = match limit > 0.0 {
-                            true => truncated(content, limit, &set.ellipsis, dir, |t| {
+                            true => dir.truncated(content, limit, &set.ellipsis, |t| {
                                 shape_at(t.to_string().into(), text.size).width().as_f32()
                             }),
                             false => content.to_string(),
@@ -575,95 +618,204 @@ fn build(chart: &Chart, key: Key, theme: &Theme, window: &mut Window) -> Option<
         }
         painted.extend(marks.into_iter().map(|op| (series.clip, op)));
     }
-    let mut legends = Vec::new();
-    for swatch in plan.legends.iter().flat_map(|legend| &legend.swatches) {
-        let r = swatch.swatch;
-        let center = [r.x + r.w / 2.0, r.y + r.h / 2.0];
-        match &swatch.glyph {
-            Glyph::Fill { ink, opacity } => legends.push(Op::Quad {
-                rect: r,
-                corners: [2.0; 4],
-                fill: Some(Paint {
-                    ink: *ink,
-                    alpha: *opacity,
-                }),
-                border: None,
-            }),
-            Glyph::Symbol { shape, size, ink } => legends.extend(glyph(
-                shape,
-                *size,
-                0.0,
-                center,
-                Some(Paint {
-                    ink: *ink,
-                    alpha: 1.0,
-                }),
-                None,
-            )),
-            Glyph::Stroke { ink, width, dash } => {
-                let run = [[r.x, center[1]], [r.right(), center[1]]];
-                legends.extend(polyline(&run, *width, dash.as_deref()).map(|path| {
-                    Op::Path(
-                        path,
-                        Paint {
-                            ink: *ink,
-                            alpha: 1.0,
-                        },
-                    )
-                }));
-            }
+    let (mut under, mut over) = (Vec::new(), Vec::new());
+    for axis in &plan.axes {
+        let ops = match axis.over {
+            true => &mut over,
+            false => &mut under,
+        };
+        for rule in axis.grid.iter().chain(&axis.rules) {
+            ops.extend(ruled(rule).map(|op| (None, op)));
         }
+        for label in axis.labels.iter().chain(&axis.title) {
+            ops.extend(text(label).into_iter().map(|op| (None, op)));
+        }
+    }
+    for legend in &plan.legends {
+        let ops = match legend.over {
+            true => &mut over,
+            false => &mut under,
+        };
+        if let Some(frame) = &legend.frame {
+            ops.push((
+                None,
+                Op::Quad {
+                    rect: frame.rect,
+                    corners: [frame.radius; 4],
+                    fill: frame.fill,
+                    border: frame.stroke.map(|paint| (paint, 1.0)),
+                },
+            ));
+        }
+        if let Some(gradient) = &legend.gradient {
+            ops.extend(ramp(gradient, theme).into_iter().map(|op| (None, op)));
+        }
+        for swatch in &legend.swatches {
+            let r = swatch.swatch;
+            let center = [r.x + r.w / 2.0, r.y + r.h / 2.0];
+            let Glyph {
+                shape,
+                size,
+                fill,
+                stroke,
+                stroke_width,
+                dash,
+                dash_offset,
+            } = &swatch.glyph;
+            let border = stroke.map(|paint| (paint, *stroke_width));
+            let dash = dash.as_deref().map(|dash| dashed(dash, *dash_offset));
+            let glyphs = glyph(shape, *size, 0.0, center, *fill, border, dash.as_deref());
+            ops.extend(glyphs.into_iter().map(|op| (swatch.clip, op)));
+            ops.extend(text(&swatch.label).into_iter().map(|op| (None, op)));
+        }
+        for label in legend.title.iter().chain(&legend.labels) {
+            ops.extend(text(label).into_iter().map(|op| (None, op)));
+        }
+    }
+    let ops = match plan.title_over {
+        true => &mut over,
+        false => &mut under,
+    };
+    for label in plan.title.iter().chain(&plan.subtitle) {
+        ops.extend(text(label).into_iter().map(|op| (None, op)));
     }
     Some(Built {
         key,
         plan,
         marks: painted,
-        legends,
-        labels,
-        title,
+        under,
+        over,
         line,
     })
 }
 
-/// `content` cut short to fit `limit`, as Vega cuts it: whole if narrower,
-/// else the most characters from its start, or its end for [`Dir::Rtl`], that
-/// leave room for `ellipsis` beside them.
-fn truncated(
-    content: &str,
-    limit: f32,
-    ellipsis: &str,
-    dir: Dir,
-    width: impl Fn(&str) -> f32,
-) -> String {
-    if width(content) < limit {
-        return content.to_string();
+/// What tells two faces' widths apart.
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct FaceKey(Option<SharedString>, u32, u32, u8);
+
+impl FaceKey {
+    fn of(face: &Face) -> Self {
+        let style = match face.style {
+            FontStyle::Normal => 0,
+            FontStyle::Italic => 1,
+            FontStyle::Oblique => 2,
+        };
+        Self(
+            face.family.clone(),
+            face.size.to_bits(),
+            face.weight.0.to_bits(),
+            style,
+        )
     }
-    let chars: Vec<char> = content.chars().collect();
-    let text = |range: &[char]| range.iter().collect::<String>();
-    let limit = limit - width(ellipsis);
-    let (mut lo, mut hi) = (0, chars.len());
-    match dir {
-        Dir::Rtl => {
-            while lo < hi {
-                let mid = (lo + hi) / 2;
-                match width(&text(&chars[mid..])) > limit {
-                    true => lo = mid + 1,
-                    false => hi = mid,
-                }
-            }
-            format!("{ellipsis}{}", text(&chars[lo..]))
-        }
-        Dir::Ltr => {
-            while lo < hi {
-                let mid = 1 + (lo + hi) / 2;
-                match width(&text(&chars[..mid])) < limit {
-                    true => lo = mid,
-                    false => hi = mid - 1,
-                }
-            }
-            format!("{}{ellipsis}", text(&chars[..lo]))
-        }
+}
+
+/// A guide's line: a quad where it runs straight across or down solid,
+/// else a stroked path.
+fn ruled(rule: &plan::Rule) -> Option<Op> {
+    let stroke = &rule.stroke;
+    let ([x0, y0], [x1, y1]) = (rule.from, rule.to);
+    let width = stroke.width;
+    if width <= 0.0 {
+        return None;
     }
+    if stroke.dash.is_none() && (x0 == x1 || y0 == y1) {
+        let rect = match x0 == x1 {
+            true => Rect {
+                x: x0 - width / 2.0,
+                y: y0.min(y1),
+                w: width,
+                h: (y1 - y0).abs(),
+            },
+            false => Rect {
+                x: x0.min(x1),
+                y: y0 - width / 2.0,
+                w: (x1 - x0).abs(),
+                h: width,
+            },
+        };
+        return Some(Op::Quad {
+            rect,
+            corners: [0.0; 4],
+            fill: Some(stroke.paint),
+            border: None,
+        });
+    }
+    let style = plan::Style {
+        fill: None,
+        stroke: Some(stroke.paint.ink),
+        opacity: 1.0,
+        fill_opacity: 1.0,
+        stroke_opacity: stroke.paint.alpha,
+        stroke_width: width,
+        dash: stroke.dash.clone(),
+        dash_offset: stroke.dash_offset,
+        cap: stroke.cap,
+        join: Join::Miter,
+        miter_limit: 10.0,
+    };
+    let segments = Curve::Linear.line(&wide(&[rule.from, rule.to]));
+    Some(Op::Path(stroked(&segments, &style)?, stroke.paint))
+}
+
+/// A gradient legend's ramp: each run between stops blended, or each step
+/// filled, and its outline.
+fn ramp(gradient: &plan::Gradient, theme: &Theme) -> Vec<Op> {
+    let r = gradient.rect;
+    let mut ops = Vec::new();
+    match &gradient.fill {
+        Fill::Stops(stops) => {
+            for pair in stops.windows(2) {
+                let ((t0, a), (t1, b)) = (pair[0], pair[1]);
+                let color = |ink: plan::Ink| {
+                    let color = ink.on(theme);
+                    color.opacity(color.a * gradient.opacity)
+                };
+                let (rect, angle) = match gradient.vertical {
+                    true => (
+                        Rect {
+                            x: r.x,
+                            y: r.bottom() - t1 * r.h,
+                            w: r.w,
+                            h: (t1 - t0) * r.h,
+                        },
+                        0.0,
+                    ),
+                    false => (
+                        Rect {
+                            x: r.x + t0 * r.w,
+                            y: r.y,
+                            w: (t1 - t0) * r.w,
+                            h: r.h,
+                        },
+                        90.0,
+                    ),
+                };
+                ops.push(Op::Gradient {
+                    rect,
+                    angle,
+                    colors: [color(a), color(b)],
+                });
+            }
+        }
+        Fill::Bands(bands) => ops.extend(bands.iter().map(|(rect, ink)| Op::Quad {
+            rect: *rect,
+            corners: [0.0; 4],
+            fill: Some(Paint {
+                ink: *ink,
+                alpha: gradient.opacity,
+            }),
+            border: None,
+        })),
+    }
+    if let Some(stroke) = &gradient.stroke {
+        ops.push(Op::Quad {
+            rect: r,
+            corners: [0.0; 4],
+            fill: None,
+            border: Some((stroke.paint, stroke.width)),
+        });
+    }
+    ops
 }
 
 fn points(run: &[[f32; 2]]) -> Vec<Point<Pixels>> {
@@ -821,6 +973,7 @@ fn trail(run: &[([f32; 2], f32)]) -> Option<Path<Pixels>> {
 
 /// A point's symbol at `at`: a circle as a rounded quad, any other shape as
 /// a path filled and then outlined.
+/// A symbol at `at`, its outline dashed by `dash` where it has one.
 fn glyph(
     shape: &Shape,
     size: f32,
@@ -828,8 +981,9 @@ fn glyph(
     at: [f32; 2],
     fill: Option<Paint>,
     border: Option<(Paint, f32)>,
+    dash: Option<&[f32]>,
 ) -> Vec<Op> {
-    if *shape == Shape::Circle {
+    if *shape == Shape::Circle && dash.is_none() {
         let d = size.max(0.0).sqrt();
         return vec![Op::Quad {
             rect: Rect {
@@ -859,7 +1013,7 @@ fn glyph(
         let width = border.map_or(1.0, |(_, width)| width);
         if let Some(paint) = paint {
             for outline in &outlines {
-                ops.extend(polyline(outline, width, None).map(|path| Op::Path(path, paint)));
+                ops.extend(polyline(outline, width, dash).map(|path| Op::Path(path, paint)));
             }
         }
         return ops;
@@ -875,7 +1029,7 @@ fn glyph(
         for outline in &outlines {
             let mut closed = outline.clone();
             closed.extend(outline.first());
-            ops.extend(polyline(&closed, width, None).map(|path| Op::Path(path, paint)));
+            ops.extend(polyline(&closed, width, dash).map(|path| Op::Path(path, paint)));
         }
     }
     ops
@@ -932,21 +1086,6 @@ fn bounds_of(rect: Rect, origin: Point<Pixels>) -> Bounds<Pixels> {
     )
 }
 
-fn paint_label(
-    built: &Built,
-    label: &plan::Label,
-    origin: Point<Pixels>,
-    window: &mut Window,
-    cx: &mut App,
-) {
-    if let Some(shaped) = built.labels.get(&label.text) {
-        let at = origin + point(px(label.at[0]), px(label.at[1]));
-        shaped
-            .paint(at, px(built.line), TextAlign::Left, None, window, cx)
-            .ok();
-    }
-}
-
 fn paint_chart(
     built: &Built,
     origin: Point<Pixels>,
@@ -956,52 +1095,21 @@ fn paint_chart(
     cx: &mut App,
 ) {
     let plan = &built.plan;
-
-    for axis in &plan.axes {
-        if axis.grid {
-            for tick in &axis.ticks {
-                let line = match axis.side {
-                    Side::Left => Rect {
-                        x: plan.plot.x,
-                        y: tick.at.round(),
-                        w: plan.plot.w,
-                        h: 1.0,
-                    },
-                    Side::Bottom => Rect {
-                        x: tick.at.round(),
-                        y: plan.plot.y,
-                        w: 1.0,
-                        h: plan.plot.h,
-                    },
-                };
-                window.paint_quad(fill(bounds_of(line, origin), theme.border_faint));
-            }
+    let paint = |ops: &[(Option<Rect>, Op)], window: &mut Window, cx: &mut App| {
+        for (clip, op) in ops {
+            let mask = clip.map(|clip| ContentMask {
+                bounds: bounds_of(clip, origin),
+                ..ContentMask::default()
+            });
+            window.with_content_mask(mask, |window| op.paint(origin, theme, window, cx));
         }
-        let labels = axis.ticks.iter().filter_map(|tick| tick.label.as_ref());
-        for label in labels.chain(&axis.title) {
-            paint_label(built, label, origin, window, cx);
-        }
-    }
-    if !plan.axes.is_empty() {
-        let base = Rect {
-            x: plan.plot.x,
-            y: plan.plot.bottom().round(),
-            w: plan.plot.w,
-            h: 1.0,
-        };
-        window.paint_quad(fill(bounds_of(base, origin), theme.border));
-    }
+    };
+    paint(&built.under, window, cx);
     if let Some(band) = tip.and_then(|tip| tip.band) {
         window.paint_quad(fill(bounds_of(band, origin), theme.ink(BAND_WASH)));
     }
-
-    for (clip, op) in &built.marks {
-        let mask = clip.map(|clip| ContentMask {
-            bounds: bounds_of(clip, origin),
-            ..ContentMask::default()
-        });
-        window.with_content_mask(mask, |window| op.paint(origin, theme, window, cx));
-    }
+    paint(&built.marks, window, cx);
+    paint(&built.over, window, cx);
 
     if let Some(tip) = tip {
         if let Some(rule) = tip.rule {
@@ -1022,22 +1130,6 @@ fn paint_chart(
                     .border_color(theme.surface),
             );
         }
-    }
-
-    if let (Some(label), Some(shaped)) = (&plan.title, &built.title) {
-        let at = origin + point(px(label.at[0]), px(label.at[1]));
-        shaped
-            .paint(at, px(built.line), TextAlign::Left, None, window, cx)
-            .ok();
-    }
-    for legend in &plan.legends {
-        let labels = legend.swatches.iter().map(|swatch| &swatch.label);
-        for label in legend.title.iter().chain(labels) {
-            paint_label(built, label, origin, window, cx);
-        }
-    }
-    for op in &built.legends {
-        op.paint(origin, theme, window, cx);
     }
 }
 

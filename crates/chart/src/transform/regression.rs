@@ -1,13 +1,15 @@
 //! Vega-Lite's `regression` transform: least-squares trend lines.
 
 use crate::{
-    data::Data,
+    data::{Column, Data},
     transform::{Groups, curve},
 };
 use gpui::SharedString;
+use js::{math, value::Value};
 
 /// A fit of `field` on `on` per group, sampled along `on`: one row per
-/// sample. A group with no more rows than the fit has parameters is left out.
+/// sample, or with `params` one per group. A group with no more rows than
+/// the fit has parameters is left out.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Regression {
     /// The predicted field.
@@ -21,6 +23,10 @@ pub struct Regression {
     pub extent: Option<[f64; 2]>,
     /// The predictor's and the prediction's fields, Vega-Lite's `as`.
     pub output: [SharedString; 2],
+    /// Each group's fit in place of its samples, as Vega gives it: `keys`,
+    /// the group's values in `groupby` order, undefined without `groupby`;
+    /// `coef`, the coefficients, the constant's first; and `rSquared`.
+    pub params: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,6 +56,7 @@ impl Regression {
             groupby: Vec::new(),
             method: Method::Linear,
             extent: None,
+            params: false,
         }
     }
 
@@ -65,16 +72,43 @@ impl Regression {
             Method::Quad => 2,
             _ => 1,
         };
-        let points: Vec<Vec<[f64; 2]>> = groups
-            .rows
-            .iter()
-            .map(|rows| {
-                if rows.len() <= parameters {
+        let fits = groups.rows.iter().map(|rows| {
+            let x: Vec<f64> = rows.iter().map(|row| xs[*row]).collect();
+            let y: Vec<f64> = rows.iter().map(|row| ys[*row]).collect();
+            let fit = (rows.len() > parameters).then(|| Fit::new(self.method, &x, &y));
+            (fit, x, y)
+        });
+        if self.params {
+            let owners: Vec<usize> = groups.rows.iter().map(|rows| rows[0]).collect();
+            let keys = groups.keys(data, &owners);
+            let (mut dims, mut coef, mut r_squared) = (Vec::new(), Vec::new(), Vec::new());
+            for (group, (fit, x, y)) in fits.enumerate() {
+                let Some(fit) = fit else {
+                    continue;
+                };
+                dims.push(match self.groupby.is_empty() {
+                    true => Value::Undefined,
+                    false => Value::Array(
+                        keys.fields()
+                            .map(|(_, column)| column.value(group))
+                            .collect(),
+                    ),
+                });
+                coef.push(Value::Array(
+                    fit.coef().into_iter().map(Value::Number).collect(),
+                ));
+                r_squared.push(fit.r_squared(&x, &y));
+            }
+            return Data::new()
+                .with("keys", Column::Value(dims.into()))
+                .with("coef", Column::Value(coef.into()))
+                .number("rSquared", r_squared);
+        }
+        let points: Vec<Vec<[f64; 2]>> = fits
+            .map(|(fit, x, _)| {
+                let Some(fit) = fit else {
                     return Vec::new();
-                }
-                let x: Vec<f64> = rows.iter().map(|row| xs[*row]).collect();
-                let y: Vec<f64> = rows.iter().map(|row| ys[*row]).collect();
-                let fit = Fit::new(self.method, &x, &y);
+                };
                 let Some(domain) = domain.or_else(|| curve::extent(x.iter().copied())) else {
                     return Vec::new();
                 };
@@ -154,6 +188,55 @@ impl Fit {
                 y
             }
         }
+    }
+
+    /// Vega's `coef`: the coefficients of `x`'s powers, lowest first, but an
+    /// exponential's `[a, b]` of `a·e^(b·x)` and a power's of `a·x^b`.
+    fn coef(&self) -> Vec<f64> {
+        match self {
+            Self::Constant(mean) => vec![*mean],
+            Self::Linear(coef) | Self::Log(coef) | Self::Pow(coef) => coef.to_vec(),
+            Self::Exp { coef: [a, b], ux } => vec![(a - b * ux).exp(), *b],
+            Self::Quad {
+                abc: [a, b, c],
+                ux,
+                uy,
+            } => vec![c - b * ux + a * ux * ux + uy, b - 2.0 * a * ux, *a],
+            // vega-statistics' `uncenter`: the polynomial in `x - ux`
+            // expanded in `x`.
+            Self::Poly { coef, ux, uy } => {
+                let mut out = vec![0.0; coef.len()];
+                for (i, &v) in coef.iter().enumerate().rev() {
+                    let mut c = 1.0;
+                    out[i] += v;
+                    for j in 1..=i {
+                        c *= (i + 1 - j) as f64 / j as f64;
+                        out[i - j] += v * math::pow(-ux, j as f64) * c;
+                    }
+                }
+                out[0] += uy;
+                out
+            }
+        }
+    }
+
+    /// The share of the variance in `y` the fit explains over the pairs
+    /// where both values are numbers; 0 for a constant.
+    fn r_squared(&self, x: &[f64], y: &[f64]) -> f64 {
+        if let Self::Constant(_) = self {
+            return 0.0;
+        }
+        let mut mean = 0.0;
+        for (n, (_, y)) in Self::pairs(x, y).enumerate() {
+            mean += (y - mean) / (n + 1) as f64;
+        }
+        let (mut sse, mut sst) = (0.0, 0.0);
+        for (x, y) in Self::pairs(x, y) {
+            let (e, t) = (y - self.predict(x), y - mean);
+            sse += e * e;
+            sst += t * t;
+        }
+        1.0 - sse / sst
     }
 
     /// Ordinary least squares `[intercept, slope]` from the means of x, y,

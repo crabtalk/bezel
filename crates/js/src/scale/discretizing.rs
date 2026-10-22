@@ -8,6 +8,8 @@ use crate::array;
 /// each.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Quantile {
+    /// The domain's values but `NaN`, sorted.
+    pub domain: Vec<f64>,
     /// The `count - 1` quantiles between the groups.
     pub thresholds: Vec<f64>,
 }
@@ -22,6 +24,7 @@ impl Quantile {
             thresholds: (1..n)
                 .map(|i| array::quantile_sorted(&sorted, i as f64 / n as f64))
                 .collect(),
+            domain: sorted,
         }
     }
 
@@ -33,6 +36,7 @@ impl Quantile {
 /// d3's `scaleQuantize`: `domain` cut into `count` equal pieces.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Quantize {
+    pub domain: [f64; 2],
     /// The `count - 1` cuts between the pieces.
     pub thresholds: Vec<f64>,
 }
@@ -47,6 +51,7 @@ impl Quantize {
                     ((i + 1.0) * x1 - (i - n) * x0) / (n + 1.0)
                 })
                 .collect(),
+            domain: [x0, x1],
         }
     }
 

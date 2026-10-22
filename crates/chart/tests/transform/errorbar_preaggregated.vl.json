@@ -1,0 +1,95 @@
+{
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+ "data": {
+  "values": [
+   {
+    "variety": "A",
+    "center": 32.4,
+    "lo": 23.099999999999998,
+    "hi": 43.599999999999994,
+    "err": 9.3,
+    "err2": -11.2
+   },
+   {
+    "variety": "B",
+    "center": 30.97,
+    "lo": 23.97,
+    "hi": 38.97,
+    "err": 7.0,
+    "err2": -8.0
+   },
+   {
+    "variety": "C",
+    "center": 33.97,
+    "lo": 24.77,
+    "hi": 46.87,
+    "err": 9.2,
+    "err2": -12.9
+   },
+   {
+    "variety": "D",
+    "center": 30.45,
+    "lo": 21.75,
+    "hi": 48.95,
+    "err": 8.7,
+    "err2": -18.5
+   }
+  ]
+ },
+ "layer": [
+  {
+   "mark": "errorbar",
+   "encoding": {
+    "x": {
+     "field": "hi",
+     "type": "quantitative"
+    },
+    "x2": {
+     "field": "lo"
+    },
+    "y": {
+     "field": "variety",
+     "type": "ordinal"
+    }
+   }
+  },
+  {
+   "mark": {
+    "type": "errorbar",
+    "ticks": true
+   },
+   "encoding": {
+    "x": {
+     "field": "center",
+     "type": "quantitative"
+    },
+    "xError": {
+     "field": "err"
+    },
+    "xError2": {
+     "field": "err2"
+    },
+    "y": {
+     "field": "variety",
+     "type": "ordinal"
+    }
+   }
+  },
+  {
+   "mark": "errorbar",
+   "encoding": {
+    "x": {
+     "field": "center",
+     "type": "quantitative"
+    },
+    "xError": {
+     "field": "err"
+    },
+    "y": {
+     "field": "variety",
+     "type": "ordinal"
+    }
+   }
+  }
+ ]
+}

@@ -9,23 +9,19 @@
 //! corner of the room under the legends; over axes, each row's place on the
 //! x and y scales.
 
-use std::{collections::HashMap, f32::consts::TAU};
-
-use gpui::SharedString;
-use js::curve::Curve;
-
 use crate::{
     data::Column,
     model::{Channel, Chart, Encode, Layer, Mark, Position, ScaleType, Stack},
     plan::{
         self, Body, Font, Hit, Hover, Link, Marks, Rect, Series, Slice, Text,
         domain::{self, Colors, Discrete},
-        layout::Layout,
         look::{self, Groups, Look},
         scales::{self, Context, Role},
     },
 };
-use js::scale::Band;
+use gpui::SharedString;
+use js::{curve::Curve, scale::Band};
+use std::{collections::HashMap, f32::consts::TAU};
 
 /// A radius for each row, in pixels: a value, or a field through its
 /// radius scale, `scale`'s where it shares one, from zero to `outer` by
@@ -74,13 +70,8 @@ fn turn(theta: &Channel) -> Option<(f32, f32)> {
     })
 }
 
-pub(super) fn arcs(chart: &Chart, colors: &Colors, layout: &Layout) -> Option<Body> {
-    let room = Rect {
-        x: plan::PAD,
-        y: layout.top,
-        w: layout.size[0] - 2.0 * plan::PAD,
-        h: layout.size[1] - layout.top - plan::PAD,
-    };
+/// Slices in `room`, what the title and legends leave.
+pub(super) fn arcs(chart: &Chart, colors: &Colors, room: Rect) -> Option<Body> {
     let outer = (room.w.min(room.h) / 2.0).max(plan::MIN_PLOT / 2.0);
     let center = [room.x + room.w / 2.0, room.y + room.h / 2.0];
     let plot = Rect {

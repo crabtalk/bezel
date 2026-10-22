@@ -1,0 +1,67 @@
+{
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+ "data": {
+  "values": [
+   {
+    "name": "a",
+    "info": {
+     "size": 3,
+     "tags": [
+      "p",
+      "q"
+     ]
+    },
+    "flag": true
+   },
+   {
+    "name": "b",
+    "info": {
+     "size": 5,
+     "tags": [
+      "r",
+      "s"
+     ]
+    },
+    "flag": false
+   },
+   {
+    "name": "c",
+    "info": {
+     "size": 2,
+     "tags": [
+      "t"
+     ]
+    },
+    "flag": true
+   },
+   {
+    "name": "d",
+    "info": null,
+    "flag": null
+   }
+  ]
+ },
+ "mark": "point",
+ "encoding": {
+  "x": {
+   "field": "info.size",
+   "type": "quantitative"
+  },
+  "y": {
+   "field": "name",
+   "type": "nominal"
+  },
+  "color": {
+   "field": "info.tags[1]",
+   "type": "nominal"
+  },
+  "detail": {
+   "field": "info",
+   "type": "nominal"
+  },
+  "tooltip": {
+   "field": "flag",
+   "type": "nominal"
+  }
+ }
+}

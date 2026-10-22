@@ -81,3 +81,28 @@ fn parses() {
         .collect();
     assert_none(failures, cases.len());
 }
+
+/// vega-format's multi-format, against what Vega 6.4.0 writes.
+#[test]
+fn multi_formats_are_vegas() {
+    let zone = LocalZone::utc();
+    let written: Vec<String> = [
+        "2024-01-01T00:00Z",
+        "2024-03-01T00:00Z",
+        "2024-03-03T00:00Z",
+        "2024-03-05T00:00Z",
+        "2024-03-05T10:00Z",
+        "2024-03-05T10:30Z",
+        "2024-03-05T10:30:15Z",
+        "2024-03-05T10:30:15.250Z",
+    ]
+    .iter()
+    .map(|text| zone.parse(text).multi_format())
+    .collect();
+    assert_eq!(
+        written,
+        [
+            "2024", "March", "Mar 03", "Tue 05", "10 AM", "10:30", ":15", ".250"
+        ]
+    );
+}

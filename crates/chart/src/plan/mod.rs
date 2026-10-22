@@ -8,7 +8,10 @@
 //! stack and along a horizontal one, or by `order`; an area's or line's
 //! series stands at zero where it has no row. Lines, areas and trails join
 //! their series' rows in ascending x, or by `order`, through their
-//! interpolation's curve, and a missing y breaks them. A bar along a
+//! interpolation's curve, and a missing y breaks them. A layer's
+//! [`Invalid`] mode says what its rows with an invalid value draw and which
+//! domains take them in; null is a value of its own on a discrete scale.
+//! A bar along a
 //! continuous axis without `x2` or `y2` is Vega-Lite's continuous band size
 //! across, and a bar's, area's, line's or trail's `orient` says which of two
 //! continuous axes, or of one alone, it stands along. A bar, rule, rect,
@@ -25,49 +28,44 @@
 //! side across without a `radius`. A layer's rows split into series by colour, `detail` and `key`, and for a
 //! line, area or bar by every other channel that names a field but shape and
 //! angle. A channel's [`Scale`] and [`Sort`] shape its domain and range as
-//! Vega-Lite's defaults and Vega's scales do, and its title
-//! sits under the bottom axis or over the left one. The pointer reads out the
+//! Vega-Lite's defaults and Vega's scales do. Its axis or legend, and the
+//! chart's title, are laid out as Vega lays them out, inside the size given:
+//! the title and legends take their room from the edges, and the plot what
+//! its axes leave of the rest. The pointer reads out the
 //! band under it, and the nearest row along the shared axis of each series
 //! of a line, area, trail or point layer placed on scales both ways. A bar
 //! spanning y to `y2` over a continuous x runs across, and a tick with an
 //! `x2` or `y2` runs to it.
 //!
+//! [`Invalid`]: crate::model::Invalid
 //! [`Scale`]: crate::model::Scale
 //! [`Sort`]: crate::model::Sort
 //! [`Stack`]: crate::model::Stack
-
-use std::{f32::consts::TAU, sync::Arc};
-
-use gpui::{FontStyle, FontWeight, Hsla, SharedString};
-use js::curve::Curve;
-use theme::Theme;
 
 use crate::{
     data::Column,
     model::{
         Align, Baseline, Cap, Channel, Chart, Dir, Encode, Encoding, Join, Mark, ScaleType, Shape,
+        Side,
     },
-    plan::{domain::Colors, layout::Layout},
+    plan::{domain::Colors, layout::Layout, title::Heading},
 };
+use gpui::{FontStyle, FontWeight, Hsla, SharedString};
+use js::curve::Curve;
+use std::{f32::consts::TAU, sync::Arc};
+use theme::Theme;
 
 mod arcs;
+mod axis;
 mod cartesian;
 mod domain;
+mod invalid;
 mod layout;
 mod legend;
 mod look;
 mod scales;
+mod title;
 
-/// Around the whole chart.
-const PAD: f32 = 8.0;
-/// Between a label and what it labels.
-const GAP: f32 = 6.0;
-const SWATCH: f32 = 10.0;
-/// Between legend entries.
-const LEGEND_GAP: f32 = 16.0;
-/// Roughly how far apart ticks stand along x, and along y.
-const X_SPACING: f32 = 80.0;
-const Y_SPACING: f32 = 40.0;
 /// The least a plot takes either way, at any size.
 const MIN_PLOT: f32 = 16.0;
 /// How far along the shared axis from the hovered point another series'
@@ -96,36 +94,148 @@ impl Rect {
     pub fn contains(&self, [x, y]: [f32; 2]) -> bool {
         x >= self.x && x <= self.right() && y >= self.y && y <= self.bottom()
     }
+
+    /// The least rect holding both.
+    pub fn union(self, other: Rect) -> Rect {
+        let (x, y) = (self.x.min(other.x), self.y.min(other.y));
+        Rect {
+            x,
+            y,
+            w: self.right().max(other.right()) - x,
+            h: self.bottom().max(other.bottom()) - y,
+        }
+    }
+
+    /// Moved by `by`.
+    pub fn moved(self, by: [f32; 2]) -> Rect {
+        Rect {
+            x: self.x + by[0],
+            y: self.y + by[1],
+            ..self
+        }
+    }
 }
 
-/// A line of text one line high, its top-left at `at`, `width` as measured.
+/// The host's text: its font size and line height, in pixels. A guide's
+/// labels are set at its size, which stands for Vega's 10 pixels; titles
+/// are as much larger as Vega's are.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Metrics {
+    pub size: f32,
+    pub line: f32,
+}
+
+/// How a guide's text is set. `family` `None` is the view's own.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Face {
+    pub family: Option<SharedString>,
+    pub size: f32,
+    pub weight: FontWeight,
+    pub style: FontStyle,
+}
+
+/// Level text, its lines split at `\n` and `line` apart, the first line's
+/// top-left at `at`; `width` its widest line as measured.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Label {
     pub text: SharedString,
     pub at: [f32; 2],
     pub width: f32,
+    pub line: f32,
+    pub face: Face,
+    pub paint: Paint,
+    /// How its lines stand against each other.
+    pub align: Align,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Side {
-    Bottom,
-    Left,
+impl Label {
+    pub fn height(&self) -> f32 {
+        self.line * self.text.split('\n').count() as f32
+    }
+
+    pub fn rect(&self) -> Rect {
+        Rect {
+            x: self.at[0],
+            y: self.at[1],
+            w: self.width,
+            h: self.height(),
+        }
+    }
+
+    /// Moved so `at` is the point of it `align` and `baseline` name.
+    pub fn anchored(self, at: [f32; 2], align: Align, baseline: Baseline) -> Self {
+        let height = self.height();
+        let y = match baseline {
+            Baseline::Top | Baseline::LineTop => 0.0,
+            Baseline::Middle => height / 2.0,
+            Baseline::Bottom | Baseline::Alphabetic | Baseline::LineBottom => height,
+        };
+        Self {
+            at: [at[0] - self.width * align.fraction(), at[1] - y],
+            align,
+            ..self
+        }
+    }
+
+    /// Moved by `by`.
+    pub fn moved(self, by: [f32; 2]) -> Self {
+        Self {
+            at: [self.at[0] + by[0], self.at[1] + by[1]],
+            ..self
+        }
+    }
 }
 
-/// `at` is x on a bottom axis and y on a left one.
+/// A guide's line from `from` to `to`.
 #[derive(Clone, Debug, PartialEq)]
-pub struct Tick {
-    pub at: f32,
-    pub label: Option<Label>,
+pub struct Rule {
+    pub from: [f32; 2],
+    pub to: [f32; 2],
+    pub stroke: Stroke,
 }
 
-/// `grid` for an axis of values, whose ticks run lines across the plot.
+/// How a guide's line is stroked.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Stroke {
+    pub paint: Paint,
+    pub width: f32,
+    /// Lengths of dash and gap, in turn. `None` is solid.
+    pub dash: Option<Arc<[f32]>>,
+    pub dash_offset: f32,
+    pub cap: Cap,
+}
+
+/// An x or y axis on `side` of the plot.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Axis {
     pub side: Side,
-    pub ticks: Vec<Tick>,
-    pub grid: bool,
+    /// Lines across the plot at its ticks.
+    pub grid: Vec<Rule>,
+    /// Its domain line, then its ticks.
+    pub rules: Vec<Rule>,
+    pub labels: Vec<Label>,
     pub title: Option<Label>,
+    /// Whether it is drawn over the marks rather than under them.
+    pub over: bool,
+}
+
+impl Axis {
+    /// What its rules and text cover, grid aside.
+    pub fn bounds(&self) -> Option<Rect> {
+        let rules = self.rules.iter().map(|rule| {
+            let half = rule.stroke.width / 2.0;
+            let (x0, x1) = (rule.from[0].min(rule.to[0]), rule.from[0].max(rule.to[0]));
+            let (y0, y1) = (rule.from[1].min(rule.to[1]), rule.from[1].max(rule.to[1]));
+            Rect {
+                x: x0 - half,
+                y: y0 - half,
+                w: x1 - x0 + 2.0 * half,
+                h: y1 - y0 + 2.0 * half,
+            }
+        });
+        let texts = self.labels.iter().chain(&self.title).map(Label::rect);
+        rules.chain(texts).reduce(|a, b| a.union(b))
+    }
 }
 
 /// A colour: a place in the theme's categorical colours, or a fixed one.
@@ -137,6 +247,10 @@ pub enum Ink {
     Muted,
     /// The theme's text, for a rule or text with no colour of its own.
     Text,
+    /// The theme's border, for an axis's domain and ticks.
+    Border,
+    /// The theme's faint border, for grid lines.
+    Faint,
 }
 
 impl Ink {
@@ -146,6 +260,8 @@ impl Ink {
             Ink::Fixed(color) => color,
             Ink::Muted => theme.text_muted,
             Ink::Text => theme.text,
+            Ink::Border => theme.border,
+            Ink::Faint => theme.border_faint,
         }
     }
 }
@@ -356,33 +472,71 @@ pub struct Color {
     pub ink: Ink,
 }
 
-/// A legend: its title, then its entries flowing left to right.
+/// A legend: its box, title, and a symbol legend's entries or a gradient
+/// legend's ramp and labels.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Legend {
+    pub frame: Option<Frame>,
     pub title: Option<Label>,
     pub swatches: Vec<Swatch>,
+    pub gradient: Option<Gradient>,
+    /// A gradient legend's labels.
+    pub labels: Vec<Label>,
+    /// Whether it is drawn over the marks rather than under them.
+    pub over: bool,
 }
 
-/// One legend entry: `glyph` drawn in `swatch`, then its label.
+/// A box drawn behind a legend.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Frame {
+    pub rect: Rect,
+    pub fill: Option<Paint>,
+    pub stroke: Option<Paint>,
+    pub radius: f32,
+}
+
+/// One legend entry: `glyph` centred in `swatch`, then its label. `clip`
+/// cuts the glyph off.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Swatch {
     pub glyph: Glyph,
     pub swatch: Rect,
     pub label: Label,
+    pub clip: Option<Rect>,
+}
+
+/// A legend entry's symbol: `size` square pixels of `shape`, the stroke
+/// `shape` a line across.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Glyph {
+    pub shape: Shape,
+    pub size: f32,
+    pub fill: Option<Paint>,
+    pub stroke: Option<Paint>,
+    pub stroke_width: f32,
+    /// Lengths of dash and gap along its outline, in turn, from
+    /// `dash_offset` into the pattern.
+    pub dash: Option<Arc<[f32]>>,
+    pub dash_offset: f32,
+}
+
+/// A gradient legend's ramp in `rect`, its colours from the start of its
+/// run to the end: up a vertical one, rightward a horizontal one.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Gradient {
+    pub rect: Rect,
+    pub vertical: bool,
+    pub fill: Fill,
+    pub stroke: Option<Stroke>,
+    pub opacity: f32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum Glyph {
-    /// A filled square.
-    Fill { ink: Ink, opacity: f32 },
-    /// A point's symbol, `size` square pixels.
-    Symbol { shape: Shape, size: f32, ink: Ink },
-    /// A short line across the swatch.
-    Stroke {
-        ink: Ink,
-        width: f32,
-        dash: Option<Arc<[f32]>>,
-    },
+pub enum Fill {
+    /// Colours at places from 0 to 1 along the run, blended between.
+    Stops(Vec<(f32, Ink)>),
+    /// A discretizing scale's steps, each its own cell.
+    Bands(Vec<(Rect, Ink)>),
 }
 
 /// What is under the pointer.
@@ -405,6 +559,9 @@ pub struct Plan {
     /// What the marks are drawn in. For arcs, the square the pie fills.
     pub plot: Rect,
     pub title: Option<Label>,
+    pub subtitle: Option<Label>,
+    /// Whether the title and subtitle are drawn over the marks.
+    pub title_over: bool,
     pub legends: Vec<Legend>,
     pub axes: Vec<Axis>,
     /// Paint order.
@@ -502,41 +659,72 @@ struct Trace {
 
 type Body = (Rect, Vec<Axis>, Vec<Series>, Hover, Vec<Link>);
 
-/// `chart` laid out at `size`, its labels `line` high and as wide as `measure`
-/// says. `None` for what cannot be drawn: a field the data does not hold, a
-/// quantitative field over text, a range of what its channel does not take,
-/// layers that disagree on which axis is discrete, no layer placed on a
-/// scale where a layer is placed in pixels, a text at an angle or with an
-/// outline, or a mark without the positions it needs. A size too small to
-/// hold a plot draws a cramped one, so no size changes whether a chart draws.
+/// `chart` laid out at `size`, its text set to `metrics` and as wide as
+/// `measure` says. `None` for what cannot be drawn: a field the data does
+/// not hold, a quantitative field over text, a range of what its channel
+/// does not take, layers that disagree on which axis is discrete, no layer
+/// placed on a scale where a layer is placed in pixels, a text at an angle
+/// or with an outline, a guide's text at an angle, a title beside the
+/// chart, or a mark without the positions it needs. A size too small to
+/// hold a plot draws a cramped one, so no size changes whether a chart
+/// draws.
 pub fn plan(
     chart: &Chart,
     size: [f32; 2],
-    line: f32,
-    measure: &mut dyn FnMut(&str) -> f32,
+    metrics: Metrics,
+    measure: &mut dyn FnMut(&str, &Face) -> f32,
 ) -> Option<Plan> {
+    let chart = &*invalid::prepare(chart);
     let colors = Colors::of(chart)?;
-    let mut layout = Layout {
-        size,
-        line,
-        top: PAD,
-        reserved: 0.0,
-        measure,
-    };
-    let first_title = |channel: fn(&Encoding) -> Option<&Channel>| {
-        chart.layers.iter().find_map(|layer| {
-            let channel = channel(&layer.encoding)?;
-            // A position with no scale has no axis.
-            (channel.scale.kind != Some(ScaleType::Identity))
-                .then(|| channel.title.clone())
-                .flatten()
-        })
-    };
-    let title = chart.title.clone().map(|text| layout.line_at(text, PAD));
-    let legends = legend::legends(chart, &colors)?
-        .into_iter()
-        .map(|(title, entries)| layout.legend(title, entries))
-        .collect();
+    // Text is drawn level, and filled without an outline: gpui paints a
+    // glyph as a mask in one colour.
+    let angled = |angle: Option<f32>| angle.is_some_and(|a| a.rem_euclid(360.0) != 0.0);
+    if chart.layers.iter().any(|layer| {
+        let e = &layer.encoding;
+        let outlined = match (&e.stroke, &e.stroke_width) {
+            (_, Some(Encode::Value(width))) if *width <= 0.0 => false,
+            (Some(Encode::Value(color)), _) => color.a > 0.0,
+            (Some(Encode::Scaled(_)), _) => true,
+            (None, _) => layer.properties.filled == Some(false),
+        };
+        let guides = e.channels().into_iter().any(|channel| {
+            let axis = channel.axis.as_deref().is_some_and(|axis| {
+                angled(axis.style.label.angle)
+                    || angled(axis.title.angle)
+                    || axis.cases.iter().any(|case| angled(case.style.label.angle))
+            });
+            let legend = channel
+                .legend
+                .as_deref()
+                .is_some_and(|legend| angled(legend.label.angle) || angled(legend.title.angle));
+            axis || legend
+        });
+        guides
+            || (layer.mark == Mark::Text
+                && (outlined || !matches!(e.angle, None | Some(Encode::Value(0.0)))))
+    }) {
+        return None;
+    }
+    if let Some(title) = &chart.title {
+        let beside = matches!(title.orient, Some(Side::Left | Side::Right))
+            && title.lettering.angle.is_none();
+        if beside || angled(title.lettering.angle) || angled(title.subtitle_lettering.angle) {
+            return None;
+        }
+    }
+
+    let mut layout = Layout::new(size, metrics, measure);
+    let heading = chart
+        .title
+        .as_ref()
+        .map(|title| Heading::of(title, &mut layout));
+    if let Some(heading) = &heading {
+        layout.reserve(heading.side(), heading.extent());
+    }
+    let inner = layout.inner;
+    let blocks = legend::legends(chart, &colors, &mut layout, [inner.w, inner.h])?;
+    legend::reserve(&blocks, &mut layout);
+
     // Arcs and text alone, none placed on a scale, draw without axes.
     let polar = chart.layers.iter().any(|layer| layer.mark == Mark::Arc)
         && chart.layers.iter().all(|layer| {
@@ -546,54 +734,45 @@ pub fn plan(
                     .iter()
                     .all(|p| p.as_ref().and_then(Encode::channel).is_none())
         });
-    let x_title = first_title(|e| e.x.as_ref()?.channel()).filter(|_| !polar);
-    if x_title.is_some() {
-        layout.reserved = line + GAP;
-    }
-    let y_title = first_title(|e| e.y.as_ref()?.channel())
-        .filter(|_| !polar)
-        .map(|text| layout.line_at(text, PAD));
-
-    // Text is drawn level, and filled without an outline: gpui paints a
-    // glyph as a mask in one colour.
-    if chart.layers.iter().any(|layer| {
-        let e = &layer.encoding;
-        let outlined = match (&e.stroke, &e.stroke_width) {
-            (_, Some(Encode::Value(width))) if *width <= 0.0 => false,
-            (Some(Encode::Value(color)), _) => color.a > 0.0,
-            (Some(Encode::Scaled(_)), _) => true,
-            (None, _) => layer.properties.filled == Some(false),
-        };
-        layer.mark == Mark::Text
-            && (outlined || !matches!(e.angle, None | Some(Encode::Value(0.0))))
-    }) {
-        return None;
-    }
-    let (plot, mut axes, series, hover, links) = match (polar, chart.layers.as_slice()) {
-        (true, _) => arcs::arcs(chart, &colors, &layout)?,
-        (false, []) => return None,
-        (false, _) => cartesian::cartesian(chart, &colors, &mut layout)?,
+    let first_title = |channel: fn(&Encoding) -> Option<&Channel>| {
+        chart.layers.iter().find_map(|layer| {
+            let channel = channel(&layer.encoding)?;
+            // A position with no scale has no axis.
+            (channel.scale.kind != Some(ScaleType::Identity))
+                .then(|| channel.title.clone())
+                .flatten()
+        })
     };
-    let x_title = x_title.map(|text| {
-        let label = layout.label(text, [0.0, 0.0]);
-        Label {
-            at: [
-                plot.x + (plot.w - label.width) / 2.0,
-                plot.bottom() + GAP + line + GAP,
-            ],
-            ..label
+    let titles = [
+        first_title(|e| e.x.as_ref()?.channel()),
+        first_title(|e| e.y.as_ref()?.channel()),
+    ];
+    let (plot, axes, series, hover, links) = match (polar, chart.layers.as_slice()) {
+        (true, _) => arcs::arcs(chart, &colors, layout.inner)?,
+        (false, []) => return None,
+        (false, _) => cartesian::cartesian(chart, &colors, &mut layout, titles)?,
+    };
+    let bounds = axes.iter().filter_map(Axis::bounds).fold(plot, Rect::union);
+    let blocks = legend::legends(chart, &colors, &mut layout, [plot.w, plot.h])?;
+    let legends = legend::place(blocks, plot, bounds);
+    let bounds = legends
+        .iter()
+        .filter_map(Legend::bounds)
+        .fold(bounds, Rect::union);
+    let title_over = heading.as_ref().is_some_and(Heading::over);
+    let (title, subtitle) = match heading {
+        Some(heading) => {
+            let (title, subtitle) = heading.place(plot, bounds);
+            (Some(title), subtitle)
         }
-    });
-    for axis in &mut axes {
-        axis.title = match axis.side {
-            Side::Bottom => x_title.clone(),
-            Side::Left => y_title.clone(),
-        };
-    }
+        None => (None, None),
+    };
     Some(Plan {
         size,
         plot,
         title,
+        subtitle,
+        title_over,
         legends,
         axes,
         series,
@@ -607,11 +786,17 @@ pub fn plan(
 impl Chart {
     /// Whether [`plan`] draws it.
     pub fn drawable(&self) -> bool {
-        plan(self, [0.0, 0.0], 0.0, &mut |_| 0.0).is_some()
+        let metrics = Metrics {
+            size: 0.0,
+            line: 0.0,
+        };
+        plan(self, [0.0, 0.0], metrics, &mut |_, _| 0.0).is_some()
     }
 }
 
 impl Plan {
+    /// The chart as drawn: without the rows its layers' invalid data modes
+    /// leave out of marks and domains alike.
     pub fn chart(&self) -> &Chart {
         &self.chart
     }
@@ -747,8 +932,8 @@ impl Plan {
     /// Row `row` of `channel` in layer `layer`, read as its kind.
     fn text(&self, layer: usize, channel: &Channel, row: usize) -> Option<SharedString> {
         Some(match channel.column(&self.chart.layers[layer].data)? {
-            Column::Text(text) => text.get(row).clone(),
             Column::Number(values) => channel.kind.describe(values[row]).into(),
+            column => column.label(row),
         })
     }
 }

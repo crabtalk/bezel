@@ -2,18 +2,19 @@
 //! that is also a channel is that channel's value where the `encoding`
 //! leaves the channel out.
 
-use gpui::{FontStyle, FontWeight, SharedString};
-use serde_json::{Map, Value, json};
-
 use crate::{
     data::Data,
-    expr::{Expr, Row, Value as ExprValue},
+    expr::{Expr, Row},
     model::{
-        Align, Baseline, Cap, Dir, Extent, Interpolate, Join, LineBreak, Mark, Orient, Overlay,
-        Properties,
+        Align, Baseline, Cap, Dir, Extent, Interpolate, Invalid, Join, LineBreak, Mark, Orient,
+        Overlay, Properties,
     },
     vega_lite::encoding,
 };
+use gpui::SharedString;
+use js::value::Value as ExprValue;
+use serde_json::{Map, Value, json};
+use std::{fmt, str::FromStr};
 
 /// Mark properties that are channels' values, and the channel each sets.
 const CHANNELS: [(&str, &str); 25] = [
@@ -46,9 +47,8 @@ const CHANNELS: [(&str, &str); 25] = [
 
 /// Properties that change nothing bezel draws: interaction, accessibility,
 /// and what applies to bins, time units and config styles alone.
-const DROPPED: [&str; 11] = [
+const DROPPED: [&str; 10] = [
     "tooltip",
-    "invalid",
     "aria",
     "ariaRole",
     "ariaRoleDescription",
@@ -129,16 +129,12 @@ fn properties(
         let number = || value.as_f64().map(|n| n as f32);
         match key {
             "filled" => p.filled = Some(value.as_bool()?),
+            // Read with the config's by `invalid`.
+            "invalid" => {}
             "clip" => p.clip = value.as_bool()?,
             "interpolate" => p.interpolate = value.as_str()?.parse().ok()?,
             "tension" => p.tension = Some(number()?),
-            "orient" => {
-                p.orient = Some(match value.as_str()? {
-                    "horizontal" => Orient::Horizontal,
-                    "vertical" => Orient::Vertical,
-                    _ => return None,
-                })
-            }
+            "orient" => p.orient = Some(value.as_str()?.parse().ok()?),
             "cornerRadius" => {
                 let radius = number()?;
                 for corner in &mut p.corner_radius {
@@ -160,14 +156,7 @@ fn properties(
             "cornerRadiusBottomRight" => p.corner_radius[2] = Some(number()?),
             "cornerRadiusBottomLeft" => p.corner_radius[3] = Some(number()?),
             "cornerRadiusEnd" => p.corner_radius_end = Some(number()?),
-            "strokeCap" => {
-                p.stroke_cap = match value.as_str()? {
-                    "butt" => Cap::Butt,
-                    "round" => Cap::Round,
-                    "square" => Cap::Square,
-                    _ => return None,
-                }
-            }
+            "strokeCap" => p.stroke_cap = value.as_str()?.parse::<Cap>().ok()?,
             "strokeJoin" => {
                 p.stroke_join = match value.as_str()? {
                     "miter" => Join::Miter,
@@ -182,45 +171,14 @@ fn properties(
             "width" => p.width = Some(extent(value)?),
             "height" => p.height = Some(extent(value)?),
             "aspect" => p.aspect = Some(value.as_bool()?),
-            "align" => {
-                p.align = Some(match value.as_str()? {
-                    "left" => Align::Left,
-                    "center" => Align::Center,
-                    "right" => Align::Right,
-                    _ => return None,
-                })
-            }
-            "baseline" => {
-                p.baseline = Some(match value.as_str()? {
-                    "top" => Baseline::Top,
-                    "middle" => Baseline::Middle,
-                    "bottom" => Baseline::Bottom,
-                    "alphabetic" => Baseline::Alphabetic,
-                    "line-top" => Baseline::LineTop,
-                    "line-bottom" => Baseline::LineBottom,
-                    _ => return None,
-                })
-            }
+            "align" => p.align = Some(value.as_str()?.parse::<Align>().ok()?),
+            "baseline" => p.baseline = Some(value.as_str()?.parse::<Baseline>().ok()?),
             "dx" => p.dx = number()?,
             "dy" => p.dy = number()?,
             "font" => p.font = Some(SharedString::from(value.as_str()?.to_string())),
             "fontSize" => p.font_size = Some(number()?),
-            "fontStyle" => {
-                p.font_style = match value.as_str()? {
-                    "normal" => FontStyle::Normal,
-                    "italic" => FontStyle::Italic,
-                    "oblique" => FontStyle::Oblique,
-                    _ => return None,
-                }
-            }
-            "fontWeight" => {
-                p.font_weight = Some(match value {
-                    Value::String(weight) if weight == "normal" => FontWeight::NORMAL,
-                    Value::String(weight) if weight == "bold" => FontWeight::BOLD,
-                    Value::Number(weight) => FontWeight(weight.as_f64()? as f32),
-                    _ => return None,
-                })
-            }
+            "fontStyle" => p.font_style = encoding::font_style(value)?,
+            "fontWeight" => p.font_weight = Some(encoding::font_weight(value)?),
             "limit" => p.limit = number()?,
             "ellipsis" => {
                 let ellipsis = value.as_str()?;
@@ -312,6 +270,57 @@ fn overlay(
     })))
 }
 
+/// A `mark`'s invalid data mode from its definition's `invalid` and its
+/// config's, each a mode's name, `null` for `"show"`, or
+/// `"break-paths-show-path-domains"`, the mark's own. Vega-Lite 6.5 draws
+/// the marks by the definition's, or else the config's, and takes the
+/// domains from the rows the marks draw unless the config's alone parts
+/// them. `Some(None)` for the mark's own mode; `None` for a mode Vega-Lite
+/// does not have.
+pub(crate) fn invalid(
+    mark: Mark,
+    own: Option<&Value>,
+    config: Option<&Value>,
+) -> Option<Option<Invalid>> {
+    let read = |value: Option<&Value>| -> Option<Invalid> {
+        Some(match value {
+            None => mark.invalid(),
+            Some(Value::Null) => Invalid::Show,
+            Some(Value::String(name)) if name == "break-paths-show-path-domains" => mark.invalid(),
+            Some(Value::String(name)) => name.parse().ok()?,
+            Some(_) => return None,
+        })
+    };
+    let marks = read(own.or(config))?;
+    let domains = read(config)?;
+    let path = mark.is_path();
+    // Whether a mode's marks draw the invalid rows, and whether the
+    // config's takes the domains from rows other than the marks'.
+    let drawn = |mode| {
+        mode == Invalid::Show
+            || (path
+                && matches!(
+                    mode,
+                    Invalid::BreakPathsFilterDomains | Invalid::BreakPathsShowDomains
+                ))
+    };
+    let parted = match path {
+        true => domains == Invalid::BreakPathsFilterDomains,
+        false => domains == Invalid::BreakPathsShowDomains,
+    };
+    let counted = match parted {
+        true => domains == Invalid::BreakPathsShowDomains,
+        false => drawn(marks),
+    };
+    let mode = match (drawn(marks), counted) {
+        (false, false) => Invalid::Filter,
+        (true, _) if marks == Invalid::Show => Invalid::Show,
+        (_, true) => Invalid::BreakPathsShowDomains,
+        (true, false) => Invalid::BreakPathsFilterDomains,
+    };
+    Some((mode != mark.invalid()).then_some(mode))
+}
+
 /// A string, `""` for none, or an `expr` with neither `datum` nor params
 /// that gives a string or a regular expression.
 fn line_break(value: &Value) -> Option<Option<LineBreak>> {
@@ -352,5 +361,28 @@ fn extent(value: &Value) -> Option<Extent> {
             Some(Extent::Band(band.get("band")?.as_f64()? as f32))
         }
         _ => None,
+    }
+}
+
+/// An orientation by its Vega-Lite name.
+impl FromStr for Orient {
+    type Err = ();
+
+    fn from_str(name: &str) -> Result<Self, ()> {
+        match name {
+            "horizontal" => Ok(Self::Horizontal),
+            "vertical" => Ok(Self::Vertical),
+            _ => Err(()),
+        }
+    }
+}
+
+/// Vega-Lite's name of the orientation.
+impl fmt::Display for Orient {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.write_str(match self {
+            Self::Horizontal => "horizontal",
+            Self::Vertical => "vertical",
+        })
     }
 }

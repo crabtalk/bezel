@@ -2,25 +2,22 @@
 //! sizes, dashes, shapes, angles, texts, links and image urls, and the
 //! series its rows fall in and the order they are drawn in.
 
-use std::{cmp::Ordering, collections::HashMap, sync::Arc};
-
-use gpui::{Hsla, SharedString};
-use js::regex::Regex;
-
 use crate::{
     data::{Column, Data},
     model::{
-        Align, Baseline, Cap, Channel, Domain, Encode, Join, Kind, Layer, LineBreak, Mark,
+        Align, Baseline, Cap, Channel, Datum, Domain, Encode, Join, Layer, LineBreak, Mark,
         NamedRange, Range, ScaleType, Shape, Sort,
     },
     plan::{
         Font, Ink, Style,
         domain::{self, Colors, Discrete},
+        invalid,
         scales::{self, ColorScale, Colored, Context, Role, Steps},
     },
-    scale::Ticks,
 };
-use js::scale::Continuous;
+use gpui::{Hsla, SharedString};
+use js::{number::Number as JsNumber, regex::Regex, scale::Continuous};
+use std::{cmp::Ordering, collections::HashMap, sync::Arc};
 
 /// Vega-Lite's ranges for its numeric channels.
 pub(super) const OPACITY: [f32; 2] = [0.3, 0.8];
@@ -47,11 +44,11 @@ const TRAIL_WIDTH: f32 = 2.0;
 pub(super) const FONT_SIZE: [f32; 2] = [8.0, 40.0];
 const TEXT_SIZE: f32 = 11.0;
 /// Vega-Lite's opacity for a point, circle, square or tick with none given.
-const REDUCED_OPACITY: f32 = 0.7;
+pub(super) const REDUCED_OPACITY: f32 = 0.7;
 /// Canvas's miter limit.
 const MITER_LIMIT: f32 = 10.0;
 /// What a text cut short ends in, with no `ellipsis` property.
-const ELLIPSIS: &str = "\u{2026}";
+pub(super) const ELLIPSIS: &str = "\u{2026}";
 
 /// One value for every row, or each row's.
 #[derive(Clone, Debug)]
@@ -82,15 +79,11 @@ pub(super) enum Amount {
     },
     Continuous {
         values: Arc<[f64]>,
-        kind: Kind,
         scale: Continuous,
-        /// A binned field's bin edges, which its legend lists.
-        edges: Option<Vec<f64>>,
     },
     /// A discretizing scale's steps, each a value of the range.
     Steps {
         values: Arc<[f64]>,
-        kind: Kind,
         steps: Steps,
         range: Vec<f64>,
     },
@@ -160,7 +153,6 @@ impl Amount {
             let steps = Steps::of(kind, &channel.scale, &spanned, range.len())?;
             return Some(Amount::Steps {
                 values: values.clone(),
-                kind: channel.kind,
                 steps,
                 range,
             });
@@ -174,9 +166,7 @@ impl Amount {
         let extent = domain::extent(spanned);
         Some(Amount::Continuous {
             values: values.clone(),
-            kind: channel.kind,
             scale: scales::continuous(channel, kind, &context, extent, range),
-            edges: scales::edges(&channel.scale),
         })
     }
 
@@ -193,8 +183,9 @@ impl Amount {
         }) as f32
     }
 
-    /// `NaN` for a missing value.
-    pub(super) fn rows(&self) -> Vec<f32> {
+    /// `NaN` for a missing value, but where `shown` on a continuous scale:
+    /// its zero, where its domain spans zero, or its domain's first value.
+    pub(super) fn rows(&self, shown: bool) -> Vec<f32> {
         match self {
             Amount::Identity(values) => values.iter().map(|&v| v as f32).collect(),
             Amount::Discrete {
@@ -209,9 +200,13 @@ impl Amount {
                     code => Self::step(code as usize, domain.labels.len(), range, *ordinal),
                 })
                 .collect(),
-            Amount::Continuous { values, scale, .. } => {
-                values.iter().map(|&v| scale.at(v) as f32).collect()
-            }
+            Amount::Continuous { values, scale, .. } => values
+                .iter()
+                .map(|&v| match v.is_nan() && shown {
+                    true => scale.at(invalid::zero_or_min(&scale.domain)) as f32,
+                    false => scale.at(v) as f32,
+                })
+                .collect(),
             Amount::Steps {
                 values,
                 steps,
@@ -229,51 +224,31 @@ impl Amount {
         }
     }
 
-    /// What a legend shows: each value, ticks across the domain, or each
-    /// step, and where each lands.
-    pub(super) fn entries(&self) -> Vec<(SharedString, f32)> {
+    /// What `value` maps to: a discrete domain's value by name, any
+    /// other's number. `None` off the domain.
+    pub(super) fn of_value(&self, value: &Datum) -> Option<f32> {
+        let number = || match value {
+            Datum::Number(number) => Some(*number),
+            Datum::Text(text) => text.parse().ok(),
+        };
         match self {
-            // With no scale, Vega-Lite draws no legend.
-            Amount::Identity(_) => Vec::new(),
+            Amount::Identity(_) => number().map(|v| v as f32),
             Amount::Discrete {
                 domain,
                 range,
                 ordinal,
-            } => domain
-                .labels
-                .iter()
-                .enumerate()
-                .map(|(i, label)| {
-                    (
-                        label.clone(),
-                        Self::step(i, domain.labels.len(), range, *ordinal),
-                    )
-                })
-                .collect(),
-            // Each bin, at where it starts.
-            Amount::Continuous {
-                kind,
-                scale,
-                edges: Some(edges),
-                ..
-            } => scales::ranges(*kind, edges)
-                .into_iter()
-                .zip(edges)
-                .map(|(label, &v)| (label, scale.at(v) as f32))
-                .collect(),
-            Amount::Continuous { kind, scale, .. } => Ticks::of(scale, domain::LEGEND_TICKS)
-                .values
-                .iter()
-                .map(|&v| (kind.describe(v).into(), scale.at(v) as f32))
-                .collect(),
-            Amount::Steps {
-                kind, steps, range, ..
-            } => steps
-                .labels(*kind, range.len())
-                .into_iter()
-                .zip(range)
-                .map(|(label, v)| (label, *v as f32))
-                .collect(),
+            } => {
+                let name = match value {
+                    Datum::Number(number) => JsNumber(*number).to_string().into(),
+                    Datum::Text(text) => text.clone(),
+                };
+                let index = domain.labels.iter().position(|label| *label == name)?;
+                Some(Self::step(index, domain.labels.len(), range, *ordinal))
+            }
+            Amount::Continuous { scale, .. } => Some(scale.at(number()?) as f32),
+            Amount::Steps { steps, range, .. } => {
+                range.get(steps.index(number()?)?).map(|&v| v as f32)
+            }
         }
     }
 }
@@ -291,7 +266,8 @@ fn amounts(
         None => Each::All(default),
         Some(Encode::Value(value)) => Each::All(*value),
         Some(Encode::Scaled(channel)) => {
-            let rows = Amount::of(channel, &layer.data, range, layer.mark, size)?.rows();
+            let rows = Amount::of(channel, &layer.data, range, layer.mark, size)?
+                .rows(invalid::shown(layer));
             Each::Rows(
                 rows.into_iter()
                     .map(|v| if v.is_nan() { default } else { v.max(0.0) })
@@ -344,22 +320,24 @@ fn paints(channel: &Channel, layer: &Layer) -> Option<Vec<Option<Ink>>> {
                 code => palette.discrete(code as usize),
             })
             .collect(),
-        (palette, Colored::Numbers(values)) => values.iter().map(|&v| palette.value(v)).collect(),
+        (palette, Colored::Numbers(values)) => {
+            let shown = invalid::shown(layer);
+            values
+                .iter()
+                .map(|&v| palette.value(if shown { palette.shown(v) } else { v }))
+                .collect()
+        }
     })
 }
 
-/// A field's values as text, a number or time read out.
+/// A field's values as text, a number or time read out, null as `null`.
 pub(super) fn texts(channel: &Channel, column: &Column) -> Vec<SharedString> {
     match column {
-        Column::Text(text) => text
-            .codes
-            .iter()
-            .map(|&c| text.names[c as usize].clone())
-            .collect(),
         Column::Number(values) => values
             .iter()
             .map(|&v| channel.kind.describe(v).into())
             .collect(),
+        column => (0..column.len()).map(|row| column.label(row)).collect(),
     }
 }
 
@@ -657,40 +635,8 @@ impl Dashes {
     }
 }
 
-/// A shape or dash field's values in order, or a discretizing scale's
-/// steps, each with `range`'s value at its place.
-pub(super) fn listed<T>(
-    channel: &Channel,
-    layer: &Layer,
-    range: impl Fn(usize) -> T,
-    count: usize,
-) -> Option<Vec<(SharedString, T)>> {
-    let kind = scales::scale_type(channel, Role::Symbol, layer.mark, false);
-    let column = channel.column(&layer.data)?;
-    let labels = match kind.is_discretizing() {
-        true => {
-            let Column::Number(values) = &column else {
-                return None;
-            };
-            Steps::of(kind, &channel.scale, values, count)?.labels(channel.kind, count)
-        }
-        false => {
-            Discrete::of(&column, &channel.sort)
-                .within(&channel.scale)
-                .labels
-        }
-    };
-    Some(
-        labels
-            .into_iter()
-            .enumerate()
-            .map(|(i, label)| (label, range(i)))
-            .collect(),
-    )
-}
-
 /// `None` for a dash with no gap.
-fn solid(dash: &[f32]) -> Option<Arc<[f32]>> {
+pub(super) fn solid(dash: &[f32]) -> Option<Arc<[f32]>> {
     (dash.iter().skip(1).step_by(2).any(|gap| *gap > 0.0) && dash.iter().any(|d| *d > 0.0))
         .then(|| dash.into())
 }
@@ -794,7 +740,8 @@ pub(super) fn ranks(layer: &Layer) -> Option<Option<Vec<u32>>> {
                     (false, false) => values[a].total_cmp(&values[b]),
                     (nan_a, nan_b) => nan_a.cmp(&nan_b),
                 },
-                Column::Text(text) => text.get(a).cmp(text.get(b)),
+                Column::Text(text) => text.get(a).cmp(&text.get(b)),
+                Column::Value(values) => values[a].compare(&values[b]).unwrap_or(Ordering::Equal),
             };
             let order = match channel.sort {
                 Sort::Descending => order.reverse(),

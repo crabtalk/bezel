@@ -8,6 +8,7 @@ pub mod decimate;
 #[cfg(feature = "vega-lite")]
 pub mod expr;
 pub mod model;
+mod path;
 pub mod plan;
 pub mod scale;
 pub mod time;
@@ -16,7 +17,7 @@ pub mod transform;
 pub mod vega_lite;
 pub mod view;
 
-pub use data::{Column, Data, Text};
+pub use data::{Column, Data, Name, Text};
 pub use model::{
     Channel, Chart, Datum, Encode, Encoding, Kind, Layer, Mark, Position, Properties, Scale, Shape,
     Sort, Source,

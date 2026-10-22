@@ -7,13 +7,12 @@
 //! `true`, and as `true` does where they differ.
 
 use crate::{
-    data::{Column, Data},
+    data::{Column, Data, Name},
     model::{Chart, Domain, ScaleType, Sort},
-    scale,
     transform::{Op, Random},
     vega_lite::{
-        dataflow::{self, DomainSort},
         encoding::{self, Def},
+        sort::{self, DomainSort},
     },
 };
 use gpui::SharedString;
@@ -104,7 +103,7 @@ fn parts(layers: &mut [Layered], name: &str) -> Option<Vec<Part>> {
         };
         parts.push(Part {
             layer: index,
-            key: dataflow::key(def)?,
+            key: sort::key(def)?,
             field,
             sort,
         });
@@ -222,59 +221,62 @@ fn merge(layers: &[Layered], parts: &[Part], random: &mut Random) -> Option<Vec<
                 .flat_map(|column| column.numbers().expect("numbers").to_vec())
                 .collect::<Vec<_>>(),
         ),
-        false => Data::new().text(key.clone(), columns.iter().flat_map(labels)),
+        false => Data::new().with(
+            key.clone(),
+            Column::Text(
+                columns
+                    .iter()
+                    .flat_map(|column| (0..column.len()).map(|row| Name::from(&column.value(row))))
+                    .collect(),
+            ),
+        ),
     };
     let union = match measured {
         Some(_) => union.number(value, values),
         None => union,
     };
-    let labels = labels(union.column(&key)?);
-    let mut distinct: Vec<(SharedString, f64)> = Vec::new();
-    let numeric = matches!(union.column(&key), Some(Column::Number(_)));
-    for (label, number) in labels.into_iter().zip(union.numbers(&key)) {
-        if numeric && number.is_nan() {
-            continue;
-        }
-        if !distinct.iter().any(|(other, _)| *other == label) {
-            distinct.push((label, number));
+    let column = union.column(&key)?;
+    // Each value's label and number, and whether it is null or undefined,
+    // which comes first in ascending order and last in descending order, in
+    // the order met.
+    let mut distinct: Vec<(SharedString, f64, bool)> = Vec::new();
+    let numeric = matches!(column, Column::Number(_));
+    for (row, number) in union.numbers(&key).into_iter().enumerate() {
+        let label = column.label(row);
+        if !distinct.iter().any(|(other, ..)| *other == label) {
+            distinct.push((label, number, column.value(row).is_nullish()));
         }
     }
     let natural = |descending: bool| {
         let mut sorted = distinct.clone();
-        sorted.sort_by(|(a, x), (b, y)| match numeric {
-            true => x.total_cmp(y),
-            false => a.cmp(b),
-        });
-        if descending {
-            sorted.reverse();
+        let ascending = |(a, x, a_null): &(SharedString, f64, bool),
+                         (b, y, b_null): &(SharedString, f64, bool)| {
+            b_null.cmp(a_null).then_with(|| match numeric {
+                true => x.total_cmp(y),
+                false => a.cmp(b),
+            })
+        };
+        match descending {
+            true => sorted.sort_by(|a, b| ascending(b, a)),
+            false => sorted.sort_by(ascending),
         }
-        sorted.into_iter().map(|(label, _)| label).collect()
+        sorted.into_iter().map(|(label, ..)| label).collect()
     };
     Some(match sort.order(&union, &key, random) {
         Sort::Ascending => natural(false),
         Sort::Descending => natural(true),
-        Sort::Data => distinct.into_iter().map(|(label, _)| label).collect(),
+        Sort::Data => distinct.into_iter().map(|(label, ..)| label).collect(),
         Sort::Explicit(listed) => {
             let mut ranked = distinct;
-            ranked.sort_by_key(|(label, _)| {
+            ranked.sort_by_key(|(label, ..)| {
                 listed
                     .iter()
                     .position(|l| l == label)
                     .unwrap_or(listed.len())
             });
-            ranked.into_iter().map(|(label, _)| label).collect()
+            ranked.into_iter().map(|(label, ..)| label).collect()
         }
     })
-}
-
-/// Each row's value as a discrete scale names it.
-fn labels(column: &Column) -> Vec<SharedString> {
-    match column {
-        Column::Text(text) => (0..text.codes.len())
-            .map(|row| text.get(row).clone())
-            .collect(),
-        Column::Number(values) => values.iter().map(|&v| scale::value(v).into()).collect(),
-    }
 }
 
 /// Whether two columns hold the same values.

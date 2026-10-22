@@ -1,181 +1,162 @@
-//! Where the header, legends, plot and axes go at the chart's size.
+//! Where the title, legends, plot and axes go at the chart's size: Vega's
+//! layout, its `pad` autosize kept inside the host's size. The title and
+//! legends take their room from the chart's edges first, and the plot
+//! takes what its axes leave of the rest.
 
-use gpui::SharedString;
+use crate::{
+    model::{Align, Dir, Lettering, Side},
+    plan::{self, Axis, Face, Ink, Label, Metrics, Paint, Rect, look},
+};
+use gpui::{FontStyle, FontWeight, SharedString};
 
-use crate::plan::{self, Axis, Glyph, Label, Legend, Rect, Side, Swatch, Tick};
+/// Vega-Lite's `padding` around the whole chart.
+const PADDING: f32 = 5.0;
+/// Vega's guide titles, chart title and subtitle against its 10-pixel
+/// guide labels, which the host's text size stands for.
+pub(super) const GUIDE_TITLE: f32 = 1.1;
+pub(super) const CHART_TITLE: f32 = 1.3;
+pub(super) const SUBTITLE: f32 = 1.2;
+/// How many times the plot is fit to what its axes take of the room.
+const PASSES: usize = 3;
 
-/// The chart's size, and how far down its title and legends reach.
 pub(super) struct Layout<'a> {
-    pub(super) size: [f32; 2],
-    pub(super) line: f32,
-    pub(super) top: f32,
-    /// Kept under the bottom axis, for its title.
-    pub(super) reserved: f32,
-    pub(super) measure: &'a mut dyn FnMut(&str) -> f32,
+    pub(super) metrics: Metrics,
+    measure: &'a mut dyn FnMut(&str, &Face) -> f32,
+    /// What the title and legends leave for the plot and its axes.
+    pub(super) inner: Rect,
 }
 
-impl Layout<'_> {
-    pub(super) fn label(&mut self, text: SharedString, at: [f32; 2]) -> Label {
-        let width = (self.measure)(&text);
-        Label { text, at, width }
+impl<'a> Layout<'a> {
+    pub(super) fn new(
+        size: [f32; 2],
+        metrics: Metrics,
+        measure: &'a mut dyn FnMut(&str, &Face) -> f32,
+    ) -> Self {
+        let inner = Rect {
+            x: PADDING,
+            y: PADDING,
+            w: (size[0] - 2.0 * PADDING).max(0.0),
+            h: (size[1] - 2.0 * PADDING).max(0.0),
+        };
+        Self {
+            metrics,
+            measure,
+            inner,
+        }
     }
 
-    /// A full-width line of the header, at `x`.
-    pub(super) fn line_at(&mut self, text: SharedString, x: f32) -> Label {
-        let label = self.label(text, [x, self.top]);
-        self.top += self.line + plan::GAP;
-        label
+    /// `lettering`'s face: `scale` times the host's size, and bold where
+    /// `bold`, unless it says otherwise.
+    pub(super) fn face(&self, lettering: &Lettering, scale: f32, bold: bool) -> Face {
+        Face {
+            family: lettering.font.clone(),
+            size: lettering.size.unwrap_or(self.metrics.size * scale),
+            weight: lettering.weight.unwrap_or(match bold {
+                true => FontWeight::BOLD,
+                false => FontWeight::NORMAL,
+            }),
+            style: lettering.style.unwrap_or(FontStyle::Normal),
+        }
     }
 
-    /// `title`, then one entry per glyph and label, flowing left to right
-    /// and wrapping, on lines of its own.
-    pub(super) fn legend(
+    /// `text` set as `lettering` says, else in `face`'s defaults and `ink`,
+    /// its top-left at the origin and each line cut short at `limit` pixels,
+    /// `0` for none.
+    pub(super) fn label(
         &mut self,
-        title: Option<SharedString>,
-        entries: Vec<(Glyph, SharedString)>,
-    ) -> Legend {
-        let boxes: Vec<[f32; 2]> = entries.iter().map(|(glyph, _)| glyph.extent()).collect();
-        let row = boxes.iter().map(|[_, h]| *h).fold(self.line, f32::max);
-        let mut x = plan::PAD;
-        let title = title.filter(|_| !entries.is_empty()).map(|text| {
-            let label = self.label(text, [plan::PAD, self.top + (row - self.line) / 2.0]);
-            x += label.width + plan::GAP;
-            label
-        });
-        let mut swatches = Vec::new();
-        for ((glyph, text), [w, h]) in entries.into_iter().zip(boxes) {
-            let label = self.label(text, [0.0, 0.0]);
-            let width = w + plan::GAP + label.width;
-            if x > plan::PAD && x + width > self.size[0] - plan::PAD {
-                x = plan::PAD;
-                self.top += row;
-            }
-            swatches.push(Swatch {
-                glyph,
-                swatch: Rect {
-                    x,
-                    y: self.top + (row - h) / 2.0,
-                    w,
-                    h,
-                },
-                label: Label {
-                    at: [x + w + plan::GAP, self.top + (row - self.line) / 2.0],
-                    ..label
-                },
-            });
-            x += width + plan::LEGEND_GAP;
-        }
-        if !swatches.is_empty() {
-            self.top += row + plan::GAP;
-        }
-        Legend { title, swatches }
-    }
-
-    /// The plot's height once a bottom axis is taken out.
-    pub(super) fn plot_height(&self) -> f32 {
-        self.size[1] - self.top - plan::PAD - plan::GAP - self.line - self.reserved
-    }
-
-    /// The plot beside left labels `left` wide, over a bottom axis.
-    pub(super) fn plot(&self, left: f32) -> Rect {
-        let x = plan::PAD + left + plan::GAP;
-        Rect {
-            x,
-            y: self.top,
-            w: (self.size[0] - x - plan::PAD).max(plan::MIN_PLOT),
-            h: self.plot_height().max(plan::MIN_PLOT),
-        }
-    }
-
-    pub(super) fn measured(&mut self, labels: &[SharedString]) -> Vec<Label> {
-        labels
-            .iter()
-            .map(|text| self.label(text.clone(), [0.0, 0.0]))
-            .collect()
-    }
-
-    /// A left axis of measured `labels`, each centred on its `at` and
-    /// right-aligned against `plot`. Past one to a line, every k-th.
-    pub(super) fn left(&self, labels: Vec<Label>, at: &[f32], plot: Rect, grid: bool) -> Axis {
-        let every = spacing(at).map_or(1, |step| (self.line / step).ceil().max(1.0) as usize);
-        Axis {
-            side: Side::Left,
-            ticks: labels
-                .into_iter()
-                .zip(at)
-                .enumerate()
-                .map(|(index, (label, &y))| Tick {
-                    at: y,
-                    label: (index % every == 0).then(|| Label {
-                        at: [plot.x - plan::GAP - label.width, y - self.line / 2.0],
-                        ..label
-                    }),
-                })
-                .collect(),
-            grid,
-            title: None,
-        }
-    }
-
-    /// A bottom axis under `plot`, each label centred on its `at` and kept
-    /// inside the chart. Past what fits side by side, every k-th.
-    pub(super) fn bottom(
-        &mut self,
-        labels: &[SharedString],
-        at: &[f32],
-        plot: Rect,
-        grid: bool,
-    ) -> Axis {
-        let measured = self.measured(labels);
-        let every = spacing(at).map_or(1, |step| {
-            ((widest(&measured) + plan::GAP) / step).ceil().max(1.0) as usize
-        });
-        let ticks = measured
-            .into_iter()
-            .zip(at)
-            .enumerate()
-            .map(|(index, (label, &x))| Tick {
-                at: x,
-                label: (index % every == 0).then(|| Label {
-                    at: [
-                        (x - label.width / 2.0).clamp(0.0, (self.size[0] - label.width).max(0.0)),
-                        plot.bottom() + plan::GAP,
-                    ],
-                    ..label
-                }),
+        text: &str,
+        lettering: &Lettering,
+        (scale, bold): (f32, bool),
+        ink: Ink,
+        limit: f32,
+    ) -> Label {
+        let face = self.face(lettering, scale, bold);
+        let line = lettering
+            .line_height
+            .unwrap_or(face.size * self.metrics.line / self.metrics.size.max(1.0));
+        let limit = lettering.limit.unwrap_or(limit);
+        let mut width: f32 = 0.0;
+        let lines: Vec<String> = text
+            .split('\n')
+            .map(|content| {
+                let content = match limit > 0.0 {
+                    true => Dir::Ltr
+                        .truncated(content, limit, look::ELLIPSIS, |t| (self.measure)(t, &face)),
+                    false => content.to_string(),
+                };
+                width = width.max((self.measure)(&content, &face));
+                content
             })
             .collect();
-        Axis {
-            side: Side::Bottom,
-            ticks,
-            grid,
-            title: None,
+        Label {
+            text: SharedString::from(lines.join("\n")),
+            at: [0.0, 0.0],
+            width,
+            line,
+            paint: Paint {
+                ink: lettering.color.map_or(ink, Ink::Fixed),
+                alpha: lettering.opacity.unwrap_or(1.0),
+            },
+            face,
+            align: lettering.align.unwrap_or(Align::Left),
         }
     }
-}
 
-impl Glyph {
-    /// The swatch's width and height.
-    fn extent(&self) -> [f32; 2] {
-        match self {
-            Glyph::Fill { .. } => [plan::SWATCH, plan::SWATCH],
-            Glyph::Symbol { size, .. } => {
-                let side = size.max(0.0).sqrt().max(plan::SWATCH);
-                [side, side]
+    /// Takes `extent` pixels of the inner room from its `side`.
+    pub(super) fn reserve(&mut self, side: Side, extent: f32) {
+        let extent = extent.max(0.0);
+        let inner = &mut self.inner;
+        match side {
+            Side::Top => {
+                inner.y += extent;
+                inner.h -= extent;
             }
-            Glyph::Stroke { width, .. } => [2.0 * plan::SWATCH, width.max(plan::SWATCH)],
+            Side::Bottom => inner.h -= extent,
+            Side::Left => {
+                inner.x += extent;
+                inner.w -= extent;
+            }
+            Side::Right => inner.w -= extent,
         }
+        inner.w = inner.w.max(0.0);
+        inner.h = inner.h.max(0.0);
     }
-}
 
-/// How far apart evenly spaced positions are.
-fn spacing(at: &[f32]) -> Option<f32> {
-    match at {
-        [a, b, ..] => Some((b - a).abs()),
-        _ => None,
+    /// The plot inside the inner room, less what the axes `place` draws
+    /// at a plot take past it, and what `place` gives there. `None` where
+    /// `place` gives none.
+    pub(super) fn fit<T>(
+        &mut self,
+        mut place: impl FnMut(&mut Self, Rect) -> Option<(T, Vec<Axis>)>,
+    ) -> Option<(Rect, T, Vec<Axis>)> {
+        // Top, right, bottom and left.
+        let mut margins = [0.0f32; 4];
+        let mut out = None;
+        for _ in 0..PASSES {
+            let inner = self.inner;
+            let plot = Rect {
+                x: inner.x + margins[3],
+                y: inner.y + margins[0],
+                w: (inner.w - margins[1] - margins[3]).max(plan::MIN_PLOT),
+                h: (inner.h - margins[0] - margins[2]).max(plan::MIN_PLOT),
+            };
+            let (placed, axes) = place(self, plot)?;
+            let taken = match axes.iter().filter_map(Axis::bounds).reduce(Rect::union) {
+                Some(b) => [
+                    plot.y - b.y,
+                    b.right() - plot.right(),
+                    b.bottom() - plot.bottom(),
+                    plot.x - b.x,
+                ]
+                .map(|m| m.max(0.0).ceil()),
+                None => [0.0; 4],
+            };
+            out = Some((plot, placed, axes));
+            if taken.iter().zip(margins).all(|(a, b)| (a - b).abs() < 0.5) {
+                break;
+            }
+            margins = taken;
+        }
+        out
     }
-}
-
-pub(super) fn widest(labels: &[Label]) -> f32 {
-    labels.iter().map(|l| l.width).fold(0.0, f32::max)
 }

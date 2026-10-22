@@ -1,11 +1,8 @@
 //! A data source's `format`: how its text becomes rows, as vega-loader reads
 //! it, and the `parse` applied to them.
 
-use crate::{
-    time,
-    vega_lite::{dsv, path::Path},
-};
-use js::number::Number as JsNumber;
+use crate::{path::Path, time, vega_lite::dsv};
+use js::value::Value as JsValue;
 use serde_json::{Map, Number, Value};
 use std::str::FromStr;
 
@@ -72,7 +69,7 @@ impl Parse {
                 Value::String(s) => s != "false" && s != "0",
                 _ => true,
             }),
-            Self::Number => number(number_of(&value)),
+            Self::Number => number(js(&value).to_number()),
             Self::Date => match &value {
                 Value::Number(_) => value,
                 Value::String(s) => number(time::parse(s).unwrap_or(f64::NAN)),
@@ -80,41 +77,26 @@ impl Parse {
             },
             Self::String => Value::String(match value {
                 Value::String(s) => s,
-                Value::Number(n) => n
-                    .as_f64()
-                    .map_or_else(|| n.to_string(), |n| JsNumber(n).to_string()),
-                other => other.to_string(),
+                other => js(&other).to_string(),
             }),
         }
     }
 }
 
-/// JavaScript's `+value`.
-pub(crate) fn number_of(value: &Value) -> f64 {
+/// The JSON as a JavaScript value, an object's keys in their order.
+pub(crate) fn js(value: &Value) -> JsValue {
     match value {
-        Value::Number(n) => n.as_f64().unwrap_or(f64::NAN),
-        Value::Bool(flag) => f64::from(u8::from(*flag)),
-        Value::String(s) => JsNumber::from(s.as_str()).0,
-        _ => f64::NAN,
-    }
-}
-
-/// JavaScript's `String(value)`: an array's items joined by commas.
-pub(crate) fn string_of(value: &Value) -> String {
-    match value {
-        Value::Null => "null".into(),
-        Value::Bool(flag) => flag.to_string(),
-        Value::Number(n) => JsNumber(n.as_f64().unwrap_or(f64::NAN)).to_string(),
-        Value::String(s) => s.clone(),
-        Value::Array(items) => items
-            .iter()
-            .map(|item| match item {
-                Value::Null => String::new(),
-                item => string_of(item),
-            })
-            .collect::<Vec<_>>()
-            .join(","),
-        Value::Object(_) => "[object Object]".into(),
+        Value::Null => JsValue::Null,
+        Value::Bool(flag) => JsValue::Bool(*flag),
+        Value::Number(n) => JsValue::Number(n.as_f64().unwrap_or(f64::NAN)),
+        Value::String(s) => s.as_str().into(),
+        Value::Array(items) => JsValue::Array(items.iter().map(js).collect()),
+        Value::Object(object) => JsValue::Object(
+            object
+                .iter()
+                .map(|(key, value)| (key.as_str().into(), js(value)))
+                .collect(),
+        ),
     }
 }
 
@@ -222,7 +204,7 @@ impl Format {
 
 fn at<'a>(value: &'a Value, property: Option<&Path>) -> Option<&'a Value> {
     match property {
-        Some(path) => path.get(value),
+        Some(path) => path.json(value),
         None => Some(value),
     }
 }

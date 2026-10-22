@@ -1,22 +1,24 @@
 //! Vega-Lite's `aggregate` transform, each op as Vega computes it.
 
 use crate::{
-    data::{Column, Data, Text},
+    data::{Column, Data, Name, Text},
     transform::{Groups, Random},
 };
 use gpui::SharedString;
-use js::{array, math, number::Number as JsNumber};
-use std::{cmp::Ordering, collections::HashSet, fmt, str::FromStr};
+use js::{array, math, number::Number as JsNumber, string, value::Value};
+use std::{borrow::Cow, cmp::Ordering, collections::HashSet, fmt, str::FromStr};
 
 /// Resamples per bootstrap confidence interval, and its alpha.
 const SAMPLES: usize = 1000;
 const ALPHA: f64 = 0.05;
 
-/// Vega's aggregate ops but `values`, by their Vega names.
+/// Vega's aggregate ops, by their Vega names.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Op {
     /// Rows in the group, whatever the field holds.
     Count,
+    /// The group's rows, each an object of every field, in an array.
+    Values,
     Valid,
     Missing,
     Distinct,
@@ -44,8 +46,9 @@ pub enum Op {
     Exponentialb,
 }
 
-const OPS: [(Op, &str); 24] = [
+const OPS: [(Op, &str); 25] = [
     (Op::Count, "count"),
+    (Op::Values, "values"),
     (Op::Valid, "valid"),
     (Op::Missing, "missing"),
     (Op::Distinct, "distinct"),
@@ -94,8 +97,9 @@ impl fmt::Display for Op {
 
 impl Op {
     /// Vega's order of computing a field's ops.
-    fn index(self) -> u8 {
+    fn index(self) -> i8 {
         match self {
+            Op::Values => -1,
             Op::Average | Op::Variance | Op::Exponentialb => 1,
             Op::Variancep | Op::Stdev | Op::Stdevp | Op::Stderr => 2,
             Op::Distinct
@@ -116,7 +120,7 @@ impl Op {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Measure {
     pub op: Op,
-    /// `None` only for `count`.
+    /// `None` only for `count` and `values`.
     pub field: Option<SharedString>,
     /// `exponential`'s weight, which `exponentialb` takes from an
     /// `exponential` of the same field. `None` computes `NaN`.
@@ -191,6 +195,8 @@ impl Aggregate {
             .iter()
             .map(|(field, _)| (cells(data, field), data.keys(field)))
             .collect();
+        let columns: Vec<Option<Cow<Column>>> =
+            fields.iter().map(|(field, _)| data.field(field)).collect();
 
         let mut values = vec![vec![f64::NAN; groups.rows.len()]; self.measures.len()];
         let mut picked: Vec<Vec<Option<usize>>> = vec![Vec::new(); self.measures.len()];
@@ -201,7 +207,8 @@ impl Aggregate {
                 }
             }
             let mut store = Store::default();
-            for (field, ((name, measures), (cells, keys))) in fields.iter().zip(&cells).enumerate()
+            for (field, (((_, measures), (cells, keys)), column)) in
+                fields.iter().zip(&cells).zip(&columns).enumerate()
             {
                 let exponent = measures
                     .iter()
@@ -209,7 +216,7 @@ impl Aggregate {
                     .rfind(|m| m.op == Op::Exponential)
                     .and_then(|m| m.param)
                     .unwrap_or(f64::NAN);
-                let text = match data.column(name) {
+                let text = match column.as_deref() {
                     Some(Column::Text(text)) => Some(text),
                     _ => None,
                 };
@@ -219,6 +226,7 @@ impl Aggregate {
                         op @ (Op::Argmin | Op::Argmax) => {
                             picked[i].push(run.pick(op, &mut store, field))
                         }
+                        Op::Values => {}
                         Op::Min if text.is_some() => picked[i].push(run.least.map(|(row, _)| row)),
                         Op::Max if text.is_some() => picked[i].push(run.most.map(|(row, _)| row)),
                         op => {
@@ -231,53 +239,81 @@ impl Aggregate {
             }
         }
 
-        for (i, measure) in self.measures.iter().enumerate() {
+        // Vega writes the counts, then each field's measures in the order
+        // it computes them: of two measures of one name, the later. A
+        // `values` of no field last.
+        let counts = (0..self.measures.len()).filter(|&i| self.measures[i].op == Op::Count);
+        let fieldless = (0..self.measures.len())
+            .filter(|&i| self.measures[i].op == Op::Values && self.measures[i].field.is_none());
+        let order: Vec<usize> = counts
+            .chain(
+                fields
+                    .iter()
+                    .flat_map(|(_, measures)| measures.iter().copied()),
+            )
+            .chain(fieldless)
+            .collect();
+        for i in order {
+            let measure = &self.measures[i];
             match measure.op {
+                Op::Values => {
+                    let column = groups
+                        .rows
+                        .iter()
+                        .map(|rows| Value::Array(rows.iter().map(|&row| data.row(row)).collect()))
+                        .collect();
+                    table = table.with(measure.output.clone(), Column::Value(column));
+                }
                 Op::Argmin | Op::Argmax => {
                     for (field, column) in data.fields() {
-                        let rows = &picked[i];
-                        let column = match column {
-                            Column::Text(text) => Column::Text(
-                                rows.iter()
-                                    .map(|row| {
-                                        row.map_or_else(SharedString::default, |r| {
-                                            text.get(r).clone()
-                                        })
-                                    })
-                                    .collect(),
-                            ),
-                            Column::Number(values) => Column::Number(
-                                rows.iter()
-                                    .map(|row| row.map_or(f64::NAN, |r| values[r]))
-                                    .collect(),
-                            ),
-                        };
+                        let column = column.pick(&picked[i]);
                         table = table.with(format!("{}.{field}", measure.output), column);
                     }
                 }
                 // The least or greatest text, as it is.
                 Op::Min | Op::Max if !picked[i].is_empty() => {
                     let field = measure.field.as_deref().unwrap_or_default();
-                    let Some(Column::Text(text)) = data.column(field) else {
+                    let Some(column) = data.field(field) else {
                         continue;
                     };
-                    let column = picked[i]
-                        .iter()
-                        .map(|row| row.map_or_else(SharedString::default, |r| text.get(r).clone()))
-                        .collect();
-                    table = table.with(measure.output.clone(), Column::Text(column));
+                    table = table.with(measure.output.clone(), column.pick(&picked[i]));
                 }
                 _ => table = table.number(measure.output.clone(), std::mem::take(&mut values[i])),
             }
         }
         table
     }
+
+    /// Vega's `joinaggregate`: every row of `data`, each with what
+    /// [`Self::apply`] measures of its group.
+    pub fn join(&self, data: &Data, random: &mut Random) -> Data {
+        let groups = Groups::of(data, &self.groupby);
+        let table = self.apply(data, random);
+        let mut owners = vec![0; data.len()];
+        for (group, rows) in groups.rows.iter().enumerate() {
+            for &row in rows {
+                owners[row] = group;
+            }
+        }
+        let mut out = data.clone();
+        for (field, _) in table.fields() {
+            if !self.groupby.contains(field) {
+                out = out.adopt(&table, field.clone(), table.take(field, &owners));
+            }
+        }
+        out
+    }
 }
 
-/// Each row's value of `field`: a number column's `NaN` is missing, and text
-/// is valid unless empty, read as JavaScript's `+text`.
+/// Each row's value of `field`: a number column's `NaN`, null, undefined
+/// and an empty string are missing, and any other value is valid, read as
+/// JavaScript's `+value`.
 fn cells(data: &Data, field: &str) -> Vec<Cell> {
-    match data.column(field) {
+    let missing = |value: &Value| match value {
+        Value::String(text) => text.is_empty(),
+        value => value.is_nullish(),
+    };
+    match data.field(field).as_deref() {
         Some(Column::Number(values)) => values
             .iter()
             .map(|&v| match v.is_nan() {
@@ -289,9 +325,9 @@ fn cells(data: &Data, field: &str) -> Vec<Cell> {
             let names: Vec<Cell> = text
                 .names
                 .iter()
-                .map(|name| match name.is_empty() {
-                    true => Cell::Missing,
-                    false => Cell::Valid(JsNumber::from(name.as_ref()).0),
+                .map(|name| match name {
+                    Name::Text(name) if !name.is_empty() => Cell::Valid(JsNumber::from(&**name).0),
+                    _ => Cell::Missing,
                 })
                 .collect();
             text.codes
@@ -299,6 +335,13 @@ fn cells(data: &Data, field: &str) -> Vec<Cell> {
                 .map(|&code| names[code as usize])
                 .collect()
         }
+        Some(Column::Value(values)) => values
+            .iter()
+            .map(|value| match missing(value) {
+                true => Cell::Missing,
+                false => Cell::Valid(value.to_number()),
+            })
+            .collect(),
         None => vec![Cell::Missing; data.len()],
     }
 }
@@ -309,7 +352,7 @@ impl Running {
     fn of(rows: &[usize], cells: &[Cell], text: Option<&Text>, exponent: f64) -> Self {
         // JavaScript's `<` on strings compares UTF-16 code units.
         let compare = |a: usize, b: usize, x: f64, y: f64| match text {
-            Some(text) => Some(text.get(a).encode_utf16().cmp(text.get(b).encode_utf16())),
+            Some(text) => Some(string::compare(text.get(a)?, text.get(b)?)),
             None => x.partial_cmp(&y),
         };
         let mut run = Running {
@@ -419,7 +462,7 @@ impl Running {
                 let [low, high] = store.ci?;
                 Some(if op == Op::Ci0 { low } else { high })
             }
-            Op::Argmin | Op::Argmax => None,
+            Op::Values | Op::Argmin | Op::Argmax => None,
         }
     }
 

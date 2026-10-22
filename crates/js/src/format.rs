@@ -1,7 +1,7 @@
 //! d3-format's number formatting with its en-US locale.
 
 use crate::{
-    math,
+    array, math,
     number::{self, Number},
     string,
 };
@@ -309,6 +309,57 @@ impl NumberFormat {
             }
             None => Self::new(specifier, "", f64::NAN),
         }
+    }
+
+    /// vega-format's `formatSpan(start, stop, count, specifier)`: `specifier`,
+    /// `,f` without one, at the precision the ticks `d3.tickStep` takes
+    /// from `start` to `stop` need where it gives none.
+    pub fn span(start: f64, stop: f64, count: f64, specifier: Option<Specifier>) -> Self {
+        let mut specifier = specifier.unwrap_or(Specifier {
+            comma: true,
+            kind: Some('f'),
+            ..Specifier::default()
+        });
+        let step = array::tick_step(start, stop, count);
+        let value = start.abs().max(stop.abs());
+        if specifier.precision.is_none() {
+            match specifier.kind {
+                Some('s') => {
+                    specifier.precision = precision_prefix(step, value);
+                    return Self::prefix(specifier, value);
+                }
+                None | Some('e' | 'g' | 'p' | 'r') => {
+                    let less = usize::from(specifier.kind == Some('e'));
+                    specifier.precision =
+                        precision_round(step, value).map(|p| p.saturating_sub(less));
+                }
+                Some('f' | '%') => {
+                    let less = 2 * usize::from(specifier.kind == Some('%'));
+                    specifier.precision = precision_fixed(step).map(|p| p.saturating_sub(less));
+                }
+                _ => {}
+            }
+        }
+        specifier.into()
+    }
+
+    /// vega-format's `formatFloat(specifier)`: `specifier`, `,` without one,
+    /// to 12 significant digits with trailing zeros dropped where it gives
+    /// no precision.
+    pub fn float(specifier: Option<Specifier>) -> Self {
+        let mut specifier = specifier.unwrap_or(Specifier {
+            comma: true,
+            ..Specifier::default()
+        });
+        if specifier.precision.is_none() {
+            specifier.precision = Some(match specifier.kind {
+                Some('%') => 10,
+                Some('e') => 11,
+                _ => 12,
+            });
+            specifier.trim = true;
+        }
+        specifier.into()
     }
 
     /// The number as text.

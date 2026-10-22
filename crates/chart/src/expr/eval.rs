@@ -1,13 +1,14 @@
 //! A syntax tree's value on one row.
 
 use crate::{
-    data::{Column, Data},
+    data::Data,
     expr::{
-        Error, Value,
+        Error,
         parse::{Binary, Node, Unary},
     },
 };
 use gpui::SharedString;
+use js::value::Value;
 use std::cmp::Ordering;
 
 /// What an expression reads: `datum` is row `index` of `data`, and a bare
@@ -27,27 +28,9 @@ impl Row<'_> {
     /// `undefined`.
     pub fn field(&self, field: &str) -> Value {
         match self.data.column(field) {
-            Some(column) => cell(column, self.index),
+            Some(column) => column.value(self.index),
             None => Value::Undefined,
         }
-    }
-
-    /// `datum` as an object of every field.
-    pub fn datum(&self) -> Value {
-        Value::Object(
-            self.data
-                .fields()
-                .map(|(name, column)| (name.clone(), cell(column, self.index)))
-                .collect(),
-        )
-    }
-}
-
-fn cell(column: &Column, index: usize) -> Value {
-    match column {
-        Column::Number(values) if values[index].is_nan() => Value::Null,
-        Column::Number(values) => Value::Number(values[index]),
-        Column::Text(text) => Value::String(text.get(index).clone()),
     }
 }
 
@@ -67,7 +50,7 @@ impl Node {
                     .map(|(key, node)| Ok((key.clone(), node.eval(row)?)))
                     .collect::<Result<_, Error>>()?,
             ),
-            Self::Datum => row.datum(),
+            Self::Datum => row.data.row(row.index),
             Self::Param(name) => row
                 .params
                 .iter()

@@ -57,6 +57,34 @@ impl Date<'_> {
         out
     }
 
+    /// vega-format's `timeFormat()` with no specifier: `%Y` on a year's
+    /// start, `%B` on a month's, `%b %d` on a Sunday, `%a %d` on any other
+    /// day's, then `%I %p`, `%I:%M`, `:%S` and `.%L` on an hour's, a
+    /// minute's, a second's start and between seconds.
+    pub fn multi_format(self) -> String {
+        let time = self.time();
+        let after = |unit: Unit| Interval::new(unit, 0.0).floored(self).time() < time;
+        let specifier = if after(Unit::Second) {
+            ".%L"
+        } else if after(Unit::Minute) {
+            ":%S"
+        } else if after(Unit::Hour) {
+            "%I:%M"
+        } else if after(Unit::Day) {
+            "%I %p"
+        } else if after(Unit::Month) {
+            match after(Unit::Week) {
+                true => "%a %d",
+                false => "%b %d",
+            }
+        } else if after(Unit::Year) {
+            "%B"
+        } else {
+            "%Y"
+        };
+        self.format(specifier)
+    }
+
     /// The start of the week holding this date, weeks starting on `start`,
     /// 0 for Sunday.
     fn week_floor(self, start: f64) -> Self {

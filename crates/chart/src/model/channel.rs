@@ -1,14 +1,17 @@
 //! Data a channel maps through its scale: a field's values or one datum.
 
-use std::sync::Arc;
-
-use gpui::SharedString;
-
 use crate::{
     data::{Column, Data},
-    model::{Domain, Nice, Scale, Stack},
-    scale, time,
+    model::{Axis, Domain, Legend, Nice, Scale, Stack},
+    time,
 };
+use gpui::SharedString;
+use js::{
+    date::LocalZone,
+    format::{NumberFormat, Specifier},
+    number::Number as JsNumber,
+};
+use std::{borrow::Cow, sync::Arc};
 
 /// A field, or a datum, read as `kind` and placed by `scale`.
 #[derive(Clone, Debug, PartialEq)]
@@ -23,6 +26,10 @@ pub struct Channel {
     /// The order of a discrete field's values. On `order`, the direction rows
     /// are drawn in, whatever the kind.
     pub sort: Sort,
+    /// On x or y, its axis; `None` draws none.
+    pub axis: Option<Box<Axis>>,
+    /// On any other channel with a scale, its legend; `None` draws none.
+    pub legend: Option<Box<Legend>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -67,12 +74,14 @@ impl Kind {
         matches!(self, Self::Ordinal | Self::Nominal)
     }
 
-    /// A number in a field of this kind, read out: a time as a date, any
-    /// other as [`scale::value`] writes it.
+    /// A number in a field of this kind as Vega-Lite's text and tooltips
+    /// write it: a time in [`time::FORMAT`], a quantity in d3's
+    /// `format("")`, any other as JavaScript's `String`.
     pub fn describe(self, value: f64) -> String {
         match self {
-            Self::Temporal => time::describe(value),
-            _ => scale::value(value),
+            Self::Temporal => LocalZone::utc().date(value).format(time::FORMAT),
+            Self::Quantitative => NumberFormat::from(Specifier::default()).format(value),
+            Self::Ordinal | Self::Nominal => JsNumber(value).to_string(),
         }
     }
 }
@@ -107,6 +116,8 @@ impl Channel {
             scale: Box::default(),
             stack: Stack::default(),
             sort: Sort::default(),
+            axis: Some(Box::default()),
+            legend: Some(Box::default()),
         }
     }
 
@@ -155,6 +166,18 @@ impl Channel {
         self
     }
 
+    /// `None` draws no axis.
+    pub fn axis(mut self, axis: Option<Axis>) -> Self {
+        self.axis = axis.map(Box::new);
+        self
+    }
+
+    /// `None` draws no legend.
+    pub fn legend(mut self, legend: Option<Legend>) -> Self {
+        self.legend = legend.map(Box::new);
+        self
+    }
+
     pub fn stack(mut self, stack: Stack) -> Self {
         self.stack = stack;
         self
@@ -173,34 +196,36 @@ impl Channel {
         }
     }
 
-    /// Its value in each of `data`'s rows. `None` for a field `data` lacks.
+    /// Its value in each of `data`'s rows, a field read as
+    /// [`Data::field`] reads it. `None` for a field `data` lacks.
     pub fn column(&self, data: &Data) -> Option<Column> {
         match &self.source {
-            Source::Field(field) => data.column(field).cloned(),
+            Source::Field(field) => data.field(field).map(Cow::into_owned),
             Source::Datum(Datum::Number(value)) => {
                 Some(Column::Number(vec![*value; data.len()].into()))
             }
             Source::Datum(Datum::Text(text)) => Some(Column::Text(
-                std::iter::repeat_n(text.clone(), data.len()).collect(),
+                std::iter::repeat_n(Some(text.clone()), data.len()).collect(),
             )),
         }
     }
 
     /// Its numbers in each of `data`'s rows. `None` for a field `data` lacks
-    /// or holds as text.
+    /// or holds as text or values.
     pub fn numbers(&self, data: &Data) -> Option<Arc<[f64]>> {
         self.column(data)?.numbers()
     }
 
-    /// The columns of `data` its continuous scale spans: its numbers, or the
-    /// fields of an unaggregated domain. `None` for a field `data` lacks or
-    /// holds as text.
+    /// The values its continuous scale spans: its numbers, the fields of an
+    /// unaggregated domain, or a data domain's values. `None` for a field
+    /// `data` lacks or holds as text or values.
     pub fn spanned(&self, data: &Data) -> Option<Vec<Arc<[f64]>>> {
         match &self.scale.domain {
             Some(Domain::Unaggregated(fields)) => fields
                 .iter()
-                .map(|field| data.column(field)?.numbers())
+                .map(|field| data.field(field)?.numbers())
                 .collect(),
+            Some(Domain::Data(values)) => Some(vec![values.clone()]),
             _ => Some(vec![self.numbers(data)?]),
         }
     }

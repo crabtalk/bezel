@@ -2,11 +2,11 @@ use chart::{
     Channel, Chart, Data, Encode, Encoding, Mark, Position, Properties, Scale, Shape, Sort,
     decimate::m4,
     model::{
-        Align, Baseline, Dir, Extent, Interpolate, LineBreak, Nice, Orient, Overlay, Palette,
-        Range, ScaleType, Scheme as ColorScheme, Stack,
+        Align, Axis, Baseline, Dir, Extent, Interpolate, Invalid, Kind, LineBreak, Nice, Orient,
+        Overlay, Palette, Range, ScaleType, Scheme as ColorScheme, Side, Stack, TickCount,
     },
-    plan::{Glyph, Ink, Marks, Rect, Side, plan},
-    scale::{self, Ticks},
+    plan::{Face, Fill, Ink, Marks, Metrics, Rect, Symbol, plan},
+    scale::Ticks,
     time,
 };
 use gpui::{Hsla, Rgba};
@@ -22,13 +22,17 @@ use js::{
 
 const SIZE: [f32; 2] = [400.0, 300.0];
 const LINE: f32 = 14.0;
+const METRICS: Metrics = Metrics {
+    size: 12.0,
+    line: LINE,
+};
 
-fn measure(text: &str) -> f32 {
+fn measure(text: &str, _: &Face) -> f32 {
     text.chars().count() as f32 * 7.0
 }
 
 fn laid_out(chart: &Chart) -> chart::Plan {
-    plan(chart, SIZE, LINE, &mut measure).expect("plans")
+    plan(chart, SIZE, METRICS, &mut measure).expect("plans")
 }
 
 fn sales() -> Data {
@@ -43,7 +47,7 @@ fn sales() -> Data {
 fn linear(lo: f64, hi: f64, count: usize) -> (Ticks, Vec<f64>) {
     let mut scale = Continuous::new(Transform::Linear, vec![lo, hi], vec![0.0, 1.0]);
     scale.nice(10.0);
-    (Ticks::of(&scale, count), scale.domain)
+    (Ticks::of(&scale, count as f64), scale.domain)
 }
 
 fn temporal(lo: f64, hi: f64, count: usize) -> Ticks {
@@ -52,7 +56,7 @@ fn temporal(lo: f64, hi: f64, count: usize) -> Ticks {
         vec![lo, hi],
         vec![0.0, 1.0],
     );
-    Ticks::of(&scale, count)
+    Ticks::of(&scale, count as f64)
 }
 
 #[test]
@@ -64,26 +68,24 @@ fn linear_ticks_are_round_and_cover_the_data() {
     // Nice to ten ticks, then two of them.
     let (ticks, domain) = linear(0.0, 25_000.0, 2);
     assert_eq!(domain, [0.0, 26_000.0]);
-    assert_eq!(ticks.labels, ["0", "10k", "20k"]);
+    assert_eq!(ticks.labels, ["0", "10,000", "20,000"]);
     assert_eq!(linear(0.0, 4_000.0, 2).0.labels, ["0", "2,000", "4,000"]);
 }
 
 #[test]
-fn values_read_out_whole() {
-    assert_eq!(scale::value(1234567.0), "1,234,567");
-    assert_eq!(scale::value(0.1 + 0.2), "0.3");
-    assert_eq!(scale::value(-12.345), "-12.35");
-    assert_eq!(scale::value(0.001234), "0.00123");
+fn values_read_out_as_vega_lite_writes_them() {
+    let quantity = |v: f64| Kind::Quantitative.describe(v);
+    assert_eq!(quantity(1234567.0), "1234567");
+    assert_eq!(quantity(0.1 + 0.2), "0.3");
+    assert_eq!(quantity(-12.345), "\u{2212}12.345");
+    assert_eq!(quantity(0.001234), "0.001234");
+    assert_eq!(Kind::Nominal.describe(-1.5), "-1.5");
 }
 
 #[test]
 fn time_reads_and_describes_utc() {
     let at = time::parse("2024-03-05T14:30:00Z").unwrap();
-    assert_eq!(time::describe(at), "2024-03-05 14:30");
-    assert_eq!(
-        time::describe(time::parse("2024-03-05").unwrap()),
-        "2024-03-05"
-    );
+    assert_eq!(Kind::Temporal.describe(at), "Mar 05, 2024");
     assert_eq!(
         time::parse("2024-03-05T14:30+02:00"),
         time::parse("2024-03-05T12:30Z")
@@ -95,7 +97,7 @@ fn time_ticks_land_on_calendar_boundaries() {
     let lo = time::parse("2024-01-10").unwrap();
     let hi = time::parse("2024-12-20").unwrap();
     let ticks = temporal(lo, hi, 4);
-    assert_eq!(ticks.labels, ["Apr", "Jul", "Oct"]);
+    assert_eq!(ticks.labels, ["April", "July", "October"]);
 
     let (lo, hi) = (
         time::parse("2020-06-01").unwrap(),
@@ -105,7 +107,7 @@ fn time_ticks_land_on_calendar_boundaries() {
 
     let lo = time::parse("2024-03-05T09:10").unwrap();
     let ticks = temporal(lo, lo + 3.0 * time::HOUR, 3);
-    assert_eq!(ticks.labels, ["10:00", "11:00", "12:00"]);
+    assert_eq!(ticks.labels, ["10 AM", "11 AM", "12 PM"]);
 }
 
 #[test]
@@ -168,7 +170,7 @@ fn hovering_a_band_reads_out_each_series() {
     let feb = east[1];
     let tip = plan.hit([feb.x + 1.0, plan.plot.y + 1.0]).unwrap();
     assert_eq!(tip.title, "Feb");
-    assert_eq!(tip.rows, [(0, "5".into()), (1, "-1".into())]);
+    assert_eq!(tip.rows, [(0, "5".into()), (1, "\u{2212}1".into())]);
     assert!(plan.hit([0.0, 0.0]).is_none());
 }
 
@@ -179,14 +181,9 @@ fn horizontal_bars_put_categories_on_the_left() {
         .x(Channel::quantitative("sales"));
     let plan = laid_out(&chart);
     let left = plan.axes.iter().find(|a| a.side == Side::Left).unwrap();
-    let labels: Vec<_> = left
-        .ticks
-        .iter()
-        .filter_map(|t| t.label.as_ref())
-        .map(|l| l.text.as_ref())
-        .collect();
+    let labels: Vec<_> = left.labels.iter().map(|l| l.text.as_ref()).collect();
     assert_eq!(labels, ["Jan", "Feb", "Mar"]);
-    assert!(!left.grid);
+    assert!(left.grid.is_empty());
 }
 
 #[test]
@@ -312,20 +309,15 @@ fn time_on_x_labels_by_the_calendar() {
             .y(Channel::quantitative("v")),
     );
     let bottom = plan.axes.iter().find(|a| a.side == Side::Bottom).unwrap();
-    assert!(
-        bottom
-            .ticks
-            .iter()
-            .filter_map(|t| t.label.as_ref())
-            .any(|l| l.text == "Feb")
-    );
+    // A tick each Sunday, about one to 40 pixels.
+    assert_eq!(bottom.labels[0].text, "Jan 07");
     let tip = plan.hit([plan.plot.x + 1.0, plan.plot.y + 1.0]).unwrap();
-    assert_eq!(tip.title, "2024-01-01");
+    assert_eq!(tip.title, "Jan 01, 2024");
 }
 
 #[test]
 fn an_encoding_the_mark_cannot_draw_is_none() {
-    let chart = |c: Chart| plan(&c, SIZE, LINE, &mut measure).is_none();
+    let chart = |c: Chart| plan(&c, SIZE, METRICS, &mut measure).is_none();
     assert!(chart(
         Chart::bar(sales())
             .x(Channel::nominal("month"))
@@ -346,7 +338,7 @@ fn no_size_changes_whether_a_chart_draws() {
     let tiny = Chart::bar(sales())
         .x(Channel::nominal("month"))
         .y(Channel::quantitative("sales"));
-    let plan = plan(&tiny, [20.0, 20.0], LINE, &mut measure).expect("plans");
+    let plan = plan(&tiny, [20.0, 20.0], METRICS, &mut measure).expect("plans");
     assert!(plan.plot.w > 0.0 && plan.plot.h > 0.0);
     assert!(tiny.drawable());
     assert!(
@@ -365,11 +357,7 @@ fn temperatures() -> Data {
 
 fn left_labels(plan: &chart::Plan) -> Vec<String> {
     let left = plan.axes.iter().find(|a| a.side == Side::Left).unwrap();
-    left.ticks
-        .iter()
-        .filter_map(|t| t.label.as_ref())
-        .map(|l| l.text.to_string())
-        .collect()
+    left.labels.iter().map(|l| l.text.to_string()).collect()
 }
 
 #[test]
@@ -444,9 +432,12 @@ fn titles_label_their_axes_and_the_legend() {
     let (x, y) = (title(Side::Bottom), title(Side::Left));
     assert_eq!((x.text.as_ref(), y.text.as_ref()), ("Month", "Sales"));
     assert!(x.at[1] > plan.plot.bottom() && y.at[1] + LINE <= plan.plot.y + 0.01);
+    // The legend stands right of the plot, its title over its entries.
     let legend = &plan.legends[0];
-    assert_eq!(legend.title.as_ref().unwrap().text, "Region");
-    assert!(legend.swatches[0].swatch.x > legend.title.as_ref().unwrap().width);
+    let title = legend.title.as_ref().unwrap();
+    assert_eq!(title.text, "Region");
+    assert!(title.at[0] > plan.plot.right());
+    assert!(legend.swatches[0].swatch.y > title.at[1] + title.height());
 }
 
 #[test]
@@ -467,18 +458,13 @@ fn layers_share_their_scales_and_colours() {
         );
     let plan = laid_out(&chart);
     let bottom = plan.axes.iter().find(|a| a.side == Side::Bottom).unwrap();
-    let months: Vec<_> = bottom
-        .ticks
-        .iter()
-        .filter_map(|t| t.label.as_ref())
-        .map(|l| l.text.as_ref())
-        .collect();
+    let months: Vec<_> = bottom.labels.iter().map(|l| l.text.as_ref()).collect();
     assert_eq!(months, ["Jan", "Feb", "Mar", "Apr"]);
     // The line's 10 sets the top, which the bars are measured against.
     assert_eq!(left_labels(&plan).last().unwrap(), "10");
     let colors: Vec<usize> = plan.series.iter().map(|s| s.color).collect();
     assert_eq!(colors, [0, 1]);
-    assert!(plan.legends.iter().all(|l| l.swatches.is_empty()));
+    assert!(plan.legends.is_empty());
 
     // Over Feb: the bar's band and the line's point read out together.
     let Marks::Bars(bars) = &plan.series[0].marks else {
@@ -526,7 +512,15 @@ fn layers_that_disagree_are_none_and_a_pie_over_axes_stands_mid_plot() {
     let bars = Chart::bar(sales())
         .x(Channel::nominal("month"))
         .y(Channel::quantitative("sales"));
-    assert!(plan(&bars.clone().layer(line.clone()), SIZE, LINE, &mut measure).is_none());
+    assert!(
+        plan(
+            &bars.clone().layer(line.clone()),
+            SIZE,
+            METRICS,
+            &mut measure
+        )
+        .is_none()
+    );
     let pie = Chart::arc(sales()).theta(Channel::quantitative("sales"));
     let plan = laid_out(&line.layer(pie));
     let Marks::Slices(slices) = &plan.series[1].marks else {
@@ -622,10 +616,9 @@ fn detail_and_dash_split_lines_without_a_colour() {
     let dashes: Vec<_> = dashed.series.iter().map(|s| s.style.dash.clone()).collect();
     assert!(dashes[0].is_none());
     assert_eq!(dashes[1].as_deref(), Some(&[4.0, 2.0][..]));
-    let Glyph::Stroke { dash, .. } = &dashed.legends[0].swatches[1].glyph else {
-        panic!()
-    };
-    assert_eq!(dash.as_deref(), Some(&[4.0, 2.0][..]));
+    let glyph = &dashed.legends[0].swatches[1].glyph;
+    assert_eq!(glyph.shape, Shape::Stroke);
+    assert_eq!(glyph.dash.as_deref(), Some(&[4.0, 2.0][..]));
 }
 
 #[test]
@@ -669,15 +662,9 @@ fn points_take_their_size_shape_and_opacity() {
     let shapes: Vec<Shape> = points.iter().map(|p| p.shape.clone()).collect();
     assert_eq!(shapes, [Shape::Circle, Shape::Square, Shape::Circle]);
     assert!(points.iter().all(|p| p.style.opacity == 0.5));
-    // A shape legend, then a size legend.
+    // A size legend, then a shape legend, as Vega-Lite orders them.
     assert_eq!(plan.legends.len(), 2);
-    assert!(matches!(
-        plan.legends[0].swatches[1].glyph,
-        Glyph::Symbol {
-            shape: Shape::Square,
-            ..
-        }
-    ));
+    assert_eq!(plan.legends[1].swatches[1].glyph.shape, Shape::Square);
 }
 
 #[test]
@@ -814,7 +801,7 @@ fn rects_fill_their_ranges() {
 }
 
 fn plan_of(chart: &Chart) -> Option<chart::Plan> {
-    plan(chart, SIZE, LINE, &mut measure)
+    plan(chart, SIZE, METRICS, &mut measure)
 }
 
 #[test]
@@ -1164,7 +1151,8 @@ fn slices_turn_round_and_stand_where_their_offsets_say() {
         pad_angle: 0.1,
         ..Properties::default()
     });
-    assert_eq!(plain.center[0], 8.0 + 100.0);
+    // Vega-Lite's 5 pixels of padding, then the position.
+    assert_eq!(plain.center[0], 5.0 + 100.0);
     assert_eq!(
         (turned.start, turned.end),
         (plain.start + 0.5, plain.end + 0.5)
@@ -1322,10 +1310,11 @@ fn a_heatmap_fills_the_cells_of_two_discrete_axes() {
     assert_eq!(plan.colors[first.color].ink, fixed(0xeff9bd));
     let last = plan.series.last().unwrap();
     assert_eq!(plan.colors[last.color].ink, fixed(0x1c3185));
-    // Its legend reads ticks across the domain in their colours.
+    // Its legend is a gradient, labelled at ticks across the domain.
     let legend = &plan.legends[0];
-    assert_eq!(legend.swatches.first().unwrap().label.text, "1");
-    assert_eq!(legend.swatches.last().unwrap().label.text, "4");
+    assert!(legend.gradient.is_some());
+    assert_eq!(legend.labels.first().unwrap().text, "1");
+    assert_eq!(legend.labels.last().unwrap().text, "4");
 
     // Text stands at each cell's middle.
     let plan = laid_out(
@@ -1372,12 +1361,7 @@ fn one_position_draws_along_its_own_axis() {
     // Points along a nominal x alone, at their bands' middles.
     let plan = laid_out(&Chart::point(xy()).x(Channel::nominal("month")));
     let bottom = &plan.axes[0];
-    let labels: Vec<_> = bottom
-        .ticks
-        .iter()
-        .filter_map(|t| t.label.as_ref())
-        .map(|l| l.text.to_string())
-        .collect();
+    let labels: Vec<_> = bottom.labels.iter().map(|l| l.text.to_string()).collect();
     assert_eq!(labels, ["Jan", "Feb", "Mar"]);
 
     // Bars along x alone stack across the plot's full height.
@@ -1481,7 +1465,12 @@ fn a_quantitative_colour_runs_through_a_ramp() {
             ..Scale::default()
         })),
     );
-    assert_eq!(quantized.legends[0].swatches.len(), 5);
+    // A discrete gradient, one cell to each step.
+    let gradient = quantized.legends[0].gradient.as_ref().unwrap();
+    let Fill::Bands(bands) = &gradient.fill else {
+        panic!()
+    };
+    assert_eq!(bands.len(), 5);
 }
 
 #[test]
@@ -1563,7 +1552,8 @@ fn scale_types_and_properties_place_positions() {
     assert!(gaps.iter().all(|gap| (gap - gaps[0]).abs() < 0.01));
     // Each power of ten and its multiples in between.
     let bottom = plan.axes.iter().find(|a| a.side == Side::Bottom).unwrap();
-    assert_eq!(bottom.ticks.len(), 28);
+    // The domain line, then each tick.
+    assert_eq!(bottom.rules.len() - 1, 28);
 
     // A reversed band scale puts the last value first; padding thins bars.
     let plan = laid_out(
@@ -1576,8 +1566,8 @@ fn scale_types_and_properties_place_positions() {
             .y(Channel::quantitative("sales")),
     );
     let bottom = plan.axes.iter().find(|a| a.side == Side::Bottom).unwrap();
-    let first = bottom.ticks[0].at;
-    assert!(first > bottom.ticks[2].at);
+    let first = bottom.rules[1].from[0];
+    assert!(first > bottom.rules[3].from[0]);
     let bar = rects(&plan)[0];
     // Three bands with half of each step empty, a quarter step outside.
     let step = plan.plot.w / (3.0 - 0.5 + 0.5);
@@ -1743,4 +1733,153 @@ fn bars_along_a_continuous_axis_are_thin() {
         bars.iter()
             .all(|bar| bar.w == plan.plot.w && (bar.h - 5.0).abs() < 0.01)
     );
+}
+
+/// A chart over `t` and `v`, the last row's `v` missing and the third's
+/// `s`, drawn as `mark` in `mode`, about 3 ticks along `t`.
+fn invalid(mark: Mark, mode: Option<Invalid>) -> chart::Plan {
+    let data = Data::new()
+        .number("t", [1.0, 2.0, 3.0, 4.0, 10.0])
+        .number("v", [1.0, 2.0, 3.0, 4.0, f64::NAN])
+        .number("s", [1.0, 2.0, f64::NAN, 2.0, 1.0]);
+    let axis = Axis {
+        tick_count: Some(TickCount::Count(3.0)),
+        ..Axis::default()
+    };
+    let chart = Chart::new(mark, data)
+        .x(Channel::quantitative("t").axis(Some(axis)))
+        .y(Channel::quantitative("v"))
+        .properties(Properties {
+            invalid: mode,
+            ..Properties::default()
+        });
+    laid_out(&chart)
+}
+
+/// The last label along the bottom.
+fn last_x(plan: &chart::Plan) -> String {
+    let axis = plan
+        .axes
+        .iter()
+        .find(|axis| axis.side == Side::Bottom)
+        .unwrap();
+    axis.labels.last().unwrap().text.to_string()
+}
+
+#[test]
+fn invalid_rows_leave_the_domains_a_mode_filters() {
+    // Vega's x domains: [1, 10] where the domains take the row in, [1, 4]
+    // for a line and [0, 4] for points where they leave it out.
+    assert_eq!(last_x(&invalid(Mark::Line, None)), "10");
+    assert_eq!(last_x(&invalid(Mark::Line, Some(Invalid::Filter))), "4");
+    let filtered = invalid(Mark::Line, Some(Invalid::BreakPathsFilterDomains));
+    assert_eq!(last_x(&filtered), "4");
+    assert_eq!(
+        filtered.chart().layers[0].data.len(),
+        5,
+        "the line keeps the row"
+    );
+    assert_eq!(last_x(&invalid(Mark::Point, None)), "4");
+    let shown = invalid(Mark::Point, Some(Invalid::BreakPathsShowDomains));
+    assert_eq!(last_x(&shown), "10");
+    assert_eq!(shown.chart().layers[0].data.len(), 4, "no point is drawn");
+    let Marks::Points(points) = &shown.series[0].marks else {
+        panic!("points");
+    };
+    assert_eq!(points.len(), 4);
+}
+
+#[test]
+fn a_path_breaks_at_an_invalid_value_of_any_channel_that_counts() {
+    let trail = |mode| {
+        let data = Data::new()
+            .number("t", [1.0, 2.0, 3.0, 4.0])
+            .number("v", [1.0, 2.0, 3.0, 4.0])
+            .number("s", [1.0, 2.0, f64::NAN, 2.0]);
+        let chart = Chart::new(Mark::Trail, data)
+            .x(Channel::quantitative("t"))
+            .y(Channel::quantitative("v"))
+            .size(Channel::quantitative("s"))
+            .properties(Properties {
+                invalid: mode,
+                ..Properties::default()
+            });
+        let Marks::Trails(runs) = laid_out(&chart).series[0].marks.clone() else {
+            panic!("trails");
+        };
+        runs.iter().map(Vec::len).collect::<Vec<_>>()
+    };
+    assert_eq!(trail(None), [2, 1]);
+    assert_eq!(trail(Some(Invalid::Filter)), [3]);
+}
+
+#[test]
+fn shown_invalid_values_stand_at_zero_or_the_domains_least() {
+    let shown = |values: [f64; 4], zero: bool| {
+        let data = Data::new()
+            .text("k", ["a", "b", "c", "d"])
+            .number("v", values);
+        let chart = Chart::point(data)
+            .x(Channel::nominal("k"))
+            .y(Channel::quantitative("v").zero(zero))
+            .properties(Properties {
+                invalid: Some(Invalid::Show),
+                ..Properties::default()
+            });
+        let Marks::Points(points) = laid_out(&chart).series[0].marks.clone() else {
+            panic!("points");
+        };
+        points.iter().map(|point| point.at[1]).collect::<Vec<_>>()
+    };
+    // At zero where the domain spans it.
+    let at = shown([-5.0, 10.0, 0.0, f64::NAN], true);
+    assert_eq!(at.len(), 4);
+    assert_eq!(at[3], at[2]);
+    // At the domain's least where it does not.
+    let at = shown([5.0, 10.0, 7.0, f64::NAN], false);
+    assert_eq!(at[3], at[0]);
+}
+
+#[test]
+fn shown_invalid_colours_take_a_discretizing_scales_zero_or_least() {
+    let shown = |kind: ScaleType, values: [f64; 4]| {
+        let data = Data::new()
+            .text("k", ["a", "b", "c", "d"])
+            .number("v", values);
+        let chart = Chart::point(data)
+            .x(Channel::nominal("k"))
+            .color(Channel::quantitative("v").scale(Scale {
+                kind: Some(kind),
+                ..Scale::default()
+            }))
+            .properties(Properties {
+                invalid: Some(Invalid::Show),
+                ..Properties::default()
+            });
+        // Each point's style, left to right.
+        let mut points: Vec<Symbol> = laid_out(&chart)
+            .series
+            .into_iter()
+            .flat_map(|series| match series.marks {
+                Marks::Points(points) => points,
+                _ => panic!("points"),
+            })
+            .collect();
+        points.sort_by(|a, b| a.at[0].total_cmp(&b.at[0]));
+        points
+            .into_iter()
+            .map(|point| point.style)
+            .collect::<Vec<_>>()
+    };
+    for kind in [ScaleType::Quantile, ScaleType::Quantize] {
+        // The least where the domain does not span zero.
+        let styles = shown(kind, [5.0, 10.0, 7.0, f64::NAN]);
+        assert_eq!(styles.len(), 4, "{kind:?}");
+        assert_eq!(styles[3], styles[0], "{kind:?}");
+        assert_ne!(styles[3], styles[1], "{kind:?}");
+        // Zero where it does.
+        let styles = shown(kind, [-5.0, 10.0, 0.0, f64::NAN]);
+        assert_eq!(styles[3], styles[2], "{kind:?}");
+        assert_ne!(styles[3], styles[1], "{kind:?}");
+    }
 }

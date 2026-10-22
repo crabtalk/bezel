@@ -1,0 +1,108 @@
+{
+ "$schema": "https://vega.github.io/schema/vega-lite/v6.json",
+ "data": {
+  "values": [
+   {
+    "t": 1,
+    "v": 3,
+    "s": "m"
+   },
+   {
+    "t": 2,
+    "v": null,
+    "s": "m"
+   },
+   {
+    "t": 3,
+    "v": 4,
+    "s": "m"
+   },
+   {
+    "t": 4,
+    "v": 2,
+    "s": "m"
+   },
+   {
+    "t": 1,
+    "v": 1,
+    "s": "n"
+   },
+   {
+    "t": 2,
+    "v": 2,
+    "s": "n"
+   },
+   {
+    "t": null,
+    "v": 5,
+    "s": "n"
+   },
+   {
+    "t": 3,
+    "v": null,
+    "s": null
+   },
+   {
+    "t": 4,
+    "v": 6,
+    "s": null
+   }
+  ]
+ },
+ "layer": [
+  {
+   "mark": "line",
+   "encoding": {
+    "x": {
+     "field": "t",
+     "type": "quantitative"
+    },
+    "y": {
+     "field": "v",
+     "type": "quantitative"
+    },
+    "color": {
+     "field": "s",
+     "type": "nominal"
+    }
+   }
+  },
+  {
+   "mark": {
+    "type": "line",
+    "invalid": "filter"
+   },
+   "encoding": {
+    "x": {
+     "field": "t",
+     "type": "quantitative"
+    },
+    "y": {
+     "field": "v",
+     "type": "quantitative"
+    },
+    "color": {
+     "field": "s",
+     "type": "nominal"
+    }
+   }
+  },
+  {
+   "mark": {
+    "type": "area",
+    "invalid": "show"
+   },
+   "encoding": {
+    "x": {
+     "field": "t",
+     "type": "quantitative"
+    },
+    "y": {
+     "field": "v",
+     "type": "quantitative",
+     "stack": null
+    }
+   }
+  }
+ ]
+}

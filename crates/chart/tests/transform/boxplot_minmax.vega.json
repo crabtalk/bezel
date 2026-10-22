@@ -1,0 +1,122 @@
+[
+ [
+  {
+   "bin_maxbins_3_w": 0,
+   "bin_maxbins_3_w_end": 5,
+   "lower_box_v": 2.1,
+   "upper_box_v": 4.75,
+   "mid_box_v": 3.3,
+   "lower_whisker_v": -10,
+   "upper_whisker_v": 7
+  },
+  {
+   "bin_maxbins_3_w": 5,
+   "bin_maxbins_3_w_end": 10,
+   "lower_box_v": 3.5,
+   "upper_box_v": 5.5,
+   "mid_box_v": 4,
+   "lower_whisker_v": 3,
+   "upper_whisker_v": 20
+  }
+ ],
+ [
+  {
+   "bin_maxbins_3_w": 0,
+   "bin_maxbins_3_w_end": 5,
+   "lower_box_v": 2.1,
+   "upper_box_v": 4.75,
+   "mid_box_v": 3.3,
+   "lower_whisker_v": -10,
+   "upper_whisker_v": 7
+  },
+  {
+   "bin_maxbins_3_w": 5,
+   "bin_maxbins_3_w_end": 10,
+   "lower_box_v": 3.5,
+   "upper_box_v": 5.5,
+   "mid_box_v": 4,
+   "lower_whisker_v": 3,
+   "upper_whisker_v": 20
+  }
+ ],
+ [
+  {
+   "bin_maxbins_3_w": 0,
+   "bin_maxbins_3_w_end": 5,
+   "lower_box_v": 2.1,
+   "upper_box_v": 4.75,
+   "mid_box_v": 3.3,
+   "lower_whisker_v": -10,
+   "upper_whisker_v": 7
+  },
+  {
+   "bin_maxbins_3_w": 5,
+   "bin_maxbins_3_w_end": 10,
+   "lower_box_v": 3.5,
+   "upper_box_v": 5.5,
+   "mid_box_v": 4,
+   "lower_whisker_v": 3,
+   "upper_whisker_v": 20
+  }
+ ],
+ [
+  {
+   "bin_maxbins_3_w": 0,
+   "bin_maxbins_3_w_end": 5,
+   "lower_box_v": 2.1,
+   "upper_box_v": 4.75,
+   "mid_box_v": 3.3,
+   "lower_whisker_v": -10,
+   "upper_whisker_v": 7
+  },
+  {
+   "bin_maxbins_3_w": 5,
+   "bin_maxbins_3_w_end": 10,
+   "lower_box_v": 3.5,
+   "upper_box_v": 5.5,
+   "mid_box_v": 4,
+   "lower_whisker_v": 3,
+   "upper_whisker_v": 20
+  }
+ ],
+ [
+  {
+   "bin_maxbins_3_w": 0,
+   "bin_maxbins_3_w_end": 5,
+   "lower_box_v": 2.1,
+   "upper_box_v": 4.75,
+   "mid_box_v": 3.3,
+   "lower_whisker_v": -10,
+   "upper_whisker_v": 7
+  },
+  {
+   "bin_maxbins_3_w": 5,
+   "bin_maxbins_3_w_end": 10,
+   "lower_box_v": 3.5,
+   "upper_box_v": 5.5,
+   "mid_box_v": 4,
+   "lower_whisker_v": 3,
+   "upper_whisker_v": 20
+  }
+ ],
+ [
+  {
+   "bin_maxbins_3_w": 0,
+   "bin_maxbins_3_w_end": 5,
+   "lower_box_v": 2.1,
+   "upper_box_v": 4.75,
+   "mid_box_v": 3.3,
+   "lower_whisker_v": -10,
+   "upper_whisker_v": 7
+  },
+  {
+   "bin_maxbins_3_w": 5,
+   "bin_maxbins_3_w_end": 10,
+   "lower_box_v": 3.5,
+   "upper_box_v": 5.5,
+   "mid_box_v": 4,
+   "lower_whisker_v": 3,
+   "upper_whisker_v": 20
+  }
+ ]
+]

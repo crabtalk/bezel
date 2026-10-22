@@ -1,6 +1,6 @@
 //! Transforms over a [`Data`], as Vega-Lite's `transform` ops compute
-//! them. Each op reads fields by name and answers a new table; a field
-//! the table lacks reads as missing values.
+//! them. Each op reads a field as [`Data::field`] reads it and answers a new
+//! table; a field the table lacks reads as missing values.
 
 use crate::data::Data;
 pub use aggregate::{Aggregate, Measure, Op};

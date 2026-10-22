@@ -5,7 +5,15 @@
 //! A `sphere` is one row `{"type": "Sphere"}` and a `graticule` one row
 //! `{"type": "MultiLineString"}`, without coordinates.
 
-use crate::vega_lite::format::{Format, Row};
+use crate::{
+    data::{Column, Data, Name},
+    model::Kind,
+    path::Path,
+    time,
+    vega_lite::format::{self, Format, Row},
+};
+use gpui::SharedString;
+use js::value::Value as JsValue;
 use serde_json::{Map, Number, Value};
 
 /// What a `data` object may carry.
@@ -64,6 +72,85 @@ impl Sources<'_, '_> {
         }
         let name = data.get("name")?.as_str()?;
         format.values(self.datasets?.get(name)?)
+    }
+
+    /// The rows `data` names as a table: each field of `reads` once, read as
+    /// a path into each row with the type given, a temporal one over any
+    /// other and otherwise the first given; then every other key of the
+    /// rows as it is. `None` as for [`Self::rows`].
+    pub(crate) fn table(
+        &self,
+        data: &Value,
+        reads: &[(SharedString, Option<Kind>)],
+    ) -> Option<Data> {
+        let rows = self.rows(data)?;
+        let mut fields: Vec<(&str, Option<Kind>, bool)> = Vec::new();
+        for (field, kind, path) in reads
+            .iter()
+            .map(|(field, kind)| (field.as_ref(), *kind, true))
+            .chain(
+                rows.iter()
+                    .flat_map(|row| row.keys().map(|key| (key.as_str(), None, false))),
+            )
+        {
+            match fields.iter_mut().find(|(name, ..)| *name == field) {
+                Some((_, slot, _)) => {
+                    if kind == Some(Kind::Temporal) || slot.is_none() {
+                        *slot = kind;
+                    }
+                }
+                None => fields.push((field, kind, path)),
+            }
+        }
+        let mut table = Data::new();
+        for (field, kind, path) in fields {
+            let values: Vec<Option<&Value>> = match path {
+                true => {
+                    let path: Path = field.parse().ok()?;
+                    rows.iter().map(|row| path.field(row)).collect()
+                }
+                false => rows.iter().map(|row| row.get(field)).collect(),
+            };
+            table = table.with(field.to_string(), column(&values, kind));
+        }
+        Some(table)
+    }
+}
+
+/// A field's values as the channel of `kind` that encodes it reads them,
+/// and as they are where no channel types it or they hold an array or
+/// object. `None` is a row that lacks the field.
+fn column(values: &[Option<&Value>], kind: Option<Kind>) -> Column {
+    let numbers = |read: fn(&Value) -> f64| {
+        Column::Number(values.iter().map(|v| v.map_or(f64::NAN, read)).collect())
+    };
+    let js = || {
+        values
+            .iter()
+            .map(|v| v.map_or(JsValue::Undefined, format::js))
+    };
+    let all = |test: fn(&Value) -> bool| values.iter().flatten().all(|v| test(v));
+    match kind {
+        Some(Kind::Temporal) => numbers(|value| match value {
+            Value::Number(n) => n.as_f64().unwrap_or(f64::NAN),
+            Value::String(s) => time::parse(s).unwrap_or(f64::NAN),
+            _ => f64::NAN,
+        }),
+        Some(Kind::Quantitative) => numbers(|value| match value {
+            Value::Null => f64::NAN,
+            value => format::js(value).to_number(),
+        }),
+        _ if all(|v| v.is_number() || v.is_null()) => {
+            numbers(|value| value.as_f64().unwrap_or(f64::NAN))
+        }
+        // Read as it is, an empty string is missing as null is.
+        None if all(|v| v.is_number() || v.is_null() || v.as_str() == Some("")) => {
+            numbers(|value| value.as_f64().unwrap_or(f64::NAN))
+        }
+        // An array or object is kept as it is.
+        Some(_) if !all(|v| !v.is_array() && !v.is_object()) => js().collect(),
+        Some(_) => Column::Text(js().map(|value| Name::from(&value)).collect()),
+        None => js().collect(),
     }
 }
 

@@ -11,8 +11,8 @@ use crate::{
 use gpui::SharedString;
 use serde_json::{Map, Value};
 
-/// `None` if an op is one the pipeline lacks, carries a key its op does not
-/// take, or asks for a regression's `params`.
+/// `None` if an op is one the pipeline lacks, or carries a key its op does
+/// not take.
 pub(crate) fn pipeline(list: &Value) -> Option<Vec<Transform>> {
     list.as_array()?.iter().map(op).collect()
 }
@@ -103,9 +103,7 @@ fn loess(op: &Map<String, Value>) -> Option<Transform> {
 fn regression(op: &Map<String, Value>) -> Option<Transform> {
     let mut out = Regression::new(field(op.get("regression")?)?, field(op.get("on")?)?);
     out.groupby = groupby(op)?;
-    if flag(op, "params")? {
-        return None;
-    }
+    out.params = flag(op, "params")?;
     let order = match op.get("order") {
         None => 3,
         Some(order) => count(order)?,
