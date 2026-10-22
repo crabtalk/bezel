@@ -2,7 +2,7 @@
 //! adds `@{ … }` metadata after a node and keeps `@` out of node ids. Pele's
 //! `diagrams/common/outline.ts`.
 
-use js::string;
+use crate::util::chars;
 use serde_repr::Serialize_repr;
 use std::borrow::Cow;
 
@@ -282,7 +282,7 @@ fn breaks(text: &str) -> Cow<'_, str> {
     while let Some(at) = rest.find('\n') {
         out.push_str(&rest[..at]);
         out.push_str("<br/>");
-        rest = rest[at + 1..].trim_start_matches(|c: char| string::is_space(c));
+        rest = rest[at + 1..].trim_start_matches(|c: char| chars::is_space(c));
     }
     out.push_str(rest);
     Cow::Owned(out)

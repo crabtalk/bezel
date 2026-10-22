@@ -1,15 +1,15 @@
 //! Pele's `diagrams/gantt/render.ts`.
 
-use crate::{config::clamped, geom::Point, svg::builder::rewrite};
+use crate::{config::clamped, geom::Point, svg::builder::rewrite, util::chars};
 use indexmap::IndexMap;
 use js::{
     date::{Date, LocalZone},
     math,
     number::{self, Number},
-    regex::Lazy,
     time,
 };
-use std::fmt::Write as _;
+use regex::Regex;
+use std::{fmt::Write as _, sync::LazyLock};
 
 use super::{
     axis::interval_ticks,
@@ -33,12 +33,13 @@ const WIDTH: f64 = 800.0;
 const MIN_PLOT: f64 = 240.0;
 const LABEL_GAP: f64 = 8.0;
 
-static RE_BREAK: Lazy = Lazy::new(r"<br\s*\/?>", "gi");
+static RE_BREAK: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!(r"(?i-u:<br)[{}]*/?>", chars::SPACE)).expect("pattern"));
 
 /// A task label sits on one row, so only its first line is kept.
 fn one_line(raw: &str, measure: &impl Host, size: f64) -> Label {
     let label = Label::layout(
-        Some(&RE_BREAK.replace(raw, |_| " ".into())),
+        Some(&RE_BREAK.replace_all(raw, " ")),
         false,
         measure,
         size,

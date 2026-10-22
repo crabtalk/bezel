@@ -35,14 +35,9 @@ token_kinds! {
         AccDescr = acc_descr("ACC_DESCR"),
         AccTitle = acc_title(),
         Title = title(),
-        Number = TokenType::regex(
-            "NUMBER",
-            r"(?:[0-9]+\.[0-9]+(?!\.))|(?:0|[1-9][0-9]*(?!\.))",
-            None,
-        )
-        .scanner(|| decimal(false, true)),
+        Number = TokenType::scanner("NUMBER", || decimal(false, true), None),
         String = string(),
-        Id = TokenType::regex("ID", r"[\w]([-\w]*\w)?", None),
+        Id = TokenType::regex("ID", r"[0-9A-Z_a-z](?:[0-9A-Z_a-z-]*[0-9A-Z_a-z])?", None),
         Newline = newline(),
         Whitespace = whitespace(),
         Yaml = yaml(),

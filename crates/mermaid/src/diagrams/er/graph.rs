@@ -1,6 +1,6 @@
 //! Pele's `diagrams/er/graph.ts`.
 
-use js::string;
+use crate::string;
 use std::collections::{HashMap, HashSet};
 
 use super::{

@@ -4,8 +4,8 @@ use super::{
     db::SankeyModel,
     lexer::{T, tokenize},
 };
-use crate::{detect::Kind, error::Error, token::Stream, util::chars::is_inline_space};
-use js::{number, string};
+use crate::{detect::Kind, error::Error, string, token::Stream, util::chars::is_inline_space};
+use js::number;
 
 /// Mermaid's sankeyUtils: strip blanks at both ends of the text, then
 /// collapse runs of line breaks so that no row is empty.

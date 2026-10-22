@@ -1,15 +1,18 @@
 //! Pele's `diagrams/wardley/parser.ts`.
 
-use crate::util::chars::digits_end;
-use js::{number, string};
+use crate::{
+    string,
+    util::chars::{self, digits_end},
+};
+use js::number;
 
 use crate::{
     detect::Kind,
     diagrams::common::{
         acc_descr::acc_descr,
         tokens::{
-            Header, Reader, Scanner, TokenType, acc_title, directive, newline, single_line_comment,
-            string, string_value, title, token_kinds, whitespace, yaml,
+            Header, Reader, Scanner, TokenType, acc_title, directive, int, newline,
+            single_line_comment, string, string_value, title, token_kinds, whitespace, yaml,
         },
     },
     error::Error,
@@ -30,8 +33,7 @@ token_kinds! {
         Minus = TokenType::literal("-").longer(&[Token::Arrow, Token::LinkArrow, Token::Yaml]),
         LBrace = TokenType::literal("{"),
         RBrace = TokenType::literal("}"),
-        Number = TokenType::regex("WARDLEY_NUMBER", r"[0-9]+\.[0-9]+", Some("0123456789"))
-            .scanner(number_scanner),
+        Number = TokenType::scanner("WARDLEY_NUMBER", number_scanner, Some("0123456789")),
         Arrow = TokenType::regex("ARROW", r"->", Some("-")),
         LinkPort = TokenType::regex("LINK_PORT", r"\+<>|\+>|\+<", Some("+")),
         LinkArrow = TokenType::regex(
@@ -55,20 +57,20 @@ token_kinds! {
         Annotation = word("KW_ANNOTATION", "annotation"),
         Accelerator = word("KW_ACCELERATOR", "accelerator"),
         Deaccelerator = word("KW_DEACCELERATOR", "deaccelerator"),
-        Name = TokenType::regex(
+        Name = TokenType::matcher(
             "NAME_WITH_SPACES",
-            r"(?!title\s|accTitle|accDescr)[A-Za-z](?:[A-Za-z0-9_()&]|-(?!>))*(?:[ \t]+[A-Za-z(](?:[A-Za-z0-9_()&]|-(?!>))*)*",
+            name_end,
             Some("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"),
         ),
         Ws = TokenType::regex("WS", r"[ \t]+", Some("\t ")).hidden(),
         AccDescr = acc_descr("ACC_DESCR"),
         AccTitle = acc_title(),
         Title = title(),
-        Int = TokenType::regex("INT", r"0|[1-9][0-9]*(?!\.)", Some("0123456789")),
+        Int = int(),
         String = string(),
         Id = TokenType::regex(
             "ID",
-            r"[\w]([-\w]*\w)?",
+            r"[0-9A-Z_a-z](?:[0-9A-Z_a-z-]*[0-9A-Z_a-z])?",
             Some("_0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"),
         ),
         Newline = newline(),
@@ -80,7 +82,46 @@ token_kinds! {
 }
 
 fn word(name: &'static str, text: &'static str) -> TokenType<Token> {
-    TokenType::regex(name, text, Some(&text[..1]))
+    TokenType::literal(text).named(name)
+}
+
+/// Mermaid's `NAME_WITH_SPACES`: words of letters, digits, `_()&` and `-`
+/// not starting `->`, the first word a letter's and any after it a letter's
+/// or `(`'s, apart by tabs and spaces; not `title ` or `accTitle` or
+/// `accDescr`.
+fn name_end(src: &str, p: usize) -> Option<usize> {
+    let s = &src.as_bytes()[p..];
+    let title = s.starts_with(b"title") && src[p + 5..].chars().next().is_some_and(chars::is_space);
+    if title || s.starts_with(b"accTitle") || s.starts_with(b"accDescr") {
+        return None;
+    }
+    if !s.first()?.is_ascii_alphabetic() {
+        return None;
+    }
+    let word_end = |mut at: usize| {
+        while let Some(&c) = s.get(at) {
+            let more = c.is_ascii_alphanumeric()
+                || matches!(c, b'_' | b'(' | b')' | b'&')
+                || (c == b'-' && s.get(at + 1) != Some(&b'>'));
+            if !more {
+                break;
+            }
+            at += 1;
+        }
+        at
+    };
+    let mut end = word_end(1);
+    loop {
+        let next = end + s[end..].iter().take_while(|&&c| chars::is_blank(c)).count();
+        if next == end
+            || !s
+                .get(next)
+                .is_some_and(|&c| c.is_ascii_alphabetic() || c == b'(')
+        {
+            return Some(p + end);
+        }
+        end = word_end(next + 1);
+    }
 }
 
 /// Answers as WARDLEY_NUMBER's pattern does. The pattern reads a whole run

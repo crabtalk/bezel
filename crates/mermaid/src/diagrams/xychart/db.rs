@@ -1,7 +1,7 @@
 //! Pele's `diagrams/xychart/db.ts`.
 
-use crate::{json, json::JsonNumber};
-use js::{number::Number, string};
+use crate::{json, json::JsonNumber, string};
+use js::number::Number;
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::diagrams::common::db::Titles;

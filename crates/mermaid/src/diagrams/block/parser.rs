@@ -5,8 +5,8 @@ use super::{
     tokens::T,
     types::{Block, BlockKind, BlockModel, Columns, EdgeLine, Statement},
 };
-use crate::{Error, detect::Kind, token::Stream};
-use js::{number, string};
+use crate::{Error, detect::Kind, string, token::Stream};
+use js::number;
 
 const STATEMENT_START: &str = "'NODE_ID', 'COLUMNS', 'SPACE_BLOCK', 'BLOCK_DIAGRAM_KEY', 'id-block', 'classDef', 'class', 'style'";
 

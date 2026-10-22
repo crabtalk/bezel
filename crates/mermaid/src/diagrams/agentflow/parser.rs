@@ -14,8 +14,10 @@ use crate::{
         tokens::T,
     },
     error::Error,
+    util::chars,
 };
-use js::regex::Lazy;
+use regex::Regex;
+use std::sync::LazyLock;
 
 const NO_TAGS: [T; 23] = [
     T::Num,
@@ -54,7 +56,8 @@ static DIALECT: Dialect = Dialect {
 
 /// Mermaid trims spaces and tabs between a closing brace and the end of its
 /// line before parsing.
-static RE_BRACE_TRAIL: Lazy = Lazy::new(r"}[^\S\n]*\n", "g");
+static RE_BRACE_TRAIL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!(r"\}}[{}--\n]*\n", chars::SPACE)).expect("pattern"));
 
 struct Frame {
     global: bool,
@@ -259,7 +262,7 @@ impl Parser<'_> {
 /// without its wrapper.
 pub fn parse_agentflow(source: &str, db: &mut AgentflowDb, raw: bool) -> Result<(), Error> {
     let src = if !raw && source.contains('}') {
-        RE_BRACE_TRAIL.replace(source, |_| "}\n".into())
+        RE_BRACE_TRAIL.replace_all(source, "}\n").into_owned()
     } else {
         source.to_string()
     };

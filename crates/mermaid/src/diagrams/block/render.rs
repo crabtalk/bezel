@@ -3,12 +3,12 @@
 use crate::{
     config::capped,
     geom::{Axis, Point, Side, Size},
+    string,
     svg::builder::rewrite,
 };
 use js::{
     math,
     number::{self, Number},
-    string,
 };
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};

@@ -31,7 +31,7 @@ pub fn acc_descr<K>() -> TokenType<K> {
 }
 
 pub fn identifier<K>(name: &'static str) -> TokenType<K> {
-    TokenType::regex(name, r"[A-Z_a-z][\w-]*", Some(NAME_START))
+    TokenType::regex(name, r"[A-Z_a-z][0-9A-Z_a-z-]*", Some(NAME_START))
 }
 
 pub fn quoted<K>(name: &'static str) -> TokenType<K> {

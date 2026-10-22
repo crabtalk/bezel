@@ -3,10 +3,9 @@
 use super::tokens::T;
 use crate::{
     diagrams::common::directions::Directions,
-    token::{Cursor, Token},
-    util::unicode::is_unicode_letter,
+    token::{Acc, Cursor, Token},
+    util::{chars, unicode::is_unicode_letter},
 };
-use js::{regex::Lazy, string};
 
 /// Jison's start conditions.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -44,11 +43,11 @@ impl S {
     }
 }
 
-static DIRECTIONS: [(T, Lazy); 4] = [
-    (T::DirectionTb, Lazy::new(r".*direction\s+TB[^\n]*", "y")),
-    (T::DirectionBt, Lazy::new(r".*direction\s+BT[^\n]*", "y")),
-    (T::DirectionRl, Lazy::new(r".*direction\s+RL[^\n]*", "y")),
-    (T::DirectionLr, Lazy::new(r".*direction\s+LR[^\n]*", "y")),
+static DIRECTIONS: [(T, &str); 4] = [
+    (T::DirectionTb, "TB"),
+    (T::DirectionBt, "BT"),
+    (T::DirectionRl, "RL"),
+    (T::DirectionLr, "LR"),
 ];
 
 struct Lexer<'s> {
@@ -152,7 +151,7 @@ impl<'s> Lexer<'s> {
             '|' if next == Some('>') => (T::Extension, 2),
             '|' => return false,
             '*' => (T::Composition, 1),
-            'o' if !next.is_some_and(string::is_word) => (T::Aggregation, 1),
+            'o' if !next.is_some_and(chars::is_word) => (T::Aggregation, 1),
             '(' if next == Some(')') => (T::Lollipop, 2),
             '(' => return false,
             '-' if next == Some('-') => (T::Line, 2),
@@ -187,7 +186,7 @@ impl<'s> Lexer<'s> {
         let Some(c) = self.at(p) else {
             return false;
         };
-        if string::is_word(c) {
+        if chars::is_word(c) {
             let end = self.cur.word_end(p);
             return self.emit(T::Alpha, end);
         }
@@ -210,7 +209,7 @@ impl<'s> Lexer<'s> {
         if self.direction() {
             return true;
         }
-        if string::is_space(c) {
+        if chars::is_space(c) {
             self.space(false);
             return true;
         }
@@ -224,26 +223,24 @@ impl<'s> Lexer<'s> {
                 self.cur.p = end;
                 return true;
             }
-            'a' => {
-                let title = self.cur.starts_with("accTitle", p);
-                if title || self.cur.starts_with("accDescr", p) {
-                    let q = self.cur.space_end(p + 8);
-                    match self.at(q) {
-                        Some(':') => {
-                            let end = self.cur.space_end(q + 1);
-                            self.emit(if title { T::AccTitle } else { T::AccDescr }, end);
-                            self.cur.push(if title { S::AccTitle } else { S::AccDescr });
-                            return true;
-                        }
-                        Some('{') if !title => {
-                            self.cur.p = self.cur.space_end(q + 1);
-                            self.cur.push(S::AccDescrMultiline);
-                            return true;
-                        }
-                        _ => {}
-                    }
+            'a' => match Acc::at(self.cur.src, p, false) {
+                Some((Acc::Title, end)) => {
+                    self.emit(T::AccTitle, end);
+                    self.cur.push(S::AccTitle);
+                    return true;
                 }
-            }
+                Some((Acc::Descr, end)) => {
+                    self.emit(T::AccDescr, end);
+                    self.cur.push(S::AccDescr);
+                    return true;
+                }
+                Some((Acc::DescrBlock, end)) => {
+                    self.cur.p = end;
+                    self.cur.push(S::AccDescrMultiline);
+                    return true;
+                }
+                None => {}
+            },
             'c' => {
                 if self.cur.keyword("classDiagram-v2") {
                     return self.emit(T::ClassDiagram, p + 15);
@@ -251,7 +248,7 @@ impl<'s> Lexer<'s> {
                 if self.cur.keyword("classDiagram") {
                     return self.emit(T::ClassDiagram, p + 12);
                 }
-                if self.cur.starts_with("call", p) && self.at(p + 4).is_some_and(string::is_space) {
+                if self.cur.starts_with("call", p) && self.at(p + 4).is_some_and(chars::is_space) {
                     self.cur.p = self.cur.space_end(p + 4);
                     self.cur.push(S::CallbackName);
                     return true;
@@ -284,7 +281,7 @@ impl<'s> Lexer<'s> {
         match self.cur.state {
             S::Initial => return self.initial(c),
             S::Class => match c {
-                c if string::is_space(c) => self.space(true),
+                c if chars::is_space(c) => self.space(true),
                 '}' => {
                     self.cur.pop();
                     self.cur.pop();
@@ -318,7 +315,7 @@ impl<'s> Lexer<'s> {
                 }
             },
             S::Namespace => match c {
-                c if string::is_space(c) => self.space(true),
+                c if chars::is_space(c) => self.space(true),
                 '{' => {
                     self.cur.push(S::NamespaceBody);
                     self.emit(T::StructStart, p + 1);
@@ -333,7 +330,7 @@ impl<'s> Lexer<'s> {
                 _ => return self.common(c),
             },
             S::NamespaceBody => match c {
-                c if string::is_space(c) => self.space(false),
+                c if chars::is_space(c) => self.space(false),
                 '}' => {
                     self.cur.pop();
                     self.emit(T::StructStop, p + 1);

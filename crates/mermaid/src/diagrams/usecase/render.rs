@@ -3,10 +3,13 @@
 use crate::{
     geom::{Direction, Point, RoutePoint, Side, Size},
     svg::{edges::Curve, theme::node_class_names},
+    util::chars,
 };
-use js::{math, number::Number, regex::Lazy};
+use js::{math, number::Number};
+use regex::{Captures, Regex};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
+use std::sync::LazyLock;
 
 use crate::{config::positive, svg::builder::rewrite};
 use std::{
@@ -55,8 +58,14 @@ const EXTENSION: f64 = 12.0;
 const PORT_GAP: f64 = 14.0;
 const SHAPE_ATTRS: &str = " fill=\"var(--_s)\" stroke=\"var(--_b)\"";
 
-static RE_MARKUP: Lazy = Lazy::new(r"[&<>\\]", "g");
-static RE_EDGE_CLASSES: Lazy = Lazy::new(r"^default relationship relationship-\S+\s?", "");
+static RE_MARKUP: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[&<>\\]").expect("pattern"));
+static RE_EDGE_CLASSES: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"^default relationship relationship-[^{s}]+[{s}]?",
+        s = chars::SPACE
+    ))
+    .expect("pattern")
+});
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ViewKind {
@@ -99,9 +108,11 @@ pub struct UsecaseConfig {
 /// Its markup characters are handed to the label parser as character
 /// references, which it turns back into characters.
 fn literal(text: &str) -> String {
-    RE_MARKUP.replace(text, |caps| {
-        format!("&#{};", caps.str(0).chars().next().map_or(0, u32::from))
-    })
+    RE_MARKUP
+        .replace_all(text, |caps: &Captures| {
+            format!("&#{};", caps[0].chars().next().map_or(0, u32::from))
+        })
+        .into_owned()
 }
 
 fn text(
@@ -978,7 +989,7 @@ impl UsecaseModel {
                 edges_out,
                 "<g class=\"{p}-edge {p}-{}{}\" data-id=\"{}\"{}><path d=\"{}\"{}/>{}{}</g>",
                 edge.kind.name(),
-                class_names(&RE_EDGE_CLASSES.replace(&edge.classes, |_| String::new())),
+                class_names(&RE_EDGE_CLASSES.replace(&edge.classes, "")),
                 EscText(&edge.id),
                 style.as_ref().map_or("", |s| s.line.as_str()),
                 path.d,

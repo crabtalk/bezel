@@ -1,14 +1,14 @@
 //! Pele's `diagrams/gantt/db.ts`.
 
-use crate::{diagrams::common::db::Titles, json::JsonNumber};
+use crate::{diagrams::common::db::Titles, json::JsonNumber, string, util::chars};
 use indexmap::{IndexMap, IndexSet};
 use js::{
     date::{self, Date, LocalZone},
     number::{self, Number},
-    regex::Lazy,
-    string,
 };
+use regex::Regex;
 use serde::{Serialize, Serializer, ser::SerializeStruct};
+use std::sync::LazyLock;
 
 use super::{
     dates::{Unit, Weekday, add, add_days, format, iso_date, parse_strict},
@@ -24,13 +24,25 @@ const DAY_STEP: f64 = 400.0;
 const DATED_STEP: f64 = 200.0;
 const FORMAT_STEP: f64 = 400.0;
 
-static RE_NUMERIC_FORMAT: Lazy = Lazy::new(r"^[YMDHhmsSZXx\-/.:, T]*$", "");
-static RE_TAG: Lazy = Lazy::new(r"^\s*(active|done|crit|milestone|vert)\s*$", "");
-static RE_AFTER: Lazy = Lazy::new(r"^after\s+([\d\w- ]+)", "");
-static RE_UNTIL: Lazy = Lazy::new(r"^until\s+([\d\w- ]+)", "");
-static RE_DURATION: Lazy = Lazy::new(r"^(\d+(?:\.\d+)?)([Mdhmswy]|ms)$", "");
-static RE_TOKEN_SPLIT: Lazy = Lazy::new(r"[\s,]+", "");
-static RE_DIGITS: Lazy = Lazy::new(r"^\d+$", "");
+static RE_NUMERIC_FORMAT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[YMDHhmsSZXx\-/.:, T]*$").expect("pattern"));
+static RE_TAG: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"^[{s}]*(active|done|crit|milestone|vert)[{s}]*$",
+        s = chars::SPACE
+    ))
+    .expect("pattern")
+});
+static RE_AFTER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(r"^after[{}]+([0-9A-Z_a-z -]+)", chars::SPACE)).expect("pattern")
+});
+static RE_UNTIL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(r"^until[{}]+([0-9A-Z_a-z -]+)", chars::SPACE)).expect("pattern")
+});
+static RE_DURATION: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^([0-9]+(?:\.[0-9]+)?)([Mdhmswy]|ms)$").expect("pattern"));
+static RE_TOKEN_SPLIT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!("[{},]+", chars::SPACE)).expect("pattern"));
 
 /// The one place the current time is read.
 pub fn clock(now: Option<f64>) -> f64 {
@@ -41,15 +53,15 @@ pub fn clock(now: Option<f64>) -> f64 {
 }
 
 pub fn parse_duration(text: &str) -> (f64, Unit) {
-    match RE_DURATION.exec(string::trim(text)) {
-        Some(m) => (number::parse_float(m.str(1)), Unit::parse(m.str(2))),
+    match RE_DURATION.captures(string::trim(text)) {
+        Some(m) => (number::parse_float(&m[1]), Unit::parse(&m[2])),
         None => (f64::NAN, Unit::Ms),
     }
 }
 
 fn merge_tokens(existing: &[String], txt: &str) -> Vec<String> {
     let mut merged: IndexSet<String> = existing.iter().cloned().collect();
-    for token in RE_TOKEN_SPLIT.split_str(&txt.to_lowercase()) {
+    for token in RE_TOKEN_SPLIT.split(&txt.to_lowercase()) {
         if !token.is_empty() {
             merged.insert(token.to_string());
         }
@@ -306,8 +318,8 @@ impl GanttDb {
             },
         };
 
-        while let Some(tag) = data.first().and_then(|first| RE_TAG.exec(first)) {
-            match tag.str(1) {
+        while let Some(tag) = data.first().and_then(|first| RE_TAG.captures(first)) {
+            match &tag[1] {
                 "active" => task.active = true,
                 "done" => task.done = true,
                 "crit" => task.crit = true,
@@ -407,8 +419,8 @@ impl GanttDb {
         // A date written with only these tokens and separators can never read
         // as a weekday name, so when nothing else is excluded or included
         // there is no need to format each day.
-        self.dated_tokens =
-            !self.includes.is_empty() || !RE_NUMERIC_FORMAT.test(string::trim(&self.date_format));
+        self.dated_tokens = !self.includes.is_empty()
+            || !RE_NUMERIC_FORMAT.is_match(string::trim(&self.date_format));
         for token in &self.excludes {
             if token != "weekends"
                 && !date::WEEKDAYS
@@ -544,7 +556,10 @@ impl GanttDb {
         let text = string::trim(raw);
         let template = string::trim(&self.date_format).to_string();
 
-        if (template == "x" || template == "X") && RE_DIGITS.test(text) {
+        if (template == "x" || template == "X")
+            && !text.is_empty()
+            && text.bytes().all(|b| b.is_ascii_digit())
+        {
             let date = zone.date(Number::from(text).0);
             if !date.is_valid() {
                 return Err(invalid_date(text));
@@ -552,9 +567,9 @@ impl GanttDb {
             return Ok(Some(date.time()));
         }
 
-        if let Some(after) = RE_AFTER.exec(text) {
+        if let Some(after) = RE_AFTER.captures(text) {
             let mut latest: Option<usize> = None;
-            for task in self.references(after.str(1)) {
+            for task in self.references(&after[1]) {
                 if latest.is_none_or(|latest| {
                     time(self.tasks[task].end_time) > time(self.tasks[latest].end_time)
                 }) {
@@ -588,9 +603,9 @@ impl GanttDb {
     ) -> Result<Option<f64>, Error> {
         let text = string::trim(raw);
 
-        if let Some(until) = RE_UNTIL.exec(text) {
+        if let Some(until) = RE_UNTIL.captures(text) {
             let mut earliest: Option<usize> = None;
-            for task in self.references(until.str(1)) {
+            for task in self.references(&until[1]) {
                 if earliest.is_none_or(|earliest| {
                     time(self.tasks[task].start_time) < time(self.tasks[earliest].start_time)
                 }) {

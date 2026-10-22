@@ -29,6 +29,7 @@ serde_with.workspace = true
 indexmap = { workspace = true, features = ["serde"] }
 chrono.workspace = true
 memchr.workspace = true
+regex.workspace = true
 
 # The clock and the local zone are the page's, through `Date`.
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]

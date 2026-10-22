@@ -12,9 +12,9 @@ use super::{
 use crate::{
     detect::Kind,
     error::Error,
+    string,
     token::{Stream, after_keyword},
 };
-use js::string;
 
 const HEADERS: &str = "'direction_tb', 'direction_bt', 'direction_rl', 'direction_lr', 'C4_CONTEXT', 'C4_CONTAINER', 'C4_COMPONENT', 'C4_DYNAMIC', 'C4_DEPLOYMENT'";
 const ATTRIBUTES: &str = "'STR', 'STR_KEY', 'ATTRIBUTE', 'ATTRIBUTE_EMPTY'";

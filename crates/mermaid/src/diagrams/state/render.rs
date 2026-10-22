@@ -1,7 +1,7 @@
 //! Pele's `diagrams/state/render.ts`.
 
 use crate::svg::builder::rect;
-use js::{math, number, regex::Lazy};
+use js::{math, number};
 use std::{
     cmp::Ordering,
     collections::HashMap,
@@ -47,10 +47,39 @@ const CORNER: f64 = 10.0;
 const SURFACE: &str = " fill=\"var(--_s)\" stroke=\"var(--_b)\"";
 const RULE: &str = " fill=\"none\" stroke=\"var(--_b)\"";
 
-static MERMAID_CLASSES: Lazy = Lazy::new(
-    r"(?:^| )statediagram-(?:state|cluster-alt|cluster|note)(?= |$)",
-    "g",
-);
+/// `classes` without Mermaid's own state classes:
+/// `classes.replace(/(?:^| )statediagram-(?:state|cluster-alt|cluster|note)(?= |$)/g, "")`.
+fn without_mermaid_classes(classes: &str) -> String {
+    let name_end = |at: usize| {
+        let rest = classes[at..].strip_prefix("statediagram-")?;
+        ["state", "cluster-alt", "cluster", "note"]
+            .iter()
+            .find_map(|name| {
+                let after = &rest[rest.starts_with(name).then_some(name.len())?..];
+                (after.is_empty() || after.starts_with(' ')).then(|| classes.len() - after.len())
+            })
+    };
+    let mut out = String::new();
+    let mut last = 0;
+    let mut at = 0;
+    while at < classes.len() {
+        let from_start = (at == 0).then(|| name_end(0)).flatten();
+        let from_space = || {
+            (classes[at..].starts_with(' '))
+                .then(|| name_end(at + 1))
+                .flatten()
+        };
+        match from_start.or_else(from_space) {
+            Some(end) => {
+                out.push_str(&classes[last..at]);
+                last = end;
+                at = end;
+            }
+            None => at += classes[at..].chars().next().map_or(1, char::len_utf8),
+        }
+    }
+    out + &classes[last..]
+}
 
 /// What an item of the drawing is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -756,7 +785,7 @@ impl StateModel {
                         out,
                         "<g class=\"{}{}\" data-id=\"{}\"",
                         prefixed(kind_classes),
-                        class_names(&MERMAID_CLASSES.replace(&node.css_classes, |_| String::new())),
+                        class_names(&without_mermaid_classes(&node.css_classes)),
                         EscText(&node.id)
                     );
                     if view.kind != K::Composite {

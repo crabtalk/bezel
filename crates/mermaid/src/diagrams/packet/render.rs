@@ -2,9 +2,10 @@
 
 use crate::{
     geom::{Point, Size},
+    string,
     svg::builder::Esc,
 };
-use js::{math, number::Number, string};
+use js::{math, number::Number};
 use std::{collections::HashMap, fmt::Write as _};
 
 use super::{

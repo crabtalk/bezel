@@ -14,12 +14,11 @@ token_kinds! {
         ShowData = keyword("showData"),
         Pie = keyword("pie"),
         Colon = TokenType::literal(":"),
-        Number = TokenType::regex(
+        Number = TokenType::scanner(
             "NUMBER_PIE",
-            r"(?:-?[0-9]+\.[0-9]+(?!\.))|(?:-?(0|[1-9][0-9]*)(?!\.))",
+            || decimal(true, false),
             Some("-0123456789"),
-        )
-        .scanner(|| decimal(true, false)),
+        ),
         AccDescr = acc_descr(),
         AccTitle = acc_title(),
         Title = title(),

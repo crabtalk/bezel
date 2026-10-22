@@ -1,7 +1,9 @@
 //! Pele's `diagrams/ishikawa/lexer.ts`.
 
-use crate::token::{Cursor, Token, grammar};
-use js::string;
+use crate::{
+    token::{Cursor, Token, grammar},
+    util::chars,
+};
 
 grammar! {
     /// The Ishikawa lexer's token kinds.
@@ -31,10 +33,7 @@ pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
         let j = cur.space_end(i);
         let last_break = src[i..j].rfind('\n').map(|at| i + at);
         let (kind, end) = if cur.starts_with("%%", j) {
-            (
-                T::Spaceline,
-                cur.run_end(j + 2, |c| !string::is_line_end(c)),
-            )
+            (T::Spaceline, cur.run_end(j + 2, |c| !chars::is_line_end(c)))
         } else if j == i {
             // `ishikawa-beta`, or failing that `ishikawa`, either one ending
             // at a word boundary.

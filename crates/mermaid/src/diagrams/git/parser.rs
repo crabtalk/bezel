@@ -4,11 +4,12 @@ use super::db::CommitType;
 use crate::{
     detect::Kind,
     diagrams::common::tokens::{
-        Header, Reader, TokenType, acc_descr, acc_title, directive, keyword, newline,
+        Header, Reader, TokenType, acc_descr, acc_title, directive, int, keyword, newline,
         single_line_comment, string, string_value, title, token_kinds, whitespace, yaml,
     },
     error::Error,
     geom::Direction,
+    util::chars,
 };
 use js::number;
 
@@ -38,17 +39,17 @@ token_kinds! {
         // Without a closing brace the block form scans to the end of the
         // text, and a brace is not a token on its own, so the first failure
         // is final.
-        AccDescr = acc_descr().opener(r"[\t ]*accDescr\s*\{"),
+        AccDescr = acc_descr().opener(&format!(r"[\t ]*accDescr[{}]*\{{", chars::SPACE)),
         AccTitle = acc_title(),
         Title = title(),
-        Int = TokenType::regex("INT", r"0|[1-9][0-9]*(?!\.)", None),
+        Int = int(),
         String = string(),
         Newline = newline(),
         Whitespace = whitespace(),
         Yaml = yaml(),
         Directive = directive(),
         Comment = single_line_comment(),
-        Reference = TokenType::regex("REFERENCE", r"\w([-\./\w]*[-\w])?", None),
+        Reference = TokenType::regex("REFERENCE", r"[0-9A-Z_a-z](?:[-./0-9A-Z_a-z]*[0-9A-Z_a-z-])?", None),
     }
 }
 

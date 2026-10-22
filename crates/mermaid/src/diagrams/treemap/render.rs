@@ -2,9 +2,10 @@
 
 use crate::{
     geom::{Point, Size},
+    string,
     text::Label,
 };
-use js::{math, number::Number, regex::Lazy, string};
+use js::{math, number::Number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 
@@ -25,8 +26,6 @@ use std::fmt::Write as _;
 const HEADER: f64 = 28.0;
 const SIDE: f64 = 6.0;
 const LINE: f64 = 1.25;
-
-static RE_FILL: Lazy = Lazy::new(r#"[";]fill:"#, "");
 
 /// Mermaid's `treemap` config.
 #[serde_as]
@@ -132,7 +131,7 @@ impl TreemapModel {
             if node.children.is_some() {
                 // A section is a tint of its color, unless a class gives it a
                 // fill of its own.
-                let tint = if RE_FILL.test(&style.shape) {
+                let tint = if style.has_fill() {
                     ""
                 } else {
                     " fill-opacity=\"0.12\""

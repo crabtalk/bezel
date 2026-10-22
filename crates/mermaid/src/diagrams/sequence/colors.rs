@@ -4,7 +4,8 @@
 //! Pele has no browser, so it knows the color keywords and the rgb() and hsl()
 //! notations. Other functions, such as calc() and var(), are not recognized.
 
-use js::{regex::Lazy, string};
+use crate::{string, util::chars};
+use regex::Regex;
 use std::{collections::HashSet, sync::LazyLock};
 
 const KEYWORDS: [&str; 196] = [
@@ -208,11 +209,14 @@ const KEYWORDS: [&str; 196] = [
 
 static KEYWORD_SET: LazyLock<HashSet<&'static str>> =
     LazyLock::new(|| KEYWORDS.into_iter().collect());
-static RE_TERM: Lazy = Lazy::new(
-    r"^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?(%|deg|grad|rad|turn)?$",
-    "i",
-);
-static RE_SPACES: Lazy = Lazy::new(r"\s+", "");
+static RE_TERM: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i-u)^[+-]?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:e[+-]?[0-9]+)?(%|deg|grad|rad|turn)?$",
+    )
+    .expect("pattern")
+});
+static RE_SPACES: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!("[{}]+", chars::SPACE)).expect("pattern"));
 
 #[derive(Clone, Copy, PartialEq)]
 enum K {
@@ -227,10 +231,10 @@ fn kind(term: &str) -> K {
     if term.to_lowercase() == "none" {
         return K::None;
     }
-    let Some(m) = RE_TERM.exec(term) else {
+    let Some(m) = RE_TERM.captures(term) else {
         return K::Bad;
     };
-    match m.get(1) {
+    match m.get(1).map(|unit| unit.as_str()) {
         None => K::Number,
         Some("%") => K::Percent,
         Some(_) => K::Angle,
@@ -266,7 +270,7 @@ fn is_function(color: &str) -> bool {
         if slash.len() > 2 {
             return false;
         }
-        parts = RE_SPACES.split_str(string::trim(slash[0]));
+        parts = RE_SPACES.split(string::trim(slash[0])).collect();
         if slash.len() == 2 {
             alpha = Some(string::trim(slash[1]));
         }

@@ -2,10 +2,12 @@
 
 use super::tokens::{KEYWORDS, T};
 use crate::{
-    token::{Cursor, Token},
-    util::chars::starts_with_caseless,
+    string,
+    token::{Acc, Cursor, Token},
+    util::chars,
 };
-use js::{regex::Lazy, string};
+use regex::Regex;
+use std::sync::LazyLock;
 
 /// Jison's start conditions.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -20,10 +22,13 @@ enum S {
 
 const LONGEST_KEYWORD: usize = 22;
 
-static RE_ACC_TITLE: Lazy = Lazy::new(r"accTitle\s*:\s*", "iy");
-static RE_ACC_DESCR: Lazy = Lazy::new(r"accDescr\s*:\s*", "iy");
-static RE_ACC_DESCR_ML: Lazy = Lazy::new(r"accDescr\s*\{\s*", "iy");
-static RE_DIRECTION: Lazy = Lazy::new(r"direction\s+(?:(TB)|(BT)|(RL)|LR)", "gi");
+static RE_DIRECTION: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"(?i-u:direction)[{}]+(?i-u:(TB)|(BT)|(RL)|LR)",
+        chars::SPACE
+    ))
+    .expect("pattern")
+});
 /// The direction kinds in the order of `RE_DIRECTION`'s alternatives.
 const DIRECTIONS: [T; 4] = [
     T::DirectionTb,
@@ -88,7 +93,7 @@ impl<'s> Lexer<'s> {
             && src
                 .get(p + 1..p + 5)
                 .is_some_and(|rest| rest.eq_ignore_ascii_case("itle"))
-            && self.cur.char_at(p + 5).is_some_and(string::is_space)
+            && self.cur.char_at(p + 5).is_some_and(chars::is_space)
         {
             let from = self.cur.after(p + 5);
             let q = src[from..].find(['#', '\n', ';']).map_or(n, |at| from + at);
@@ -96,23 +101,27 @@ impl<'s> Lexer<'s> {
                 return self.emit(T::Title, q);
             }
         }
-        if lower == 'a' && starts_with_caseless(src, p, "acc") {
-            if let Some(e) = RE_ACC_TITLE.match_end(src, p) {
-                self.cur.push(S::AccTitle);
-                return self.emit(T::AccTitle, e);
-            }
-            if let Some(e) = RE_ACC_DESCR.match_end(src, p) {
-                self.cur.push(S::AccDescr);
-                return self.emit(T::AccDescr, e);
-            }
-            if let Some(e) = RE_ACC_DESCR_ML.match_end(src, p) {
-                self.cur.push(S::AccDescrMultiline);
-                self.cur.p = e;
-                return true;
+        if lower == 'a'
+            && let Some((acc, e)) = Acc::at(src, p, true)
+        {
+            match acc {
+                Acc::Title => {
+                    self.cur.push(S::AccTitle);
+                    return self.emit(T::AccTitle, e);
+                }
+                Acc::Descr => {
+                    self.cur.push(S::AccDescr);
+                    return self.emit(T::AccDescr, e);
+                }
+                Acc::DescrBlock => {
+                    self.cur.push(S::AccDescrMultiline);
+                    self.cur.p = e;
+                    return true;
+                }
             }
         }
         if self.dirs.iter().any(|list| !list.is_empty())
-            && !string::is_line_end(c)
+            && !chars::is_line_end(c)
             && self.direction()
         {
             return true;
@@ -131,7 +140,7 @@ impl<'s> Lexer<'s> {
             }
             return self.emit(T::Newline, q);
         }
-        if string::is_space(c) {
+        if chars::is_space(c) {
             self.cur.p = self.cur.space_end(p);
             return true;
         }
@@ -140,7 +149,7 @@ impl<'s> Lexer<'s> {
             return true;
         }
 
-        if string::is_word(c) {
+        if chars::is_word(c) {
             let mut q = self.cur.word_end(p);
             if q - p <= LONGEST_KEYWORD {
                 let word = src[p..q].to_ascii_lowercase();
@@ -178,7 +187,7 @@ impl<'s> Lexer<'s> {
     fn style(&mut self, c: char) -> bool {
         let p = self.cur.p;
         match c {
-            _ if string::is_word(c) => {
+            _ if chars::is_word(c) => {
                 let q = self.cur.word_end(p);
                 self.emit(T::Alpha, q)
             }
@@ -260,7 +269,8 @@ pub fn tokenize(src: &str) -> Vec<Token<'_, T>> {
         let kind = (1..4)
             .find(|&group| m.get(group).is_some())
             .map_or(3, |group| group - 1);
-        lx.dirs[kind].push((m.start(), m.end()));
+        let found = m.get_match();
+        lx.dirs[kind].push((found.start(), found.end()));
     }
 
     while let Some(c) = lx.cur.char_at(lx.cur.p) {

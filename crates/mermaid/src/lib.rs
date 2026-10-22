@@ -13,7 +13,6 @@
 //! assert!(drawing.svg.starts_with("<svg"));
 //! ```
 
-use js::string;
 use serde::Serialize;
 
 pub mod config;
@@ -24,6 +23,7 @@ pub mod geom;
 pub mod json;
 pub mod layout;
 pub mod preprocess;
+mod string;
 pub mod svg;
 pub mod text;
 mod token;

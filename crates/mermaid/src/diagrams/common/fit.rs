@@ -1,14 +1,45 @@
 //! Labels laid out as journey and timeline draw them, and cut to fit a box.
 //! Pele's `diagrams/common/fit.ts`.
 
-use crate::text::{Host, Label};
-use js::{regex::Lazy, string};
+use crate::{
+    string,
+    text::{Host, Label},
+    util::chars,
+};
+use regex::Regex;
+use std::sync::LazyLock;
 
-static RE_TAG_START: Lazy = Lazy::new(r"<(?!br\s*\/?>)", "gi");
-static RE_ICON: Lazy = Lazy::new(r":fa-", "g");
-/// A line break, an encoded entity, a surrogate pair, or one character: the
-/// pieces a word can be cut between.
-static RE_UNIT: Lazy = Lazy::new(r"<br\s*\/?>|ﬂ°°?\w+¶ß|&#?\w+;|[\s\S]", "gi");
+/// A line break, an encoded entity, or one character: the pieces a word can
+/// be cut between.
+static RE_UNIT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"(?i-u:<br)[{}]*/?>|ﬂ°°?[0-9A-Z_a-z]+¶ß|&#?[0-9A-Z_a-z]+;|(?s:.)",
+        chars::SPACE
+    ))
+    .expect("pattern")
+});
+
+/// `text` with each `<` that does not open a `<br>` as `&lt;`:
+/// `text.replace(/<(?!br\s*\/?>)/gi, "&lt;")`.
+fn escape_tags(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut last = 0;
+    for (at, _) in text.match_indices('<') {
+        let rest = &text[at + 1..];
+        let after_br = rest
+            .get(..2)
+            .filter(|br| br.eq_ignore_ascii_case("br"))
+            .map(|_| string::trim_start(&rest[2..]));
+        let is_break =
+            after_br.is_some_and(|after| after.strip_prefix('/').unwrap_or(after).starts_with('>'));
+        if !is_break {
+            out.push_str(&text[last..at]);
+            out.push_str("&lt;");
+            last = at + 1;
+        }
+    }
+    out + &text[last..]
+}
 
 impl Label {
     /// Text laid out as Mermaid's journey and timeline draw it: plain text in
@@ -17,10 +48,10 @@ impl Label {
         let text = raw.map(|text| {
             let mut text = text.to_string();
             if text.contains('<') {
-                text = RE_TAG_START.replace(&text, |_| "&lt;".into());
+                text = escape_tags(&text);
             }
             if text.contains(":fa-") {
-                text = RE_ICON.replace(&text, |_| "&colon;fa-".into());
+                text = text.replace(":fa-", "&colon;fa-");
             }
             text
         });
@@ -39,7 +70,7 @@ impl Label {
         }
         let mut out = String::new();
         let mut width = 0.0;
-        for unit in RE_UNIT.find_all(raw) {
+        for unit in RE_UNIT.find_iter(raw).map(|unit| unit.as_str()) {
             let units = string::len(unit);
             if string::trim(unit).is_empty() || (units > 2 && unit.starts_with('<')) {
                 width = 0.0;

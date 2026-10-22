@@ -4,12 +4,14 @@ use crate::{
     detect::Kind,
     diagrams::common::{
         acc_descr::acc_descr,
+        tokens,
         tokens::{
             Header, Reader, TokenType, acc_title, directive, keyword, single_line_comment, title,
             token_kinds, yaml,
         },
     },
     error::Error,
+    util::chars,
 };
 
 token_kinds! {
@@ -48,23 +50,23 @@ token_kinds! {
         Rf = word("rf"),
         Tick = TokenType::literal("`"),
         Dot = TokenType::literal("."),
-        Id = TokenType::regex("EM_ID", r"[_a-zA-Z][\w_]*", None),
-        FrameId = TokenType::regex("EM_FID", r"\d{1,3}", None),
-        Inline = TokenType::regex("EM_DATA_INLINE", r#"\{(.*)\}|"(.*)"|'(.*)'"#, None),
-        Block = TokenType::regex(
+        Id = TokenType::regex("EM_ID", r"[_a-zA-Z][0-9A-Z_a-z]*", None),
+        FrameId = TokenType::regex("EM_FID", r"[0-9]{1,3}", None),
+        Inline = TokenType::regex("EM_DATA_INLINE", r#"\{[^\n\r\u{2028}\u{2029}]*\}|"[^\n\r\u{2028}\u{2029}]*"|'[^\n\r\u{2028}\u{2029}]*'"#, None),
+        Block = TokenType::matcher(
             "EM_DATA_BLOCK",
-            r"\{[\t ]*\r?\n(?:[\S\s]*?\r?\n)?\}(?:\r?\n|(?!\S))",
+            |src, p| tokens::block_end(src, p, "{", "}"),
             None,
         ),
         AccDescr = acc_descr("EM_ACC_DESCR"),
         AccTitle = acc_title().named("EM_ACC_TITLE"),
         Title = title().named("EM_TITLE"),
-        Ws = TokenType::regex("EM_WS", r"\s+", None).hidden(),
+        Ws = TokenType::regex("EM_WS", &format!("[{}]+", chars::SPACE), None).hidden(),
         Yaml = yaml().named("EM_YAML"),
         Directive = directive().named("EM_DIRECTIVE"),
         Comment = single_line_comment().named("EM_SINGLE_LINE_COMMENT"),
-        MlComment = TokenType::regex("EM_ML_COMMENT", r"\/\*[\s\S]*?\*\/", None).hidden(),
-        SlComment = TokenType::regex("EM_SL_COMMENT", r"\/\/[^\n\r]*", None).hidden(),
+        MlComment = TokenType::regex("EM_ML_COMMENT", r"/\*(?s:.)*?\*/", None).hidden(),
+        SlComment = TokenType::regex("EM_SL_COMMENT", r"//[^\n\r]*", None).hidden(),
     }
 }
 

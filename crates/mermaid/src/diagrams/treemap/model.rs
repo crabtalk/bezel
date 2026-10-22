@@ -2,14 +2,9 @@
 
 use crate::{diagrams::common::db::Titles, json};
 use indexmap::IndexMap;
-use js::regex::Lazy;
 use serde::Serialize;
 
 use super::parser::{ItemKind, RowAst, TreemapAst};
-
-static RE_ESCAPED_COMMA: Lazy = Lazy::new(r"\\,", "g");
-static RE_COMMA: Lazy = Lazy::new(r",", "g");
-static RE_MARK: Lazy = Lazy::new(r"§§§", "g");
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -113,10 +108,8 @@ impl TreemapModel {
             let styles = classes.entry(class_name.clone()).or_default();
             // An escaped comma stays in the value; the others separate
             // declarations.
-            let text =
-                RE_ESCAPED_COMMA.replace(style_text.as_deref().unwrap_or(""), |_| "§§§".into());
-            let text = RE_COMMA.replace(&text, |_| ";".into());
-            let text = RE_MARK.replace(&text, |_| ",".into());
+            let text = style_text.as_deref().unwrap_or("").replace("\\,", "§§§");
+            let text = text.replace(',', ";").replace("§§§", ",");
             for style in text.split(';') {
                 styles.push(style.to_string());
             }

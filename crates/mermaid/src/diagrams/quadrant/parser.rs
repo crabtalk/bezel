@@ -5,8 +5,9 @@ use super::{
     lexer::tokenize,
     tokens::{QUADRANTS, T},
 };
-use crate::{detect::Kind, diagrams::common::chart::ChartKind, error::Error, token::Stream};
-use js::string;
+use crate::{
+    detect::Kind, diagrams::common::chart::ChartKind, error::Error, string, token::Stream,
+};
 
 const TEXT_TOKENS: &str = "'STR', 'MD_STR', 'ALPHA', 'NUM', 'UNICODE_TEXT', 'PUNCTUATION'";
 

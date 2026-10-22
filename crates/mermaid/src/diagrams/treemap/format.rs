@@ -1,16 +1,20 @@
 //! Pele's `diagrams/treemap/format.ts`.
 
-use js::{number::Number, regex::Lazy};
+use js::number::Number;
+use regex::Regex;
+use std::sync::LazyLock;
 
 /// The parts of d3-format's specifier that treemap values use: an optional
 /// `$`, `,` for thousands separators, a precision, and a type of `f`, `%`,
 /// `d`, `e` or none. Fill, alignment and width are read and ignored. Anything
 /// else falls back to the default, `,`.
-static RE_SPEC: Lazy = Lazy::new(
-    r"^(?:.?[<>=^])?([-+( ])?(\$)?0?\d*(,)?(?:\.(\d+))?(~)?([a-zA-Z%])?$",
-    "",
-);
-static RE_ZEROS: Lazy = Lazy::new(r"\.?0+$", "");
+static RE_SPEC: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"^(?:[^\n\r\u{2028}\u{2029}]?[<>=^])?([-+( ])?(\$)?0?[0-9]*(,)?(?:\.([0-9]+))?(~)?([a-zA-Z%])?$",
+    )
+    .expect("pattern")
+});
+static RE_ZEROS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\.?0+$").expect("pattern"));
 
 fn group(digits: &str) -> String {
     let mut out = String::new();
@@ -56,16 +60,17 @@ impl Formatter {
         // separators.
         let spec = if spec == "$0,0" { "$," } else { spec };
         let m = RE_SPEC
-            .exec(spec)
-            .or_else(|| RE_SPEC.exec(","))
+            .captures(spec)
+            .or_else(|| RE_SPEC.captures(","))
             .expect("`,` is a specifier");
+        let group = |i: usize| m.get(i).map(|g| g.as_str());
         Self {
-            plus: m.get(1) == Some("+"),
-            currency: m.get(2).is_some(),
-            comma: m.get(3).is_some(),
-            trim: m.get(5).is_some_and(|t| !t.is_empty()),
-            precision: m.get(4).map(|p| Number::from(p).0.min(20.0) as usize),
-            notation: match m.str(6) {
+            plus: group(1) == Some("+"),
+            currency: group(2).is_some(),
+            comma: group(3).is_some(),
+            trim: group(5).is_some_and(|t| !t.is_empty()),
+            precision: group(4).map(|p| Number::from(p).0.min(20.0) as usize),
+            notation: match group(6).unwrap_or("") {
                 "f" => Notation::Fixed,
                 "%" => Notation::Percent,
                 "d" => Notation::Integer,
@@ -92,7 +97,7 @@ impl Formatter {
         };
 
         if self.trim && body.contains('.') && !body.contains('e') {
-            body = RE_ZEROS.replace(&body, |_| String::new());
+            body = RE_ZEROS.replace(&body, "").into_owned();
         }
         if self.comma && !body.contains('e') {
             body = match body.find('.') {

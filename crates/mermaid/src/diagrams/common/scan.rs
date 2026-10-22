@@ -3,8 +3,10 @@
 //! and the `accTitle` and `accDescr` statements. Pele's
 //! `diagrams/common/scan.ts`.
 
-use crate::token::{Cursor, Token, grammar};
-use js::string;
+use crate::{
+    token::{Acc, Cursor, Token, grammar},
+    util::chars,
+};
 
 grammar! {
     /// The journey and timeline lexers' token kinds.
@@ -67,7 +69,7 @@ impl<'s> Lexer<'s> {
                 cur.p = cur.line_end(next + 2);
             } else if c == '\n' {
                 return true;
-            } else if string::is_space(c) {
+            } else if chars::is_space(c) {
                 cur.p = cur.space_end(next);
             } else if c == '#' {
                 cur.p = cur.line_end(cur.p);
@@ -92,16 +94,13 @@ impl<'s> Lexer<'s> {
     pub fn accessibility(&mut self) -> bool {
         let cur = &mut self.cur;
         let p = cur.p;
-        let descr = cur.starts_with_caseless("accdescr", p);
-        if !descr && !cur.starts_with_caseless("acctitle", p) {
+        let Some((acc, mut q)) = Acc::at(cur.src, p, true) else {
             return false;
-        }
-        let mut q = cur.space_end(p + 8);
-        match cur.char_at(q) {
-            Some(':') => {
-                q = cur.space_end(q + 1);
+        };
+        match acc {
+            Acc::Title | Acc::Descr => {
                 let end = cur.line_end(q);
-                let (keyword, value) = if descr {
+                let (keyword, value) = if acc == Acc::Descr {
                     (T::AccDescr, T::AccDescrValue)
                 } else {
                     (T::AccTitle, T::AccTitleValue)
@@ -109,11 +108,10 @@ impl<'s> Lexer<'s> {
                 cur.emit(keyword, p, q);
                 cur.emit(value, q, end);
             }
-            Some('{') if descr => {
+            Acc::DescrBlock => {
                 // An unclosed description gives its text, then an empty
                 // value at the end.
                 let n = cur.src.len();
-                q = cur.space_end(q + 1);
                 while cur.char_at(q) != Some('}') {
                     let end = cur.src[q..].find('}').map_or(n, |at| q + at);
                     cur.emit(T::AccDescrMultilineValue, q, end);
@@ -124,7 +122,6 @@ impl<'s> Lexer<'s> {
                 }
                 cur.p = q + 1;
             }
-            _ => return false,
         }
         true
     }

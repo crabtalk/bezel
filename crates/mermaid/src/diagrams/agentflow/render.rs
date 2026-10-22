@@ -1,7 +1,7 @@
 //! Pele's `diagrams/agentflow/render.ts`.
 
 use crate::svg::theme::node_class_names;
-use js::{math, regex::Lazy};
+use js::math;
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -53,8 +53,6 @@ pub const PALETTE: usize = 8;
 
 const DOTS: f64 = 14.0;
 
-static RE_FILL: Lazy = Lazy::new(r#"[";]fill:"#, "");
-
 /// Mermaid's `agentflow` config.
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -76,7 +74,7 @@ pub struct AgentflowConfig {
 /// A fill the author set replaces the wash and stays opaque.
 fn tint<'a>(slot: usize, wash: &'a str, style: &ResolvedStyle) -> impl fmt::Display + 'a {
     let color = series_color(slot as i64);
-    let filled = RE_FILL.test(&style.shape);
+    let filled = style.has_fill();
     fragment(move |f| {
         write!(f, " fill=\"{color}\"")?;
         if !filled {

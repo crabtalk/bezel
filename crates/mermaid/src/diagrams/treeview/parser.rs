@@ -7,9 +7,9 @@ use crate::{
         tokens::{Header, Reader, TokenType, acc_title, keyword, title, token_kinds},
     },
     error::Error,
+    string,
     util::chars::{char_at, inner},
 };
-use js::string;
 
 token_kinds! {
     enum Token {
@@ -19,26 +19,21 @@ token_kinds! {
         Title = title(),
         ClassAnnotation = TokenType::regex(
             "CLASS_ANNOTATION",
-            r"[ \t]+:::[ \t]*[A-Za-z_][\w-]*",
+            r"[ \t]+:::[ \t]*[A-Za-z_][0-9A-Z_a-z-]*",
             None,
         ),
         IconAnnotation = TokenType::regex(
             "ICON_ANNOTATION",
-            r"[ \t]+icon\([\w-]*(?::[\w-]+)?\)",
+            r"[ \t]+icon\([0-9A-Z_a-z-]*(?::[0-9A-Z_a-z-]+)?\)",
             None,
         ),
         DescAnnotation = TokenType::regex("DESC_ANNOTATION", r"[ \t]+##[^\n\r]*", None),
         Indentation = TokenType::regex("INDENTATION", r"[ \t]{1,}", None),
         QuotedName = TokenType::regex("QUOTED_NAME", r#""[^"]*"|'[^']*'"#, None),
         Ws = TokenType::regex("WS", r"[ \t]+", None).hidden(),
-        Comment = TokenType::regex("ML_COMMENT", r"\%\%[^\n]*", None).hidden(),
+        Comment = TokenType::regex("ML_COMMENT", r"%%[^\n]*", None).hidden(),
         Newline = TokenType::regex("NL", r"\r?\n", None).hidden(),
-        BareName = TokenType::regex(
-            "BARE_NAME",
-            r#"(?!:::|icon\(|##)[^ \t\n\r"'](?:(?![ \t]+:::[ \t]*[A-Za-z_]|[ \t]+icon\(|[ \t]+##)[^\n\r])*"#,
-            None,
-        )
-        .matcher(match_bare_name),
+        BareName = TokenType::matcher("BARE_NAME", match_bare_name, None),
     }
 }
 

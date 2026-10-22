@@ -1,8 +1,7 @@
 //! Pele's `diagrams/venn/db.ts`.
 
-use crate::util::chars::unquote;
+use crate::{string, util::chars::unquote};
 use indexmap::{IndexMap, IndexSet};
-use js::string;
 use serde::Serialize;
 
 use super::{

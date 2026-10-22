@@ -1,7 +1,9 @@
 //! Pele's `diagrams/treemap/parser.ts`.
 
-use crate::util::chars::inner;
-use js::{number, regex::Lazy};
+use crate::util::{chars, chars::inner};
+use js::number;
+use regex::Regex;
+use std::sync::LazyLock;
 
 use crate::{
     detect::Kind,
@@ -23,7 +25,10 @@ token_kinds! {
         Keyword = TokenType::regex("TREEMAP_KEYWORD", r"treemap-beta|treemap", None),
         ClassDef = TokenType::regex(
             "CLASS_DEF",
-            r"classDef\s+([a-zA-Z_][a-zA-Z0-9_]+)(?:\s+([^;\r\n]*))?(?:;)?",
+            &format!(
+                r"classDef[{s}]+[a-zA-Z_][a-zA-Z0-9_]+(?:[{s}]+[^;\r\n]*)?;?",
+                s = chars::SPACE
+            ),
             None,
         ),
         StyleSeparator = TokenType::regex("STYLE_SEPARATOR", r":::", None),
@@ -31,16 +36,21 @@ token_kinds! {
         Comma = TokenType::regex("COMMA", r",", None),
         Indentation = TokenType::regex("INDENTATION", r"[ \t]{1,}", None),
         Ws = TokenType::regex("WS", r"[ \t]+", None).hidden(),
-        Comment = TokenType::regex("ML_COMMENT", r"\%\%[^\n]*", None).hidden(),
+        Comment = TokenType::regex("ML_COMMENT", r"%%[^\n]*", None).hidden(),
         Newline = TokenType::regex("NL", r"\r?\n", None).hidden(),
         Id = TokenType::regex("ID2", r"[a-zA-Z_][a-zA-Z0-9_]*", None),
-        Number = TokenType::regex("NUMBER2", r"[0-9_\.\,]+", None),
+        Number = TokenType::regex("NUMBER2", r"[0-9_.,]+", None),
         String = TokenType::regex("STRING2", r#""[^"]*"|'[^']*'"#, None),
     }
 }
 
-static RE_CLASS_DEF: Lazy = Lazy::new(r"classDef\s+([A-Z_a-z]\w+)(?:\s+([^\n\r;]*))?;?", "");
-static RE_COMMA: Lazy = Lazy::new(r",", "g");
+static RE_CLASS_DEF: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"classDef[{s}]+([A-Z_a-z][0-9A-Z_a-z]+)(?:[{s}]+([^\n\r;]*))?;?",
+        s = chars::SPACE
+    ))
+    .expect("pattern")
+});
 
 pub enum ItemKind {
     Section,
@@ -87,11 +97,15 @@ pub fn parse_treemap(src: &str) -> Result<TreemapAst, Error> {
         if r.at(Token::ClassDef) {
             let text = r.take();
             let m = RE_CLASS_DEF
-                .exec(text)
+                .captures(text)
                 .expect("a CLASS_DEF token is a class definition");
             ast.rows.push(RowAst::ClassDef {
-                class_name: m.str(1).to_string(),
-                style_text: m.get(2).filter(|t| !t.is_empty()).map(str::to_string),
+                class_name: m[1].to_string(),
+                style_text: m
+                    .get(2)
+                    .map(|t| t.as_str())
+                    .filter(|t| !t.is_empty())
+                    .map(str::to_string),
             });
             continue;
         }
@@ -106,9 +120,7 @@ pub fn parse_treemap(src: &str) -> Result<TreemapAst, Error> {
             }
             r.accept(Token::Indentation);
             let number = r.expect(Token::Number)?;
-            ItemKind::Leaf(number::parse_float(
-                &RE_COMMA.replace(number, |_| String::new()),
-            ))
+            ItemKind::Leaf(number::parse_float(&number.replace(',', "")))
         } else {
             ItemKind::Section
         };

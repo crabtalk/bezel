@@ -9,8 +9,9 @@ use super::{
     tokens::T,
     types::{DocItem, FlowText},
 };
-use crate::{detect::Kind, error::Error};
-use js::{regex::Lazy, string};
+use crate::{detect::Kind, error::Error, string, util::chars};
+use regex::Regex;
+use std::sync::LazyLock;
 
 const NO_TAGS: [T; 21] = [
     T::Num,
@@ -47,7 +48,8 @@ static DIALECT: Dialect = Dialect {
 
 /// Mermaid trims whitespace between a closing brace and the end of its line
 /// before parsing.
-static RE_BRACE_TRAIL: Lazy = Lazy::new(r"}\s*\n", "g");
+static RE_BRACE_TRAIL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!(r"\}}[{}]*\n", chars::SPACE)).expect("pattern"));
 
 struct Frame {
     id: Option<String>,
@@ -97,7 +99,7 @@ impl Parser<'_> {
         }
         self.r.s.bump();
         // Without a bracketed title, an id with whitespace is only a title.
-        let id = (title.is_some() || !text.text.contains(|c: char| string::is_space(c)))
+        let id = (title.is_some() || !text.text.contains(|c: char| chars::is_space(c)))
             .then(|| string::trim(&text.text).to_string());
         Ok(Frame {
             id,
@@ -158,7 +160,7 @@ impl Parser<'_> {
 
 pub fn parse_flowchart(source: &str, db: &mut FlowDb) -> Result<(), Error> {
     let src = if source.contains('}') {
-        RE_BRACE_TRAIL.replace(source, |_| "}\n".into())
+        RE_BRACE_TRAIL.replace_all(source, "}\n").into_owned()
     } else {
         source.to_string()
     };

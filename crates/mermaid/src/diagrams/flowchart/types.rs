@@ -1,7 +1,6 @@
 //! What a flowchart is made of. Pele's `diagrams/flowchart/types.ts`.
 
-use crate::{json, json::JsValue};
-use js::string;
+use crate::{json, json::JsValue, string};
 use std::fmt::Debug;
 
 use indexmap::IndexMap;

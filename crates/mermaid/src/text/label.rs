@@ -6,11 +6,10 @@ use super::{
     icons::icon_markup,
     measure::{Host, Style},
 };
-use js::{
-    math,
-    regex::{Lazy, Regex},
-    string,
-};
+use crate::{string, util::chars};
+use js::math;
+use regex::Regex;
+use std::sync::LazyLock;
 
 pub const LINE_HEIGHT: f64 = 1.5;
 
@@ -18,19 +17,31 @@ pub const LINE_HEIGHT: f64 = 1.5;
 /// as Korean puts spaces between words.
 const CJK: &str = r"⺀-鿿豈-﫿＀-｠";
 const CLOSE: &str = r"、。，．：；！？）］｝」』】〕〉》〙〗ー…‥・ゝゞぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮ,.:;!?)\]}";
-const OPEN: &str = "（［｛「『【〔〈《〘〖([{";
+const OPEN: &str = r"（［｛「『【〔〈《〘〖(\[{";
 
-static RE_BREAK: Lazy = Lazy::new(r"<br\s*\/?>|\\n|\n", "gi");
-static RE_TAG: Lazy = Lazy::new(r"<\/?([a-zA-Z][\w-]*)(?:\s[^<>]*)?\/?>", "y");
-static RE_ICON: Lazy = Lazy::new(r"(fa[bklrs]?):fa-([\w-]+)", "g");
-static RE_MARKUP: Lazy = Lazy::new(r"[<\\\n*_]|fa[bklrs]?:fa-", "");
-static RE_CJK: std::sync::LazyLock<Regex> =
-    std::sync::LazyLock::new(|| Regex::new(&format!("[{CJK}]"), ""));
-static RE_PIECE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
-    Regex::new(
-        &format!(r"\s*(?:[{OPEN}]*[{CJK}][{CLOSE}]*|[^\s{CJK}]+[{CLOSE}]*)\s*|\s+"),
-        "g",
-    )
+static RE_BREAK: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(r"(?i-u:<br)[{}]*/?>|(?i-u:\\n)|\n", chars::SPACE)).expect("pattern")
+});
+/// A tag at the start of the text.
+static RE_TAG: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"^</?([a-zA-Z][0-9A-Z_a-z-]*)(?:[{}][^<>]*)?/?>",
+        chars::SPACE
+    ))
+    .expect("pattern")
+});
+static RE_ICON: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(fa[bklrs]?):fa-([0-9A-Z_a-z-]+)").expect("pattern"));
+static RE_MARKUP: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[<\\\n*_]|fa[bklrs]?:fa-").expect("pattern"));
+static RE_CJK: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!("[{CJK}]")).expect("pattern"));
+static RE_PIECE: LazyLock<Regex> = LazyLock::new(|| {
+    let s = chars::SPACE;
+    Regex::new(&format!(
+        r"[{s}]*(?:[{OPEN}]*[{CJK}][{CLOSE}]*|[^{s}{CJK}]+[{CLOSE}]*)[{s}]*|[{s}]+"
+    ))
+    .expect("pattern")
 });
 
 #[derive(Clone, Debug, PartialEq)]
@@ -114,9 +125,10 @@ fn push_icons(line: &mut Vec<Span>, text: &str, style: u8, host: &impl Host) {
     }
     let mut last = 0;
     for caps in RE_ICON.captures_iter(text) {
-        let icon = format!("{}:fa-{}", caps.str(1), caps.str(2));
-        push_text(line, &text[last..caps.start()], style);
-        last = caps.end();
+        let icon = format!("{}:fa-{}", &caps[1], &caps[2]);
+        let found = caps.get_match();
+        push_text(line, &text[last..found.start()], style);
+        last = found.end();
         let markup = icon_markup(host, &icon);
         if !markup.is_empty() {
             line.push(Span {
@@ -151,8 +163,8 @@ fn inline(line: &mut Vec<Span>, source: &str, markdown: bool, base: u8, host: &i
     while i < n {
         let ch = char_at(i).unwrap_or(' ');
         if ch == '<' {
-            if let Some(m) = RE_TAG.match_here(source, i) {
-                let tag = m.str(1).to_lowercase();
+            if let Some(m) = RE_TAG.captures(&source[i..]) {
+                let tag = m[1].to_lowercase();
                 let closing = source[i + 1..].starts_with('/');
                 let bit = match tag.as_str() {
                     "b" | "strong" => Style::BOLD,
@@ -168,7 +180,7 @@ fn inline(line: &mut Vec<Span>, source: &str, markdown: bool, base: u8, host: &i
                         style | bit
                     };
                 }
-                i = m.end();
+                i += m.get_match().end();
                 continue;
             }
         } else if markdown && (ch == '*' || ch == '_') {
@@ -192,11 +204,11 @@ fn inline(line: &mut Vec<Span>, source: &str, markdown: bool, base: u8, host: &i
                 ch.to_string()
             };
             let can_open = open
-                && next.is_some_and(|c| !string::is_space(c))
+                && next.is_some_and(|c| !chars::is_space(c))
                 && source[i + len..].contains(&marker);
-            let can_close = !open && prev.is_some_and(|c| !string::is_space(c));
+            let can_close = !open && prev.is_some_and(|c| !chars::is_space(c));
             let wordy =
-                ch == '_' && prev.is_some_and(string::is_word) && next.is_some_and(string::is_word);
+                ch == '_' && prev.is_some_and(chars::is_word) && next.is_some_and(chars::is_word);
             if (can_open || can_close) && !wordy {
                 push_icons(line, &text, style, host);
                 text.clear();
@@ -275,8 +287,8 @@ fn wrap(
             width += w;
             continue;
         }
-        for piece in RE_PIECE.find_all(&span.text) {
-            let mut part = piece;
+        for piece in RE_PIECE.find_iter(&span.text) {
+            let mut part = piece.as_str();
             if width > 0.0 && width + measure.width(string::trim_end(part), size, span.style) > max
             {
                 commit(&mut current, &mut width, out, widths);
@@ -332,10 +344,10 @@ impl Label {
         };
         let line_height = math::round(size * LINE_HEIGHT);
 
-        if !RE_MARKUP.test(raw) && !raw.contains('&') && !raw.contains('ﬂ') {
+        if !RE_MARKUP.is_match(raw) && !raw.contains('&') && !raw.contains('ﬂ') {
             let text = string::trim(raw);
             let width = measure.width(text, size, base);
-            if width <= max_width || !(text.contains(' ') || RE_CJK.test(text)) {
+            if width <= max_width || !(text.contains(' ') || RE_CJK.is_match(text)) {
                 return Label {
                     lines: vec![vec![Span {
                         text: text.to_string(),
@@ -384,7 +396,7 @@ impl Label {
         };
         let mut lines = Vec::new();
         let mut widths = Vec::new();
-        for part in RE_BREAK.split_str(&source) {
+        for part in RE_BREAK.split(&source) {
             let mut line = Vec::new();
             inline(&mut line, string::trim(part), markdown, base, measure);
             let w = measure_spans(&mut line, measure, size);

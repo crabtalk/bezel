@@ -13,9 +13,9 @@ use crate::{
         TokenType, directive, keyword, single_line_comment, token_kinds, yaml,
     },
     error::Error,
-    util::chars::inner,
+    string,
+    util::{chars, chars::inner},
 };
-use js::string;
 
 token_kinds! {
     enum Token {
@@ -40,20 +40,15 @@ token_kinds! {
         AccDescr = acc_descr(),
         Id = identifier("EBNF_ID"),
         String = quoted("EBNF_STRING"),
-        Special = TokenType::regex(
-            "EBNF_SPECIAL_SEQUENCE",
-            r"\?(?=[^?;]*[^?\s;][^?;]*\?)[^?;]*\?",
-            Some("?"),
-        )
-        .matcher(special_sequence),
+        Special = TokenType::matcher("EBNF_SPECIAL_SEQUENCE", special_sequence, Some("?")),
         Whitespace = blank(),
         Yaml = yaml(),
         Directive = directive(),
         Comment = single_line_comment(),
-        BlockComment = TokenType::regex("EBNF_BLOCK_COMMENT", r"\/\*[\s\S]*?\*\/", Some("/"))
+        BlockComment = TokenType::regex("EBNF_BLOCK_COMMENT", r"/\*(?s:.)*?\*/", Some("/"))
             .hidden()
-            .opener(r"\/\*"),
-        IsoComment = TokenType::regex("EBNF_ISO_COMMENT", r"\(\*[\s\S]*?\*\)", Some("("))
+            .opener(r"/\*"),
+        IsoComment = TokenType::regex("EBNF_ISO_COMMENT", r"\(\*(?s:.)*?\*\)", Some("("))
             .hidden()
             .opener(r"\(\*"),
     }
@@ -69,7 +64,7 @@ fn special_sequence(src: &str, at: usize) -> Option<usize> {
         match c {
             '?' => return solid.then_some(at + 1 + i + 1),
             ';' => return None,
-            _ => solid = solid || !string::is_space(c),
+            _ => solid = solid || !chars::is_space(c),
         }
     }
     None

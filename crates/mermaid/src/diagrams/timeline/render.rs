@@ -5,6 +5,7 @@ use crate::{
     Config, Ctx, Error, Host, Rendered,
     diagrams::Render,
     geom::{Point, Size},
+    string,
     svg::{
         builder::{EscText, num, rect},
         edges::{ARROW, Marker},
@@ -13,7 +14,7 @@ use crate::{
     },
     text::{Label, Style},
 };
-use js::{math, number::Number, string};
+use js::{math, number::Number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 use std::fmt::{self, Write as _};

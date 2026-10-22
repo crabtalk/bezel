@@ -2,7 +2,10 @@
 //! comments, line breaks, `accTitle` and `accDescr`, strings, and words,
 //! numbers and punctuation.
 
-use crate::{token::Cursor, util::chars::digits_end};
+use crate::{
+    token::{Acc, Cursor},
+    util::chars::digits_end,
+};
 
 /// The token kinds the shared rules make.
 pub trait ChartKind: Copy + PartialEq {
@@ -112,27 +115,20 @@ impl<K: ChartKind, S: ChartState> ChartRules<K> for Cursor<'_, K, S> {
 
     fn accessibility(&mut self) -> bool {
         let p = self.p;
-        let descr = self.starts_with_caseless("accdescr", p);
-        if !descr && !self.starts_with_caseless("acctitle", p) {
-            return false;
-        }
-        let k = self.space_end(p + 8);
-        match self.char_at(k) {
-            Some(':') => {
-                let end = self.space_end(k + 1);
-                let (kind, state) = if descr {
-                    (K::ACC_DESCR, S::ACC_DESCR)
-                } else {
-                    (K::ACC_TITLE, S::ACC_TITLE)
-                };
-                self.emit(kind, p, end);
-                self.push(state);
+        match Acc::at(self.src, p, true) {
+            Some((Acc::Title, end)) => {
+                self.emit(K::ACC_TITLE, p, end);
+                self.push(S::ACC_TITLE);
             }
-            Some('{') if descr => {
-                self.p = self.space_end(k + 1);
+            Some((Acc::Descr, end)) => {
+                self.emit(K::ACC_DESCR, p, end);
+                self.push(S::ACC_DESCR);
+            }
+            Some((Acc::DescrBlock, end)) => {
+                self.p = end;
                 self.push(S::ACC_DESCR_MULTILINE);
             }
-            _ => return false,
+            None => return false,
         }
         true
     }

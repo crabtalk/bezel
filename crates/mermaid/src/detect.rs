@@ -1,6 +1,6 @@
 //! Which diagram a source is, from its first keyword.
 
-use js::regex::Lazy;
+use crate::{string, util::chars};
 use serde::{Serialize, Serializer};
 
 /// Every diagram type Mermaid 12.1 registers, by the name Pele gives it.
@@ -125,61 +125,92 @@ impl Serialize for Kind {
     }
 }
 
+/// Whether `head` starts with `word`, ending at a `\b`.
+fn bounded(head: &str, word: &str) -> bool {
+    head.starts_with(word)
+        && !head[word.len()..]
+            .bytes()
+            .next()
+            .is_some_and(chars::is_word)
+}
+
+/// Whether `head` starts with `word`, given in lower case, in either case.
+fn caseless(head: &str, word: &str) -> bool {
+    chars::starts_with_caseless(head, 0, word)
+}
+
+/// Whether a source, after its leading whitespace, is of a kind.
+type Test = fn(&str) -> bool;
+
 /// Mermaid's detectors, in the order Mermaid registers them. The first match
 /// wins.
-static DETECTORS: [(Kind, Lazy); 34] = [
-    (Kind::Flowchart, Lazy::new(r"^\s*flowchart-elk", "")),
-    (Kind::Mindmap, Lazy::new(r"^\s*mindmap", "")),
-    (Kind::Architecture, Lazy::new(r"^\s*architecture", "")),
-    (Kind::Agentflow, Lazy::new(r"^\s*agentflow-beta\b", "")),
-    (
-        Kind::C4,
-        Lazy::new(
-            r"^\s*C4Context|C4Container|C4Component|C4Dynamic|C4Deployment",
-            "",
-        ),
-    ),
-    (Kind::Kanban, Lazy::new(r"^\s*kanban", "")),
-    (Kind::Class, Lazy::new(r"^\s*classDiagram", "")),
-    (Kind::Er, Lazy::new(r"^\s*erDiagram", "")),
-    (Kind::Gantt, Lazy::new(r"^\s*gantt", "")),
-    (Kind::Info, Lazy::new(r"^\s*info", "")),
-    (Kind::Pie, Lazy::new(r"^\s*pie", "")),
-    (
-        Kind::Requirement,
-        Lazy::new(r"^\s*requirement(Diagram)?", ""),
-    ),
-    (Kind::Sequence, Lazy::new(r"^\s*sequenceDiagram", "")),
-    (Kind::Swimlane, Lazy::new(r"^\s*swimlane-beta\b", "")),
-    (Kind::Flowchart, Lazy::new(r"^\s*(graph|flowchart)", "")),
-    (Kind::Timeline, Lazy::new(r"^\s*timeline", "")),
-    (Kind::GitGraph, Lazy::new(r"^\s*gitGraph", "")),
-    (Kind::State, Lazy::new(r"^\s*stateDiagram", "")),
-    (Kind::Journey, Lazy::new(r"^\s*journey", "")),
-    (Kind::QuadrantChart, Lazy::new(r"^\s*quadrantChart", "")),
-    (Kind::Sankey, Lazy::new(r"^\s*sankey(-beta)?", "")),
-    (Kind::Packet, Lazy::new(r"^\s*packet(-beta)?", "")),
-    (Kind::XyChart, Lazy::new(r"^\s*xychart(-beta)?", "")),
-    (Kind::Block, Lazy::new(r"^\s*block(-beta)?", "")),
-    (Kind::Eventmodeling, Lazy::new(r"^\s*eventmodeling", "")),
-    (Kind::TreeView, Lazy::new(r"^\s*treeView-beta", "")),
-    (Kind::Radar, Lazy::new(r"^\s*radar-beta", "")),
-    (Kind::Ishikawa, Lazy::new(r"^\s*ishikawa(-beta)?\b", "i")),
-    (Kind::Treemap, Lazy::new(r"^\s*treemap", "")),
-    (
-        Kind::Railroad,
-        Lazy::new(r"^\s*railroad-(?:ebnf-|abnf-|peg-)?beta", "i"),
-    ),
-    (Kind::Venn, Lazy::new(r"^\s*venn-beta", "")),
-    (Kind::Wardley, Lazy::new(r"^\s*wardley-beta", "i")),
-    (Kind::Cynefin, Lazy::new(r"^\s*cynefin-beta(?:[\s:]|$)", "")),
-    (Kind::Usecase, Lazy::new(r"^\s*usecase-beta(?:\s|$)", "")),
+static DETECTORS: [(Kind, Test); 34] = [
+    (Kind::Flowchart, |h| h.starts_with("flowchart-elk")),
+    (Kind::Mindmap, |h| h.starts_with("mindmap")),
+    (Kind::Architecture, |h| h.starts_with("architecture")),
+    (Kind::Agentflow, |h| bounded(h, "agentflow-beta")),
+    // Only the first name is anchored; the others match anywhere.
+    (Kind::C4, |h| {
+        h.starts_with("C4Context")
+            || ["C4Container", "C4Component", "C4Dynamic", "C4Deployment"]
+                .iter()
+                .any(|name| h.contains(name))
+    }),
+    (Kind::Kanban, |h| h.starts_with("kanban")),
+    (Kind::Class, |h| h.starts_with("classDiagram")),
+    (Kind::Er, |h| h.starts_with("erDiagram")),
+    (Kind::Gantt, |h| h.starts_with("gantt")),
+    (Kind::Info, |h| h.starts_with("info")),
+    (Kind::Pie, |h| h.starts_with("pie")),
+    (Kind::Requirement, |h| h.starts_with("requirement")),
+    (Kind::Sequence, |h| h.starts_with("sequenceDiagram")),
+    (Kind::Swimlane, |h| bounded(h, "swimlane-beta")),
+    (Kind::Flowchart, |h| {
+        h.starts_with("graph") || h.starts_with("flowchart")
+    }),
+    (Kind::Timeline, |h| h.starts_with("timeline")),
+    (Kind::GitGraph, |h| h.starts_with("gitGraph")),
+    (Kind::State, |h| h.starts_with("stateDiagram")),
+    (Kind::Journey, |h| h.starts_with("journey")),
+    (Kind::QuadrantChart, |h| h.starts_with("quadrantChart")),
+    (Kind::Sankey, |h| h.starts_with("sankey")),
+    (Kind::Packet, |h| h.starts_with("packet")),
+    (Kind::XyChart, |h| h.starts_with("xychart")),
+    (Kind::Block, |h| h.starts_with("block")),
+    (Kind::Eventmodeling, |h| h.starts_with("eventmodeling")),
+    (Kind::TreeView, |h| h.starts_with("treeView-beta")),
+    (Kind::Radar, |h| h.starts_with("radar-beta")),
+    // `ishikawa(-beta)?\b`: a `-` after the name is a boundary already.
+    (Kind::Ishikawa, |h| {
+        caseless(h, "ishikawa") && !h[8..].bytes().next().is_some_and(chars::is_word)
+    }),
+    (Kind::Treemap, |h| h.starts_with("treemap")),
+    (Kind::Railroad, |h| {
+        caseless(h, "railroad-")
+            && ["ebnf-beta", "abnf-beta", "peg-beta", "beta"]
+                .iter()
+                .any(|rest| caseless(&h[9..], rest))
+    }),
+    (Kind::Venn, |h| h.starts_with("venn-beta")),
+    (Kind::Wardley, |h| caseless(h, "wardley-beta")),
+    (Kind::Cynefin, |h| {
+        h.strip_prefix("cynefin-beta").is_some_and(|rest| {
+            rest.chars()
+                .next()
+                .is_none_or(|c| c == ':' || chars::is_space(c))
+        })
+    }),
+    (Kind::Usecase, |h| {
+        h.strip_prefix("usecase-beta")
+            .is_some_and(|rest| rest.chars().next().is_none_or(chars::is_space))
+    }),
 ];
 
 /// The diagram `cleaned` names: source after preprocessing.
 pub fn detect(cleaned: &str) -> Option<Kind> {
+    let head = string::trim_start(cleaned);
     DETECTORS
         .iter()
-        .find(|(_, re)| re.test(cleaned))
+        .find(|(_, test)| test(head))
         .map(|(kind, _)| *kind)
 }

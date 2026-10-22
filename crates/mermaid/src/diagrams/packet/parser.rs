@@ -3,7 +3,7 @@
 use crate::{
     detect::Kind,
     diagrams::common::tokens::{
-        Header, Reader, TokenType, acc_descr, acc_title, directive, keyword, newline,
+        Header, Reader, TokenType, acc_descr, acc_title, directive, int, keyword, newline,
         single_line_comment, string, string_value, title, token_kinds, whitespace, yaml,
     },
     error::Error,
@@ -21,7 +21,7 @@ token_kinds! {
         AccDescr = acc_descr(),
         AccTitle = acc_title(),
         Title = title(),
-        Int = TokenType::regex("INT", r"0|[1-9][0-9]*(?!\.)", None),
+        Int = int(),
         String = string(),
         Newline = newline(),
         Whitespace = whitespace(),

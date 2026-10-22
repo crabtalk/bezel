@@ -1,7 +1,7 @@
 //! Pele's `diagrams/wardley/model.ts`.
 
-use crate::diagrams::common::db::Titles;
-use js::{number::Number, string};
+use crate::{diagrams::common::db::Titles, string};
+use js::number::Number;
 use serde::Serialize;
 
 use super::{

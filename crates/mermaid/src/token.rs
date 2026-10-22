@@ -1,11 +1,13 @@
 //! Tokens, and the cursor a parser reads them with.
 
-use js::string;
+use crate::util::chars;
+use regex::Regex;
 use std::borrow::Cow;
 
 use crate::{
     detect::Kind,
     error::Error,
+    string,
     util::chars::{char_at, code_at, starts_with_caseless, width_at},
 };
 
@@ -177,14 +179,14 @@ impl<'s, K, S: Copy> Cursor<'s, K, S> {
     /// Whether `word`, written in lower case, is at `at` in any case, with no
     /// word character after it.
     pub fn keyword_caseless(&self, word: &str, at: usize) -> bool {
-        self.starts_with_caseless(word, at) && !string::is_word(self.code(at + word.len()))
+        self.starts_with_caseless(word, at) && !chars::is_word(self.code(at + word.len()))
     }
 
     /// The end of `word`, in any case, at the cursor, then one whitespace
     /// character and a nonempty run of characters other than `stops`.
     pub fn keyword_line(&self, word: &str, stops: &[char]) -> Option<usize> {
         let after = self.p + word.len();
-        if !self.starts_with_caseless(word, self.p) || !string::is_space(self.code(after)) {
+        if !self.starts_with_caseless(word, self.p) || !chars::is_space(self.code(after)) {
             return None;
         }
         let from = after + width_at(self.src, after);
@@ -194,12 +196,12 @@ impl<'s, K, S: Copy> Cursor<'s, K, S> {
 
     /// Whether `word` is at the cursor with no word character after it.
     pub fn keyword(&self, word: &str) -> bool {
-        self.starts_with(word, self.p) && !string::is_word(self.code(self.p + word.len()))
+        self.starts_with(word, self.p) && !chars::is_word(self.code(self.p + word.len()))
     }
 
     /// The end of the run of whitespace at `from`.
     pub fn space_end(&self, mut from: usize) -> usize {
-        while from < self.src.len() && string::is_space(self.code(from)) {
+        while from < self.src.len() && chars::is_space(self.code(from)) {
             from += width_at(self.src, from);
         }
         from
@@ -208,7 +210,7 @@ impl<'s, K, S: Copy> Cursor<'s, K, S> {
     /// The end of the run of word characters at `from`.
     pub fn word_end(&self, from: usize) -> usize {
         from + self.src.get(from..).map_or(0, |rest| {
-            rest.bytes().take_while(|&b| string::is_word(b)).count()
+            rest.bytes().take_while(|&b| chars::is_word(b)).count()
         })
     }
 
@@ -244,7 +246,61 @@ impl<'s, K, S: Copy> Cursor<'s, K, S> {
     /// The next line terminator, what `.` does not match, at or after `from`,
     /// or the end of the source.
     pub fn terminator_end(&self, from: usize) -> usize {
-        self.until(from, string::is_line_end)
+        self.until(from, chars::is_line_end)
+    }
+}
+
+/// A `regex` pattern matched only where it is asked to start, as a lexer
+/// rule is.
+pub struct Rule(Regex);
+
+impl Rule {
+    pub fn new(pattern: &str) -> Self {
+        Self(Regex::new(&format!("^(?:{pattern})")).expect("rule pattern"))
+    }
+
+    /// The end of the match at byte `at` of `src`. What precedes `at` is not
+    /// seen, so the pattern does not open with `\b`.
+    pub fn end(&self, src: &str, at: usize) -> Option<usize> {
+        self.0.find(&src[at..]).map(|m| at + m.end())
+    }
+}
+
+/// An accessibility statement a Jison lexer rule opens.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Acc {
+    Title,
+    Descr,
+    DescrBlock,
+}
+
+impl Acc {
+    /// Jison's `accTitle\s*:\s*`, `accDescr\s*:\s*` and `accDescr\s*\{\s*`
+    /// rules at byte `at` of `src`, tried in that order, their words in either
+    /// case when `caseless`: which one matches, and its end.
+    pub fn at(src: &str, at: usize, caseless: bool) -> Option<(Self, usize)> {
+        let word = |word: &str| {
+            src.as_bytes().get(at..at + word.len()).is_some_and(|here| {
+                if caseless {
+                    here.eq_ignore_ascii_case(word.as_bytes())
+                } else {
+                    here == word.as_bytes()
+                }
+            })
+        };
+        let title = word("accTitle");
+        if !title && !word("accDescr") {
+            return None;
+        }
+        let q = string::space_end(src, at + 8);
+        match src.as_bytes().get(q) {
+            Some(b':') => {
+                let kind = if title { Self::Title } else { Self::Descr };
+                Some((kind, string::space_end(src, q + 1)))
+            }
+            Some(b'{') if !title => Some((Self::DescrBlock, string::space_end(src, q + 1))),
+            _ => None,
+        }
     }
 }
 

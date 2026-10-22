@@ -1,9 +1,10 @@
 //! What the agentflow parser builds. Pele's `diagrams/agentflow/db.ts`.
 
-use crate::json::JsValue;
+use crate::{json::JsValue, string, util::chars};
 use indexmap::{IndexMap, IndexSet};
-use js::{regex::Lazy, string};
+use regex::Regex;
 use serde::{Serialize, Serializer, ser::SerializeMap};
+use std::sync::LazyLock;
 
 use super::{
     Agentflow,
@@ -46,8 +47,11 @@ const TOOL_SHAPES: [&str; 5] = [
     "tool",
 ];
 
-static RE_BLOCK_SCALAR: Lazy = Lazy::new(r":\s*[>|][\d+-]*\s*$", "");
-static RE_TRAILING_COMMA: Lazy = Lazy::new(r",([\t ]*)$", "");
+static RE_BLOCK_SCALAR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(r":[{s}]*[>|][0-9+-]*[{s}]*$", s = chars::SPACE)).expect("pattern")
+});
+static RE_TRAILING_COMMA: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r",([\t ]*)$").expect("pattern"));
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -217,12 +221,12 @@ fn strip_line_trailing_commas(body: &str) -> String {
             Some(at) => line.split_at(at),
             None => (line, ""),
         };
-        if RE_BLOCK_SCALAR.test(code) {
+        if RE_BLOCK_SCALAR.is_match(code) {
             block_scalar_indent = Some(indent);
             out.push(line.to_string());
             continue;
         }
-        out.push(RE_TRAILING_COMMA.replace(code, |caps| caps.str(1).to_string()) + comment);
+        out.push(RE_TRAILING_COMMA.replace(code, "$1").into_owned() + comment);
     }
     out.join("\n")
 }

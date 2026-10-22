@@ -19,8 +19,11 @@ use super::{
         RelationshipType, Span, StatementKind, UseCaseShape, UsecaseModel,
     },
 };
-use crate::{error::Error, util::chars::is_blank};
-use js::string;
+use crate::{
+    error::Error,
+    string,
+    util::{chars, chars::is_blank},
+};
 
 const FORBIDDEN: [&str; 5] = [
     "allowmixing",
@@ -895,7 +898,7 @@ impl Parser<'_> {
                 from += 1;
             }
             let mut to = from;
-            while self.src.matches(to, string::is_word) {
+            while self.src.matches(to, chars::is_word) {
                 to += 1;
             }
             let json = DraftJson {

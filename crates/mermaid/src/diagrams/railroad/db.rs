@@ -1,8 +1,11 @@
 //! Pele's `diagrams/railroad/db.ts`.
 
-use crate::diagrams::common::{db::Titles, tokens::Header};
+use crate::{
+    diagrams::common::{db::Titles, tokens::Header},
+    string,
+    util::chars::starts_with_caseless,
+};
 use indexmap::IndexMap;
-use js::regex::Lazy;
 use serde::{Serialize, Serializer, ser::SerializeMap};
 
 use super::{
@@ -13,8 +16,6 @@ use super::{
     types::{Nodes, Notation, RailroadRule, Rule},
 };
 use crate::{detect::Kind, error::Error};
-
-static RE_KEYWORD: Lazy = Lazy::new(r"^\s*railroad-(ebnf-|abnf-|peg-)?beta", "i");
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RailroadDb {
@@ -101,13 +102,25 @@ impl Notation {
     /// Mermaid has a detector per keyword, each matching without regard to
     /// case.
     pub fn detect(source: &str) -> Option<Self> {
-        let m = RE_KEYWORD.exec(source)?;
-        Some(match m.get(1).map(str::to_lowercase).as_deref() {
-            Some("ebnf-") => Self::Ebnf,
-            Some("abnf-") => Self::Abnf,
-            Some("peg-") => Self::Peg,
-            _ => Self::Railroad,
+        let head = string::trim_start(source);
+        if !starts_with_caseless(head, 0, "railroad-") {
+            return None;
+        }
+        let rest = &head[9..];
+        if starts_with_caseless(rest, 0, "beta") {
+            return Some(Self::Railroad);
+        }
+        [
+            ("ebnf-", Self::Ebnf),
+            ("abnf-", Self::Abnf),
+            ("peg-", Self::Peg),
+        ]
+        .into_iter()
+        .find(|(prefix, _)| {
+            starts_with_caseless(rest, 0, prefix)
+                && starts_with_caseless(rest, prefix.len(), "beta")
         })
+        .map(|(_, notation)| notation)
     }
 
     /// Parses `source` as written in this notation, its rules' nodes added to

@@ -1,6 +1,6 @@
 //! Pele's `diagrams/xychart/lexer.ts`.
 
-use js::string;
+use crate::util::chars;
 use std::sync::LazyLock;
 
 use super::tokens::T;
@@ -173,7 +173,7 @@ impl Lexer<'_> {
             self.cur.push(S::String);
             return true;
         }
-        if string::is_space(c) {
+        if chars::is_space(c) {
             self.cur.p = self.cur.space_end(p);
             return true;
         }

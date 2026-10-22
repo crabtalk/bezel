@@ -1,8 +1,8 @@
 //! Pele's `diagrams/block/db.ts`.
 
-use crate::diagrams::common::style_class::StyleClass;
+use crate::{diagrams::common::style_class::StyleClass, string};
 use indexmap::{IndexMap, IndexSet};
-use js::{number::Number, string};
+use js::number::Number;
 
 use super::types::{Block, BlockKind, BlockModel, Columns, Statement};
 use crate::{Error, Kind};

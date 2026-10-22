@@ -3,15 +3,15 @@
 use super::tokens::T;
 use crate::{
     diagrams::common::directions::Directions,
-    token::{Cursor, Token},
+    token::{Acc, Cursor, Token},
+    util::chars,
 };
-use js::{regex::Lazy, string};
 
-static RE_DIRECTION: [(T, Lazy); 4] = [
-    (T::DirectionTb, Lazy::new(r".*direction\s+TB[^\n]*", "y")),
-    (T::DirectionBt, Lazy::new(r".*direction\s+BT[^\n]*", "y")),
-    (T::DirectionRl, Lazy::new(r".*direction\s+RL[^\n]*", "y")),
-    (T::DirectionLr, Lazy::new(r".*direction\s+LR[^\n]*", "y")),
+static RE_DIRECTION: [(T, &str); 4] = [
+    (T::DirectionTb, "TB"),
+    (T::DirectionBt, "BT"),
+    (T::DirectionRl, "RL"),
+    (T::DirectionLr, "LR"),
 ];
 
 const HEADERS: [(&str, T); 5] = [
@@ -102,7 +102,7 @@ impl<'s> Lexer<'s> {
     fn statement(&mut self, word: &str, kind: T) -> bool {
         let p = self.cur.p;
         let q = p + word.len();
-        if !self.cur.starts_with(word, p) || !self.cur.char_at(q).is_some_and(string::is_space) {
+        if !self.cur.starts_with(word, p) || !self.cur.char_at(q).is_some_and(chars::is_space) {
             return false;
         }
         let from = self.cur.after(q);
@@ -139,24 +139,23 @@ impl<'s> Lexer<'s> {
             if self.statement("accDescription", T::AccDescription) {
                 return true;
             }
-            let title = self.cur.starts_with("accTitle", p);
-            if title || self.cur.starts_with("accDescr", p) {
-                let q = self.cur.space_end(p + 8);
-                match self.cur.char_at(q) {
-                    Some(':') => {
-                        let end = self.cur.space_end(q + 1);
-                        self.cur
-                            .emit_to(if title { T::AccTitle } else { T::AccDescr }, end);
-                        self.cur.state = if title { S::AccTitle } else { S::AccDescr };
-                        return true;
-                    }
-                    Some('{') if !title => {
-                        self.cur.p = self.cur.space_end(q + 1);
-                        self.cur.state = S::AccDescrMultiline;
-                        return true;
-                    }
-                    _ => {}
+            match Acc::at(self.cur.src, p, false) {
+                Some((Acc::Title, end)) => {
+                    self.cur.emit_to(T::AccTitle, end);
+                    self.cur.state = S::AccTitle;
+                    return true;
                 }
+                Some((Acc::Descr, end)) => {
+                    self.cur.emit_to(T::AccDescr, end);
+                    self.cur.state = S::AccDescr;
+                    return true;
+                }
+                Some((Acc::DescrBlock, end)) => {
+                    self.cur.p = end;
+                    self.cur.state = S::AccDescrMultiline;
+                    return true;
+                }
+                None => {}
             }
         }
         if self.cur.starts_with("%%", p) {
@@ -169,7 +168,7 @@ impl<'s> Lexer<'s> {
             self.cur.p = q;
             return true;
         }
-        if string::is_space(c) {
+        if chars::is_space(c) {
             let q = self.cur.space_end(p);
             match src[p..q].rfind('\n') {
                 Some(last) => self.cur.emit_to(T::Newline, p + last + 1),
@@ -188,7 +187,7 @@ impl<'s> Lexer<'s> {
             }
             _ => {}
         }
-        if string::is_word(c) {
+        if chars::is_word(c) {
             let q = self.cur.word_end(p);
             let word = &src[p..q];
             let find = |table: &[(&str, T)]| {

@@ -3,10 +3,12 @@
 
 use crate::{
     geom::Point,
+    string,
     svg::builder::{Esc, fragment, num, span_style, text_style},
     text::{Host, Label, Span},
+    util::chars,
 };
-use js::{math, string};
+use js::math;
 use std::fmt;
 
 impl Label {
@@ -43,9 +45,9 @@ impl Label {
                 }
                 let mut take = lo;
                 let wraps = from + take < chars.len();
-                if wraps && !string::is_space(chars[from + take]) {
+                if wraps && !chars::is_space(chars[from + take]) {
                     for i in (1..take).rev() {
-                        if string::is_space(chars[from + i]) {
+                        if chars::is_space(chars[from + i]) {
                             take = i + 1;
                             break;
                         }
@@ -63,7 +65,7 @@ impl Label {
                     line
                 });
                 from += take;
-                while wraps && from < chars.len() && string::is_space(chars[from]) {
+                while wraps && from < chars.len() && chars::is_space(chars[from]) {
                     from += 1;
                 }
             }

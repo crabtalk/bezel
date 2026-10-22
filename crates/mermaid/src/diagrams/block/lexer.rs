@@ -2,10 +2,9 @@
 
 use super::tokens::T;
 use crate::{
-    token::{Cursor, Token},
-    util::chars::digits_end,
+    token::{Acc, Cursor, Token},
+    util::{chars, chars::digits_end},
 };
-use js::string;
 
 /// Jison's start conditions.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -32,7 +31,7 @@ const DIRECTIONS: [&str; 6] = ["right", "left", "x", "y", "up", "down"];
 
 /// Whether `c` ends a node id: ( ) [ { } < > - : = and whitespace.
 fn ends_id(c: char) -> bool {
-    matches!(c, '(' | ')' | '[' | '{' | '}' | '<' | '>' | '-' | ':' | '=') || string::is_space(c)
+    matches!(c, '(' | ')' | '[' | '{' | '}' | '<' | '>' | '-' | ':' | '=') || chars::is_space(c)
 }
 
 struct Lexer<'s> {
@@ -153,13 +152,13 @@ impl<'s> Lexer<'s> {
 
     /// Whether the character at `at` is not a word character.
     fn boundary(&self, at: usize) -> bool {
-        !self.cur.char_at(at).is_some_and(string::is_word)
+        !self.cur.char_at(at).is_some_and(chars::is_word)
     }
 
     fn initial(&mut self, c: char) -> bool {
         let src = self.cur.src;
         let p = self.cur.p;
-        if string::is_space(c) {
+        if chars::is_space(c) {
             self.cur.p = self.cur.space_end(p);
             return true;
         }
@@ -234,31 +233,22 @@ impl<'s> Lexer<'s> {
                     return self.emit(T::Interpolate, p + 11);
                 }
             }
-            'a' => {
-                if self.cur.starts_with("accTitle", p) {
-                    let q = self.cur.space_end(p + 8);
-                    if self.cur.char_at(q) == Some(':') {
-                        self.cur.push(S::AccTitle);
-                        let end = self.cur.space_end(q + 1);
-                        return self.emit(T::AccTitle, end);
-                    }
-                } else if self.cur.starts_with("accDescr", p) {
-                    let q = self.cur.space_end(p + 8);
-                    match self.cur.char_at(q) {
-                        Some(':') => {
-                            self.cur.push(S::AccDescr);
-                            let end = self.cur.space_end(q + 1);
-                            return self.emit(T::AccDescr, end);
-                        }
-                        Some('{') => {
-                            self.cur.push(S::AccDescrMultiline);
-                            self.cur.p = self.cur.space_end(q + 1);
-                            return true;
-                        }
-                        _ => {}
-                    }
+            'a' => match Acc::at(self.cur.src, p, false) {
+                Some((Acc::Title, end)) => {
+                    self.cur.push(S::AccTitle);
+                    return self.emit(T::AccTitle, end);
                 }
-            }
+                Some((Acc::Descr, end)) => {
+                    self.cur.push(S::AccDescr);
+                    return self.emit(T::AccDescr, end);
+                }
+                Some((Acc::DescrBlock, end)) => {
+                    self.cur.push(S::AccDescrMultiline);
+                    self.cur.p = end;
+                    return true;
+                }
+                None => {}
+            },
             'e' => {
                 if self.cur.keyword("end") {
                     let end = self.cur.space_end(p + 3);

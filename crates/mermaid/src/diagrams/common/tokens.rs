@@ -2,13 +2,14 @@
 //! Token types are tried in order and the first match wins, as in
 //! Chevrotain. Pele's `diagrams/common/tokens.ts`.
 
-use crate::util::chars::{self, char_at, digits_end};
-use js::{
-    regex::{Lazy, Regex},
+use crate::{
     string,
+    util::chars::{self, char_at, digits_end},
 };
+use regex::Regex;
+use std::sync::LazyLock;
 
-use crate::{detect::Kind, diagrams::common::db::Titles, error::Error};
+use crate::{detect::Kind, diagrams::common::db::Titles, error::Error, token::Rule};
 
 /// The end of a match at a position, or `None`.
 pub type Scanner = Box<dyn FnMut(&str, usize) -> Option<usize>>;
@@ -59,7 +60,14 @@ pub(crate) use token_kinds;
 
 enum Pattern {
     Literal(&'static str),
-    Regex(Regex),
+    /// A word Mermaid ends only at whitespace, a comment, or the end of
+    /// input.
+    Keyword(&'static str),
+    Regex(Rule),
+    /// Matches with no memory between calls.
+    Matcher(fn(&str, usize) -> Option<usize>),
+    /// A matcher made once per text, for a token that could rescan it.
+    Scanner(fn() -> Scanner),
 }
 
 /// Which of Mermaid's title and accessibility statements a token is.
@@ -77,16 +85,12 @@ pub struct TokenType<K> {
     /// Start of a construct that needs a closer. When this matches but the
     /// whole pattern does not, no closer exists in the rest of the text, so
     /// the pattern is not tried again.
-    opener: Option<Regex>,
+    opener: Option<Rule>,
     /// Every ASCII character a match can start with, when that is known.
     first: Option<&'static str>,
     /// Chevrotain's `LONGER_ALT`: tried at the same place when this matches,
     /// the first one matching more text becoming the token.
     longer: Vec<K>,
-    /// A matcher made once per text, for a pattern that could rescan it.
-    scanner: Option<fn() -> Scanner>,
-    /// Matches in place of the pattern, needing no memory between calls.
-    matcher: Option<fn(&str, usize) -> Option<usize>>,
     heading: Option<Heading>,
 }
 
@@ -99,8 +103,6 @@ impl<K> TokenType<K> {
             opener: None,
             first,
             longer: Vec::new(),
-            scanner: None,
-            matcher: None,
             heading: None,
         }
     }
@@ -110,9 +112,23 @@ impl<K> TokenType<K> {
         Self::new(text, Pattern::Literal(text), None)
     }
 
-    /// A sticky regular expression.
+    /// A `regex` pattern, matched where it starts.
     pub fn regex(name: &'static str, pattern: &str, first: Option<&'static str>) -> Self {
-        Self::new(name, Pattern::Regex(Regex::new(pattern, "y")), first)
+        Self::new(name, Pattern::Regex(Rule::new(pattern)), first)
+    }
+
+    /// Matched by `matcher`, which answers the end of a match at a position.
+    pub fn matcher(
+        name: &'static str,
+        matcher: fn(&str, usize) -> Option<usize>,
+        first: Option<&'static str>,
+    ) -> Self {
+        Self::new(name, Pattern::Matcher(matcher), first)
+    }
+
+    /// Matched by a scanner `make` makes once per text.
+    pub fn scanner(name: &'static str, make: fn() -> Scanner, first: Option<&'static str>) -> Self {
+        Self::new(name, Pattern::Scanner(make), first)
     }
 
     pub fn hidden(mut self) -> Self {
@@ -138,22 +154,13 @@ impl<K> TokenType<K> {
         self
     }
 
+    /// A `regex` pattern the token's start matches.
     pub fn opener(mut self, pattern: &str) -> Self {
-        self.opener = Some(Regex::new(pattern, "y"));
+        self.opener = Some(Rule::new(pattern));
         self
     }
 
-    pub fn scanner(mut self, scanner: fn() -> Scanner) -> Self {
-        self.scanner = Some(scanner);
-        self
-    }
-
-    pub fn matcher(mut self, matcher: fn(&str, usize) -> Option<usize>) -> Self {
-        self.matcher = Some(matcher);
-        self
-    }
-
-    fn heading(mut self, heading: Heading) -> Self {
+    pub fn heading(mut self, heading: Heading) -> Self {
         self.heading = Some(heading);
         self
     }
@@ -179,8 +186,10 @@ impl<K: Kinds> Table<K> {
                     .iter()
                     .copied()
                     .filter(|&k| match &types[k].pattern {
-                        Pattern::Literal(text) => text.starts_with(ch),
-                        Pattern::Regex(_) => types[k].first.is_none_or(|first| first.contains(ch)),
+                        Pattern::Literal(text) | Pattern::Keyword(text) => text.starts_with(ch),
+                        Pattern::Regex(_) | Pattern::Matcher(_) | Pattern::Scanner(_) => {
+                            types[k].first.is_none_or(|first| first.contains(ch))
+                        }
                     })
                     .collect()
             })
@@ -213,26 +222,20 @@ impl<K: Kinds> Table<K> {
                 return None;
             }
             let ty = &types[k];
-            if let Some(matcher) = ty.matcher {
-                return matcher(src, p);
-            }
-            if let Some(make) = ty.scanner {
-                let scanner = scanners[k].get_or_insert_with(make);
-                return scanner(src, p);
-            }
-            match &ty.pattern {
+            let end = match &ty.pattern {
                 Pattern::Literal(text) => src[p..].starts_with(text).then(|| p + text.len()),
-                Pattern::Regex(re) => {
-                    let end = re.match_end(src, p);
-                    if end.is_none()
-                        && let Some(opener) = &ty.opener
-                        && opener.match_end(src, p).is_some()
-                    {
-                        dead[k] = true;
-                    }
-                    end
-                }
+                Pattern::Keyword(word) => keyword_end(src, p, word),
+                Pattern::Regex(rule) => rule.end(src, p),
+                Pattern::Matcher(matcher) => matcher(src, p),
+                Pattern::Scanner(make) => scanners[k].get_or_insert_with(make)(src, p),
+            };
+            if end.is_none()
+                && let Some(opener) = &ty.opener
+                && opener.end(src, p).is_some()
+            {
+                dead[k] = true;
             }
+            end
         };
 
         let mut p = 0;
@@ -276,35 +279,103 @@ impl<K: Kinds> Table<K> {
     }
 }
 
+/// The end of the run of tabs and spaces at byte `at` of `src`.
+fn blanks_end(src: &str, at: usize) -> usize {
+    at + src.as_bytes()[at..]
+        .iter()
+        .take_while(|&&b| chars::is_blank(b))
+        .count()
+}
+
+/// The end of a statement's value from byte `from`: the start of a `%%`
+/// comment on the line, or else the end of the line. Mermaid's
+/// `[^\n\r]*?(?=%%)|[^\n\r]*`.
+fn value_end(src: &str, from: usize) -> usize {
+    let rest = &src.as_bytes()[from..];
+    let line = memchr::memchr2(b'\n', b'\r', rest).unwrap_or(rest.len());
+    from + memchr::memmem::find(&rest[..line], b"%%").unwrap_or(line)
+}
+
+/// After a closing fence at byte `at`: a line break taken with it, or else
+/// whitespace or the end of the text. Mermaid's `(?:\r?\n|(?!\S))`.
+fn fence_end(src: &str, at: usize) -> Option<usize> {
+    let rest = &src[at..];
+    if rest.starts_with("\r\n") {
+        Some(at + 2)
+    } else if rest.starts_with('\n') {
+        Some(at + 1)
+    } else {
+        rest.chars()
+            .next()
+            .is_none_or(chars::is_space)
+            .then_some(at)
+    }
+}
+
+/// The end of `accDescr`'s head at `p`: after the value of the `:` form,
+/// with `false`, or after the `{` of the braced form, with `true`. Mermaid's
+/// `[\t ]*accDescr(?:[\t ]*:(?:[^\n\r]*?(?=%%)|[^\n\r]*)|\s*(\{))`.
+pub fn acc_descr_head(src: &str, p: usize) -> Option<(usize, bool)> {
+    let at = blanks_end(src, p);
+    let at = at
+        + src[at..]
+            .starts_with("accDescr")
+            .then_some("accDescr".len())?;
+    let colon = blanks_end(src, at);
+    if src[colon..].starts_with(':') {
+        return Some((value_end(src, colon + 1), false));
+    }
+    let brace = string::space_end(src, at);
+    src[brace..].starts_with('{').then_some((brace + 1, true))
+}
+
 pub fn acc_descr<K>() -> TokenType<K> {
-    TokenType::regex(
+    TokenType::matcher(
         "ACC_DESCR",
-        r"[\t ]*accDescr(?:[\t ]*:([^\n\r]*?(?=%%)|[^\n\r]*)|\s*\{([^}]*)\})",
+        |src, p| match acc_descr_head(src, p)? {
+            (end, false) => Some(end),
+            (end, true) => src[end..].find('}').map(|close| end + close + 1),
+        },
         Some("\t a"),
     )
     .heading(Heading::AccDescr)
 }
 
 pub fn acc_title<K>() -> TokenType<K> {
-    TokenType::regex(
+    TokenType::matcher(
         "ACC_TITLE",
-        r"[\t ]*accTitle[\t ]*:(?:[^\n\r]*?(?=%%)|[^\n\r]*)",
+        |src, p| {
+            let at = blanks_end(src, p);
+            let at = blanks_end(src, at + src[at..].starts_with("accTitle").then_some(8)?);
+            src[at..].starts_with(':').then(|| value_end(src, at + 1))
+        },
         Some("\t a"),
     )
     .heading(Heading::AccTitle)
 }
 
 pub fn title<K>() -> TokenType<K> {
-    TokenType::regex(
+    TokenType::matcher(
         "TITLE",
-        r"[\t ]*title(?:[\t ][^\n\r]*?(?=%%)|[\t ][^\n\r]*|)",
+        |src, p| {
+            let at = blanks_end(src, p);
+            let at = at + src[at..].starts_with("title").then_some(5)?;
+            Some(match src.as_bytes().get(at) {
+                Some(&b) if chars::is_blank(b) => value_end(src, at + 1),
+                _ => at,
+            })
+        },
         Some("\t t"),
     )
     .heading(Heading::Title)
 }
 
 pub fn string<K>() -> TokenType<K> {
-    TokenType::regex("STRING", r#""([^"\\]|\\.)*"|'([^'\\]|\\.)*'"#, Some("\"'"))
+    TokenType::regex(
+        "STRING",
+        r#""(?:[^"\\]|\\[^\n\r\u{2028}\u{2029}])*"|'(?:[^'\\]|\\[^\n\r\u{2028}\u{2029}])*'"#,
+        Some("\"'"),
+    )
 }
 
 pub fn newline<K>() -> TokenType<K> {
@@ -315,20 +386,47 @@ pub fn whitespace<K>() -> TokenType<K> {
     TokenType::regex("WHITESPACE", r"[\t ]+", Some("\t ")).hidden()
 }
 
+/// The end of a block at `p` fenced by lines starting `open` and `close`:
+/// Mermaid's `open[\t ]*\r?\n(?:[\S\s]*?\r?\n)?close(?:\r?\n|(?!\S))`
+/// with `open` and `close` written out.
+pub fn block_end(src: &str, p: usize, open: &str, close: &str) -> Option<usize> {
+    if !src[p..].starts_with(open) {
+        return None;
+    }
+    let at = blanks_end(src, p + open.len());
+    let body = at
+        + [("\r\n", 2), ("\n", 1)]
+            .iter()
+            .find(|(brk, _)| src[at..].starts_with(brk))?
+            .1;
+    let closed = |at: usize| {
+        src[at..]
+            .starts_with(close)
+            .then(|| fence_end(src, at + close.len()))
+            .flatten()
+    };
+    memchr::memchr_iter(b'\n', &src.as_bytes()[body..])
+        .find_map(|line| closed(body + line + 1))
+        .or_else(|| closed(body))
+}
+
 pub fn yaml<K>() -> TokenType<K> {
-    TokenType::regex(
-        "YAML",
-        r"---[\t ]*\r?\n(?:[\S\s]*?\r?\n)?---(?:\r?\n|(?!\S))",
-        Some("-"),
-    )
-    .hidden()
-    .opener(r"---[\t ]*\r?\n")
+    TokenType::matcher("YAML", |src, p| block_end(src, p, "---", "---"), Some("-"))
+        .hidden()
+        .opener(r"---[\t ]*\r?\n")
 }
 
 pub fn directive<K>() -> TokenType<K> {
-    TokenType::regex(
+    TokenType::matcher(
         "DIRECTIVE",
-        r"[\t ]*%%\{[\S\s]*?\}%%(?:\r?\n|(?!\S))",
+        |src, p| {
+            let at = blanks_end(src, p);
+            if !src[at..].starts_with("%%{") {
+                return None;
+            }
+            memchr::memmem::find_iter(&src.as_bytes()[at + 3..], b"}%%")
+                .find_map(|close| fence_end(src, at + 3 + close + 3))
+        },
         Some("\t %"),
     )
     .hidden()
@@ -342,15 +440,36 @@ pub fn single_line_comment<K>() -> TokenType<K> {
 /// A keyword, which Mermaid ends only at whitespace, a comment, or the end of
 /// input.
 pub fn keyword<K>(word: &'static str) -> TokenType<K> {
-    let mut escaped = String::new();
-    for c in word.chars() {
-        if ".*+?^${}()|[]\\".contains(c) {
-            escaped.push('\\');
-        }
-        escaped.push(c);
-    }
     let first = &word[..word.chars().next().map_or(0, char::len_utf8)];
-    TokenType::regex(word, &format!(r"{escaped}(?:(?=%%)|(?!\S))"), Some(first))
+    TokenType::new(word, Pattern::Keyword(word), Some(first))
+}
+
+/// The end of `word` at `p` when whitespace, `%%` or the end follows it.
+fn keyword_end(src: &str, p: usize, word: &str) -> Option<usize> {
+    let end = p + src[p..].starts_with(word).then_some(word.len())?;
+    let rest = &src[end..];
+    (rest.starts_with("%%") || rest.chars().next().is_none_or(chars::is_space)).then_some(end)
+}
+
+/// Mermaid's `INT`, `0|[1-9][0-9]*(?!\.)`: a run of digits not followed by
+/// a point, short of its last digit when one is.
+pub fn int<K>() -> TokenType<K> {
+    TokenType::matcher(
+        "INT",
+        |src, p| match src.as_bytes().get(p)? {
+            b'0' => Some(p + 1),
+            b'1'..=b'9' => {
+                let end = digits_end(src, p);
+                if char_at(src, end) != Some('.') {
+                    Some(end)
+                } else {
+                    (end - p >= 2).then_some(end - 1)
+                }
+            }
+            _ => None,
+        },
+        Some("0123456789"),
+    )
 }
 
 /// Matches as `-?(?:[0-9]+\.[0-9]+(?!\.)|(?:0|[1-9][0-9]*)(?!\.))` does,
@@ -395,37 +514,98 @@ pub fn decimal(signed: bool, lone_zero: bool) -> Scanner {
     })
 }
 
-static RE_ACC_DESCR: Lazy = Lazy::new(r"accDescr(?:[\t ]*:([^\n\r]*)|\s*\{([^}]*)\})", "");
-static RE_ACC_TITLE: Lazy = Lazy::new(r"accTitle[\t ]*:([^\n\r]*)", "");
-static RE_TITLE: Lazy = Lazy::new(r"title([\t ][^\n\r]*|)", "");
-static RE_SPACES: Lazy = Lazy::new(r"[\t ]{2,}", "gm");
-static RE_LEAD: Lazy = Lazy::new(r"^\s*", "gm");
-static RE_TRAIL: Lazy = Lazy::new(r"\s+$", "gm");
-static RE_BREAKS: Lazy = Lazy::new(r"[\n\r]{2,}", "gm");
+static RE_ACC_DESCR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"accDescr(?:[\t ]*:([^\n\r]*)|[{}]*\{{([^}}]*)\}})",
+        chars::SPACE
+    ))
+    .expect("pattern")
+});
+static RE_ACC_TITLE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"accTitle[\t ]*:([^\n\r]*)").expect("pattern"));
+static RE_TITLE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"title([\t ][^\n\r]*|)").expect("pattern"));
+static RE_SPACES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\t ]{2,}").expect("pattern"));
+static RE_BREAKS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\n\r]{2,}").expect("pattern"));
 
 fn single(text: &str) -> String {
-    RE_SPACES.replace(string::trim(text), |_| " ".into())
+    RE_SPACES.replace_all(string::trim(text), " ").into_owned()
+}
+
+/// Group 1 of `re`'s first match in `text`, or `""`.
+fn group<'t>(re: &Regex, text: &'t str) -> &'t str {
+    re.captures(text)
+        .and_then(|m| m.get(1))
+        .map_or("", |m| m.as_str())
 }
 
 pub fn title_value(text: &str) -> String {
-    single(RE_TITLE.exec(text).map_or("", |m| m.str(1)))
+    single(group(&RE_TITLE, text))
 }
 
 pub fn acc_title_value(text: &str) -> String {
-    single(RE_ACC_TITLE.exec(text).map_or("", |m| m.str(1)))
+    single(group(&RE_ACC_TITLE, text))
 }
 
 pub fn acc_descr_value(text: &str) -> String {
-    let Some(m) = RE_ACC_DESCR.exec(text) else {
+    let Some(m) = RE_ACC_DESCR.captures(text) else {
         return String::new();
     };
     if let Some(line) = m.get(1) {
-        return single(line);
+        return single(line.as_str());
     }
-    let body = RE_LEAD.replace(m.str(2), |_| String::new());
-    let body = RE_TRAIL.replace(&body, |_| String::new());
-    let body = RE_SPACES.replace(&body, |_| " ".into());
-    RE_BREAKS.replace(&body, |_| "\n".into())
+    let body = without_trailing_space(&without_leading_space(&m[2]));
+    let body = RE_SPACES.replace_all(&body, " ");
+    RE_BREAKS.replace_all(&body, "\n").into_owned()
+}
+
+/// `text.replace(/^\s*/gm, "")`: the whitespace after each line start goes,
+/// line breaks in it too.
+fn without_leading_space(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut line_start = true;
+    let mut rest = text.chars().peekable();
+    while let Some(&c) = rest.peek() {
+        if line_start {
+            while rest.next_if(|&c| chars::is_space(c)).is_some() {}
+            line_start = false;
+            continue;
+        }
+        rest.next();
+        out.push(c);
+        line_start = chars::is_line_end(c);
+    }
+    out
+}
+
+/// `text.replace(/\s+$/gm, "")`: a run of whitespace goes up to its last line
+/// break, or whole at the end of the text.
+fn without_trailing_space(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    while let Some(c) = text[at..].chars().next() {
+        if !chars::is_space(c) {
+            out.push(c);
+            at += c.len_utf8();
+            continue;
+        }
+        let run = string::space_end(text, at);
+        let cut = if run == text.len() {
+            Some(run)
+        } else {
+            text[at + c.len_utf8()..run]
+                .rfind(|c: char| chars::is_line_end(c))
+                .map(|end| at + c.len_utf8() + end)
+        };
+        match cut {
+            Some(cut) => at = cut,
+            None => {
+                out.push_str(&text[at..run]);
+                at = run;
+            }
+        }
+    }
+    out
 }
 
 /// A quoted string's text, its escapes read.

@@ -3,27 +3,29 @@
 //! scalars. Ported from Pele's `util/yaml.ts`.
 
 use super::config::{Map, Value};
-use crate::{json, json::JsValue};
-use js::{
-    number::{self, Number},
-    regex::Lazy,
-    string,
-};
+use crate::{json, json::JsValue, string, util::chars};
+use js::number::{self, Number};
+use regex::Regex;
+use std::sync::LazyLock;
 
 const MAX_DEPTH: usize = 64;
 
-static RE_INT: Lazy = Lazy::new(r"^[-+]?(?:0|[1-9][0-9]*)$", "");
-static RE_HEX: Lazy = Lazy::new(r"^[-+]?0x[0-9a-fA-F]+$", "");
-static RE_OCT: Lazy = Lazy::new(r"^[-+]?0o[0-7]+$", "");
-static RE_BIN: Lazy = Lazy::new(r"^[-+]?0b[01]+$", "");
-static RE_FLOAT: Lazy = Lazy::new(
-    r"^[-+]?(?:[0-9][0-9]*(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?$",
-    "",
-);
-static RE_INF: Lazy = Lazy::new(r"^[-+]?\.(?:inf|Inf|INF)$", "");
-static RE_NAN: Lazy = Lazy::new(r"^\.(?:nan|NaN|NAN)$", "");
-static RE_BLOCK_HEADER: Lazy = Lazy::new(r"^[|>][-+0-9]*\s*(?:#.*)?$", "");
-static RE_CONTINUED: Lazy = Lazy::new(r"\\\n[ \t]*", "g");
+static RE_INT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[-+]?(?:0|[1-9][0-9]*)$").expect("pattern"));
+static RE_HEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[-+]?0x[0-9a-fA-F]+$").expect("pattern"));
+static RE_OCT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[-+]?0o[0-7]+$").expect("pattern"));
+static RE_BIN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[-+]?0b[01]+$").expect("pattern"));
+static RE_FLOAT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[-+]?(?:[0-9][0-9]*(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][-+]?[0-9]+)?$")
+        .expect("pattern")
+});
+static RE_INF: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[-+]?\.(?:inf|Inf|INF)$").expect("pattern"));
+static RE_NAN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\.(?:nan|NaN|NAN)$").expect("pattern"));
+static RE_CONTINUED: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\\\n[ \t]*").expect("pattern"));
 
 /// Why the text is not YAML: js-yaml's message, which the error shows.
 #[derive(Debug)]
@@ -91,7 +93,7 @@ fn blanks_end(bytes: &[u8], from: usize) -> usize {
 
 /// Whether `c` ends a plain scalar after a `:`.
 fn ends_plain(c: char) -> bool {
-    string::is_space(c) || matches!(c, ',' | '[' | ']' | '{' | '}')
+    chars::is_space(c) || matches!(c, ',' | '[' | ']' | '{' | '}')
 }
 
 fn leading(line: &str) -> usize {
@@ -130,7 +132,7 @@ fn split_key(line: &str) -> Option<(&str, usize)> {
         }
     } else {
         let first_char = line.chars().next()?;
-        if string::is_space(first_char) || "#:,[]{}&*!|>'\"%@`".contains(first_char) {
+        if chars::is_space(first_char) || "#:,[]{}&*!|>'\"%@`".contains(first_char) {
             return None;
         }
         if first == b'-'
@@ -166,10 +168,10 @@ fn scalar(raw: &str) -> Value {
         "false" | "False" | "FALSE" => return Value::Bool(false),
         _ => {}
     }
-    if RE_INT.test(s) || RE_FLOAT.test(s) {
+    if RE_INT.is_match(s) || RE_FLOAT.is_match(s) {
         return json::number_value(Number::from(s).0);
     }
-    if RE_HEX.test(s) || RE_OCT.test(s) || RE_BIN.test(s) {
+    if RE_HEX.is_match(s) || RE_OCT.is_match(s) || RE_BIN.is_match(s) {
         let neg = s.starts_with('-');
         let v = Number::from(if neg || s.starts_with('+') {
             &s[1..]
@@ -179,14 +181,14 @@ fn scalar(raw: &str) -> Value {
         .0;
         return json::number_value(if neg { -v } else { v });
     }
-    if RE_INF.test(s) {
+    if RE_INF.is_match(s) {
         return json::number_value(if s.starts_with('-') {
             f64::NEG_INFINITY
         } else {
             f64::INFINITY
         });
     }
-    if RE_NAN.test(s) {
+    if RE_NAN.is_match(s) {
         return json::number_value(f64::NAN);
     }
     Value::String(s.to_string())
@@ -256,7 +258,7 @@ fn fold(text: &str) -> String {
 }
 
 fn unquote_double(body: &str) -> Result<String> {
-    let s = fold(&RE_CONTINUED.replace(body, |_| String::new()));
+    let s = fold(&RE_CONTINUED.replace_all(body, ""));
     let mut chars = s.chars();
     let mut out = String::new();
     while let Some(ch) = chars.next() {
@@ -299,7 +301,7 @@ fn skip(s: &str, mut pos: usize) -> usize {
         if is_blank(c) {
             pos += 1;
         } else if c == b'#'
-            && (pos == 0 || s[..pos].chars().next_back().is_some_and(string::is_space))
+            && (pos == 0 || s[..pos].chars().next_back().is_some_and(chars::is_space))
         {
             pos = s[pos..].find('\n').map_or(s.len(), |nl| pos + nl);
         } else {
@@ -420,7 +422,7 @@ fn flow(s: &str, pos: usize, stops: &str, depth: usize) -> Result<(Value, usize)
         {
             break;
         }
-        if c == b'#' && end > pos && s[..end].chars().next_back().is_some_and(string::is_space) {
+        if c == b'#' && end > pos && s[..end].chars().next_back().is_some_and(chars::is_space) {
             let nl = s[end..].find('\n').map_or(s.len(), |nl| end + nl);
             return Ok((scalar(&fold(string::trim(&s[pos..end]))), nl));
         }
@@ -562,7 +564,7 @@ impl Reader {
     /// past `parent`; with no `parent`, every line.
     fn inline_value(&mut self, rest: &str, parent: Option<usize>) -> Result<Value> {
         let first = rest.as_bytes().first().copied();
-        if matches!(first, Some(b'|' | b'>')) && RE_BLOCK_HEADER.test(rest) {
+        if matches!(first, Some(b'|' | b'>')) && is_block_header(rest) {
             return Ok(Value::String(self.block_scalar(rest, parent.unwrap_or(0))));
         }
         if matches!(first, Some(b'{' | b'[' | b'"' | b'\'')) {
@@ -740,4 +742,12 @@ pub fn parse_yaml(src: &str) -> std::result::Result<Value, YamlError> {
         ));
     }
     Ok(value)
+}
+
+/// Whether `rest`, from its `|` or `>`, is a block scalar's header line:
+/// `/^[|>][-+0-9]*\s*(?:#.*)?$/`.
+fn is_block_header(rest: &str) -> bool {
+    let tail = rest[1..].trim_start_matches(|c: char| c == '-' || c == '+' || c.is_ascii_digit());
+    let tail = string::trim_start(tail);
+    tail.is_empty() || (tail.starts_with('#') && !tail.contains(chars::is_line_end))
 }

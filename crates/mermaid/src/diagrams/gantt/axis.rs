@@ -5,14 +5,14 @@ use crate::diagrams::gantt::dates::Weekday;
 use js::{
     date::LocalZone,
     number,
-    regex::Lazy,
     time::{Interval, Unit},
 };
+use regex::Regex;
+use std::sync::LazyLock;
 
-static RE_INTERVAL: Lazy = Lazy::new(
-    r"^([1-9]\d*)(millisecond|second|minute|hour|day|week|month)$",
-    "",
-);
+static RE_INTERVAL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^([1-9][0-9]*)(millisecond|second|minute|hour|day|week|month)$").expect("pattern")
+});
 
 /// Ticks for a `tickInterval` such as `1week`, or `None` when it is not one
 /// or asks for more than `limit`.
@@ -24,9 +24,9 @@ pub(crate) fn interval_ticks(
     limit: f64,
     zone: &LocalZone,
 ) -> Option<Vec<f64>> {
-    let m = RE_INTERVAL.exec(interval)?;
-    let step = number::parse_int(m.str(1), 10);
-    let unit = match m.str(2) {
+    let m = RE_INTERVAL.captures(interval)?;
+    let step = number::parse_int(&m[1], 10);
+    let unit = match &m[2] {
         "second" => Unit::Second,
         "minute" => Unit::Minute,
         "hour" => Unit::Hour,

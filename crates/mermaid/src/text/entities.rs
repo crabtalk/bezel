@@ -1,11 +1,13 @@
 //! HTML entity codes and Mermaid's `#name;` placeholders, read as characters.
 
-use std::{collections::HashMap, fmt::Write as _, sync::OnceLock};
-
-use js::{
-    number::{self, Number},
-    regex::Lazy,
+use regex::{Captures, Regex};
+use std::{
+    collections::HashMap,
+    fmt::Write as _,
+    sync::{LazyLock, OnceLock},
 };
+
+use js::number::{self, Number};
 
 /// Every entity name Pele reads, with its code point.
 const NAMED: &str = concat!(
@@ -33,7 +35,9 @@ const NAMED: &str = concat!(
 const OPEN: &str = "ﬂ°";
 const CLOSE: &str = "¶ß";
 
-static RE_ENTITY: Lazy = Lazy::new(r"&(?:#(\d+)|#[xX]([0-9a-fA-F]+)|(\w+));", "g");
+static RE_ENTITY: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"&(?:#([0-9]+)|#[xX]([0-9a-fA-F]+)|([0-9A-Z_a-z]+));").expect("pattern")
+});
 static NAMES: OnceLock<HashMap<&'static str, char>> = OnceLock::new();
 
 fn lookup(name: &str) -> Option<char> {
@@ -127,17 +131,19 @@ fn decode_owned(text: &str) -> String {
     if !text.contains('&') {
         return text;
     }
-    RE_ENTITY.replace(&text, |caps| {
-        let whole = caps.str(0);
-        if let Some(dec) = caps.get(1) {
-            return code_point(Number::from(dec).0, whole);
-        }
-        if let Some(hex) = caps.get(2) {
-            return code_point(number::parse_int(hex, 16), whole);
-        }
-        match lookup(caps.str(3)) {
-            Some(c) => c.to_string(),
-            None => whole.to_string(),
-        }
-    })
+    RE_ENTITY
+        .replace_all(&text, |caps: &Captures| {
+            let whole = &caps[0];
+            if let Some(dec) = caps.get(1) {
+                return code_point(Number::from(dec.as_str()).0, whole);
+            }
+            if let Some(hex) = caps.get(2) {
+                return code_point(number::parse_int(hex.as_str(), 16), whole);
+            }
+            match lookup(&caps[3]) {
+                Some(c) => c.to_string(),
+                None => whole.to_string(),
+            }
+        })
+        .into_owned()
 }

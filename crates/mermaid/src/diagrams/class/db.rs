@@ -1,7 +1,7 @@
 //! Pele's `diagrams/class/db.ts`.
 
+use crate::string;
 use indexmap::{IndexMap, IndexSet};
-use js::string;
 
 use crate::geom::Direction;
 use serde::{

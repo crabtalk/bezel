@@ -7,7 +7,6 @@ use crate::{
 use js::{
     math,
     number::{self, Number},
-    regex::Lazy,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -33,9 +32,6 @@ use crate::{
     text::{Label, Style},
     util::url::{linked, sanitize_url},
 };
-
-static RE_HASH: Lazy = Lazy::new(r"\ufb02\u00b0\u00b0?", "g");
-static RE_SEMI: Lazy = Lazy::new(r"\u00b6\u00df", "g");
 
 const PAIR_SHIFT: f64 = 7.0;
 const NARROW_GAP: f64 = 36.0;
@@ -79,7 +75,9 @@ fn link(
     // Entity encoding has hidden any `#name;` in the address. Put it back, so
     // that the check sees what a browser would.
     let url = if url.contains("\u{b6}\u{df}") {
-        RE_SEMI.replace(&RE_HASH.replace(url, |_| "#".into()), |_| ";".into())
+        url.replace("\u{fb02}\u{b0}\u{b0}", "#")
+            .replace("\u{fb02}\u{b0}", "#")
+            .replace("\u{b6}\u{df}", ";")
     } else {
         url.to_string()
     };

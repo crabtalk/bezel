@@ -3,9 +3,9 @@
 use crate::{
     diagrams::common::{db::Titles, style_class::StyleClass},
     geom::Direction,
+    string,
 };
 use indexmap::{IndexMap, IndexSet};
-use js::string;
 use serde::{Serialize, Serializer};
 
 use super::types::{

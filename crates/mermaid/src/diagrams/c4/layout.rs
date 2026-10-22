@@ -1,6 +1,7 @@
 //! Pele's `diagrams/c4/layout.ts`.
 
-use js::{math, string};
+use crate::string;
+use js::math;
 use std::collections::HashMap;
 
 use super::{

@@ -5,9 +5,12 @@ use super::{tokens::T, types::Span};
 use crate::{
     detect::Kind,
     error::Error,
-    util::chars::{is_blank, is_digit, is_hex, is_letter},
+    string,
+    util::{
+        chars,
+        chars::{is_blank, is_digit, is_hex, is_letter},
+    },
 };
-use js::string;
 
 /// Each keyword, in the order of Mermaid's token list, and whether it
 /// ignores case.
@@ -241,7 +244,7 @@ impl Source {
             let mut fresh = false;
 
             let kind = match c {
-                c if string::is_word(c) => {
+                c if chars::is_word(c) => {
                     let mut line = None;
                     if c == 'a' && line_start && self.starts_with(i, "acc") {
                         let descr = self.starts_with(i + 3, "Descr");
@@ -279,7 +282,7 @@ impl Source {
                             j += 1;
                         }
                         let id = j;
-                        while self.matches(j, string::is_word) {
+                        while self.matches(j, chars::is_word) {
                             j += 1;
                         }
                         if j > id {
@@ -334,7 +337,7 @@ impl Source {
                     if let Some(line) = line {
                         line
                     } else {
-                        while self.matches(end, string::is_word) {
+                        while self.matches(end, chars::is_word) {
                             end += 1;
                         }
                         if let Some((keyword, length)) = self.keyword_at(i) {
@@ -377,10 +380,10 @@ impl Source {
                             }
                         } else {
                             let mut kind = T::Identifier;
-                            while self.is(end, '-') && self.matches(end + 1, string::is_word) {
+                            while self.is(end, '-') && self.matches(end + 1, chars::is_word) {
                                 kind = T::CssIdentifier;
                                 end += 2;
-                                while self.matches(end, string::is_word) {
+                                while self.matches(end, chars::is_word) {
                                     end += 1;
                                 }
                             }

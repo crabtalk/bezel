@@ -2,12 +2,13 @@
 
 use crate::{
     geom::{Point, Size},
+    string,
     svg::{
         builder::{Esc, EscText, TITLE, fragment},
         edges::Marker,
     },
 };
-use js::{math, string};
+use js::math;
 use std::{
     collections::{HashMap, HashSet},
     fmt::{self, Write as _},

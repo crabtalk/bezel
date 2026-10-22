@@ -2,13 +2,7 @@
 //! `accDescr {` that never closes, because `accDescr` is also a name there.
 //! Pele's `diagrams/common/accDescr.ts`.
 
-use super::tokens::{Scanner, TokenType, acc_descr as base};
-use js::regex::Lazy;
-
-static RE_HEAD: Lazy = Lazy::new(
-    r"[\t ]*accDescr(?:[\t ]*:(?:[^\n\r]*?(?=%%)|[^\n\r]*)|\s*(\{))",
-    "y",
-);
+use crate::diagrams::common::tokens::{self, Heading, Scanner, TokenType};
 
 /// The braced form scans for its closing brace. Once none is found there is
 /// none further on, so later braced descriptions fail without scanning the
@@ -16,9 +10,8 @@ static RE_HEAD: Lazy = Lazy::new(
 fn scanner() -> Scanner {
     let mut unclosed = false;
     Box::new(move |src, at| {
-        let m = RE_HEAD.match_here(src, at)?;
-        let end = m.end();
-        if m.get(1).is_none() {
+        let (end, braced) = tokens::acc_descr_head(src, at)?;
+        if !braced {
             return Some(end);
         }
         if unclosed {
@@ -35,5 +28,5 @@ fn scanner() -> Scanner {
 }
 
 pub fn acc_descr<K>(name: &'static str) -> TokenType<K> {
-    base().named(name).scanner(scanner)
+    TokenType::scanner(name, scanner, Some("\t a")).heading(Heading::AccDescr)
 }

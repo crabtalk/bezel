@@ -1,7 +1,6 @@
 //! Pele's `diagrams/architecture/parser.ts`.
 
-use crate::util::chars::inner;
-use js::string;
+use crate::{string, util::chars::inner};
 use serde::Serialize;
 
 use crate::{
@@ -37,16 +36,16 @@ token_kinds! {
         AccTitle = acc_title(),
         Title = title(),
         String = string(),
-        Id = TokenType::regex("ID", r"[\w]([-\w]*\w)?", None),
+        Id = TokenType::regex("ID", r"[0-9A-Z_a-z](?:[0-9A-Z_a-z-]*[0-9A-Z_a-z])?", None),
         Newline = newline(),
         Whitespace = whitespace(),
         Yaml = yaml(),
         Directive = directive(),
         Comment = single_line_comment(),
-        Icon = TokenType::regex("ARCH_ICON", r"\([\w-:]+\)", Some("(")),
+        Icon = TokenType::regex("ARCH_ICON", r"\([0-9A-Z_a-z:-]+\)", Some("(")),
         Label = TokenType::regex(
             "ARCH_TITLE",
-            r#"\[(?:"([^"\\]|\\.)*"|'([^'\\]|\\.)*'|[^\[\]\r\n]+)\]"#,
+            r#"\[(?:"(?:[^"\\]|\\[^\n\r\u{2028}\u{2029}])*"|'(?:[^'\\]|\\[^\n\r\u{2028}\u{2029}])*'|[^\[\]\r\n]+)\]"#,
             Some("["),
         ),
     }

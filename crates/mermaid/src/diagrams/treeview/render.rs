@@ -5,8 +5,9 @@ use crate::{
     config::within,
     geom::Point,
     svg::builder::{Esc, EscText},
+    util::chars,
 };
-use js::{math, string};
+use js::math;
 use std::{collections::HashMap, fmt::Write as _};
 
 use super::{
@@ -173,11 +174,10 @@ impl TreeViewModel {
             if label_x + width > label_right {
                 label_right = label_x + width;
             }
-            let highlighted = node.css_class.as_deref().is_some_and(|class| {
-                class
-                    .split(string::is_space)
-                    .any(|name| name == "highlight")
-            });
+            let highlighted = node
+                .css_class
+                .as_deref()
+                .is_some_and(|class| class.split(chars::is_space).any(|name| name == "highlight"));
             if highlighted {
                 any_highlight = true;
             }

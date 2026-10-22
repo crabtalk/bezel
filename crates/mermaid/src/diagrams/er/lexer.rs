@@ -3,10 +3,12 @@
 use super::tokens::T;
 use crate::{
     diagrams::common::directions::Directions,
-    token::{Cursor, Token},
-    util::chars::{digits_end, starts_with_caseless},
+    token::{Acc, Cursor, Token},
+    util::{
+        chars,
+        chars::{digits_end, starts_with_caseless},
+    },
 };
-use js::{regex::Lazy, string};
 
 /// Jison's start conditions.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -20,14 +22,11 @@ enum S {
     Style,
 }
 
-static RE_ACC_TITLE: Lazy = Lazy::new(r"accTitle\s*:\s*", "iy");
-static RE_ACC_DESCR: Lazy = Lazy::new(r"accDescr\s*:\s*", "iy");
-static RE_ACC_DESCR_ML: Lazy = Lazy::new(r"accDescr\s*\{\s*", "iy");
-static RE_DIRECTION: [(T, Lazy); 4] = [
-    (T::DirectionTb, Lazy::new(r".*direction\s+TB[^\n]*", "iy")),
-    (T::DirectionBt, Lazy::new(r".*direction\s+BT[^\n]*", "iy")),
-    (T::DirectionRl, Lazy::new(r".*direction\s+RL[^\n]*", "iy")),
-    (T::DirectionLr, Lazy::new(r".*direction\s+LR[^\n]*", "iy")),
+static RE_DIRECTION: [(T, &str); 4] = [
+    (T::DirectionTb, "TB"),
+    (T::DirectionBt, "BT"),
+    (T::DirectionRl, "RL"),
+    (T::DirectionLr, "LR"),
 ];
 
 /// The runs of characters the lexer's rules read as one token.
@@ -44,11 +43,11 @@ enum Run {
 impl Run {
     fn has_ascii(self, c: char) -> bool {
         match self {
-            Self::Text => string::is_word(c) || matches!(c, '-' | '*' | '.'),
-            Self::StyleText => string::is_word(c) || matches!(c, '-' | '*'),
+            Self::Text => chars::is_word(c) || matches!(c, '-' | '*' | '.'),
+            Self::StyleText => chars::is_word(c) || matches!(c, '-' | '*'),
             Self::AttrStart => c.is_ascii_alphabetic() || matches!(c, '_' | '*'),
             Self::AttrRest => {
-                string::is_word(c) || matches!(c, '-' | '*' | '.' | '[' | ']' | '(' | ')' | ',')
+                chars::is_word(c) || matches!(c, '-' | '*' | '.' | '[' | ']' | '(' | ')' | ',')
             }
         }
     }
@@ -98,13 +97,13 @@ impl<'s> Lexer<'s> {
 
     /// Whether the character at `q` is not a word character.
     fn boundary(&self, q: usize) -> bool {
-        !self.cur.char_at(q).is_some_and(string::is_word)
+        !self.cur.char_at(q).is_some_and(chars::is_word)
     }
 
     /// The end of the run of characters that are not whitespace at `from`.
     fn word_end(&self, from: usize) -> usize {
         self.cur.src[from..]
-            .find(string::is_space)
+            .find(chars::is_space)
             .map_or(self.cur.src.len(), |at| from + at)
     }
 
@@ -151,10 +150,10 @@ impl<'s> Lexer<'s> {
         }
         if c == '1' {
             match d {
-                Some(d) if string::is_space(d) => {
+                Some(d) if chars::is_space(d) => {
                     let r = self.cur.space_end(self.cur.after(p + 1));
                     let f = self.cur.char_at(r);
-                    if f.is_some_and(string::is_word) || matches!(f, Some('"' | '\'')) {
+                    if f.is_some_and(chars::is_word) || matches!(f, Some('"' | '\'')) {
                         self.cur.emit_to(T::OnlyOne, p + 1);
                         return;
                     }
@@ -224,22 +223,24 @@ impl<'s> Lexer<'s> {
 
     fn initial(&mut self, c: char) {
         let p = self.cur.p;
-        if matches!(c, 'a' | 'A') && starts_with_caseless(self.cur.src, p, "acc") {
-            if let Some(e) = RE_ACC_TITLE.match_end(self.cur.src, p) {
-                self.cur.state = S::AccTitle;
-                self.cur.emit_to(T::AccTitle, e);
-                return;
+        if matches!(c, 'a' | 'A')
+            && let Some((acc, e)) = Acc::at(self.cur.src, p, true)
+        {
+            match acc {
+                Acc::Title => {
+                    self.cur.state = S::AccTitle;
+                    self.cur.emit_to(T::AccTitle, e);
+                }
+                Acc::Descr => {
+                    self.cur.state = S::AccDescr;
+                    self.cur.emit_to(T::AccDescr, e);
+                }
+                Acc::DescrBlock => {
+                    self.cur.state = S::AccDescrMultiline;
+                    self.cur.p = e;
+                }
             }
-            if let Some(e) = RE_ACC_DESCR.match_end(self.cur.src, p) {
-                self.cur.state = S::AccDescr;
-                self.cur.emit_to(T::AccDescr, e);
-                return;
-            }
-            if let Some(e) = RE_ACC_DESCR_ML.match_end(self.cur.src, p) {
-                self.cur.state = S::AccDescrMultiline;
-                self.cur.p = e;
-                return;
-            }
+            return;
         }
         if self.direction() {
             return;
@@ -329,7 +330,7 @@ impl<'s> Lexer<'s> {
 
     fn block(&mut self, c: char) {
         let p = self.cur.p;
-        if string::is_space(c) {
+        if chars::is_space(c) {
             self.cur.p = self.cur.space_end(p);
             return;
         }
@@ -377,7 +378,7 @@ impl<'s> Lexer<'s> {
                 self.cur.state = S::Initial;
                 self.cur.emit_to(T::Newline, e);
             }
-            _ if string::is_space(c) => self.cur.p = self.cur.space_end(p),
+            _ if chars::is_space(c) => self.cur.p = self.cur.space_end(p),
             ':' => self.cur.emit_to(T::Colon, p + 1),
             ',' => self.cur.emit_to(T::Comma, p + 1),
             '#' => self.cur.emit_to(T::Brkt, p + 1),

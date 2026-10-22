@@ -1,12 +1,15 @@
 //! The title and accessibility text every diagram's database keeps. Pele's
 //! `diagrams/common/commonDb.ts`.
 
-use js::{regex::Lazy, string};
+use crate::{string, util::chars};
+use regex::Regex;
 use serde::Serialize;
+use std::sync::LazyLock;
 
 use crate::svg::root::Accessible;
 
-static RE_INDENT: Lazy = Lazy::new(r"\n\s+", "g");
+static RE_INDENT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!(r"\n[{}]+", chars::SPACE)).expect("pattern"));
 
 /// `accTitle` text without its leading whitespace.
 pub fn acc_title(text: &str) -> String {
@@ -15,7 +18,7 @@ pub fn acc_title(text: &str) -> String {
 
 /// `accDescr` text without the indentation of its lines after the first.
 pub fn acc_descr(text: &str) -> String {
-    RE_INDENT.replace(text, |_| "\n".into())
+    RE_INDENT.replace_all(text, "\n").into_owned()
 }
 
 /// A diagram's title and accessibility text, each absent from a model's JSON

@@ -1,8 +1,10 @@
 //! The URLs a diagram links to and shows images from. Pele's `util/url.ts`,
 //! after `@braintree/sanitize-url`, which Mermaid applies to click targets.
 
-use js::{number::Number, regex::Lazy, string};
-use std::fmt;
+use crate::{string, util::chars};
+use js::number::Number;
+use regex::{Captures, Regex};
+use std::{fmt, sync::LazyLock};
 
 use crate::{
     Ctx, Host, Link,
@@ -14,17 +16,39 @@ const BLANK: &str = "about:blank";
 pub(crate) const LINK_SCHEMES: [&str; 4] = ["http", "https", "mailto", "tel"];
 pub(crate) const IMAGE_SCHEMES: [&str; 2] = ["http", "https"];
 
-static RE_INVALID_PROTOCOL: Lazy = Lazy::new(r"^([^\w]*)(javascript|data|vbscript)", "im");
-static RE_HTML_ENTITIES: Lazy = Lazy::new(r"&#(\w+)(^\w|;)?", "g");
-static RE_HTML_CTRL_ENTITY: Lazy = Lazy::new(r"&(newline|tab);", "gi");
-static RE_CTRL: Lazy = Lazy::new(
-    "[\\u0000-\\u001F\\u007F-\\u009F\\u2000-\\u200D\\uFEFF]",
-    "gim",
-);
-static RE_SCHEME: Lazy = Lazy::new(r"^.+(:|&colon;)", "gim");
-static RE_WS_ESCAPE: Lazy = Lazy::new(r"(\\|%5[cC])((%(6[eE]|72|74))|[nrt])", "g");
-static RE_SCHEME_NAME: Lazy = Lazy::new(r"^([a-z][a-z0-9+.-]*):", "i");
-static RE_NETWORK_PATH: Lazy = Lazy::new(r"^[\\/]{2}", "");
+static RE_INVALID_PROTOCOL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[^0-9A-Z_a-z]*(?i-u:javascript|data|vbscript)").expect("pattern")
+});
+static RE_HTML_ENTITIES: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"&#([0-9A-Z_a-z]+);?").expect("pattern"));
+static RE_HTML_CTRL_ENTITY: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i-u)&(?:newline|tab);").expect("pattern"));
+static RE_CTRL: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"[\x00-\x1F\x7F-\x{9F}\x{2000}-\x{200D}\x{FEFF}]").expect("pattern")
+});
+static RE_WS_ESCAPE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?:\\|%5[cC])(?:%(?:6[eE]|72|74)|[nrt])").expect("pattern"));
+static RE_SCHEME_NAME: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^((?i-u)[a-z][a-z0-9+.-]*):").expect("pattern"));
+
+/// The scheme part of `text`, as `/^.+(:|&colon;)/im` finds it: on the first
+/// line that has one, through its last `:` or `&colon;` after the line's
+/// first character.
+fn scheme(text: &str) -> Option<&str> {
+    text.split(chars::is_line_end).find_map(|line| {
+        (1..line.len())
+            .rev()
+            .filter(|&at| line.is_char_boundary(at))
+            .find_map(|at| {
+                if line[at..].starts_with(':') {
+                    Some(at + 1)
+                } else {
+                    chars::starts_with_caseless(line, at, "&colon;").then_some(at + 7)
+                }
+            })
+            .map(|end| &line[..end])
+    })
+}
 
 /// `decodeURIComponent`, or the text as it is where that would throw.
 fn decode(uri: &str) -> String {
@@ -64,9 +88,9 @@ pub fn sanitize_url(url: &str) -> String {
         if rounds > 32 {
             return BLANK.into();
         }
-        let step = RE_CTRL.replace(&decoded, |_| String::new());
-        let step = RE_HTML_ENTITIES.replace(&step, |caps| {
-            let code = Number::from(caps.str(1)).0;
+        let step = RE_CTRL.replace_all(&decoded, "");
+        let step = RE_HTML_ENTITIES.replace_all(&step, |caps: &Captures| {
+            let code = Number::from(&caps[1]).0;
             char::from_u32(if code.is_finite() {
                 code as u32 & 0xffff
             } else {
@@ -74,14 +98,14 @@ pub fn sanitize_url(url: &str) -> String {
             })
             .map_or(String::new(), |c| c.to_string())
         });
-        let step = RE_HTML_CTRL_ENTITY.replace(&step, |_| String::new());
-        let step = RE_CTRL.replace(&step, |_| String::new());
-        let step = RE_WS_ESCAPE.replace(&step, |_| String::new());
+        let step = RE_HTML_CTRL_ENTITY.replace_all(&step, "");
+        let step = RE_CTRL.replace_all(&step, "");
+        let step = RE_WS_ESCAPE.replace_all(&step, "");
         decoded = decode(string::trim(&step));
-        let more = RE_CTRL.test(&decoded)
-            || RE_HTML_ENTITIES.test(&decoded)
-            || RE_HTML_CTRL_ENTITY.test(&decoded)
-            || RE_WS_ESCAPE.test(&decoded);
+        let more = RE_CTRL.is_match(&decoded)
+            || RE_HTML_ENTITIES.is_match(&decoded)
+            || RE_HTML_CTRL_ENTITY.is_match(&decoded)
+            || RE_WS_ESCAPE.is_match(&decoded);
         if !more {
             break;
         }
@@ -95,11 +119,11 @@ pub fn sanitize_url(url: &str) -> String {
     }
 
     let trimmed = string::trim_start(&decoded);
-    let Some(scheme) = RE_SCHEME.exec(trimmed) else {
+    let Some(scheme) = scheme(trimmed) else {
         return decoded;
     };
-    let protocol = string::trim(&scheme.str(0).to_lowercase()).to_string();
-    if RE_INVALID_PROTOCOL.test(&protocol) {
+    let protocol = string::trim(&scheme.to_lowercase()).to_string();
+    if RE_INVALID_PROTOCOL.is_match(&protocol) {
         return BLANK.into();
     }
 
@@ -142,13 +166,13 @@ pub fn safe_url(url: &str) -> String {
 /// in a shared note could otherwise open a local file, a network share, or
 /// another application.
 fn allow(url: &str, schemes: &[String]) -> Option<String> {
-    if RE_NETWORK_PATH.test(url) {
+    if url.starts_with(['\\', '/']) && url[1..].starts_with(['\\', '/']) {
         return None;
     }
-    match RE_SCHEME_NAME.exec(url) {
+    match RE_SCHEME_NAME.captures(url) {
         None => Some(url.to_string()),
         Some(scheme) => {
-            let name = scheme.str(1).to_lowercase();
+            let name = scheme[1].to_lowercase();
             schemes.contains(&name).then(|| url.to_string())
         }
     }

@@ -1,47 +1,50 @@
 //! Pele's `diagrams/flowchart/lexer.ts`, and the rules the agentflow lexer
 //! shares with it. Positions are byte offsets.
 
-use js::{regex::Lazy, string};
-use std::borrow::Cow;
+use regex::Regex;
+use std::{borrow::Cow, sync::LazyLock};
 
 use super::tokens::T;
 use crate::{
     diagrams::common::directions::Directions,
-    token::{Cursor, Token},
+    token::{Acc, Cursor, Rule, Token},
     util::{
-        chars::{char_at, digits_end, width_at},
+        chars::{self, char_at, digits_end, width_at},
         unicode::is_unicode_letter,
     },
 };
 
-static RE_ACC_TITLE: Lazy = Lazy::new(r"accTitle\s*:\s*", "y");
-static RE_ACC_DESCR: Lazy = Lazy::new(r"accDescr\s*:\s*", "y");
-static RE_ACC_DESCR_ML: Lazy = Lazy::new(r"accDescr\s*\{\s*", "y");
-static RE_CALL: Lazy = Lazy::new(r"call\s+", "y");
-static RE_CLICK: Lazy = Lazy::new(r"click\s+", "y");
-static RE_NODIR: Lazy = Lazy::new(r"(?:\r?\n)*\s*\n", "y");
-static RE_DIR: Lazy = Lazy::new(r"\s*(?:LR|RL|TB|BT|TD|BR)\b", "y");
-static RE_DIR_SYM: Lazy = Lazy::new(r"\s*[<>^]", "y");
-static RE_DIR_V: Lazy = Lazy::new(r"\s*v\b", "y");
-static DIRECTIONS: [(T, Lazy); 5] = [
-    (T::DirectionTb, Lazy::new(r".*direction\s+TB[^\n]*", "y")),
-    (T::DirectionBt, Lazy::new(r".*direction\s+BT[^\n]*", "y")),
-    (T::DirectionRl, Lazy::new(r".*direction\s+RL[^\n]*", "y")),
-    (T::DirectionLr, Lazy::new(r".*direction\s+LR[^\n]*", "y")),
-    (T::DirectionTd, Lazy::new(r".*direction\s+TD[^\n]*", "y")),
-];
-static RE_EMPTY_CALL: Lazy = Lazy::new(r"\(\s*\)", "y");
-static RE_BR: Lazy = Lazy::new(r"\n\s*", "g");
+/// A [`Rule`] with `{s}` standing for `\s`'s class.
+fn rule(pattern: &str) -> Rule {
+    Rule::new(&pattern.replace("{s}", chars::SPACE))
+}
 
-static RE_LINK: Lazy = Lazy::new(r"\s*[xo<]?--+[-xo>]\s*", "y");
-static RE_START_LINK: Lazy = Lazy::new(r"\s*[xo<]?--\s*", "y");
-static RE_THICK_LINK: Lazy = Lazy::new(r"\s*[xo<]?==+[=xo>]\s*", "y");
-static RE_THICK_START: Lazy = Lazy::new(r"\s*[xo<]?==\s*", "y");
-static RE_DOTTED_LINK: Lazy = Lazy::new(r"\s*[xo<]?-?\.+-[xo>]?\s*", "y");
-static RE_DOTTED_START: Lazy = Lazy::new(r"\s*[xo<]?-\.\s*", "y");
-static RE_INVIS_LINK: Lazy = Lazy::new(r"\s*~~~+\s*", "y");
-static RE_NEWLINE: Lazy = Lazy::new(r"(?:\r?\n)+", "y");
-static RE_SPACE: Lazy = Lazy::new(r"[^\S\n\r]+", "y");
+static RE_CALL: LazyLock<Rule> = LazyLock::new(|| rule(r"call[{s}]+"));
+static RE_CLICK: LazyLock<Rule> = LazyLock::new(|| rule(r"click[{s}]+"));
+static RE_NODIR: LazyLock<Rule> = LazyLock::new(|| rule(r"(?:\r?\n)*[{s}]*\n"));
+static RE_DIR: LazyLock<Rule> = LazyLock::new(|| rule(r"[{s}]*(?:LR|RL|TB|BT|TD|BR)(?-u:\b)"));
+static RE_DIR_SYM: LazyLock<Rule> = LazyLock::new(|| rule(r"[{s}]*[<>^]"));
+static RE_DIR_V: LazyLock<Rule> = LazyLock::new(|| rule(r"[{s}]*v(?-u:\b)"));
+static DIRECTIONS: [(T, &str); 5] = [
+    (T::DirectionTb, "TB"),
+    (T::DirectionBt, "BT"),
+    (T::DirectionRl, "RL"),
+    (T::DirectionLr, "LR"),
+    (T::DirectionTd, "TD"),
+];
+static RE_EMPTY_CALL: LazyLock<Rule> = LazyLock::new(|| rule(r"\([{s}]*\)"));
+static RE_BR: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(&format!(r"\n[{}]*", chars::SPACE)).expect("pattern"));
+
+static RE_LINK: LazyLock<Rule> = LazyLock::new(|| rule(r"[{s}]*[xo<]?--+[-xo>][{s}]*"));
+static RE_START_LINK: LazyLock<Rule> = LazyLock::new(|| rule(r"[{s}]*[xo<]?--[{s}]*"));
+static RE_THICK_LINK: LazyLock<Rule> = LazyLock::new(|| rule(r"[{s}]*[xo<]?==+[=xo>][{s}]*"));
+static RE_THICK_START: LazyLock<Rule> = LazyLock::new(|| rule(r"[{s}]*[xo<]?==[{s}]*"));
+static RE_DOTTED_LINK: LazyLock<Rule> = LazyLock::new(|| rule(r"[{s}]*[xo<]?-?\.+-[xo>]?[{s}]*"));
+static RE_DOTTED_START: LazyLock<Rule> = LazyLock::new(|| rule(r"[{s}]*[xo<]?-\.[{s}]*"));
+static RE_INVIS_LINK: LazyLock<Rule> = LazyLock::new(|| rule(r"[{s}]*~~~+[{s}]*"));
+static RE_NEWLINE: LazyLock<Rule> = LazyLock::new(|| rule(r"(?:\r?\n)+"));
+static RE_SPACE: LazyLock<Rule> = LazyLock::new(|| rule(r"[{s}--\n\r]+"));
 
 /// Jison's start conditions of the flowchart and agentflow lexers.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -113,7 +116,7 @@ impl LinkIds {
     /// whitespace, through its last `@` with neither `{` nor `"` after it.
     fn end(&mut self, src: &str, p: usize) -> Option<usize> {
         let c = char_at(src, p)?;
-        if self.next.is_none() || c == '"' || string::is_space(c) {
+        if self.next.is_none() || c == '"' || chars::is_space(c) {
             return None;
         }
         if p >= self.run_end {
@@ -121,7 +124,7 @@ impl LinkIds {
                 self.next = src[p..].find('@').map(|at| p + at);
             }
             let end = src[p..]
-                .find(|c: char| c == '"' || string::is_space(c))
+                .find(|c: char| c == '"' || chars::is_space(c))
                 .map_or(src.len(), |at| p + at);
             self.run_end = end;
             self.run_at = None;
@@ -320,19 +323,21 @@ pub(crate) trait Lex<'s> {
         let src = self.src();
         match self.at(p) {
             Some('a') if src[p..].starts_with("acc") => {
-                if let Some(end) = RE_ACC_TITLE.match_end(src, p) {
-                    self.push(S::AccTitle);
-                    self.emit(T::AccTitle, end);
-                    return true;
-                }
-                if let Some(end) = RE_ACC_DESCR.match_end(src, p) {
-                    self.push(S::AccDescr);
-                    self.emit(T::AccDescr, end);
-                    return true;
-                }
-                if let Some(end) = RE_ACC_DESCR_ML.match_end(src, p) {
-                    self.push(S::AccDescrMultiline);
-                    self.skip(end);
+                if let Some((acc, end)) = Acc::at(src, p, false) {
+                    match acc {
+                        Acc::Title => {
+                            self.push(S::AccTitle);
+                            self.emit(T::AccTitle, end);
+                        }
+                        Acc::Descr => {
+                            self.push(S::AccDescr);
+                            self.emit(T::AccDescr, end);
+                        }
+                        Acc::DescrBlock => {
+                            self.push(S::AccDescrMultiline);
+                            self.skip(end);
+                        }
+                    }
                     return true;
                 }
             }
@@ -342,7 +347,7 @@ pub(crate) trait Lex<'s> {
                 return true;
             }
             Some('c') => {
-                if let Some(end) = RE_CALL.match_end(src, p) {
+                if let Some(end) = RE_CALL.end(src, p) {
                     self.push(S::Callbackname);
                     self.skip(end);
                     return true;
@@ -355,7 +360,7 @@ pub(crate) trait Lex<'s> {
                     self.emit_flat(T::Class, p + 5);
                     return true;
                 }
-                if let Some(end) = RE_CLICK.match_end(src, p) {
+                if let Some(end) = RE_CLICK.end(src, p) {
                     self.push(S::Click);
                     self.skip(end);
                     return true;
@@ -366,7 +371,7 @@ pub(crate) trait Lex<'s> {
                 return true;
             }
             Some('h')
-                if src[p..].starts_with("href") && self.at(p + 4).is_some_and(string::is_space) =>
+                if src[p..].starts_with("href") && self.at(p + 4).is_some_and(chars::is_space) =>
             {
                 self.emit(T::Href, p + 4 + width_at(src, p + 4));
                 return true;
@@ -440,7 +445,7 @@ pub(crate) trait Lex<'s> {
             }
             '^' => (T::Up, 1),
             '\\' if next == Some('|') => (T::Sep, 2),
-            'v' if !next.is_some_and(string::is_word) => (T::Down, 1),
+            'v' if !next.is_some_and(chars::is_word) => (T::Down, 1),
             '\\' | 'v' => return Some(self.node_string()),
             _ => return None,
         };
@@ -467,15 +472,15 @@ pub(crate) trait Lex<'s> {
             self.quote();
             return true;
         }
-        if let Some(end) = RE_NODIR.match_end(src, p) {
+        if let Some(end) = RE_NODIR.end(src, p) {
             self.pop();
             self.emit(T::Nodir, end);
             return true;
         }
         if let Some(end) = RE_DIR
-            .match_end(src, p)
-            .or_else(|| RE_DIR_SYM.match_end(src, p))
-            .or_else(|| RE_DIR_V.match_end(src, p))
+            .end(src, p)
+            .or_else(|| RE_DIR_SYM.end(src, p))
+            .or_else(|| RE_DIR_V.end(src, p))
         {
             self.pop();
             self.emit(T::Dir, end);
@@ -510,7 +515,7 @@ pub(crate) trait Lex<'s> {
             // a comment may start with one.
             Some('%') if Self::COMMENTS => return self.comment(),
             c => {
-                if c.is_some_and(|c| c == '~' || string::is_space(c)) && self.invis_link() {
+                if c.is_some_and(|c| c == '~' || chars::is_space(c)) && self.invis_link() {
                     return true;
                 }
                 let end = self.core().cur.until(p + width_at(src, p), |c| {
@@ -534,7 +539,7 @@ pub(crate) trait Lex<'s> {
             self.quote();
             return true;
         }
-        if c.is_some_and(|c| c == '~' || string::is_space(c)) && self.invis_link() {
+        if c.is_some_and(|c| c == '~' || chars::is_space(c)) && self.invis_link() {
             return true;
         }
         if c == Some('%')
@@ -558,7 +563,7 @@ pub(crate) trait Lex<'s> {
             if matches!(ch, '"' | '(' | ')' | '[' | ']' | '{' | '}')
                 || (matches!(ch, '-' | '/') && self.at(q + 1) == Some(')'))
                 || (ch == '%' && self.comment_end(q).is_some())
-                || ((ch == '~' || string::is_space(ch)) && self.invis_link_end(q).is_some())
+                || ((ch == '~' || chars::is_space(ch)) && self.invis_link_end(q).is_some())
             {
                 break;
             }
@@ -577,7 +582,7 @@ pub(crate) trait Lex<'s> {
             self.quote();
             return true;
         }
-        if c.is_some_and(|c| c == '~' || string::is_space(c)) && self.invis_link() {
+        if c.is_some_and(|c| c == '~' || chars::is_space(c)) && self.invis_link() {
             return true;
         }
         let (kind, len) = match c {
@@ -663,18 +668,18 @@ pub(crate) trait Lex<'s> {
             S::TrapText => return self.trap_text(),
             S::Click => match c {
                 Some('"') => self.quote(),
-                Some(c) if string::is_space(c) => {
+                Some(c) if chars::is_space(c) => {
                     self.pop();
                     self.skip(rest_from);
                 }
                 _ => {
-                    let end = cur.until(rest_from, string::is_space);
+                    let end = cur.until(rest_from, chars::is_space);
                     self.emit_flat(T::Click, end);
                 }
             },
             S::Callbackname => {
                 if c == Some('(') {
-                    let empty = RE_EMPTY_CALL.match_end(src, p);
+                    let empty = RE_EMPTY_CALL.end(src, p);
                     self.pop();
                     match empty {
                         Some(end) => self.skip(end),
@@ -718,8 +723,8 @@ pub(crate) trait Lex<'s> {
                     self.emit_flat(T::ShapeData, p + 1);
                 } else {
                     let end = cur.until(p, |c| c == '"');
-                    let text = RE_BR.replace(&src[p..end], |_| "<br/>".into());
-                    self.emit_text(T::ShapeData, text.into(), end);
+                    let text = RE_BR.replace_all(&src[p..end], "<br/>");
+                    self.emit_text(T::ShapeData, text, end);
                 }
             }
             S::Initial | S::EdgeText | S::ThickEdgeText | S::DottedEdgeText => return self.own(),
@@ -782,7 +787,7 @@ impl<'s> Lex<'s> for Lexer<'s> {
         if self.at(at) != Some('~') {
             return None;
         }
-        RE_INVIS_LINK.match_end(self.src(), q)
+        RE_INVIS_LINK.end(self.src(), q)
     }
 
     fn own(&mut self) -> bool {
@@ -808,10 +813,10 @@ impl Lexer<'_> {
 
     /// The first of `rules` matching at the cursor, a link or the start of
     /// one that opens the given condition.
-    fn link_rule(&mut self, rules: &[(&Lazy, Option<S>)]) -> bool {
+    fn link_rule(&mut self, rules: &[(&Rule, Option<S>)]) -> bool {
         let (p, src) = (self.p(), self.src());
         for &(rule, opens) in rules {
-            if let Some(end) = rule.match_end(src, p) {
+            if let Some(end) = rule.end(src, p) {
                 match opens {
                     Some(state) => {
                         self.push(state);
@@ -845,8 +850,8 @@ impl Lexer<'_> {
     }
 
     /// A token of what `rule` matches at the cursor.
-    fn rule(&mut self, rule: &Lazy, kind: T) -> bool {
-        let Some(end) = rule.match_end(self.src(), self.p()) else {
+    fn rule(&mut self, rule: &Rule, kind: T) -> bool {
+        let Some(end) = rule.end(self.src(), self.p()) else {
             return false;
         };
         self.emit(kind, end);
@@ -898,7 +903,7 @@ impl Lexer<'_> {
             }
             Some('=') => return self.link(),
             Some('~') => return self.invis_link(),
-            Some(c) if string::is_space(c) => {
+            Some(c) if chars::is_space(c) => {
                 return self.link()
                     || self.rule(&RE_NEWLINE, T::Newline)
                     || self.rule(&RE_SPACE, T::Space);
@@ -913,7 +918,7 @@ impl Lexer<'_> {
 
     /// The label of a link, up to the `line` that closes it, or `also` where
     /// a closing link may start with that.
-    fn edge_text(&mut self, link: &Lazy, line: char, also: Option<char>) -> bool {
+    fn edge_text(&mut self, link: &Rule, line: char, also: Option<char>) -> bool {
         let (p, src) = (self.p(), self.src());
         let c = self.at(p);
         if c == Some('"') {
@@ -922,7 +927,7 @@ impl Lexer<'_> {
         }
         let closes = |c: Option<char>| c.is_some() && (c == Some(line) || c == also);
         if closes(self.link_char(p))
-            && let Some(end) = link.match_end(src, p)
+            && let Some(end) = link.end(src, p)
         {
             self.pop();
             self.emit(T::Link, end);
@@ -940,9 +945,9 @@ impl Lexer<'_> {
                 if line != '-' || self.at(q + 1) == Some('-') {
                     break;
                 }
-            } else if (matches!(ch, 'x' | 'o' | '<') || Some(ch) == also || string::is_space(ch))
+            } else if (matches!(ch, 'x' | 'o' | '<') || Some(ch) == also || chars::is_space(ch))
                 && closes(self.link_char(q))
-                && link.match_end(src, q).is_some()
+                && link.end(src, q).is_some()
             {
                 break;
             }

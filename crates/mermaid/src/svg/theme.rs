@@ -1,13 +1,10 @@
 //! The colours, fonts and user styles of a drawing, as CSS. Pele's
 //! `svg/theme.ts`, with `--bezel-*` for `--pele-*`.
 
-use crate::svg::builder::Esc;
-use js::{
-    number::{self, Number},
-    regex::Lazy,
-    string,
-};
-use std::{borrow::Cow, collections::HashSet, fmt::Write as _};
+use crate::{string, svg::builder::Esc, util::chars};
+use js::number::{self, Number};
+use regex::Regex;
+use std::{borrow::Cow, collections::HashSet, fmt::Write as _, sync::LazyLock};
 
 use super::builder::{esc, push_esc};
 
@@ -58,21 +55,28 @@ const TEXT_PROPS: [&str; 9] = [
 
 /// A list of font names, quoted or not, and nothing that could end the
 /// declaration it is put in.
-static RE_FAMILIES: Lazy = Lazy::new(
-    r#"^\s*(?:"[^"'\\\n<>{}();:@]*"|'[^"'\\\n<>{}();:@]*'|[\p{L}\p{N}_-][\p{L}\p{N}_ .-]*)(?:\s*,\s*(?:"[^"'\\\n<>{}();:@]*"|'[^"'\\\n<>{}();:@]*'|[\p{L}\p{N}_-][\p{L}\p{N}_ .-]*))*\s*$"#,
-    "u",
-);
-static RE_UNSAFE: Lazy = Lazy::new(
-    r"url\s*\(|expression\s*\(|javascript:|[<>{};\\]|@import|image-set|\/\*",
-    "i",
-);
-static RE_IMPORTANT: Lazy = Lazy::new(r"!important", "gi");
-static RE_PX: Lazy = Lazy::new(r"^[\d.]+(px)?$", "");
-static RE_CLASS: Lazy = Lazy::new(r"[^\w-]+", "g");
+static RE_FAMILIES: LazyLock<Regex> = LazyLock::new(|| {
+    let s = format!("[{}]", chars::SPACE);
+    let family =
+        r#"(?:"[^"'\\\n<>{}();:@]*"|'[^"'\\\n<>{}();:@]*'|[\p{L}\p{N}_-][\p{L}\p{N}_ .-]*)"#;
+    Regex::new(&format!("^{s}*{family}(?:{s}*,{s}*{family})*{s}*$")).expect("pattern")
+});
+static RE_UNSAFE: LazyLock<Regex> = LazyLock::new(|| {
+    let s = format!("[{}]", chars::SPACE);
+    Regex::new(&format!(
+        r"(?i-u:url){s}*\(|(?i-u:expression){s}*\(|(?i-u:javascript):|[<>{{}};\\]|@(?i-u:import)|(?i-u:image-set)|/\*"
+    ))
+    .expect("pattern")
+});
+static RE_IMPORTANT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i-u)!important").expect("pattern"));
+static RE_PX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[0-9.]+(?:px)?$").expect("pattern"));
+static RE_CLASS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[^0-9A-Z_a-z-]+").expect("pattern"));
 
 fn families<'a>(list: Option<&'a str>, generic: &'a str) -> &'a str {
     match list {
-        Some(list) if !list.is_empty() && RE_FAMILIES.test(list) => list,
+        Some(list) if !list.is_empty() && RE_FAMILIES.is_match(list) => list,
         _ => generic,
     }
 }
@@ -104,6 +108,11 @@ pub struct ResolvedStyle {
 }
 
 impl ResolvedStyle {
+    /// Whether the shape style sets a fill: `/[";]fill:/`.
+    pub fn has_fill(&self) -> bool {
+        self.shape.contains("\"fill:") || self.shape.contains(";fill:")
+    }
+
     /// The colour of a line in this style and of its arrowheads.
     pub fn line_color(&self) -> Cow<'static, str> {
         match self.stroke.as_deref().filter(|stroke| !stroke.is_empty()) {
@@ -149,9 +158,9 @@ pub fn resolve_style<S: AsRef<str>>(declarations: &[S]) -> ResolvedStyle {
             continue;
         };
         let prop = string::trim(&decl[..at]).to_lowercase();
-        let value = RE_IMPORTANT.replace(&decl[at + 1..], |_| String::new());
+        let value = RE_IMPORTANT.replace_all(&decl[at + 1..], "");
         let value = string::trim(&value).to_string();
-        if value.is_empty() || RE_UNSAFE.test(&value) {
+        if value.is_empty() || RE_UNSAFE.is_match(&value) {
             continue;
         }
         if shape_props.contains(prop.as_str()) {
@@ -188,7 +197,7 @@ pub fn resolve_style<S: AsRef<str>>(declarations: &[S]) -> ResolvedStyle {
     let size = get(&text, "font-size");
     let px = size
         .as_deref()
-        .filter(|size| RE_PX.test(size))
+        .filter(|size| RE_PX.is_match(size))
         .map(number::parse_float);
     let attr = |css: &str| {
         if css.is_empty() {
@@ -214,7 +223,7 @@ pub fn resolve_style<S: AsRef<str>>(declarations: &[S]) -> ResolvedStyle {
 /// `raw` as class names: anything but word characters and `-` separates
 /// them. ` a b`, or `""` for none.
 pub fn class_names(raw: &str) -> String {
-    let cleaned = RE_CLASS.replace(raw, |_| " ".to_string());
+    let cleaned = RE_CLASS.replace_all(raw, " ");
     let cleaned = string::trim(&cleaned);
     if cleaned.is_empty() {
         String::new()
@@ -436,10 +445,11 @@ pub fn resolve_style_over(base: &[String], over: &[String]) -> ResolvedStyle {
     resolve_style(&all)
 }
 
-static RE_DEFAULT_CLASS: Lazy = Lazy::new(r"^default\s?", "");
-
 /// [`class_names`] of a node's `raw` classes, less the `default` class they
 /// start with.
 pub fn node_class_names(raw: &str) -> String {
-    class_names(&RE_DEFAULT_CLASS.replace(raw, |_| String::new()))
+    let rest = raw.strip_prefix("default").map_or(raw, |rest| {
+        rest.strip_prefix(chars::is_space).unwrap_or(rest)
+    });
+    class_names(rest)
 }

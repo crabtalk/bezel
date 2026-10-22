@@ -1,7 +1,7 @@
 //! Pele's `diagrams/kanban/render.ts`.
 
-use crate::geom::Point;
-use js::{math, number::Number, string};
+use crate::{geom::Point, string};
+use js::{math, number::Number};
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};
 

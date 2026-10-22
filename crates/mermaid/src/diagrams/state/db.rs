@@ -3,8 +3,8 @@
 //! `stateDiagram-v2`. The legacy version, which numbers `[*]` states, is not
 //! ported.
 
+use crate::string;
 use indexmap::IndexMap;
-use js::string;
 
 use super::{
     graph::build_state_graph,

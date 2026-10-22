@@ -40,9 +40,9 @@ token_kinds! {
         Yaml = yaml(),
         Directive = directive(),
         Comment = single_line_comment(),
-        BlockComment = TokenType::regex("RR_BLOCK_COMMENT", r"\/\*[\s\S]*?\*\/", Some("/"))
+        BlockComment = TokenType::regex("RR_BLOCK_COMMENT", r"/\*(?s:.)*?\*/", Some("/"))
             .hidden()
-            .opener(r"\/\*"),
+            .opener(r"/\*"),
     }
 }
 

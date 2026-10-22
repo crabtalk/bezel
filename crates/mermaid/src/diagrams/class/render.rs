@@ -2,12 +2,12 @@
 
 use crate::{
     geom::{Axis, Direction, Point, RoutePoint, Side, Size},
+    string,
     svg::edges::Curve,
 };
 use js::{
     math,
     number::{self, Number},
-    string,
 };
 use serde::Deserialize;
 use serde_with::{DefaultOnError, serde_as};

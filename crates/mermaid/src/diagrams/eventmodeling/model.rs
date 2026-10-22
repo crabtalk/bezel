@@ -1,7 +1,6 @@
 //! Pele's `diagrams/eventmodeling/model.ts`.
 
-use crate::{diagrams::common::db::Titles, json};
-use js::string;
+use crate::{diagrams::common::db::Titles, json, string};
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet},

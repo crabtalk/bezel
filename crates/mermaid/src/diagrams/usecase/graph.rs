@@ -4,8 +4,7 @@
 //! getData from Mermaid's use case DB. Pele's `diagrams/usecase/graph.ts`.
 
 use super::json::pointer_key;
-use crate::json::JsValue;
-use js::string;
+use crate::{json::JsValue, string};
 
 use indexmap::IndexMap;
 

@@ -1,7 +1,8 @@
 //! Pele's `diagrams/sequence/db.ts`.
 
-use crate::{diagrams::common::db::Titles, json, json::JsValue};
-use js::{regex::Lazy, string};
+use crate::{diagrams::common::db::Titles, json, json::JsValue, string, util::chars};
+use regex::Regex;
+use std::sync::LazyLock;
 
 use indexmap::IndexMap;
 use serde::{Serialize, Serializer, ser::SerializeMap};
@@ -15,12 +16,11 @@ use super::{
 };
 use crate::{config::Value, detect::Kind, error::Error, yaml::parse_yaml};
 
-static RE_WRAP: Lazy = Lazy::new(r"^:?wrap:", "");
-static RE_NOWRAP: Lazy = Lazy::new(r"^:?nowrap:", "");
-static RE_WRAP_PREFIX: Lazy = Lazy::new(r"^:?(?:no)?wrap:", "");
-static RE_BOX_FUNCTION: Lazy = Lazy::new(r"^(?:rgba?|hsla?)\s*\(", "");
-static RE_LINE_TERMINATOR: Lazy = Lazy::new(r"[\r  ]", "");
-static RE_WORD: Lazy = Lazy::new(r"^\w*", "");
+static RE_BOX_FUNCTION: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(r"^(?:rgba?|hsla?)[{}]*\(", chars::SPACE)).expect("pattern")
+});
+/// The line terminators other than a line feed.
+const LINE_TERMINATORS: [char; 3] = ['\r', '\u{2028}', '\u{2029}'];
 
 fn fail(message: impl Into<String>) -> Error {
     Error::semantic(message).of(Kind::Sequence)
@@ -31,19 +31,19 @@ fn fail(message: impl Into<String>) -> Error {
 /// terminator, so a line that holds one outside the gap before the
 /// parenthesis does not match at all.
 fn split_box(text: &str) -> Option<(&str, &str)> {
-    if let Some(function) = RE_BOX_FUNCTION.exec(text) {
+    if let Some(function) = RE_BOX_FUNCTION.find(text) {
         let head = function.end();
         if let Some(close) = text.rfind(')').filter(|&close| close >= head) {
-            if RE_LINE_TERMINATOR.test(&text[head..]) {
+            if text[head..].contains(LINE_TERMINATORS) {
                 return None;
             }
             return Some((&text[..close + 1], &text[close + 1..]));
         }
     }
-    if RE_LINE_TERMINATOR.test(text) {
+    if text.contains(LINE_TERMINATORS) {
         return None;
     }
-    let word = RE_WORD.exec(text).map_or(0, |m| m.end());
+    let word = text.bytes().take_while(|&b| chars::is_word(b)).count();
     Some((&text[..word], &text[word..]))
 }
 
@@ -81,19 +81,16 @@ impl SeqText {
     /// A message, without the `wrap:` or `nowrap:` that may open it.
     pub fn parse(raw: &str) -> Self {
         let text = string::trim(raw);
-        let wrap = if RE_WRAP.test(text) {
-            Some(true)
-        } else if RE_NOWRAP.test(text) {
-            Some(false)
+        let body = text.strip_prefix(':').unwrap_or(text);
+        let (wrap, text) = if let Some(rest) = body.strip_prefix("wrap:") {
+            (Some(true), rest)
+        } else if let Some(rest) = body.strip_prefix("nowrap:") {
+            (Some(false), rest)
         } else {
-            None
-        };
-        let text = match wrap {
-            None => text.to_string(),
-            Some(_) => RE_WRAP_PREFIX.replace(text, |_| String::new()),
+            (None, text)
         };
         Self {
-            text: string::trim(&text).to_string(),
+            text: string::trim(text).to_string(),
             wrap,
         }
     }

@@ -1,8 +1,10 @@
 //! Pele's `diagrams/gantt/lexer.ts`.
 
 use super::tokens::T;
-use crate::token::{Cursor, Token};
-use js::string;
+use crate::{
+    token::{Cursor, Token},
+    util::chars,
+};
 
 /// What ends most statements' text.
 const STATEMENT_END: &[char] = &['#', '\n', ';'];
@@ -79,7 +81,7 @@ impl Lexer<'_> {
             4 | 7 => *b == b'-',
             _ => b.is_ascii_digit(),
         });
-        (fits && !string::is_word(self.cur.code(p + 10))).then_some(p + 10)
+        (fits && !chars::is_word(self.cur.code(p + 10))).then_some(p + 10)
     }
 
     /// A statement that starts with a keyword, at the cursor.
@@ -175,7 +177,7 @@ impl Lexer<'_> {
         } else if c == '\n' {
             let end = self.cur.run_end(p, |c| c == '\n');
             self.emit(T::Nl, end);
-        } else if string::is_space(c) {
+        } else if chars::is_space(c) {
             self.cur.p = self.cur.space_end(p + w);
         } else if !self.keyword() {
             self.task(c);
@@ -230,10 +232,10 @@ impl Lexer<'_> {
             }
             S::Callbackargs => self.delimited(c, ')', T::Callbackargs),
             S::Click => {
-                if string::is_space(c) {
+                if chars::is_space(c) {
                     self.begin(S::Initial, p + c.len_utf8());
                 } else {
-                    let end = self.cur.run_end(p + c.len_utf8(), |c| !string::is_space(c));
+                    let end = self.cur.run_end(p + c.len_utf8(), |c| !chars::is_space(c));
                     self.emit(T::Click, end);
                 }
             }

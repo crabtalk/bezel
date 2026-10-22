@@ -7,17 +7,15 @@ use super::{
     util::chars::{self, is_inline_space, width_at},
     yaml::parse_yaml,
 };
-use crate::{json, json::JsValue};
-use js::{regex::Lazy, string};
+use crate::{json, json::JsValue, string};
+use regex::{Captures, Regex};
+use std::{ops::Range, sync::LazyLock};
 
-static RE_COMMENT: Lazy = Lazy::new(r"^\s*%%(?!\{)[^\n]+\n?", "gm");
-static RE_DIRECTIVE: Lazy = Lazy::new(
-    r"%{2}\{\s*(?:(\w+)\s*:|(\w+))\s*(?:(\w+)|((?:(?!\}%{2}).|\r?\n)*))?\s*(?:\}%{2})?",
-    "gi",
-);
-static RE_HTML_TAG: Lazy = Lazy::new(r"<(\w+)([^>]*)>", "g");
-static RE_ATTR: Lazy = Lazy::new(r#"="([^"]*)""#, "g");
-static RE_ENTITY: Lazy = Lazy::new(r"#\w+;", "g");
+static RE_HTML_TAG: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<([0-9A-Z_a-z]+)([^>]*)>").expect("pattern"));
+static RE_ATTR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"="([^"]*)""#).expect("pattern"));
+static RE_ENTITY: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"#[0-9A-Z_a-z]+;").expect("pattern"));
 
 pub struct Preprocessed {
     pub text: String,
@@ -29,20 +27,117 @@ pub struct Preprocessed {
     pub line_offset: usize,
 }
 
+/// `text` without its `%%` comment lines, as Mermaid's
+/// `/^\s*%%(?!\{)[^\n]+\n?/gm` removes them, and its leading whitespace.
 pub fn cleanup_comments(text: &str) -> String {
-    let text = if text.contains("%%") {
-        RE_COMMENT.replace(text, |_| String::new())
-    } else {
-        text.to_string()
-    };
-    string::trim_start(&text).to_string()
+    if !text.contains("%%") {
+        return string::trim_start(text).to_string();
+    }
+    let mut out = String::new();
+    let mut last = 0;
+    let mut line = 0;
+    loop {
+        let at = line + (text.len() - line - string::trim_start(&text[line..]).len());
+        let rest = &text.as_bytes()[at..];
+        if rest.starts_with(b"%%") && rest.get(2).is_some_and(|&c| c != b'{' && c != b'\n') {
+            let end = memchr::memchr(b'\n', &rest[2..]).map_or(text.len(), |n| at + 2 + n + 1);
+            out.push_str(&text[last..line]);
+            last = end;
+            line = end;
+            continue;
+        }
+        match text[line..].find(|c: char| chars::is_line_end(c)) {
+            Some(n) => line += n + width_at(text, line + n),
+            None => break,
+        }
+    }
+    out.push_str(&text[last..]);
+    string::trim_start(&out).to_string()
+}
+
+/// A `%%{…}%%` directive, as Mermaid's
+/// `/%{2}\{\s*(?:(\w+)\s*:|(\w+))\s*(?:(\w+)|((?:(?!\}%{2}).|\r?\n)*))?\s*(?:\}%{2})?/gi`
+/// matches it.
+struct Directive<'t> {
+    range: Range<usize>,
+    kind: &'t str,
+    /// What follows the kind when it is not a single word.
+    args: Option<&'t str>,
+}
+
+impl<'t> Directive<'t> {
+    /// The first directive in `text` from byte `from`.
+    fn find(text: &'t str, mut from: usize) -> Option<Self> {
+        let bytes = text.as_bytes();
+        let space = |at: usize| at + (text.len() - at - string::trim_start(&text[at..]).len());
+        let word = |at: usize| {
+            at + bytes[at..]
+                .iter()
+                .take_while(|&&b| chars::is_word(b))
+                .count()
+        };
+        loop {
+            let start = from + memchr::memmem::find(&bytes[from..], b"%%{")?;
+            from = start + 1;
+            let kind_start = space(start + 3);
+            let kind_end = word(kind_start);
+            if kind_end == kind_start {
+                continue;
+            }
+            let colon = space(kind_end);
+            let mut at = if bytes.get(colon) == Some(&b':') {
+                colon + 1
+            } else {
+                kind_end
+            };
+            at = space(at);
+            let mut args = None;
+            let value_end = word(at);
+            if value_end > at {
+                at = value_end;
+            } else {
+                let args_start = at;
+                loop {
+                    if bytes[at..].starts_with(b"}%%") {
+                        break;
+                    }
+                    match text[at..].chars().next() {
+                        Some('\r') if bytes.get(at + 1) == Some(&b'\n') => at += 2,
+                        Some(c) if !chars::is_line_end(c) => at += c.len_utf8(),
+                        Some('\n') => at += 1,
+                        _ => break,
+                    }
+                }
+                args = Some(&text[args_start..at]);
+            }
+            at = space(at);
+            if bytes[at..].starts_with(b"}%%") {
+                at += 3;
+            }
+            return Some(Self {
+                range: start..at,
+                kind: &text[kind_start..kind_end],
+                args,
+            });
+        }
+    }
+
+    /// Every directive in `text`, in order.
+    fn all(text: &'t str) -> impl Iterator<Item = Self> {
+        let mut from = 0;
+        std::iter::from_fn(move || {
+            let found = Self::find(text, from)?;
+            from = found.range.end;
+            Some(found)
+        })
+    }
 }
 
 /// Byte offsets of the line breaks in the run of whitespace at `from`.
 fn breaks_in_space(text: &str, from: usize) -> impl Iterator<Item = usize> + '_ {
     text[from..]
         .char_indices()
-        .take_while(|&(_, c)| string::is_space(c))
+        .take_while(|&(_, c)| chars::is_space(c))
         .filter(|&(_, c)| matches!(c, '\n' | '\r'))
         .map(move |(at, _)| from + at)
 }
@@ -116,14 +211,13 @@ fn directives(text: &str, config: &mut Map) -> String {
         return text.to_string();
     }
     let normalized = string::trim(text).replace('\'', "\"");
-    for caps in RE_DIRECTIVE.captures_iter(&normalized) {
-        let kind = caps.get(1).or_else(|| caps.get(2));
-        match kind {
-            Some("wrap") => {
+    for directive in Directive::all(&normalized) {
+        match directive.kind {
+            "wrap" => {
                 config.insert("wrap".into(), Value::Bool(true));
             }
-            Some("init" | "initialize") => {
-                if let Some(args) = caps.get(4).filter(|args| !args.is_empty())
+            "init" | "initialize" => {
+                if let Some(args) = directive.args.filter(|args| !args.is_empty())
                     && let Some(Value::Object(args)) = json::parse_json(string::trim(args))
                 {
                     // Mermaid ignores an init directive whose body is not
@@ -134,7 +228,13 @@ fn directives(text: &str, config: &mut Map) -> String {
             _ => {}
         }
     }
-    RE_DIRECTIVE.replace(text, |_| String::new())
+    let mut out = String::new();
+    let mut last = 0;
+    for directive in Directive::all(text) {
+        out.push_str(&text[last..directive.range.start]);
+        last = directive.range.end;
+    }
+    out + &text[last..]
 }
 
 pub fn preprocess(source: &str) -> Result<Preprocessed, Error> {
@@ -148,11 +248,11 @@ pub fn preprocess(source: &str) -> Result<Preprocessed, Error> {
         && let Some(last_close) = text.rfind('>')
         && last_close > 0
     {
-        let head = RE_HTML_TAG.replace(&text[..=last_close], |caps| {
-            let attrs = RE_ATTR.replace(caps.str(2), |attr| format!("='{}'", attr.str(1)));
-            format!("<{}{}>", caps.str(1), attrs)
+        let head = RE_HTML_TAG.replace_all(&text[..=last_close], |caps: &Captures| {
+            let attrs = RE_ATTR.replace_all(&caps[2], "='$1'");
+            format!("<{}{}>", &caps[1], attrs)
         });
-        text = head + &text[last_close + 1..];
+        text = head.into_owned() + &text[last_close + 1..];
     }
 
     let mut config = Map::new();
@@ -232,7 +332,7 @@ fn drop_color_semicolons(text: &str, keyword: &str) -> String {
                     hash = Some(j);
                     break;
                 }
-            } else if string::is_space(c) {
+            } else if chars::is_space(c) {
                 after_colon = false;
             }
         }
@@ -265,14 +365,16 @@ pub fn encode_entities(text: &str) -> String {
         return text.to_string();
     }
     let text = drop_color_semicolons(&drop_color_semicolons(text, "style"), "classDef");
-    RE_ENTITY.replace(&text, |caps| {
-        let s = caps.str(0);
-        let inner = chars::inner(s);
-        let open = if inner.bytes().all(|b| b.is_ascii_digit()) {
-            "ﬂ°°"
-        } else {
-            "ﬂ°"
-        };
-        format!("{open}{inner}¶ß")
-    })
+    RE_ENTITY
+        .replace_all(&text, |caps: &Captures| {
+            let s = &caps[0];
+            let inner = chars::inner(s);
+            let open = if inner.bytes().all(|b| b.is_ascii_digit()) {
+                "ﬂ°°"
+            } else {
+                "ﬂ°"
+            };
+            format!("{open}{inner}¶ß")
+        })
+        .into_owned()
 }

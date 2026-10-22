@@ -5,8 +5,10 @@ use super::{
     lexer::tokenize,
     tokens::T,
 };
-use crate::{detect::Kind, diagrams::common::chart::ChartKind, error::Error, token::Stream};
-use js::{number::Number, string};
+use crate::{
+    detect::Kind, diagrams::common::chart::ChartKind, error::Error, string, token::Stream,
+};
+use js::number::Number;
 
 pub fn parse_xy_chart(src: &str, db: &mut XyChartModel) -> Result<(), Error> {
     let tokens = tokenize(src);

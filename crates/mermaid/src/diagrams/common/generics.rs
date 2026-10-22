@@ -1,9 +1,5 @@
 //! `List~int~` as `List<int>`. Pele's `diagrams/common/generics.ts`.
 
-use js::regex::Lazy;
-
-static RE_COMMA: Lazy = Lazy::new(r"(,)", "");
-
 fn tildes(text: &str) -> usize {
     text.matches('~').count()
 }
@@ -40,7 +36,14 @@ pub fn parse_generic_types(input: &str) -> String {
     if !input.contains('~') {
         return input.to_string();
     }
-    let sets = RE_COMMA.split_str(input);
+    // `input.split(/(,)/)`: the commas kept between the pieces.
+    let mut sets = Vec::new();
+    for (i, piece) in input.split(',').enumerate() {
+        if i > 0 {
+            sets.push(",");
+        }
+        sets.push(piece);
+    }
     let mut output: Vec<String> = Vec::new();
     let mut i = 0;
     while i < sets.len() {

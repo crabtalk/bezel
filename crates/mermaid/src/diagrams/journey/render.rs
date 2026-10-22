@@ -1,7 +1,7 @@
 //! Pele's `diagrams/journey/render.ts`.
 
-use crate::{geom::Point, svg::builder::EscText};
-use js::{math, number::Number, string};
+use crate::{geom::Point, string, svg::builder::EscText};
+use js::{math, number::Number};
 use std::{
     collections::HashMap,
     fmt::{self, Write as _},

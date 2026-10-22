@@ -5,14 +5,14 @@
 //! is accepted only when formatting the parsed result gives back the input.
 //! Pele's `diagrams/gantt/dates.ts`.
 
+use crate::{string, util::chars};
 use js::{
     date::{self, Date},
     math,
     number::{self, Number},
-    regex::Lazy,
-    string,
 };
-use std::{cell::RefCell, rc::Rc};
+use regex::{Captures, Regex};
+use std::{cell::RefCell, rc::Rc, sync::LazyLock};
 
 /// A day of the week, numbered from Sunday as [`Date::day`] numbers it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
@@ -61,30 +61,39 @@ const DAY: f64 = 86_400_000.0;
 const WEEK: f64 = 7.0 * DAY;
 const DEFAULT_FORMAT: &str = "YYYY-MM-DDTHH:mm:ssZ";
 
-static RE_ADVANCED: Lazy = Lazy::new(
-    r"\[([^\]]+)]|Q|wo|ww|w|WW|W|zzz|z|gggg|GGGG|Do|X|x|k{1,2}|S",
-    "g",
-);
-static RE_FORMAT: Lazy = Lazy::new(
-    r"\[([^\]]+)]|YYYY|YY|M{1,4}|D{1,2}|d{1,4}|H{1,2}|h{1,2}|a|A|m{1,2}|s{1,2}|Z{1,2}|SSS",
-    "g",
-);
-static RE_TOKENS: Lazy = Lazy::new(
-    r"(\[[^[]*\])|([-_:/.,()\s]+)|(A|a|Q|YYYY|YY?|ww?|MM?M?M?|Do|DD?|hh?|HH?|mm?|ss?|S{1,3}|z|ZZ?)",
-    "g",
-);
-static RE_LITERAL: Lazy = Lazy::new(r"\[[^\]]+]", "g");
-static RE_LOCALIZED: Lazy = Lazy::new(r"[Ll]", "");
-static RE_BRACKETS: Lazy = Lazy::new(r"^\[|\]$", "g");
-static MATCH_1: Lazy = Lazy::new(r"\d", "");
-static MATCH_2: Lazy = Lazy::new(r"\d\d", "");
-static MATCH_3: Lazy = Lazy::new(r"\d{3}", "");
-static MATCH_4: Lazy = Lazy::new(r"\d{4}", "");
-static MATCH_1_TO_2: Lazy = Lazy::new(r"\d\d?", "");
-static MATCH_SIGNED: Lazy = Lazy::new(r"[+-]?\d+", "");
-static MATCH_OFFSET: Lazy = Lazy::new(r"[+-]\d\d:?(\d\d)?|Z", "");
-static MATCH_WORD: Lazy = Lazy::new(r"\d*[^-_:/,()\s\d]+", "");
-static RE_OFFSET_PARTS: Lazy = Lazy::new(r"([+-]|\d\d)", "g");
+static RE_ADVANCED: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\[([^\]]+)\]|Q|wo|ww|w|WW|W|zzz|z|gggg|GGGG|Do|X|x|k{1,2}|S").expect("pattern")
+});
+static RE_FORMAT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"\[([^\]]+)\]|YYYY|YY|M{1,4}|D{1,2}|d{1,4}|H{1,2}|h{1,2}|a|A|m{1,2}|s{1,2}|Z{1,2}|SSS",
+    )
+    .expect("pattern")
+});
+static RE_TOKENS: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"(\[[^\[]*\])|([-_:/.,(){}]+)|(A|a|Q|YYYY|YY?|ww?|MM?M?M?|Do|DD?|hh?|HH?|mm?|ss?|S{{1,3}}|z|ZZ?)",
+        chars::SPACE
+    ))
+    .expect("pattern")
+});
+static RE_LITERAL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\[[^\]]+\]").expect("pattern"));
+static RE_BRACKETS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\[|\]$").expect("pattern"));
+static MATCH_1: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[0-9]").expect("pattern"));
+static MATCH_2: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[0-9]{2}").expect("pattern"));
+static MATCH_3: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[0-9]{3}").expect("pattern"));
+static MATCH_4: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[0-9]{4}").expect("pattern"));
+static MATCH_1_TO_2: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[0-9][0-9]?").expect("pattern"));
+static MATCH_SIGNED: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[+-]?[0-9]+").expect("pattern"));
+static MATCH_OFFSET: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[+-][0-9]{2}:?(?:[0-9]{2})?|Z").expect("pattern"));
+static MATCH_WORD: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(r"[0-9]*[^-_:/,(){}0-9]+", chars::SPACE)).expect("pattern")
+});
+static RE_OFFSET_PARTS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[+-]|[0-9]{2}").expect("pattern"));
 /// How many formats [`compiled`] keeps.
 const COMPILED_KEPT: usize = 4;
 
@@ -93,7 +102,7 @@ thread_local! {
     static COMPILED: RefCell<Vec<(String, Compiled)>> =
         const { RefCell::new(Vec::new()) };
 }
-static RE_DIGITS: Lazy = Lazy::new(r"\d+", "");
+static RE_DIGITS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[0-9]+").expect("pattern"));
 
 /// A unit `add` takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -242,8 +251,8 @@ pub(crate) fn format(date: Date, template: &str) -> Option<String> {
         return Some(iso_date(date));
     }
     let mut unsupported = false;
-    let advanced = RE_ADVANCED.replace(s, |caps| {
-        let m = caps.str(0);
+    let advanced = RE_ADVANCED.replace_all(s, |caps: &Captures| {
+        let m = &caps[0];
         match m {
             "Q" => Number(((date.month() + 1.0) / 3.0).ceil()).to_string(),
             "Do" => format!("[{}]", ordinal(date.date())),
@@ -277,46 +286,50 @@ pub(crate) fn format(date: Date, template: &str) -> Option<String> {
         return None;
     }
     let hours = date.hours();
-    Some(RE_FORMAT.replace(&advanced, |caps| {
-        if let Some(literal) = caps.get(1).filter(|literal| !literal.is_empty()) {
-            return literal.to_string();
-        }
-        let twelve = if number::truthy(hours % 12.0) {
-            hours % 12.0
-        } else {
-            12.0
-        };
-        match caps.str(0) {
-            "YY" => {
-                let year = Number(date.full_year()).to_string();
-                year[year.len().saturating_sub(2)..].to_string()
-            }
-            "YYYY" => pad(date.full_year(), 4),
-            "M" => Number(date.month() + 1.0).to_string(),
-            "MM" => pad(date.month() + 1.0, 2),
-            "MMM" => date::MONTHS[date.month() as usize][..3].to_string(),
-            "MMMM" => date::MONTHS[date.month() as usize].to_string(),
-            "D" => Number(date.date()).to_string(),
-            "DD" => pad(date.date(), 2),
-            "d" => Number(date.day()).to_string(),
-            "dd" => date::WEEKDAYS[date.day() as usize][..2].to_string(),
-            "ddd" => date::WEEKDAYS[date.day() as usize][..3].to_string(),
-            "dddd" => date::WEEKDAYS[date.day() as usize].to_string(),
-            "H" => Number(hours).to_string(),
-            "HH" => pad(hours, 2),
-            "h" => Number(twelve).to_string(),
-            "hh" => pad(twelve, 2),
-            "a" => if hours < 12.0 { "am" } else { "pm" }.into(),
-            "A" => if hours < 12.0 { "AM" } else { "PM" }.into(),
-            "m" => Number(date.minutes()).to_string(),
-            "mm" => pad(date.minutes(), 2),
-            "s" => Number(date.seconds()).to_string(),
-            "ss" => pad(date.seconds(), 2),
-            "SSS" => pad(date.milliseconds(), 3),
-            "Z" => zone(date),
-            _ => zone(date).replacen(':', "", 1),
-        }
-    }))
+    Some(
+        RE_FORMAT
+            .replace_all(&advanced, |caps: &Captures| {
+                if let Some(literal) = caps.get(1).filter(|literal| !literal.is_empty()) {
+                    return literal.as_str().to_string();
+                }
+                let twelve = if number::truthy(hours % 12.0) {
+                    hours % 12.0
+                } else {
+                    12.0
+                };
+                match &caps[0] {
+                    "YY" => {
+                        let year = Number(date.full_year()).to_string();
+                        year[year.len().saturating_sub(2)..].to_string()
+                    }
+                    "YYYY" => pad(date.full_year(), 4),
+                    "M" => Number(date.month() + 1.0).to_string(),
+                    "MM" => pad(date.month() + 1.0, 2),
+                    "MMM" => date::MONTHS[date.month() as usize][..3].to_string(),
+                    "MMMM" => date::MONTHS[date.month() as usize].to_string(),
+                    "D" => Number(date.date()).to_string(),
+                    "DD" => pad(date.date(), 2),
+                    "d" => Number(date.day()).to_string(),
+                    "dd" => date::WEEKDAYS[date.day() as usize][..2].to_string(),
+                    "ddd" => date::WEEKDAYS[date.day() as usize][..3].to_string(),
+                    "dddd" => date::WEEKDAYS[date.day() as usize].to_string(),
+                    "H" => Number(hours).to_string(),
+                    "HH" => pad(hours, 2),
+                    "h" => Number(twelve).to_string(),
+                    "hh" => pad(twelve, 2),
+                    "a" => if hours < 12.0 { "am" } else { "pm" }.into(),
+                    "A" => if hours < 12.0 { "AM" } else { "PM" }.into(),
+                    "m" => Number(date.minutes()).to_string(),
+                    "mm" => pad(date.minutes(), 2),
+                    "s" => Number(date.seconds()).to_string(),
+                    "ss" => pad(date.seconds(), 2),
+                    "SSS" => pad(date.milliseconds(), 3),
+                    "Z" => zone(date),
+                    _ => zone(date).replacen(':', "", 1),
+                }
+            })
+            .into_owned(),
+    )
 }
 
 pub(crate) fn iso_date(date: Date) -> String {
@@ -373,13 +386,13 @@ enum Read {
 
 enum Step {
     Literal(String),
-    Read(&'static Lazy, Read),
+    Read(&'static LazyLock<Regex>, Read),
 }
 
 /// A format's steps, `None` for one dayjs fails on.
 type Compiled = Rc<Option<Vec<Step>>>;
 
-fn reader(token: &str) -> Option<(&'static Lazy, Read)> {
+fn reader(token: &str) -> Option<(&'static LazyLock<Regex>, Read)> {
     Some(match token {
         "A" => (&MATCH_WORD, Read::Afternoon("PM")),
         "a" => (&MATCH_WORD, Read::Afternoon("pm")),
@@ -424,12 +437,12 @@ fn read(f: &mut Fields, how: Read, input: &str) -> bool {
             f.year = Some(value + if value > 68.0 { 1900.0 } else { 2000.0 });
         }
         Read::Ordinal => {
-            let Some(digits) = RE_DIGITS.exec(input) else {
+            let Some(digits) = RE_DIGITS.find(input) else {
                 return false;
             };
             // dayjs keeps the digits as a string here, so even "0" counts as
             // a day having been given.
-            f.day = Some(Number::from(digits.str(0)).0);
+            f.day = Some(Number::from(digits.as_str()).0);
             f.day_given = true;
             for i in 1..=31 {
                 if ordinal(i as f64) == input {
@@ -458,7 +471,10 @@ fn read(f: &mut Fields, how: Read, input: &str) -> bool {
                 f.offset = Some(0.0);
                 return true;
             }
-            let parts = RE_OFFSET_PARTS.find_all(input);
+            let parts: Vec<&str> = RE_OFFSET_PARTS
+                .find_iter(input)
+                .map(|m| m.as_str())
+                .collect();
             let part = |i: usize| parts.get(i).map_or(f64::NAN, |p| Number::from(*p).0);
             let second = part(2);
             let minutes = part(1) * 60.0 + if number::truthy(second) { second } else { 0.0 };
@@ -493,10 +509,10 @@ fn compiled(template: &str) -> Compiled {
 fn compile(template: &str) -> Option<Vec<Step>> {
     // dayjs expands localized tokens through a locale table the English
     // locale does not have, and fails.
-    if RE_LOCALIZED.test(&RE_LITERAL.replace(template, |_| String::new())) {
+    if RE_LITERAL.replace_all(template, "").contains(['L', 'l']) {
         return None;
     }
-    let tokens = RE_TOKENS.find_all(template);
+    let tokens: Vec<&str> = RE_TOKENS.find_iter(template).map(|m| m.as_str()).collect();
     if tokens.is_empty() {
         return None;
     }
@@ -505,7 +521,7 @@ fn compile(template: &str) -> Option<Vec<Step>> {
             .into_iter()
             .map(|token| match reader(token) {
                 Some((re, how)) => Step::Read(re, how),
-                None => Step::Literal(RE_BRACKETS.replace(token, |_| String::new())),
+                None => Step::Literal(RE_BRACKETS.replace_all(token, "").into_owned()),
             })
             .collect(),
     )
@@ -530,8 +546,8 @@ fn loose<'z>(input: &str, template: &str, now: Date<'z>) -> Option<Date<'z>> {
             Step::Read(re, how) => (re, *how),
         };
         let found = re
-            .exec(&rest[string::units_end(&rest, start)..])?
-            .str(0)
+            .find(&rest[string::units_end(&rest, start)..])?
+            .as_str()
             .to_string();
         if !read(&mut f, how, &found) {
             return None;
