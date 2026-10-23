@@ -3,7 +3,7 @@
 
 use gpui::{Hsla, WindowBackgroundAppearance, hsla};
 
-use crate::{Appearance, color, paint, theme::Theme};
+use crate::{Appearance, Material, color, paint, theme::Theme};
 
 impl Theme {
     /// The frost tint painted over the blurred window background (macOS glass):
@@ -37,6 +37,19 @@ impl Theme {
         match self.vibrancy {
             true => self.content_background.opacity(self.content_opacity),
             false => self.bg,
+        }
+    }
+
+    /// What a content card sitting back paints over [`Self::sidebar_bg`]:
+    /// [`Self::content_bg`]'s fill at [`Material::Thin`]'s share of
+    /// [`Material::Thick`]'s coverage.
+    pub fn content_resting_bg(&self) -> Hsla {
+        let share = Material::Thin.opacity() / Material::Thick.opacity();
+        match self.vibrancy {
+            true => self
+                .content_background
+                .opacity(self.content_opacity * share),
+            false => color::over(self.bg.opacity(share), self.surface),
         }
     }
 

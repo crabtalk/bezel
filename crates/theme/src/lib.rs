@@ -43,11 +43,14 @@ mod brand;
 mod color;
 mod paint;
 mod platform;
+mod selection;
 mod theme;
 
 pub use brand::{BASE_COLORS, Brand, Ink, TextInk, Tint, Vibrancy};
 
 pub use platform::{LENSED, behind_window_blending};
+
+pub use selection::Selection;
 
 pub use color::{
     LEGIBLE, contrast_ratio, flatten, grey, hsl_to_rgb, ink_over, kept, legible, legible_on,

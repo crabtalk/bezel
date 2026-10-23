@@ -8,7 +8,7 @@ use crate::stack;
 use gpui::{CursorStyle, Div, SharedString, Svg, div, prelude::*, px};
 use icons::Icon;
 use motion::{self, Fade};
-use theme::{TextStyle, Theme, ThemeExt, Typeset};
+use theme::{Selection, TextStyle, Theme, ThemeExt, Typeset};
 
 /// The drag payload of a [`Layout::split_handle`]. Shipped from here so every
 /// split speaks the same type: `on_drag_move::<SplitDrag>` on one container
@@ -95,14 +95,14 @@ pub trait Layout: ThemeExt {
         &self,
         icon: Option<Icon>,
         label: impl Into<SharedString>,
-        selected: bool,
+        selected: Selection,
         fade: Fade,
     ) -> Div {
         let theme = self.theme();
         // Selected is a flat wash; unselected fades. The tone is
         // `popover::menu_row`'s and `tree::tree_row`'s, so a sidebar, a menu
         // and a tree never show three different ideas of "this one".
-        let tint = if selected {
+        let tint = if selected.is_selected() {
             theme.row_text(true, false)
         } else {
             motion::hover_blend(&fade, theme.row_text(false, false), theme.text)
@@ -115,8 +115,8 @@ pub trait Layout: ThemeExt {
             .text_style(TextStyle::Body)
             .text_color(tint)
             .cursor_pointer();
-        if selected {
-            row = row.bg(theme.card_selected_bg());
+        if let Some(fill) = selected.fill(theme) {
+            row = row.bg(fill);
         } else {
             row = row.bg(motion::hover_blend(
                 &fade,

@@ -133,19 +133,19 @@ pub fn frame(child: impl IntoElement, window: &mut Window, cx: &App) -> Div {
 pub fn content(floating: bool, cx: &App) -> Div {
     let theme = Theme::of(cx);
     match floating {
-        true => div()
-            .bg(theme.content_bg())
-            .rounded(px(Theme::panel_radius()))
-            .border_1()
-            .border_color(theme.border)
-            .when(!theme.vibrancy, |card| {
-                card.shadow(theme::content_shadows())
-            })
-            // Without this the child's own background paints over the
-            // corners the border rounds.
-            .overflow_hidden(),
+        true => card(theme.content_bg(), theme).when(!theme.vibrancy, |card| {
+            card.shadow(theme::content_shadows())
+        }),
         false => div().bg(theme.window_bg()),
     }
+}
+
+/// A floating [`content`] card sitting back, beside a raised one: the same
+/// corners and border, [`Theme::content_resting_bg`] over the chrome, and no
+/// shadow.
+pub fn resting(cx: &App) -> Div {
+    let theme = Theme::of(cx);
+    card(theme.content_resting_bg(), theme)
 }
 
 /// The one colour [`content`] shows, chrome included, for an element inside
@@ -155,6 +155,22 @@ pub fn content_fill(floating: bool, theme: &Theme) -> Hsla {
         true => theme::over(theme.content_bg(), theme.sidebar_bg()),
         false => theme.window_bg(),
     }
+}
+
+/// [`content_fill`] for a [`resting`] card.
+pub fn resting_fill(theme: &Theme) -> Hsla {
+    theme::over(theme.content_resting_bg(), theme.sidebar_bg())
+}
+
+fn card(fill: Hsla, theme: &Theme) -> Div {
+    div()
+        .bg(fill)
+        .rounded(px(Theme::panel_radius()))
+        .border_1()
+        .border_color(theme.border)
+        // Without this the child's own background paints over the corners the
+        // border rounds.
+        .overflow_hidden()
 }
 
 /// Which edge a press at `pos` resizes, or `None` for a press on the content.
