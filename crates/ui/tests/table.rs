@@ -65,7 +65,7 @@ fn a_row_short_of_cells_is_caught_rather_than_quietly_misaligned() {
         &theme,
         &columns,
         true,
-        false,
+        theme::Selection::None,
         vec![div().into_any_element()],
     );
 }

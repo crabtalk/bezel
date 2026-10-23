@@ -1,5 +1,6 @@
 use super::{Edit, Page};
 use gpui::{App, Bounds, Pixels, Window};
+use std::rc::Rc;
 
 pub(super) const BINDS_EDITS: bool = false;
 
@@ -12,10 +13,10 @@ impl State {
 }
 
 impl Page {
-    pub(super) fn place(&self, bounds: Bounds<Pixels>, window: &Window) {
-        self.uncover();
-        self.window.set(Some(window.window_handle()));
-        self.placed.set(Some(bounds));
+    pub(super) fn place(this: &Rc<Self>, bounds: Bounds<Pixels>, window: &Window, _cx: &mut App) {
+        this.uncover();
+        this.window.set(Some(window.window_handle()));
+        this.placed.set(Some(bounds));
     }
 
     pub(super) fn capture(&self) -> bool {

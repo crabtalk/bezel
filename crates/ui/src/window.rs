@@ -120,34 +120,32 @@ pub fn frame(child: impl IntoElement, window: &mut Window, cx: &App) -> Div {
 /// The element an app's main view is drawn in.
 ///
 /// Floating, it is a card on the window's chrome, [`Theme::sidebar_bg`],
-/// which its parent paints: half [`Theme::CONTENT_INSET`] of margin on every
-/// side, [`Theme::panel_radius`] corners, a hairline border and
-/// [`Theme::content_bg`] over the chrome. An opaque card casts
+/// which its parent paints: [`Theme::panel_radius`] corners, a hairline border
+/// and [`Theme::content_bg`] over the chrome. An opaque card casts
 /// [`theme::content_shadows`]; under [`Theme::vibrancy`] it casts none, since a
 /// shadow shows through a translucent fill. Flat, it is a plain
 /// [`Theme::window_bg`] fill with none of those.
 ///
-/// The caller sizes it: it is handed back unsized, as a flex row or column
-/// item would want it. The parent of floating cards pads itself by the other
-/// half of the inset, so a card stands the whole inset off the window's edge
-/// and two cards side by side meet the whole inset apart.
+/// The card has no margin. The caller sizes and places it: it is handed back
+/// unsized, as a flex row or column item would want it, and the space around
+/// it — [`Theme::CONTENT_INSET`] off the window's edge and between two cards —
+/// is the parent's padding and gaps.
 pub fn content(floating: bool, cx: &App) -> Div {
     let theme = Theme::of(cx);
     match floating {
-        true => div()
-            .bg(theme.content_bg())
-            .m(px(Theme::CONTENT_INSET / 2.0))
-            .rounded(px(Theme::panel_radius()))
-            .border_1()
-            .border_color(theme.border)
-            .when(!theme.vibrancy, |card| {
-                card.shadow(theme::content_shadows())
-            })
-            // Without this the child's own background paints over the
-            // corners the border rounds.
-            .overflow_hidden(),
+        true => card(theme.content_bg(), theme).when(!theme.vibrancy, |card| {
+            card.shadow(theme::content_shadows())
+        }),
         false => div().bg(theme.window_bg()),
     }
+}
+
+/// A floating [`content`] card sitting back, beside a raised one: the same
+/// corners and border, [`Theme::content_resting_bg`] over the chrome, and no
+/// shadow.
+pub fn resting(cx: &App) -> Div {
+    let theme = Theme::of(cx);
+    card(theme.content_resting_bg(), theme)
 }
 
 /// The one colour [`content`] shows, chrome included, for an element inside
@@ -157,6 +155,22 @@ pub fn content_fill(floating: bool, theme: &Theme) -> Hsla {
         true => theme::over(theme.content_bg(), theme.sidebar_bg()),
         false => theme.window_bg(),
     }
+}
+
+/// [`content_fill`] for a [`resting`] card.
+pub fn resting_fill(theme: &Theme) -> Hsla {
+    theme::over(theme.content_resting_bg(), theme.sidebar_bg())
+}
+
+fn card(fill: Hsla, theme: &Theme) -> Div {
+    div()
+        .bg(fill)
+        .rounded(px(Theme::panel_radius()))
+        .border_1()
+        .border_color(theme.border)
+        // Without this the child's own background paints over the corners the
+        // border rounds.
+        .overflow_hidden()
 }
 
 /// Which edge a press at `pos` resizes, or `None` for a press on the content.

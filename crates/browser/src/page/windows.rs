@@ -64,13 +64,6 @@ impl State {
 
 pub(super) fn start(_window: &Window, _cx: &mut App) {}
 
-pub(super) fn build(
-    builder: wry::WebViewBuilder<'_>,
-    window: &Window,
-) -> Option<wry::Result<wry::WebView>> {
-    Some(builder.build_as_child(window))
-}
-
 /// Store identifiers are macOS's.
 pub(super) fn store<'a>(
     builder: wry::WebViewBuilder<'a>,

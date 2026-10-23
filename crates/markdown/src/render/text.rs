@@ -359,7 +359,7 @@ pub(super) fn painted_text(
                     crate::app::link::follow(link, jump.as_ref(), window, cx);
                 }
             })
-            .tooltip(move |at, _window, cx| {
+            .hoverable_tooltip(move |at, _window, cx| {
                 let (_, url) = hovered.iter().find(|(range, _)| range.contains(&at))?;
                 Some(HoverCard::view(url, hover_base.clone(), cx))
             })

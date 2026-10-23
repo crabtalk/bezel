@@ -15,7 +15,7 @@ profiler = ["gpui/profiler"]
 # Runs on the host whatever the target is, which is what lets the web build
 # ship highlighted samples it could never compile tree-sitter to produce.
 [build-dependencies]
-syntax.workspace = true
+syntax = { workspace = true, features = ["rust", "python", "typescript", "json", "go", "bash", "toml"] }
 theme.workspace = true
 
 [dependencies]
@@ -53,7 +53,7 @@ web-time.workspace = true
 terminal.workspace = true
 gpui_platform.workspace = true
 # The live highlighter. A web build has the build script's table instead.
-syntax.workspace = true
+syntax = { workspace = true, features = ["rust", "python", "typescript", "json", "go", "bash", "toml"] }
 
 [dev-dependencies]
 serde_json.workspace = true

@@ -1,5 +1,5 @@
 use crate::host::{Host, Surface};
-use gpui::{Bounds, Context, FocusHandle, IntoElement, Pixels, Render, RenderImage, Window};
+use gpui::{App, Bounds, Context, FocusHandle, IntoElement, Pixels, Render, RenderImage, Window};
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -112,8 +112,8 @@ impl Surface for Iframe {
         &self.owner
     }
 
-    fn place(&self, bounds: Bounds<Pixels>, window: &Window) {
-        let Some((canvas, iframe)) = self.built.get_or_init(|| self.build(window)) else {
+    fn place(this: &Rc<Self>, bounds: Bounds<Pixels>, window: &mut Window, _cx: &mut App) {
+        let Some((canvas, iframe)) = this.built.get_or_init(|| this.build(window)) else {
             return;
         };
         // gpui's logical pixels are CSS pixels, from the canvas's corner.
@@ -128,7 +128,7 @@ impl Surface for Iframe {
                 f64::from(f32::from(bounds.size.height)),
             ),
         };
-        if self.placed.get() == Some(bounds) {
+        if this.placed.get() == Some(bounds) {
             return;
         }
         let style = iframe.style();
@@ -141,7 +141,7 @@ impl Surface for Iframe {
             let _ = style.set_property(property, &format!("{value}px"));
         }
         let _ = style.set_property("display", "block");
-        self.placed.set(Some(bounds));
+        this.placed.set(Some(bounds));
     }
 
     fn park(&self) {

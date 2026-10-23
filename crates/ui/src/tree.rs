@@ -17,7 +17,8 @@
 //! // Each frame: flatten what is open, paint it, and let `step` answer the keys.
 //! let rows = self.flatten();                       // Vec<(Row, label)>
 //! tree().children(rows.iter().enumerate().map(|(index, (row, label))| {
-//!     tree_row(&theme, row, self.selected == Some(index), self.cursor == index)
+//!     let selected = Selection::new(self.selected == Some(index), self.focused);
+//!     tree_row(&theme, row, selected, self.cursor == index)
 //!         .id(("row", index))
 //!         .child(label.clone())
 //! }))
@@ -29,7 +30,7 @@
 
 use gpui::{App, KeyBinding, actions, div, prelude::*, px};
 
-use theme::{TextStyle, Theme, Typeset};
+use theme::{Selection, TextStyle, Theme, Typeset};
 
 use crate::widgets::Layout;
 
@@ -166,7 +167,7 @@ pub fn tree() -> gpui::Div {
 ///
 /// `selected` is what the app considers chosen; `cursor` is where the keyboard
 /// is. Two tones, because a tree shows both at once.
-pub fn tree_row(theme: &Theme, row: &Row, selected: bool, cursor: bool) -> gpui::Div {
+pub fn tree_row(theme: &Theme, row: &Row, selected: Selection, cursor: bool) -> gpui::Div {
     let mut frame = div()
         .flex()
         .flex_row()
@@ -177,10 +178,10 @@ pub fn tree_row(theme: &Theme, row: &Row, selected: bool, cursor: bool) -> gpui:
         .pr(px(8.0))
         .text_style(TextStyle::Callout)
         .cursor_pointer();
-    frame = if selected {
+    frame = if let Some(fill) = selected.fill(theme) {
         frame
-            .bg(theme.card_selected_bg())
-            .shadow(theme::glass_selected_shadows())
+            .bg(fill)
+            .shadow(selected.shadows())
             .text_color(theme.text)
     } else if cursor {
         frame.bg(theme::wash(0.05)).text_color(theme.text)

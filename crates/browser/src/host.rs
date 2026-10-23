@@ -18,7 +18,7 @@ pub(crate) trait Surface: 'static {
     fn focus(&self) -> Option<&FocusHandle>;
     /// The token of the [`Shown`] that placed the surface last.
     fn owner(&self) -> &Cell<u64>;
-    fn place(&self, bounds: Bounds<Pixels>, window: &Window);
+    fn place(this: &Rc<Self>, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App);
     fn park(&self);
     /// Called in place of [`Surface::place`] in a frame where something is
     /// painted over the surface.
@@ -108,7 +108,7 @@ impl<S: Surface> Element for Host<S> {
             if covered {
                 surface.cover();
             } else {
-                surface.place(bounds, window);
+                S::place(&surface, bounds, window, cx);
             }
             ((), shown)
         });

@@ -34,7 +34,7 @@
 
 use gpui::{AnyElement, Pixels, SharedString, div, prelude::*, px, relative};
 
-use theme::{TextStyle, Theme, Typeset, ink};
+use theme::{Selection, TextStyle, Theme, Typeset, ink};
 
 use crate::icons;
 
@@ -177,7 +177,7 @@ pub fn row(
     theme: &Theme,
     columns: &[Column],
     first: bool,
-    selected: bool,
+    selected: Selection,
     cells: Vec<AnyElement>,
 ) -> gpui::Div {
     debug_assert_eq!(
@@ -195,8 +195,8 @@ pub fn row(
         })
         .text_style(TextStyle::Callout)
         .text_color(theme.text);
-    row = if selected {
-        row.bg(theme.card_selected_bg())
+    row = if let Some(fill) = selected.fill(theme) {
+        row.bg(fill)
     } else {
         // The same wash `card_row` uses, so a table and a card list read as one
         // system rather than two.

@@ -117,7 +117,7 @@ pub fn start() {
     let opening = requested("open");
     let embedded = section.is_some();
 
-    let platform = Rc::new(gpui_web::WebPlatform::new(false));
+    let platform = Rc::new(gpui_web::WebPlatform::new(false).with_system_font("Geist"));
     let http_client = Arc::new(platform.fetch_http_client());
     let handle = Application::with_platform(platform)
         .with_http_client(http_client)

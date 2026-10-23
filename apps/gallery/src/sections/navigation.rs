@@ -318,7 +318,10 @@ impl Gallery {
                                     .nav_row(
                                         Some(Icon::glyph(icon)),
                                         *label,
-                                        self.navigation.nav_choice == index,
+                                        theme::Selection::new(
+                                            self.navigation.nav_choice == index,
+                                            true,
+                                        ),
                                         key.clone(),
                                     )
                                     .when(*label == "Archived", |row| {

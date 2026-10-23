@@ -12,8 +12,9 @@ use std::{fmt, rc::Rc, time::Duration};
 
 /// A webview showing one page.
 ///
-/// The page is built the first time the view is painted, in the window it is
-/// painted in, and moves to each other window the view is painted in. It sits
+/// The page is built after the first time the view is painted, in the window
+/// it is painted in, and shows from the paint after that; until then its place
+/// is empty. It moves to each other window the view is painted in. It sits
 /// at the element's bounds in every frame the element is painted and is parked
 /// in every frame it is not. A parked page stays loaded. A view painted in two
 /// windows in turn moves its page on every paint.
@@ -351,6 +352,7 @@ impl WebView {
                 self.page.captured(still);
                 cx.notify();
             }
+            Report::Built => cx.notify(),
         }
     }
 

@@ -5,7 +5,7 @@ prompt: Render the ```mermaid blocks in my markdown notes as diagrams, and expor
 ---
 
 ```rust
-// In a document: markdown = { version = "0.2.19", features = ["mermaid"] }
+// In a document: markdown = { version = "0.2.20", features = ["mermaid"] }
 
 // On its own:
 let drawing = mermaid::render("flowchart LR\n  A --> B", &mermaid::Options::default(), &Fonts)?;

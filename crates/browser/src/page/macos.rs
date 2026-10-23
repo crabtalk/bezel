@@ -45,13 +45,6 @@ impl State {
 
 pub(super) fn start(_window: &Window, _cx: &mut App) {}
 
-pub(super) fn build(
-    builder: wry::WebViewBuilder<'_>,
-    window: &Window,
-) -> Option<wry::Result<wry::WebView>> {
-    Some(builder.build_as_child(window))
-}
-
 /// Uses the persistent store `identifier` names; wry falls back to the default
 /// store before macOS 14.
 pub(super) fn store<'a>(
