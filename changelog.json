@@ -1,5 +1,27 @@
 [
   {
+    "version": "0.2.20",
+    "date": "2026-10-23",
+    "summary": "A resting content card, tab chips and drawn tab leads, emphasized and unemphasized selection, and link cards that stay open under the pointer.",
+    "new": [
+      "`theme::Selection` is a row's selected state: emphasized while its area holds the keyboard focus and unemphasized otherwise, as AppKit's `isEmphasized`. Both are neutral washes, never the accent; `fill` and `shadows` paint it.",
+      "`window::resting` is a floating content card sitting back beside a raised one: the same corners and border, `Theme::content_resting_bg` over the chrome, and no shadow. `window::resting_fill` is its fill.",
+      "`tabs::chip(theme, state)` is a tab's frame without its label, for a label that is not a `Label`. `Label::with_lead` draws an element before the text in place of an icon, and `TAB_PAD` is a tab's inset."
+    ],
+    "changed": [
+      "Breaking: `tree_row` takes a `Selection` in place of a `bool`.",
+      "Breaking: `window::content`'s floating card has no margin; the parent pads it by `Theme::CONTENT_INSET`.",
+      "Breaking: `bezel-syntax` has no default grammars; enable each one as a feature.",
+      "Breaking: the terminal's output batch is removed: `OUTPUT_BATCH_MS`, `OUTPUT_BATCH_LIMIT`, `Batched` and `OutputBatch`.",
+      "Built on bezel-gpui 0.3.20."
+    ],
+    "fixed": [
+      "A markdown link's hover card stays open while the pointer is over it.",
+      "On Windows, a browser page is built between gpui updates, so WebView2 cannot re-enter a draw.",
+      "The web gallery no longer panics on text with no font family: Geist is its system font."
+    ]
+  },
+  {
     "version": "0.2.19",
     "date": "2026-10-21",
     "summary": "Tabs that stand on a track and share its width, with the front one a pill that slides, and a deck that shows a stack in a title row.",
