@@ -93,13 +93,13 @@ image = { version = "0.25", default-features = false }
 tracing = "0.1"
 
 # Our zed fork, published from crabtalk/zed; the keys are what the source imports.
-gpui = { package = "bezel-gpui", version = "0.3.19" }
-gpui_platform = { package = "bezel-gpui-platform", version = "0.3.19", features = [
+gpui = { package = "bezel-gpui", version = "0.3.20" }
+gpui_platform = { package = "bezel-gpui-platform", version = "0.3.20", features = [
     "font-kit",
 ] }
-gpui_web = { package = "bezel-gpui-web", version = "0.3.19" }
+gpui_web = { package = "bezel-gpui-web", version = "0.3.20" }
 # What `gpui::SharedString` re-exports, for a crate that builds without gpui.
-gpui_shared_string = { package = "bezel-gpui-shared-string", version = "0.3.19" }
+gpui_shared_string = { package = "bezel-gpui-shared-string", version = "0.3.20" }
 
 [workspace.lints.rust]
 # The objc 0.2 macros expand `cfg(feature = "cargo-clippy")` checks; declare
