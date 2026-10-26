@@ -18,6 +18,9 @@ pub struct Motion {
     /// How far the gaze wanders, in units of the body radius.
     pub drift: f32,
     pub blink: bool,
+    /// How shut the eyes rest, 0 open to 1 closed. A blink shuts them further
+    /// and never opens them past this.
+    pub lid: f32,
 }
 
 impl Default for Motion {
@@ -32,12 +35,22 @@ impl Motion {
         breathe: 0.0,
         drift: 0.0,
         blink: false,
+        lid: 0.0,
     };
     pub const ALIVE: Self = Self {
         wobble: 0.34,
         breathe: 0.014,
         drift: 0.03,
         blink: true,
+        lid: 0.0,
+    };
+    /// Eyes shut, the body still but for its breath.
+    pub const ASLEEP: Self = Self {
+        wobble: 0.0,
+        breathe: 0.014,
+        drift: 0.0,
+        blink: false,
+        lid: 1.0,
     };
 
     /// The outline at `t`. Each harmonic travels at its own rate, which is what
@@ -54,7 +67,7 @@ impl Motion {
 
     /// Everything that moves without changing the outline.
     pub fn beat(&self, t: f32) -> Beat {
-        let lid = if self.blink {
+        let blink = if self.blink {
             let p = (t / BLINK_EVERY).fract() * BLINK_EVERY;
             if p < BLINK_FOR {
                 (PI * p / BLINK_FOR).sin()
@@ -64,6 +77,7 @@ impl Motion {
         } else {
             0.0
         };
+        let lid = blink.max(self.lid.clamp(0.0, 1.0));
         Beat {
             scale: 1.0 + self.breathe * (0.9 * t).sin(),
             gaze: (

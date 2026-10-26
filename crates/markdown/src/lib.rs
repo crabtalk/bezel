@@ -34,6 +34,7 @@ pub mod doc;
 pub mod edit;
 #[cfg(feature = "gpui")]
 pub mod fence;
+pub mod html;
 pub mod marks;
 #[cfg(feature = "gpui")]
 pub mod paint;
@@ -60,6 +61,7 @@ pub use doc::{Align, Block, BlockKind, Doc, Form, Mark, MarkSpan, Part, QuoteKin
 pub use edit::{Shortcut, Splice, shortcut};
 #[cfg(feature = "gpui")]
 pub use fence::{BlockRenderer, Fence, Rewrite, highlight::Highlighter};
+pub use html::{Html, html};
 pub use marks::Marks;
 #[cfg(feature = "gpui")]
 pub use paint::{

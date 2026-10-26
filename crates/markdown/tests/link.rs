@@ -167,15 +167,12 @@ fn a_fragment_link_with_no_jump_opens_nothing(cx: &mut TestAppContext) {
 
 #[test]
 fn a_heading_slug_follows_github() {
+    assert_eq!(markdown::doc::slug("Set Up: the `cli`!"), "set-up-the-cli");
     assert_eq!(
-        markdown::app::link::slug("Set Up: the `cli`!"),
-        "set-up-the-cli"
-    );
-    assert_eq!(
-        markdown::app::link::slug("snake_case and-dash"),
+        markdown::doc::slug("snake_case and-dash"),
         "snake_case-and-dash"
     );
-    assert_eq!(markdown::app::link::slug("Café über"), "café-über");
+    assert_eq!(markdown::doc::slug("Café über"), "café-über");
 }
 
 #[test]

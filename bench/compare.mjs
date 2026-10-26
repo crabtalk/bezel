@@ -1,6 +1,8 @@
-// Medians side by side, from what bench.mjs and the engine's bench wrote.
+// Medians side by side, from the JSON two or more benches wrote: each a run
+// of one engine, `{ engine, rows: [{ case, inputs, ms, done }] }`. The first
+// file is the baseline.
 //
-//   node compare.mjs pele.json ours.json [more.json…]
+//   node compare.mjs theirs.json ours.json [more.json…]
 import { readFileSync } from 'node:fs';
 import { basename } from 'node:path';
 
@@ -12,18 +14,18 @@ for (const [i, run] of runs.entries()) {
   if (shared[i]) run.engine = `${run.engine} (${basename(files[i], '.json')})`;
 }
 if (runs.length < 2) {
-  console.error('usage: node compare.mjs pele.json ours.json [more.json…]');
+  console.error('usage: node compare.mjs theirs.json ours.json [more.json…]');
   process.exit(2);
 }
 
 const ms = (value) => (value < 1 ? value.toFixed(3) : value.toFixed(1)) + ' ms';
 const [base] = runs;
 const table = base.rows.map((row) => {
-  const out = { case: row.case, diagrams: row.diagrams };
+  const out = { case: row.case, inputs: row.inputs };
   for (const run of runs) {
     const match = run.rows.find((r) => r.case === row.case);
     if (!match) continue;
-    out[run.engine] = ms(match.ms) + (match.done !== match.diagrams ? ` (${match.done} drew)` : '');
+    out[run.engine] = ms(match.ms) + (match.done !== match.inputs ? ` (${match.done} done)` : '');
   }
   for (const run of runs.slice(1)) {
     const match = run.rows.find((r) => r.case === row.case);

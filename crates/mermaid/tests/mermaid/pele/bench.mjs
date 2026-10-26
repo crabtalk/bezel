@@ -74,5 +74,5 @@ function time(inputs) {
   return { ms: samples[samples.length >> 1], done };
 }
 
-const rows = cases.map(([name, inputs]) => ({ case: name, diagrams: inputs.length, ...time(inputs) }));
+const rows = cases.map(([name, inputs]) => ({ case: name, inputs: inputs.length, ...time(inputs) }));
 console.log(JSON.stringify({ engine, rows }, null, 1));

@@ -13,7 +13,10 @@
 //! parse, serialize, parse again, and the document is unchanged — so an
 //! edit/save cycle never drifts.
 
-use std::ops::Range;
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+};
 
 /// A markdown document: blocks in document order.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -64,6 +67,50 @@ impl Doc {
             }
         }
     }
+
+    /// Each heading's anchor and its block, in document order. A slug already
+    /// taken by an earlier heading gets `-1`, `-2`, … as on GitHub.
+    pub fn anchors(&self) -> Vec<(String, usize)> {
+        let mut taken = HashSet::new();
+        // The first suffix not yet tried for each slug, so a title repeated n
+        // times costs n probes rather than n².
+        let mut next: HashMap<String, usize> = HashMap::new();
+        self.blocks
+            .iter()
+            .enumerate()
+            .filter_map(|(ix, block)| match &block.kind {
+                BlockKind::Heading { text, .. } => Some((slug(&text.text), ix)),
+                _ => None,
+            })
+            .map(|(base, ix)| {
+                let from = next.get(&base).copied().unwrap_or(0);
+                let (n, anchor) = (from..)
+                    .map(|n| match n {
+                        0 => (n, base.clone()),
+                        n => (n, format!("{base}-{n}")),
+                    })
+                    .find(|(_, anchor)| !taken.contains(anchor))
+                    .expect("an unbounded run of suffixes");
+                next.insert(base, n + 1);
+                taken.insert(anchor.clone());
+                (anchor, ix)
+            })
+            .collect()
+    }
+}
+
+/// The anchor GitHub gives a heading: lowercased, punctuation dropped but for
+/// `-` and `_`, each space a `-`.
+pub fn slug(text: &str) -> String {
+    text.chars()
+        .flat_map(char::to_lowercase)
+        .filter_map(|c| match c {
+            ' ' => Some('-'),
+            '-' | '_' => Some(c),
+            c if c.is_alphanumeric() => Some(c),
+            _ => None,
+        })
+        .collect()
 }
 
 /// One block, and how deeply it is nested.

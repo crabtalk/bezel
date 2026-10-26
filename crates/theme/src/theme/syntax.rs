@@ -63,6 +63,66 @@ pub enum HighlightKind {
     Invalid,
 }
 
+impl HighlightKind {
+    pub const ALL: [Self; 24] = [
+        Self::Comment,
+        Self::Keyword,
+        Self::String,
+        Self::StringSpecial,
+        Self::Escape,
+        Self::Number,
+        Self::Boolean,
+        Self::TypeName,
+        Self::TypeBuiltin,
+        Self::Constructor,
+        Self::Function,
+        Self::FunctionBuiltin,
+        Self::MacroName,
+        Self::Property,
+        Self::Constant,
+        Self::Variable,
+        Self::VariableSpecial,
+        Self::Parameter,
+        Self::Operator,
+        Self::Punctuation,
+        Self::Tag,
+        Self::Attribute,
+        Self::Label,
+        Self::Invalid,
+    ];
+
+    /// The kind as a kebab-case word: `string-special`. Stable — a stylesheet
+    /// names kinds by it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Comment => "comment",
+            Self::Keyword => "keyword",
+            Self::String => "string",
+            Self::StringSpecial => "string-special",
+            Self::Escape => "escape",
+            Self::Number => "number",
+            Self::Boolean => "boolean",
+            Self::TypeName => "type",
+            Self::TypeBuiltin => "type-builtin",
+            Self::Constructor => "constructor",
+            Self::Function => "function",
+            Self::FunctionBuiltin => "function-builtin",
+            Self::MacroName => "macro",
+            Self::Property => "property",
+            Self::Constant => "constant",
+            Self::Variable => "variable",
+            Self::VariableSpecial => "variable-special",
+            Self::Parameter => "parameter",
+            Self::Operator => "operator",
+            Self::Punctuation => "punctuation",
+            Self::Tag => "tag",
+            Self::Attribute => "attribute",
+            Self::Label => "label",
+            Self::Invalid => "invalid",
+        }
+    }
+}
+
 impl SyntaxPalette {
     /// The palette color for a token kind.
     pub fn color(&self, kind: HighlightKind) -> Hsla {

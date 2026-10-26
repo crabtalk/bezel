@@ -1,6 +1,6 @@
 //! The engine timed on the cases `tests/mermaid/pele/bench.mjs` times Pele
 //! on, with Pele's timing loop, written as JSON for
-//! `tests/mermaid/pele/compare.mjs`:
+//! `bench/compare.mjs`:
 //!
 //! ```sh
 //! cargo bench -p bezel-mermaid --bench mermaid > ours.json
@@ -110,7 +110,7 @@ fn main() {
         .iter()
         .map(|(name, inputs)| {
             let (ms, done) = time(inputs, &options);
-            serde_json::json!({ "case": name, "diagrams": inputs.len(), "ms": ms, "done": done })
+            serde_json::json!({ "case": name, "inputs": inputs.len(), "ms": ms, "done": done })
         })
         .collect();
     let engine = format!("bezel-mermaid {}", env!("CARGO_PKG_VERSION"));
