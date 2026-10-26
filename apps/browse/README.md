@@ -5,7 +5,7 @@ A Safari-shaped browser built on [`bezel-browser`](../../crates/browser)'s `WebV
 ```sh
 cargo run -p browse                    # opens on the start page
 cargo run -p browse -- example.com     # opens on a page
-cargo build -p browse --release        # the app's own code at opt-level "z"
+cargo build -p browse --release
 ```
 
 The page is a WKWebView on macOS and WebView2 on Windows. On Linux the window opens but the page area stays empty.

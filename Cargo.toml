@@ -115,12 +115,7 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 debug = false
 
-# Timed for speed, where release is built for size.
-[profile.bench]
-opt-level = 3
-
 [profile.release]
-opt-level = "z"
 lto = "fat"
 codegen-units = 1
 strip = "symbols"

@@ -14,7 +14,8 @@
     "changed": [
       "Breaking: `markdown::app::link::slug` is `markdown::doc::slug`.",
       "Breaking: `Motion` has a `lid` field.",
-      "The benchmark comparison script is `bench/compare.mjs`, shared by the mermaid and markdown benchmarks, and its rows count `inputs`."
+      "The benchmark comparison script is `bench/compare.mjs`, shared by the mermaid and markdown benchmarks, and its rows count `inputs`.",
+      "The release profile builds at `opt-level = 3` rather than `\"z\"`, and benches run on it."
     ],
     "fixed": [
       "Heading anchors in a document that repeats a title many times are found in linear time."

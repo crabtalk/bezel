@@ -3,7 +3,7 @@
   "type": "module",
   "scripts": {
     "prebench": "npm install --no-audit --no-fund && ../spec/fetch.sh",
-    "bench": "node bench.mjs > tiptap.json && cargo bench -q -p bezel-markdown --bench markdown > opt3.json && node ../../../../bench/compare.mjs tiptap.json opt3.json"
+    "bench": "node bench.mjs > tiptap.json && cargo bench -q -p bezel-markdown --bench markdown > ours.json && node ../../../../bench/compare.mjs tiptap.json ours.json"
   },
   "dependencies": {
     "@tiptap/core": "3.32.0",

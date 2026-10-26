@@ -48,4 +48,4 @@ cargo nextest run -p bezel-mermaid
 npm --prefix crates/mermaid/tests/mermaid/pele run bench
 ```
 
-Times Pele in Node and this crate at `opt-level = 3` (`cargo bench`) and with `--profile release`, on Pele's benchmark cases and the corpus. It prints each case side by side and the geometric mean.
+Times Pele in Node and this crate (`cargo bench`), on Pele's benchmark cases and the corpus. It prints each case side by side and the geometric mean.
