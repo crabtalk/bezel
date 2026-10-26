@@ -912,6 +912,7 @@ dependencies = [
  "pulldown-cmark",
  "resvg",
  "rustybuzz",
+ "serde_json",
  "usvg",
 ]
 
