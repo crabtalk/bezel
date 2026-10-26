@@ -174,11 +174,11 @@ impl Html {
                 self.inline(out, text);
             }
             BlockKind::Task { checked, text } => {
-                out.push_str("<li class=\"md-task\"><input type=\"checkbox\" disabled");
+                out.push_str("<li class=\"md-task\"><input");
                 if *checked {
-                    out.push_str(" checked");
+                    out.push_str(" checked=\"\"");
                 }
-                out.push_str("> ");
+                out.push_str(" disabled=\"\" type=\"checkbox\"> ");
                 self.inline(out, text);
             }
             BlockKind::Code {
@@ -211,6 +211,9 @@ impl Html {
                         }
                         out.push('>');
                         self.code(out, language.as_deref(), &code.text);
+                        if !code.text.is_empty() {
+                            out.push('\n');
+                        }
                         out.push_str("</code></pre>");
                     }
                 }
@@ -432,11 +435,50 @@ impl Html {
         }
     }
 
+    /// `url` resolved, then percent-encoded where an `href` cannot hold it as
+    /// written. A `javascript:`, `vbscript:` or `file:` URL, or a `data:` URL
+    /// that is not an image, is written empty.
     fn write_url(&self, out: &mut String, url: &str) {
-        match &self.url {
-            Some(resolve) => escape(out, &resolve(url)),
-            None => escape(out, url),
+        let resolved = match &self.url {
+            Some(resolve) => resolve(url),
+            None => url.to_owned(),
+        };
+        if unsafe_url(&resolved) {
+            return;
         }
+        let mut encoded = String::with_capacity(resolved.len());
+        for c in resolved.chars() {
+            if c.is_ascii_alphanumeric() || HREF_SAFE.contains(c) {
+                encoded.push(c);
+            } else {
+                for byte in c.encode_utf8(&mut [0; 4]).bytes() {
+                    encoded.push_str(&format!("%{byte:02X}"));
+                }
+            }
+        }
+        escape(out, &encoded);
+    }
+}
+
+/// What an `href` holds as written besides ASCII letters and digits: cmark's
+/// set, which leaves an existing `%XX` alone.
+const HREF_SAFE: &str = "-_.+!*'(),%#@?=;:/&$~";
+
+fn unsafe_url(url: &str) -> bool {
+    let scheme = url
+        .split_once(':')
+        .map(|(scheme, _)| scheme.trim().to_ascii_lowercase());
+    match scheme.as_deref() {
+        Some("javascript" | "vbscript" | "file") => true,
+        Some("data") => ![
+            "data:image/png",
+            "data:image/gif",
+            "data:image/jpeg",
+            "data:image/webp",
+        ]
+        .iter()
+        .any(|image| url.trim_start().to_ascii_lowercase().starts_with(image)),
+        _ => false,
     }
 }
 

@@ -9,6 +9,9 @@ use std::{fs, path::Path, time::Instant};
 
 use markdown::{Doc, html, parse, serialize};
 
+#[path = "../tests/spec/examples.rs"]
+mod examples;
+
 /// One warm-up pass, then passes until 300 ms are spent and at least 5 are
 /// taken (at most 2000): the median pass in ms.
 fn time<T, R>(inputs: &[T], stage: impl Fn(&T) -> R) -> f64 {
@@ -51,12 +54,16 @@ fn main() {
         .collect();
     crates.sort();
     docs.extend(crates.iter().map(|readme| read(readme)));
-    let sample = read(&here.join("tests/tiptap/sample.md"));
+    let spec = fs::read_to_string(here.join("tests/spec/commonmark.txt"))
+        .expect("tests/spec/commonmark.txt: run crates/markdown/tests/spec/fetch.sh");
+    let examples = examples::examples(&spec, &[""])
+        .into_iter()
+        .map(|example| example.markdown)
+        .collect();
     let cases = [
         ("workspace READMEs", docs),
-        ("sample article", vec![sample.clone()]),
-        ("sample article × 10", vec![sample.repeat(10)]),
-        ("sample article × 100", vec![sample.repeat(100)]),
+        ("CommonMark spec examples", examples),
+        ("CommonMark spec", vec![spec]),
     ];
 
     let mut rows = Vec::new();

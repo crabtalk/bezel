@@ -10,7 +10,9 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { getSchema } from '@tiptap/core';
 import { MarkdownManager } from '@tiptap/markdown';
+import { Node } from '@tiptap/pm/model';
 import StarterKit from '@tiptap/starter-kit';
 import Image from '@tiptap/extension-image';
 import { TaskItem, TaskList } from '@tiptap/extension-list';
@@ -22,18 +24,31 @@ const root = join(here, '..', '..', '..', '..');
 const engine = 'tiptap 3.32.0';
 const extensions = [StarterKit, Image, TaskList, TaskItem, TableKit];
 const manager = new MarkdownManager({ extensions });
+const schema = getSchema(extensions);
 
 // The workspace's own READMEs, in the order the Rust bench reads them.
 const docs = ['README.md', 'CONTRIBUTING.md'];
 for (const crate of readdirSync(join(root, 'crates')).sort()) {
   if (existsSync(join(root, 'crates', crate, 'README.md'))) docs.push(join('crates', crate, 'README.md'));
 }
-const sample = readFileSync(join(here, 'sample.md'), 'utf8');
+// The spec's examples, read as `tests/spec/examples.rs` reads them.
+const spec = readFileSync(join(here, '..', 'spec', 'commonmark.txt'), 'utf8');
+const fence = '`'.repeat(32);
+const examples = [];
+{
+  const lines = spec.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trimEnd() !== `${fence} example`) continue;
+    let markdown = '';
+    while (++i < lines.length && lines[i] !== '.') markdown += lines[i].replaceAll('→', '\t') + '\n';
+    while (++i < lines.length && lines[i] !== fence);
+    examples.push(markdown);
+  }
+}
 const cases = [
   ['workspace READMEs', docs.map((file) => readFileSync(join(root, file), 'utf8'))],
-  ['sample article', [sample]],
-  ['sample article × 10', [sample.repeat(10)]],
-  ['sample article × 100', [sample.repeat(100)]],
+  ['CommonMark spec examples', examples],
+  ['CommonMark spec', [spec]],
 ];
 
 // Pele's loop, as in the mermaid bench: one warm-up pass, then passes until
@@ -69,9 +84,12 @@ function time(inputs, stage) {
 const rows = [];
 for (const [name, sources] of cases) {
   const docs = sources.map((source) => manager.parse(source));
+  // The document as an editor holds it, as the Rust bench renders a `Doc`:
+  // JSON would be read into one against a fresh schema on every render.
+  const nodes = docs.map((doc) => Node.fromJSON(schema, doc));
   const stages = [
     ['parse', sources, (source) => manager.parse(source)],
-    ['html', docs, (doc) => renderToHTMLString({ extensions, content: doc })],
+    ['html', nodes, (node) => renderToHTMLString({ extensions, content: node })],
     ['serialize', docs, (doc) => manager.serialize(doc)],
   ];
   for (const [stage, inputs, run] of stages) {

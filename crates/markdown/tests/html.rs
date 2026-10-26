@@ -26,7 +26,7 @@ fn lists_nest_inside_their_items() {
         render("- a\n    - b\n- c\n\n3. d\n4. e\n\n- [x] f"),
         "<ul><li>a<ul><li>b</li></ul></li><li>c</li></ul>\
          <ol start=\"3\"><li>d</li><li>e</li></ol>\
-         <ul class=\"md-tasks\"><li class=\"md-task\"><input type=\"checkbox\" disabled checked> f</li></ul>"
+         <ul class=\"md-tasks\"><li class=\"md-task\"><input checked=\"\" disabled=\"\" type=\"checkbox\"> f</li></ul>"
     );
 }
 
@@ -62,7 +62,7 @@ fn a_quote_inside_an_item() {
 fn code_table_rule_and_pictures() {
     assert_eq!(
         render("```rust\nfn a() {}\n```"),
-        "<pre><code class=\"language-rust\">fn a() {}</code></pre>"
+        "<pre><code class=\"language-rust\">fn a() {}\n</code></pre>"
     );
     assert_eq!(
         render("| a | b |\n| --- | :-: |\n| 1 | 2 |"),
@@ -112,6 +112,14 @@ fn overlapping_marks_close_and_reopen() {
 }
 
 #[test]
+fn urls_are_encoded_and_unsafe_ones_dropped() {
+    assert_eq!(
+        render("[a](/f%C3%B6ö\\\\x) [b](javascript:alert(1)) ![c](data:image/png;base64,AA)"),
+        "<p><a href=\"/f%C3%B6%C3%B6%5Cx\">a</a> <a href=\"\">b</a> <img src=\"data:image/png;base64,AA\" alt=\"c\"></p>"
+    );
+}
+
+#[test]
 fn hooks_resolve_urls_and_render_fences() {
     let html = Html::new()
         .url(|url| format!("/site/{url}"))
@@ -123,7 +131,7 @@ fn hooks_resolve_urls_and_render_fences() {
         html,
         "<p><a href=\"/site/b\">a</a></p>\
          <div class=\"md-fence\" data-language=\"mermaid\" style=\"height:300px\"><svg>graph</svg></div>\
-         <pre><code class=\"language-sh\">ls</code></pre>"
+         <pre><code class=\"language-sh\">ls\n</code></pre>"
     );
 }
 
@@ -139,7 +147,7 @@ fn highlighted_code_takes_classes() {
         .render(&parse("```rust\nfn <a>\n```"));
     assert_eq!(
         html,
-        "<pre><code class=\"language-rust\"><span class=\"hl-keyword\">fn</span> &lt;a&gt;</code></pre>"
+        "<pre><code class=\"language-rust\"><span class=\"hl-keyword\">fn</span> &lt;a&gt;\n</code></pre>"
     );
 }
 
