@@ -10,11 +10,19 @@
 //!
 //! A bookmark and a mention are links with their form as a class. Their
 //! previews come from the network in the app, and are not fetched here.
+//!
+//! A highlighted span of code is a `<span class="hl-…">` named by
+//! [`theme::HighlightKind::name`], and [`Html::stylesheet`] colors them.
 
+#[cfg(feature = "gpui")]
+use crate::fence::highlight::Highlighter;
 use crate::{
     doc::{Align, BlockKind, Doc, Form, Mark, Text},
     serialize::Layout,
 };
+
+#[cfg(feature = "gpui")]
+mod style;
 
 /// How a document is written as HTML: what its URLs become, and who renders a
 /// fenced block.
@@ -22,6 +30,8 @@ use crate::{
 pub struct Html {
     url: Option<UrlFn>,
     fence: Option<FenceFn>,
+    #[cfg(feature = "gpui")]
+    highlighter: Option<Highlighter>,
 }
 
 type UrlFn = Box<dyn Fn(&str) -> String>;
@@ -47,6 +57,13 @@ impl Html {
     /// `None` to write it as `<pre><code>`. The markup is written unescaped.
     pub fn fence(mut self, fence: impl Fn(&str, &str) -> Option<String> + 'static) -> Self {
         self.fence = Some(Box::new(fence));
+        self
+    }
+
+    /// What colors a fenced block [`Html::fence`] leaves as `<pre><code>`.
+    #[cfg(feature = "gpui")]
+    pub fn highlighter(mut self, highlighter: Highlighter) -> Self {
+        self.highlighter = Some(highlighter);
         self
     }
 
@@ -193,7 +210,7 @@ impl Html {
                             out.push('"');
                         }
                         out.push('>');
-                        escape(out, &code.text);
+                        self.code(out, language.as_deref(), &code.text);
                         out.push_str("</code></pre>");
                     }
                 }
@@ -271,6 +288,38 @@ impl Html {
             }
             BlockKind::Rule => out.push_str("<hr>"),
         }
+    }
+
+    /// `code`, its highlighted spans wrapped. A span overlapping the one
+    /// before it is dropped.
+    fn code(&self, out: &mut String, language: Option<&str>, code: &str) {
+        #[cfg(feature = "gpui")]
+        if let Some(spans) = self
+            .highlighter
+            .zip(language)
+            .and_then(|(highlighter, language)| highlighter(language, code))
+        {
+            let mut cursor = 0;
+            for (range, kind) in spans {
+                let (Some(before), Some(inside)) =
+                    (code.get(cursor..range.start), code.get(range.clone()))
+                else {
+                    continue;
+                };
+                escape(out, before);
+                out.push_str("<span class=\"hl-");
+                out.push_str(kind.name());
+                out.push_str("\">");
+                escape(out, inside);
+                out.push_str("</span>");
+                cursor = range.end;
+            }
+            escape(out, &code[cursor..]);
+            return;
+        }
+        #[cfg(not(feature = "gpui"))]
+        let _ = language;
+        escape(out, code);
     }
 
     /// Marks open outermost first. Where two overlap without nesting, the

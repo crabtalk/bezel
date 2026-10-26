@@ -1294,7 +1294,7 @@ fn checkbox(checked: bool, overlay: Overlay, typography: &Typography, theme: &Th
 }
 
 /// What an alert paints its rule and its label in.
-fn alert_color(kind: QuoteKind, theme: &Theme) -> Hsla {
+pub(crate) fn alert_color(kind: QuoteKind, theme: &Theme) -> Hsla {
     match kind {
         QuoteKind::Note => theme.accent,
         QuoteKind::Tip => theme.success,

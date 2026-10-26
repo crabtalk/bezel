@@ -126,3 +126,37 @@ fn hooks_resolve_urls_and_render_fences() {
          <pre><code class=\"language-sh\">ls</code></pre>"
     );
 }
+
+#[test]
+fn highlighted_code_takes_classes() {
+    let html = Html::new()
+        .highlighter(|_, code| {
+            Some(vec![(
+                0..code.find(' ').unwrap_or(0),
+                theme::HighlightKind::Keyword,
+            )])
+        })
+        .render(&parse("```rust\nfn <a>\n```"));
+    assert_eq!(
+        html,
+        "<pre><code class=\"language-rust\"><span class=\"hl-keyword\">fn</span> &lt;a&gt;</code></pre>"
+    );
+}
+
+#[test]
+fn the_stylesheet_names_what_the_markup_writes() {
+    let css = Html::stylesheet(
+        &theme::Theme::light(),
+        &theme::Theme::dark(),
+        &markdown::Typography::default(),
+    );
+    for name in [
+        ".md h1",
+        ".md-alert-tip",
+        ".hl-keyword",
+        "--md-hl-string-special",
+        "prefers-color-scheme: dark",
+    ] {
+        assert!(css.contains(name), "{name} missing");
+    }
+}
