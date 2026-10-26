@@ -79,3 +79,25 @@ fn motion_is_pure() {
     assert_eq!(Motion::STILL.shape(shape, 99.0), shape);
     assert_eq!(Motion::STILL.beat(99.0), Motion::STILL.beat(0.0));
 }
+
+#[test]
+fn asleep_holds_the_eyes_shut() {
+    for i in 0..400 {
+        let t = i as f32 * 0.05;
+        assert_eq!(Motion::ASLEEP.beat(t).lid, 1.0);
+    }
+}
+
+#[test]
+fn a_resting_lid_is_a_floor_under_the_blink() {
+    let half = Motion {
+        lid: 0.5,
+        ..Motion::ALIVE
+    };
+    for i in 0..400 {
+        let t = i as f32 * 0.05;
+        let lid = half.beat(t).lid;
+        assert!((0.5..=1.0).contains(&lid));
+        assert!(lid >= Motion::ALIVE.beat(t).lid);
+    }
+}
