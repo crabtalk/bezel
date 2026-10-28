@@ -1,5 +1,22 @@
 [
   {
+    "version": "0.2.22",
+    "date": "2026-10-28",
+    "summary": "A busy mascot, browser stills on Windows, and modals that stay open under their own menus; on bezel-gpui 0.3.21.",
+    "new": [
+      "`Motion::BUSY` sweeps the gaze side to side. `Motion::scan` is how far, `Motion::sweep(t)` the offset at `t`, and `Motion::reach()` the drift and the sweep together. A `mascot` draws the sweep.",
+      "On Windows, a covered browser page shows a still of itself, taken with WebView2's `CapturePreview`."
+    ],
+    "changed": [
+      "Breaking: `Motion` has a `scan` field.",
+      "On bezel-gpui 0.3.21: on Windows, a window's child windows, such as a WebView2 page, draw over gpui's content."
+    ],
+    "fixed": [
+      "A modal closes on a press that lands on its scrim, so picking from a menu that reaches past its card leaves it open.",
+      "On Windows, moving keyboard focus into or out of a browser page runs between gpui updates."
+    ]
+  },
+  {
     "version": "0.2.21",
     "date": "2026-10-26",
     "summary": "Markdown rendered as HTML, with highlighted code and a stylesheet from the theme, timed against tiptap; and a mascot that can sleep.",
