@@ -81,16 +81,12 @@ pub(super) fn modal_with(
                     .flex()
                     .items_center()
                     .justify_center()
+                    // A press hit-tested onto the scrim: the card occludes it,
+                    // and so does a menu the card opens, which draws on a layer
+                    // above and may reach past the card's edge.
+                    .on_any_mouse_down(on_dismiss)
                     .child(crate::cover::cover())
-                    // On the card's wrapper, not the scrim: a press inside the
-                    // card is not "out", so the dialog's own buttons keep
-                    // working with no occluding overlay and no propagation
-                    // games. The scrim covers the viewport and occludes, so
-                    // "outside the card" and "on the scrim" are the same press.
-                    .child(motion::dialog_in(
-                        id,
-                        div().child(card).on_mouse_down_out(on_dismiss),
-                    )),
+                    .child(motion::dialog_in(id, div().occlude().child(card))),
             ),
     )
     .priority(MODAL_LAYER)

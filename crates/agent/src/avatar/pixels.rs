@@ -90,13 +90,17 @@ fn cell(u: f32, span: f32) -> usize {
 /// [`Pose`](crate::avatar::Pose).
 pub fn mascot(face: &Face, t: f32) -> AnyElement {
     // Drift and breath are both under a cell at this size, so only the blink
-    // survives the trip; the outline is the resting one, since a wobble that
-    // cannot move a whole cell only flickers the ones on the edge.
-    let rows = cells(
-        &face.shape,
-        &face.eyes.place(&face.shape, 0.0),
-        face.motion.beat(t).lid,
-    );
+    // and the sweep survive the trip; the outline is the resting one, since a
+    // wobble that cannot move a whole cell only flickers the ones on the edge.
+    let sweep = face.motion.sweep(t);
+    let eyes = face
+        .eyes
+        .place(&face.shape, face.motion.scan)
+        .map(|eye| Eye {
+            cx: eye.cx + sweep,
+            ..eye
+        });
+    let rows = cells(&face.shape, &eyes, face.motion.beat(t).lid);
     let tint = face.color;
     canvas(
         move |_: Bounds<Pixels>, _, _| (),

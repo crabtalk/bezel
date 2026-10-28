@@ -101,3 +101,32 @@ fn a_resting_lid_is_a_floor_under_the_blink() {
         assert!(lid >= Motion::ALIVE.beat(t).lid);
     }
 }
+
+/// A busy gaze crosses to both sides within its scan, and the fit spends the
+/// sweep, so an eye at either end stays inside the body.
+#[test]
+fn a_busy_gaze_sweeps_inside_the_body() {
+    let busy = Motion::BUSY;
+    let sweeps: Vec<f32> = (0..240).map(|i| busy.sweep(i as f32 * 0.01)).collect();
+    assert!(sweeps.iter().any(|x| *x > busy.scan * 0.9));
+    assert!(sweeps.iter().any(|x| *x < -busy.scan * 0.9));
+    assert!(sweeps.iter().all(|x| x.abs() <= busy.scan));
+    for i in 0..2_000u64 {
+        let seed = i.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        let shape = Shape::from(seed);
+        for eye in Eyes::from(seed).place(&shape, busy.reach()) {
+            for side in [-busy.reach(), busy.reach()] {
+                let (cx, cy) = (eye.cx + side, eye.cy);
+                let far = cx.hypot(cy) + eye.rx.hypot(eye.ry);
+                assert!(far <= shape.reach(cx, cy), "seed {i} swept an eye out");
+            }
+        }
+    }
+}
+
+#[test]
+fn only_a_busy_face_sweeps() {
+    for motion in [Motion::STILL, Motion::ALIVE, Motion::ASLEEP] {
+        assert_eq!(motion.sweep(0.3), 0.0);
+    }
+}
