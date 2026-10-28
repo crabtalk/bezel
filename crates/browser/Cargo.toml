@@ -89,7 +89,12 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
 wry = { version = "0.57", default-features = false }
 webview2-com = "0.39"
 raw-window-handle = "0.6"
-windows = { version = "0.62", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+windows = { version = "0.62", features = [
+    "Win32_System_Com",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+] }
+image = { workspace = true, features = ["png"] }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 raw-window-handle = "0.6"

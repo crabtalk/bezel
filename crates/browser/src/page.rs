@@ -469,7 +469,7 @@ impl Page {
             return;
         };
         if self.placed.get().is_some() && !platform::closed(view) {
-            let _ = view.focus();
+            self.platform.take_keys(view);
         }
     }
 
@@ -478,7 +478,7 @@ impl Page {
         if let Some(view) = self.built()
             && self.holds_keys()
         {
-            platform::give_keys(view);
+            self.platform.give_keys(view);
         }
     }
 

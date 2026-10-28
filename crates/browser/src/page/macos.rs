@@ -41,6 +41,17 @@ impl State {
     pub(super) fn holds_keys(&self, view: &wry::WebView) -> bool {
         holds(&view.webview())
     }
+
+    pub(super) fn take_keys(&self, view: &wry::WebView) {
+        let _ = view.focus();
+    }
+
+    /// Makes the page's superview, gpui's view in the window the page is in
+    /// now, first responder. wry's `focus_parent` picks the view the page was
+    /// built in.
+    pub(super) fn give_keys(&self, view: &wry::WebView) {
+        release(&view.webview());
+    }
 }
 
 pub(super) fn start(_window: &Window, _cx: &mut App) {}
@@ -77,13 +88,6 @@ pub(super) fn reparent(view: &wry::WebView, window: &Window) -> bool {
     // Taken out of its old superview first.
     parent.addSubview(&view.webview());
     true
-}
-
-/// Makes the page's superview, gpui's view in the window the page is in now,
-/// first responder. wry's `focus_parent` picks the view the page was built
-/// in.
-pub(super) fn give_keys(view: &wry::WebView) {
-    release(&view.webview());
 }
 
 fn release(page: &objc2_app_kit::NSView) {

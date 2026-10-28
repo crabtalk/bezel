@@ -1,6 +1,6 @@
 use super::{Edit, Report};
-use gpui::{App, Window};
-use std::{cell::Cell, rc::Rc};
+use gpui::{App, ForegroundExecutor, RenderImage, Window};
+use std::{cell::Cell, rc::Rc, sync::Arc};
 use wry::WebViewExtWindows;
 
 mod accelerator;
@@ -11,6 +11,9 @@ pub(super) struct State {
     /// Whether the page holds keyboard focus, as WebView2 last reported.
     focused: Rc<Cell<bool>>,
     keys: Rc<accelerator::Keys>,
+    /// Runs focus moves between gpui updates: moving Win32 focus sends the
+    /// window's messages synchronously.
+    executor: ForegroundExecutor,
 }
 
 impl State {
@@ -18,6 +21,7 @@ impl State {
         Self {
             focused: Rc::new(Cell::new(false)),
             keys: Rc::new(accelerator::Keys::new(cx)),
+            executor: cx.foreground_executor().clone(),
         }
     }
 
@@ -60,6 +64,42 @@ impl State {
     pub(super) fn holds_keys(&self, _view: &wry::WebView) -> bool {
         self.focused.get()
     }
+
+    /// Moves focus into the page, unless it is hidden by then.
+    pub(super) fn take_keys(&self, view: &wry::WebView) {
+        use webview2_com::Microsoft::Web::WebView2::Win32::COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC;
+
+        let controller = view.controller();
+        self.executor
+            .spawn(async move {
+                let mut visible = windows::core::BOOL::default();
+                // SAFETY: on the thread that owns the controller.
+                unsafe {
+                    if controller.IsVisible(&mut visible).is_ok() && visible.as_bool() {
+                        let _ = controller.MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+                    }
+                }
+            })
+            .detach();
+    }
+
+    /// Moves focus to the window the page is in now.
+    pub(super) fn give_keys(&self, view: &wry::WebView) {
+        use windows::Win32::{Foundation::HWND, UI::Input::KeyboardAndMouse::SetFocus};
+
+        let controller = view.controller();
+        self.executor
+            .spawn(async move {
+                let mut parent = HWND::default();
+                // SAFETY: on the thread that owns the controller.
+                unsafe {
+                    if controller.ParentWindow(&mut parent).is_ok() && !parent.is_invalid() {
+                        let _ = SetFocus(Some(parent));
+                    }
+                }
+            })
+            .detach();
+    }
 }
 
 pub(super) fn start(_window: &Window, _cx: &mut App) {}
@@ -85,10 +125,6 @@ pub(super) fn reparent(view: &wry::WebView, window: &Window) -> bool {
     view.reparent(handle.hwnd.get())
         .inspect_err(|error| tracing::warn!(%error, "webview: reparent"))
         .is_ok()
-}
-
-pub(super) fn give_keys(view: &wry::WebView) {
-    let _ = view.focus_parent();
 }
 
 pub(super) fn edit(_edit: Edit) {}
@@ -131,11 +167,67 @@ pub(super) fn default_user_agent() -> Option<String> {
     None
 }
 
+/// The page's visible area as a PNG, through WebView2's `CapturePreview`.
 pub(super) fn capture(
-    _view: &wry::WebView,
-    _done: impl FnOnce(Option<std::sync::Arc<gpui::RenderImage>>) + 'static,
+    view: &wry::WebView,
+    done: impl FnOnce(Option<Arc<RenderImage>>) + 'static,
 ) -> bool {
-    false
+    use webview2_com::{
+        CapturePreviewCompletedHandler,
+        Microsoft::Web::WebView2::Win32::COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
+    };
+    use windows::Win32::UI::Shell::SHCreateMemStream;
+
+    // SAFETY: an empty stream, with no initial bytes.
+    let Some(stream) = (unsafe { SHCreateMemStream(None) }) else {
+        return false;
+    };
+    let written = stream.clone();
+    let handler = CapturePreviewCompletedHandler::create(Box::new(move |result| {
+        done(result.ok().and_then(|()| pixels(&written)));
+        Ok(())
+    }));
+    // SAFETY: called on the thread that owns the webview.
+    unsafe {
+        view.webview()
+            .CapturePreview(
+                COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG,
+                &stream,
+                &handler,
+            )
+            .is_ok()
+    }
+}
+
+/// The PNG `stream` holds, as the BGRA pixels a `RenderImage` holds.
+fn pixels(stream: &windows::Win32::System::Com::IStream) -> Option<Arc<RenderImage>> {
+    use windows::Win32::System::Com::{STREAM_SEEK_END, STREAM_SEEK_SET};
+
+    let mut size = 0u64;
+    let mut read = 0u32;
+    // SAFETY: `bytes` holds `size` bytes, the stream's length.
+    let bytes = unsafe {
+        stream.Seek(0, STREAM_SEEK_END, Some(&mut size)).ok()?;
+        stream.Seek(0, STREAM_SEEK_SET, None).ok()?;
+        let mut bytes = vec![0u8; usize::try_from(size).ok()?];
+        stream
+            .Read(
+                bytes.as_mut_ptr().cast(),
+                u32::try_from(size).ok()?,
+                Some(&mut read),
+            )
+            .ok()
+            .ok()?;
+        bytes.truncate(read as usize);
+        bytes
+    };
+    let mut buffer = image::load_from_memory_with_format(&bytes, image::ImageFormat::Png)
+        .ok()?
+        .into_rgba8();
+    for pixel in buffer.pixels_mut() {
+        pixel.0.swap(0, 2);
+    }
+    Some(Arc::new(RenderImage::new([image::Frame::new(buffer)])))
 }
 
 /// WebView2 reaches a store only through a built page.

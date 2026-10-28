@@ -91,7 +91,7 @@ impl Face {
         let breath = |(x, y): (f32, f32)| (x * beat.scale, y * beat.scale);
         Pose {
             outline: shape.outline().map(breath),
-            eyes: self.eyes.place(&shape, self.motion.drift).map(|e| {
+            eyes: self.eyes.place(&shape, self.motion.reach()).map(|e| {
                 let (cx, cy) = breath((e.cx + beat.gaze.0, e.cy + beat.gaze.1));
                 Eye {
                     cx,

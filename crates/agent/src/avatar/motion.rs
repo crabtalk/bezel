@@ -8,6 +8,8 @@ use std::f32::consts::PI;
 /// Seconds between blinks, and how long one takes.
 const BLINK_EVERY: f32 = 4.4;
 const BLINK_FOR: f32 = 0.16;
+/// Seconds the gaze takes to sweep side to side and back.
+const SCAN_EVERY: f32 = 1.2;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Motion {
@@ -18,6 +20,11 @@ pub struct Motion {
     /// How far the gaze wanders, in units of the body radius.
     pub drift: f32,
     pub blink: bool,
+    /// How far the gaze sweeps side to side, in units of the body radius. A
+    /// sweep of a quarter radius moves the eyes a cell in a [`mascot`].
+    ///
+    /// [`mascot`]: crate::avatar::mascot
+    pub scan: f32,
     /// How shut the eyes rest, 0 open to 1 closed. A blink shuts them further
     /// and never opens them past this.
     pub lid: f32,
@@ -35,6 +42,7 @@ impl Motion {
         breathe: 0.0,
         drift: 0.0,
         blink: false,
+        scan: 0.0,
         lid: 0.0,
     };
     pub const ALIVE: Self = Self {
@@ -42,7 +50,13 @@ impl Motion {
         breathe: 0.014,
         drift: 0.03,
         blink: true,
+        scan: 0.0,
         lid: 0.0,
+    };
+    /// Alive, its gaze sweeping side to side.
+    pub const BUSY: Self = Self {
+        scan: 0.3,
+        ..Self::ALIVE
     };
     /// Eyes shut, the body still but for its breath.
     pub const ASLEEP: Self = Self {
@@ -50,8 +64,19 @@ impl Motion {
         breathe: 0.014,
         drift: 0.0,
         blink: false,
+        scan: 0.0,
         lid: 1.0,
     };
+
+    /// How far the gaze can wander from rest, drift and sweep together.
+    pub fn reach(&self) -> f32 {
+        self.drift + self.scan
+    }
+
+    /// The gaze's side-to-side offset at `t`.
+    pub fn sweep(&self, t: f32) -> f32 {
+        self.scan * (2.0 * PI * t / SCAN_EVERY).sin()
+    }
 
     /// The outline at `t`. Each harmonic travels at its own rate, which is what
     /// keeps the wobble from reading as the whole body rotating.
@@ -81,7 +106,8 @@ impl Motion {
         Beat {
             scale: 1.0 + self.breathe * (0.9 * t).sin(),
             gaze: (
-                self.drift * (0.6 * (0.31 * t).sin() + 0.4 * (0.17 * t + 1.3).sin()),
+                self.drift * (0.6 * (0.31 * t).sin() + 0.4 * (0.17 * t + 1.3).sin())
+                    + self.sweep(t),
                 self.drift * (0.5 * (0.23 * t + 0.7).sin() + 0.5 * (0.13 * t).sin()),
             ),
             lid,
