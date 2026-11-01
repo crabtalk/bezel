@@ -424,6 +424,7 @@ pub struct TextField {
     /// What the text is set in. Its leading is a multiple of the painted size,
     /// so the whole line box follows [`theme::AppExt::set_base_text_size`].
     metrics: Metrics,
+    mono: bool,
     /// Which half of the blink the caret is in. Flipped by [`Self::start_blink`].
     caret_on: bool,
     /// The blink, alive only while the field holds focus.
@@ -473,6 +474,7 @@ impl TextField {
             last_edit: None,
             key_context: None,
             metrics: TextStyle::Body.into(),
+            mono: false,
             caret_on: true,
             blink: None,
             follow_caret: false,
@@ -490,6 +492,12 @@ impl TextField {
     /// anything behavioural parked in it.
     pub fn with_undo_limit(mut self, limit: usize) -> Self {
         self.history.set_limit(limit);
+        self
+    }
+
+    /// Use the current theme's monospace family for text and placeholder.
+    pub fn with_mono(mut self) -> Self {
+        self.mono = true;
         self
     }
 
