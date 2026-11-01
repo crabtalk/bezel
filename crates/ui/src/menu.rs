@@ -985,7 +985,7 @@ impl<V: 'static> Tree<V> {
                         )
                         .children(description.map(|description| {
                             description_line(theme, description, enabled)
-                                .when(inline, |line| line.mt_0().flex_1().min_w_0())
+                                .when(inline, |line| line.mt_0().min_w_0())
                         })),
                 )
                 .map(|row| match item {
