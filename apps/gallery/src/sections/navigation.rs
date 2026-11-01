@@ -1,5 +1,5 @@
 use crate::*;
-use ui::AppExt as _;
+use ui::{AppExt as _, split::Split};
 
 impl Gallery {
     pub(crate) fn navigation(
@@ -465,7 +465,7 @@ impl Gallery {
             }
 
             "split" => {
-                let hint = hint(&theme, "Drag the divider; it clamps at 15% either side.");
+                let hint = hint(&theme, "Drag the divider; each pane keeps at least 60 points.");
                 let muted = theme.text_muted;
                 let pane = move |label: SharedString| {
                     div()
@@ -487,54 +487,19 @@ impl Gallery {
                             .border_1()
                             .border_color(theme.border)
                             .overflow_hidden()
-                            .flex()
-                            .flex_row()
-                            .on_drag_move(cx.listener(
-                                |view, event: &DragMoveEvent<SplitDrag>, _, cx| {
-                                    view.navigation.split = widgets::axis_fraction(
-                                        event.event.position,
-                                        event.bounds,
-                                        Axis::Horizontal,
-                                        0.15,
-                                    );
-                                    view.navigation.split_dragging = true;
-                                    cx.notify();
-                                },
-                            ))
-                            // Both, because the release can land anywhere: a
-                            // divider left lit reads as still grabbed.
-                            .on_mouse_up(
-                                gpui::MouseButton::Left,
-                                cx.listener(|view, _, _, cx| {
-                                    view.navigation.split_dragging = false;
-                                    cx.notify();
-                                }),
-                            )
-                            .on_mouse_up_out(
-                                gpui::MouseButton::Left,
-                                cx.listener(|view, _, _, cx| {
-                                    view.navigation.split_dragging = false;
-                                    cx.notify();
-                                }),
-                            )
-                            .child(div().w(relative(self.navigation.split)).child(pane(
-                                SharedString::from(format!(
-                                    "{:.0}%",
-                                    self.navigation.split * 100.0
-                                )),
-                            )))
                             .child(
-                                theme
-                                    .split_handle(
-                                        Axis::Horizontal,
-                                        SplitStyle::Line {
-                                            dragging: self.navigation.split_dragging,
-                                        },
-                                    )
-                                    .id("split-handle")
-                                    .on_drag(SplitDrag, |_, _, _, cx| cx.new(|_| Empty)),
-                            )
-                            .child(div().flex_1().child(pane("drag the divider".into()))),
+                                Split::horizontal(
+                                    "panes",
+                                    pane(SharedString::from(format!("{:.0}%", self.navigation.split * 100.0))),
+                                    pane("drag the divider".into()),
+                                )
+                                .ratio(self.navigation.split)
+                                .min(px(60.0))
+                                .on_resize(cx.listener(|view, ratio, _, cx| {
+                                    view.navigation.split = *ratio;
+                                    cx.notify();
+                                })),
+                            ),
                     )
                     .into_any_element()
             }
@@ -735,7 +700,6 @@ const NOTES: [&str; 2] = ["Interview notes", "Keyboard shortcut reference"];
 pub(crate) struct State {
     /// Where the split's divider sits, as a fraction of the container.
     pub(crate) split: f32,
-    pub(crate) split_dragging: bool,
     pub(crate) tab_strip: [gpui::FocusHandle; 3],
     pub(crate) tab_choice: usize,
     /// The tab-strip demo's open tabs, in order, with one of them in front.
@@ -753,7 +717,6 @@ impl State {
     pub(crate) fn new(cx: &mut Context<Gallery>) -> Self {
         Self {
             split: 0.4,
-            split_dragging: false,
             tab_strip: [cx.focus_handle(), cx.focus_handle(), cx.focus_handle()],
             tab_choice: 0,
             reorder: tabs::Reorder::new(),

@@ -44,6 +44,7 @@ pub mod pending;
 pub mod popover;
 pub mod scroll;
 mod search;
+pub mod split;
 pub mod stack;
 pub mod stats;
 pub mod surface;
