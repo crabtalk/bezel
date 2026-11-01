@@ -1034,7 +1034,9 @@ impl<V: 'static> Tree<V> {
                 (true, Described::Fit(most)) => card.min_w(width.min).max_w(most),
                 (false, _) => card.min_w(width.min),
             })
-            .on_mouse_down_out(self.dismissal(cx))
+            .when(self.closing.is_none(), |card| {
+                card.on_mouse_down_out(self.dismissal(cx))
+            })
             .map(|card| match query {
                 None => card.child(
                     scroll::Viewport::new(rows_id, rows, Axis::Vertical)

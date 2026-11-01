@@ -185,3 +185,23 @@ fn the_keyboard_walks_into_a_submenu_and_backs_out_a_level_at_a_time(cx: &mut Te
         )
     });
 }
+
+#[gpui::test]
+fn choosing_a_row_allows_an_immediate_trigger_press(cx: &mut TestAppContext) {
+    let (page, mut cx) = page(cx);
+    for trigger in ["one", "two"] {
+        click(&mut cx, "one");
+        cx.simulate_keystrokes("down enter");
+        cx.run_until_parked();
+        assert_eq!(open_key(&page, &mut cx), None);
+        let at = cx.debug_bounds(trigger).unwrap().center();
+        cx.simulate_click(at, Modifiers::default());
+        cx.run_until_parked();
+        assert_eq!(
+            open_key(&page, &mut cx),
+            Some(if trigger == "one" { Key::One } else { Key::Two })
+        );
+        cx.simulate_keystrokes("escape");
+        settle(&mut cx);
+    }
+}
