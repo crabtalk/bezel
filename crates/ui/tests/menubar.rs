@@ -124,6 +124,27 @@ fn the_builders_leave_each_others_fields_alone() {
 }
 
 #[test]
+fn an_inline_description_is_a_description_on_the_label_line() {
+    let row = Item::action("/review").with_inline_description("Review the diff");
+    assert!(matches!(
+        &row,
+        Item::Action {
+            description: Some(_),
+            inline: true,
+            ..
+        }
+    ));
+    assert!(matches!(
+        Item::action("/review").with_description("Review the diff"),
+        Item::Action { inline: false, .. }
+    ));
+    assert_eq!(
+        Item::Separator.with_inline_description("x"),
+        Item::Separator
+    );
+}
+
+#[test]
 fn a_separator_carries_nothing() {
     assert_eq!(Item::Separator.with_keystroke("⌘K"), Item::Separator);
     assert_eq!(Item::Separator.disabled(), Item::Separator);

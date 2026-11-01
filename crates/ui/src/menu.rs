@@ -155,6 +155,10 @@ pub enum Item {
         /// because a row's two lines read as one block and a blank second line
         /// would read as a gap.
         description: Option<SharedString>,
+        /// The description stands after the label, on the label's line, and
+        /// takes the width the label leaves — see
+        /// [`Item::with_inline_description`].
+        inline: bool,
         /// Hover text for the row, shown after gpui's tooltip delay. Where the
         /// whole of a [`Item::with_description`] too long for its one line
         /// goes, and where a disabled row says why — a disabled row takes no
@@ -226,6 +230,7 @@ impl Item {
         Item::Action {
             label: label.into(),
             description: None,
+            inline: false,
             tooltip: None,
             icon: None,
             indent: 0,
@@ -295,6 +300,22 @@ impl Item {
         } = &mut self
         {
             *slot = Some(description.into());
+        }
+        self
+    }
+
+    /// A description after the label on the label's line, muted and cut at
+    /// the row's end, in place of a second line. No-ops on anything but an
+    /// action row, as [`Item::with_description`] does.
+    pub fn with_inline_description(mut self, description: impl Into<SharedString>) -> Self {
+        if let Item::Action {
+            description: slot,
+            inline,
+            ..
+        } = &mut self
+        {
+            *slot = Some(description.into());
+            *inline = true;
         }
         self
     }
@@ -915,13 +936,14 @@ impl<V: 'static> Tree<V> {
                         unreachable!("returned above")
                     }
                 };
-                let (description, hint) = match item {
+                let (description, inline, hint) = match item {
                     Item::Action {
                         description,
+                        inline,
                         tooltip,
                         ..
-                    } => (description.clone(), tooltip.clone()),
-                    _ => (None, None),
+                    } => (description.clone(), *inline, tooltip.clone()),
+                    _ => (None, false, None),
                 };
                 let row = if enabled {
                     popover::menu_row(theme, lit == Some(row), None)
@@ -953,12 +975,18 @@ impl<V: 'static> Tree<V> {
                         .flex_1()
                         .min_w_0()
                         .flex()
-                        .flex_col()
-                        .child(div().truncate().child(label))
-                        .children(
-                            description
-                                .map(|description| description_line(theme, description, enabled)),
-                        ),
+                        .when(!inline, |text| text.flex_col())
+                        .when(inline, |text| text.flex_row().items_baseline().gap(px(8.0)))
+                        .child(
+                            div()
+                                .truncate()
+                                .when(inline, |label| label.flex_none().max_w_full())
+                                .child(label),
+                        )
+                        .children(description.map(|description| {
+                            description_line(theme, description, enabled)
+                                .when(inline, |line| line.mt_0().min_w_0())
+                        })),
                 )
                 .map(|row| match item {
                     Item::Action {

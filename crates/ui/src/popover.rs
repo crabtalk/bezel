@@ -385,7 +385,7 @@ pub fn trigger_press_matching<V: 'static, T: 'static, E: gpui::InteractiveElemen
 /// The inner inset of a [`popover_card`], and so the amount [`menu_row`]'s
 /// corners come in by. Named because two things read it: the card's padding and
 /// its rows' radius. Change it and the rows follow.
-pub(crate) const MENU_PAD: f32 = 4.0;
+pub const MENU_PAD: f32 = 4.0;
 
 /// The gap a floating layer keeps from the window edge once it has run out of
 /// room and is snapped back inside it.

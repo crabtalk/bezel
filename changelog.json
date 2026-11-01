@@ -1,5 +1,17 @@
 [
   {
+    "version": "0.2.23",
+    "date": "2026-11-01",
+    "summary": "Inline menu descriptions and a public menu card inset.",
+    "new": [
+      "`menu::Item::with_inline_description` places a muted description beside the action label.",
+      "`popover::MENU_PAD` exposes the menu card's inner inset."
+    ],
+    "fixed": [
+      "Inline menu descriptions no longer stretch the row beyond their content width."
+    ]
+  },
+  {
     "version": "0.2.22",
     "date": "2026-10-28",
     "summary": "A busy mascot, browser stills on Windows, and modals that stay open under their own menus; on bezel-gpui 0.3.21.",
