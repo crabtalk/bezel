@@ -39,7 +39,7 @@ fn menus() -> Vec<Menu> {
                 ],
             ),
             Item::Separator,
-            Item::action("Close").disabled(),
+            Item::action("Close").disabled(true),
         ],
     )]
 }

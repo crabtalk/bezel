@@ -349,7 +349,7 @@ pub(crate) fn demo_menus() -> Vec<Menu> {
                 Item::action("Save As…")
                     .with_icon(icons::glyph::Save)
                     .with_keystroke(keys::printed("secondary-shift-s"))
-                    .disabled(),
+                    .disabled(true),
             ],
         ),
         Menu::new(
@@ -358,7 +358,7 @@ pub(crate) fn demo_menus() -> Vec<Menu> {
                 Item::action("Undo").with_keystroke(keys::printed("secondary-z")),
                 Item::action("Redo")
                     .with_keystroke(keys::printed("secondary-shift-z"))
-                    .disabled(),
+                    .disabled(true),
                 Item::Separator,
                 Item::action("Cut").with_keystroke(keys::printed("secondary-x")),
                 Item::action("Copy").with_keystroke(keys::printed("secondary-c")),
@@ -396,7 +396,7 @@ pub(crate) fn demo_menus() -> Vec<Menu> {
                         ),
                     ],
                 ),
-                Item::submenu("Nothing Here", vec![]).disabled(),
+                Item::submenu("Nothing Here", vec![]).disabled(true),
             ],
         ),
     ]

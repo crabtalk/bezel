@@ -5,7 +5,7 @@ fn items() -> Vec<Item> {
     vec![
         Item::action("a"),
         Item::Separator,
-        Item::action("b").disabled(),
+        Item::action("b").disabled(true),
         Item::action("c"),
     ]
 }
@@ -35,7 +35,7 @@ fn both_ends_wrap() {
 #[test]
 fn a_menu_with_nothing_to_choose_answers_none() {
     // The shape that would otherwise walk the ring forever.
-    let dead = vec![Item::Separator, Item::action("x").disabled()];
+    let dead = vec![Item::Separator, Item::action("x").disabled(true)];
     assert_eq!(next_selectable(&dead, None, 1), None);
     assert_eq!(next_selectable(&dead, Some(1), -1), None);
     assert_eq!(next_selectable(&[], None, 1), None);
@@ -107,7 +107,7 @@ fn the_builders_leave_each_others_fields_alone() {
         .with_description("Write the file to disk")
         .with_tooltip("Write the file to disk, overwriting what is there")
         .checked(true)
-        .disabled();
+        .disabled(true);
     assert!(matches!(
         &full,
         Item::Action {
@@ -147,10 +147,10 @@ fn an_inline_description_is_a_description_on_the_label_line() {
 #[test]
 fn a_separator_carries_nothing() {
     assert_eq!(Item::Separator.with_keystroke("⌘K"), Item::Separator);
-    assert_eq!(Item::Separator.disabled(), Item::Separator);
+    assert_eq!(Item::Separator.disabled(true), Item::Separator);
     assert!(!Item::Separator.selectable());
     assert!(Item::action("a").selectable());
-    assert!(!Item::action("a").disabled().selectable());
+    assert!(!Item::action("a").disabled(true).selectable());
 }
 
 #[test]
@@ -175,7 +175,7 @@ fn nested() -> Vec<Item> {
             ],
         ),
         Item::Separator,
-        Item::action("b").disabled(),
+        Item::action("b").disabled(true),
         Item::submenu("Empty", vec![]),
         Item::action("c"),
     ]
@@ -203,7 +203,7 @@ fn a_submenu_with_nothing_in_it_cannot_be_landed_on() {
     assert!(!items[4].selectable());
     assert!(
         !Item::submenu("x", vec![Item::action("y")])
-            .disabled()
+            .disabled(true)
             .selectable()
     );
     // …and the keyboard steps over it like any other dead row: 1 → 5, not 4.
@@ -359,7 +359,7 @@ fn pointing_at_a_segment_lights_it() {
 #[test]
 fn a_disabled_or_empty_segmented_row_is_stepped_over() {
     assert!(!Item::segmented([], 0).selectable());
-    assert!(!segmented()[1].clone().disabled().selectable());
+    assert!(!segmented()[1].clone().disabled(true).selectable());
     assert!(segmented()[1].selectable());
 }
 
@@ -367,6 +367,17 @@ fn a_disabled_or_empty_segmented_row_is_stepped_over() {
 fn a_note_is_read_and_never_landed_on() {
     let note = Item::Note("1,204 words".into());
     assert_eq!(note.clone().with_icon(icons::glyph::Check), note);
-    assert_eq!(note.clone().disabled(), note);
+    assert_eq!(note.clone().disabled(true), note);
     assert!(!note.selectable());
+}
+
+#[test]
+fn disabled_flag_can_reenable_menu_items() {
+    for item in [
+        Item::action("Open"),
+        Item::submenu("More", vec![Item::action("Open")]),
+    ] {
+        assert!(!item.clone().disabled(true).selectable());
+        assert!(item.disabled(true).disabled(false).selectable());
+    }
 }
