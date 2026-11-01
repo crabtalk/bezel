@@ -169,10 +169,9 @@ pub fn header_cell(theme: &Theme, column: &Column, sorted: Option<bool>) -> gpui
 
 /// One body row, its cells zipped onto the columns.
 ///
-/// The zip is the whole point — a cell is never sized where it is written, so a
-/// row cannot drift from the header. `cells` shorter than `columns` is a bug in
-/// the caller rather than a shape to render, and the assert says so in debug
-/// builds; release truncates rather than panicking at a user.
+/// With no selection fill, the row installs a hover background. Do not chain
+/// `.hover(...)` on it: gpui permits only one hover style per element.
+/// `cells` must have one entry per column; debug builds assert this.
 pub fn row(
     theme: &Theme,
     columns: &[Column],
