@@ -303,6 +303,9 @@ impl Render for TextField {
                         theme.border
                     })
             })
+            .when(self.mono, |field| {
+                field.font_family(theme.font_mono.clone())
+            })
             .text_size(px(self.metrics.size()))
             .font_weight(self.metrics.weight)
             .line_height(px(self.metrics.line_height()))

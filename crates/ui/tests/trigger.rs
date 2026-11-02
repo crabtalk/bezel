@@ -167,3 +167,19 @@ fn an_old_reaper_cannot_finish_a_new_close(cx: &mut TestAppContext) {
     visual.run_until_parked();
     assert!(visual.update(|_, cx| entity.read(cx).menu.get().is_none()));
 }
+
+#[gpui::test]
+fn a_trigger_can_reopen_during_the_exit(cx: &mut TestAppContext) {
+    let mut cx = open(true, cx);
+    let at = point(px(40.0), px(30.0));
+    cx.simulate_click(at, Modifiers::default());
+    cx.run_until_parked();
+    cx.simulate_click(at, Modifiers::default());
+    cx.run_until_parked();
+    cx.simulate_click(at, Modifiers::default());
+    cx.run_until_parked();
+    cx.executor()
+        .advance_clock(std::time::Duration::from_secs(1));
+    cx.run_until_parked();
+    assert!(card_up(&mut cx));
+}

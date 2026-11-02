@@ -1,4 +1,4 @@
-//! The button — one component, three shipped looks — in its labelled and
+//! The button — one component, four shipped looks — in its labelled and
 //! glyph-only forms, the [`Buttons::control_group`] that gathers adjacent ones
 //! onto one shared background, and [`Buttons::ghost`], the open frame a quiet
 //! control paints around children of its own. A catalog trait like every widget
@@ -21,6 +21,8 @@ pub enum ButtonStyle {
     Ghost,
     /// The maximum-contrast plate — the primary action.
     Prominent,
+    /// A transparent plate with a strong border.
+    Secondary,
     /// The muted red fill — carries the destructive semantics with the paint.
     Destructive,
 }
@@ -280,6 +282,22 @@ pub(super) fn appearance(
         } else {
             (frame.text_color(rest), rest)
         }
+    } else if style == ButtonStyle::Secondary {
+        let tint = if destructive {
+            theme.danger_strong
+        } else {
+            theme.text
+        };
+        (
+            frame
+                .border_1()
+                .border_color(theme.border_strong)
+                .text_color(tint)
+                .when(interactive, |button| {
+                    button.hover(|s| s.bg(theme.element_hover))
+                }),
+            tint,
+        )
     } else {
         let (fill, tint) = if destructive {
             (theme.danger_strong, gpui::white())

@@ -386,11 +386,11 @@ impl Item {
         self
     }
 
-    pub fn disabled(mut self) -> Self {
+    pub fn disabled(mut self, disabled: bool) -> Self {
         match &mut self {
             Item::Action { enabled, .. }
             | Item::Submenu { enabled, .. }
-            | Item::Segmented { enabled, .. } => *enabled = false,
+            | Item::Segmented { enabled, .. } => *enabled = !disabled,
             Item::Heading(_) | Item::Note(_) | Item::Separator => {}
         }
         self
@@ -742,7 +742,7 @@ pub fn edit_items(
     window: &Window,
 ) -> Vec<Item> {
     let [cut, copy, paste, select_all] = actions;
-    let enable = |item: Item, on: bool| if on { item } else { item.disabled() };
+    let enable = |item: Item, on: bool| item.disabled(!on);
     vec![
         enable(Item::action("Cut").with_shortcut(cut, window), selected),
         enable(Item::action("Copy").with_shortcut(copy, window), selected),
@@ -1034,7 +1034,9 @@ impl<V: 'static> Tree<V> {
                 (true, Described::Fit(most)) => card.min_w(width.min).max_w(most),
                 (false, _) => card.min_w(width.min),
             })
-            .on_mouse_down_out(self.dismissal(cx))
+            .when(self.closing.is_none(), |card| {
+                card.on_mouse_down_out(self.dismissal(cx))
+            })
             .map(|card| match query {
                 None => card.child(
                     scroll::Viewport::new(rows_id, rows, Axis::Vertical)

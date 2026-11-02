@@ -17,11 +17,11 @@ fn trigger_press_note_distinguishes_dismiss_from_open() {
     popup.note_trigger_press();
     popup.begin_close();
     assert!(popup.take_press_was_open());
-    // Out-handler first, trigger note second: mid-exit still counts.
+    // A later press during the exit can open the popup again.
     popup.open(1);
     popup.begin_close();
     popup.note_trigger_press();
-    assert!(popup.take_press_was_open());
+    assert!(!popup.take_press_was_open());
 
     // The note is consumed — a later click starts clean.
     assert!(!popup.take_press_was_open());

@@ -1,5 +1,22 @@
 [
   {
+    "version": "0.2.24",
+    "date": "2026-11-02",
+    "summary": "Resizable split panes, secondary buttons, monospace fields, and responsive menu reopening.",
+    "new": [
+      "`split::Split` provides horizontal and vertical panes with minimum sizes and a resize callback for a host-owned ratio.",
+      "`ButtonStyle::Secondary` adds a transparent button with a strong border.",
+      "`TextField::with_mono` selects the current theme's monospace family."
+    ],
+    "changed": [
+      "Breaking: `menu::Item::disabled` takes a boolean.",
+      "`table::row` documents its built-in hover style and gpui's single-hover constraint."
+    ],
+    "fixed": [
+      "Menu triggers can reopen a popup during its exit animation; closing menus no longer consume outside presses."
+    ]
+  },
+  {
     "version": "0.2.23",
     "date": "2026-11-01",
     "summary": "Inline menu descriptions and a public menu card inset.",

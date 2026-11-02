@@ -150,18 +150,7 @@ impl<T> Popup<T> {
         }
     }
 
-    /// Unmount now, with no exit phase.
-    ///
-    /// For a surface that has no exit animation to play — [`modal`], which
-    /// takes no `closing` and paints the same either way. Sending one of those
-    /// through [`Self::begin_close`] buys nothing and costs everything: it
-    /// stays fully painted for the animation's span, and if the reap never
-    /// lands it stays forever, because nothing retries.
-    ///
-    /// Not for a popup something toggles: unmounting on the press erases what
-    /// [`Self::note_trigger_press`] has to read, so the note comes back false
-    /// and the trigger reopens what it just shut. Those close through
-    /// [`close_popup`].
+    /// Unmount immediately, without an exit animation.
     pub fn close(&mut self) {
         self.inner = None;
     }
@@ -180,18 +169,8 @@ impl<T> Popup<T> {
         }
     }
 
-    /// Record, from the trigger's `on_mouse_down`, whether this popup is
-    /// still mounted. The anchored card's `on_mouse_down_out` fires on that
-    /// same press and begins the close, so by click (mouse-up) time the
-    /// popup already reads as closed — the click handler alone cannot tell
-    /// "this press dismissed it; stay closed" from "open fresh", and a
-    /// plain toggle closes-and-reopens (user report). Both handler orders
-    /// work: open and mid-exit each count as mounted. Every trigger click
-    /// is preceded by a trigger mouse-down, so the note is never stale.
-    ///
-    /// [`menu_trigger`] wires this and the matching click together. Reach for
-    /// it directly only when the open is not a click — a gutter handle whose
-    /// menu belongs to the release of a possible drag.
+    /// Record whether the trigger press found an interactive popup.
+    /// Call during capture, before the card's outside-press dismissal.
     pub fn note_trigger_press(&mut self) {
         self.note_trigger_press_matching(|_| true);
     }
@@ -201,11 +180,11 @@ impl<T> Popup<T> {
     /// several triggers): only a press on the OWNING trigger counts, so
     /// clicking a different trigger switches menus instead of swallowing.
     pub fn note_trigger_press_matching(&mut self, owns: impl FnOnce(&T) -> bool) {
-        self.pressed_while_open = self.inner.as_ref().is_some_and(|(value, _)| owns(value));
+        self.pressed_while_open = self.as_open().is_some_and(owns);
     }
 
     /// Consume the press note: `true` when the press that produced the
-    /// current click found the popup mounted — the click should leave it
+    /// current click found the popup interactive — the click should leave it
     /// closed rather than reopen it.
     pub fn take_press_was_open(&mut self) -> bool {
         std::mem::take(&mut self.pressed_while_open)
@@ -271,27 +250,18 @@ pub fn close_popup<V: 'static, T: 'static>(
     }
 }
 
-/// Dismiss `popup` on a press outside `el` — the card side of the pair
-/// [`menu_trigger`] completes.
-///
-/// It closes through [`close_popup`] rather than [`Popup::close`], and that is
-/// load-bearing rather than cosmetic: the exit phase is what keeps the popup
-/// reading as mounted while the trigger's own press handler runs, whichever of
-/// the two the frame happens to dispatch first.
-///
-/// The press is swallowed, as [`crate::menu::card`]'s own dismissal swallows
-/// it: this listener runs in the capture phase, and stopping there skips the
-/// bubble phase where gpui records the press a click is built from. A press
-/// that dismisses an open card is spent on the dismissal, and whatever it
-/// landed on is one more press away.
+/// Dismiss an open `popup` on an outside press and consume that press.
+/// A closing popup leaves outside presses untouched.
 pub fn dismiss_on_out<V: 'static, T: 'static, E: gpui::InteractiveElement>(
     el: E,
     popup: impl Fn(&mut V) -> &mut Popup<T> + Copy + 'static,
     cx: &gpui::Context<V>,
 ) -> E {
     el.on_mouse_down_out(cx.listener(move |view, _: &gpui::MouseDownEvent, _, cx| {
-        close_popup(view, cx, popup);
-        cx.stop_propagation();
+        if popup(view).is_open() {
+            close_popup(view, cx, popup);
+            cx.stop_propagation();
+        }
     }))
 }
 
@@ -367,12 +337,6 @@ pub fn trigger_press_matching<V: 'static, T: 'static, E: gpui::InteractiveElemen
     owns: impl Fn(&T) -> bool + 'static,
     cx: &gpui::Context<V>,
 ) -> E {
-    // Capture, not bubble: `on_mouse_down_out` is itself a capture-phase
-    // listener, so a bubble-phase note is dispatched after every dismissal in
-    // the frame and reads whatever they left behind. Survivable while every
-    // dismissal goes through [`close_popup`] — mid-exit still counts as
-    // mounted — and not survivable the moment one reaches for [`Popup::close`],
-    // which is a footgun to leave lying under a component's own trigger.
     el.capture_any_mouse_down(cx.listener(move |view, _: &gpui::MouseDownEvent, _, _| {
         popup(view).note_trigger_press_matching(&owns);
     }))

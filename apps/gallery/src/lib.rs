@@ -8,8 +8,8 @@
 
 use editor::AppExt as _;
 use gpui::{
-    AnyElement, App, Axis, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
-    actions, div, point, prelude::*, px, relative,
+    AnyElement, App, Context, DragMoveEvent, Empty, Entity, KeyBinding, SharedString, Window,
+    actions, div, point, prelude::*, px,
 };
 use markdown::AppExt as _;
 use motion::{AppExt as _, Fade, Painter};
@@ -47,7 +47,7 @@ use ui::{
     widgets,
     widgets::{
         ButtonStyle, Buttons, Content, Controls, Icons as _, Layout, Scaffolding, SliderDrag,
-        SplitDrag, SplitStyle, Status,
+        Status,
     },
 };
 

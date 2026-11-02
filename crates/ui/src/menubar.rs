@@ -26,7 +26,7 @@
 //!         Item::action("New Window").with_shortcut(&NewWindow, window),
 //!         Item::submenu("Open Recent", vec![Item::action("bezel.md")]),
 //!         Item::Separator,
-//!         Item::action("Close").with_keystroke(keys::printed("secondary-w")).disabled(),
+//!         Item::action("Close").with_keystroke(keys::printed("secondary-w")).disabled(true),
 //!     ]),
 //! ], cx));
 //! cx.subscribe(&bar, |_, bar, event, cx| match event {
