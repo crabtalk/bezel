@@ -9,8 +9,7 @@
 //! writes its own with the same trait. A tool reads and commands a
 //! [`CanvasEditor`] and says what it draws; the view paints it.
 
-use gpui::{Modifiers, MouseButton, Pixels, Point};
-
+use gpui::{CursorStyle, Modifiers, MouseButton, Pixels, Point};
 use crate::{
     change::{self, Change},
     clip, contain,
@@ -131,6 +130,11 @@ pub trait Tool {
         None
     }
 
+    /// The cursor while this tool holds the pointer.
+    fn cursor(&self) -> Option<CursorStyle> {
+        self.held().map(|_| CursorStyle::ClosedHand)
+    }
+
     /// Whether it is holding a gesture that a press near the view's edge
     /// should pan the view under.
     fn drifts(&self) -> bool {
@@ -192,6 +196,10 @@ impl Tool for Pan {
     fn cancel(&mut self, _: &mut Hand) {
         self.last = None;
     }
+
+    fn cursor(&self) -> Option<CursorStyle> {
+        self.last.map(|_| CursorStyle::ClosedHand)
+    }
 }
 
 #[derive(Default)]
@@ -213,6 +221,9 @@ impl Tool for SpacePan {
     }
     fn cancel(&mut self, hand: &mut Hand) {
         self.0.cancel(hand);
+    }
+    fn cursor(&self) -> Option<CursorStyle> {
+        self.0.cursor()
     }
 }
 
@@ -598,6 +609,7 @@ struct Pulling {
     node: Node,
     from: Point<f32>,
     axes: (i64, i64),
+    cursor: CursorStyle,
     grows: bool,
 }
 
@@ -623,6 +635,7 @@ impl Tool for Resize {
             node: found.clone(),
             from: pointer.at,
             axes,
+            cursor: handle.cursor(),
             grows,
         });
         true
@@ -709,8 +722,14 @@ impl Tool for Resize {
         hand.editor.clear_preview();
     }
 
-    fn drifts(&self) -> bool {
-        self.pulling.is_some()
+    fn held(&self) -> Option<&str> {
+        self.pulling
+            .as_ref()
+            .map(|pulling| pulling.node.id.as_str())
+    }
+
+    fn cursor(&self) -> Option<CursorStyle> {
+        self.pulling.as_ref().map(|pulling| pulling.cursor)
     }
 }
 

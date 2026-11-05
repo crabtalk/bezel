@@ -4,8 +4,7 @@
 //! out where one lands from its [`Spot`], so a press finds it without waiting
 //! for a frame to be laid out, and an edge names the one it left from.
 
-use gpui::{Point, point};
-
+use gpui::{CursorStyle, Point, point};
 use crate::{
     model::{Edge, Node, Side},
     path::{Anchor, Path, Rect},
@@ -116,6 +115,18 @@ impl Handle {
             id: id.into(),
             spot,
             role,
+        }
+    }
+
+    pub fn cursor(&self) -> CursorStyle {
+        match self.role {
+            Role::Resize => match self.spot.resize_axes() {
+                Some((0, _)) => CursorStyle::ResizeUpDown,
+                Some((_, 0)) => CursorStyle::ResizeLeftRight,
+                Some((x, y)) if x != y => CursorStyle::ResizeUpRightDownLeft,
+                _ => CursorStyle::ResizeUpLeftDownRight,
+            },
+            _ => CursorStyle::Crosshair,
         }
     }
 

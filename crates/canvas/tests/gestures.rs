@@ -5,7 +5,7 @@ use canvas::{
     model::Side,
     tool::{Hand, Hit, Pointer, Resize, Select, SpacePan, Tool},
 };
-use gpui::{Modifiers, MouseButton, point, px};
+use gpui::{CursorStyle, Modifiers, MouseButton, point, px};
 
 fn editor() -> CanvasEditor {
     CanvasEditor::new(Canvas::parse(r#"{"nodes":[{"id":"a","type":"link","x":100,"y":100,"width":200,"height":100},{"id":"b","type":"link","x":500,"y":300,"width":100,"height":100}]}"#).unwrap(), layout::FREE)
@@ -172,4 +172,119 @@ fn shift_drag_can_start_with_shift_already_held() {
     tool.release(&pointer, &mut Hand::new(&mut editor));
     let node = editor.canvas().node("a").unwrap();
     assert_eq!((node.x, node.y), (100, 170));
+}
+
+#[test]
+fn resize_keeps_the_pressed_cursor_and_node_until_cancelled() {
+    let cases = [
+        (
+            Spot::Side {
+                side: Side::Left,
+                at: 0.5,
+            },
+            CursorStyle::ResizeLeftRight,
+        ),
+        (
+            Spot::Side {
+                side: Side::Right,
+                at: 0.5,
+            },
+            CursorStyle::ResizeLeftRight,
+        ),
+        (
+            Spot::Side {
+                side: Side::Top,
+                at: 0.5,
+            },
+            CursorStyle::ResizeUpDown,
+        ),
+        (
+            Spot::Side {
+                side: Side::Bottom,
+                at: 0.5,
+            },
+            CursorStyle::ResizeUpDown,
+        ),
+        (
+            Spot::CornerAt {
+                right: false,
+                bottom: false,
+            },
+            CursorStyle::ResizeUpLeftDownRight,
+        ),
+        (
+            Spot::CornerAt {
+                right: true,
+                bottom: true,
+            },
+            CursorStyle::ResizeUpLeftDownRight,
+        ),
+        (
+            Spot::CornerAt {
+                right: false,
+                bottom: true,
+            },
+            CursorStyle::ResizeUpRightDownLeft,
+        ),
+        (
+            Spot::CornerAt {
+                right: true,
+                bottom: false,
+            },
+            CursorStyle::ResizeUpRightDownLeft,
+        ),
+    ];
+    for (spot, cursor) in cases {
+        let mut editor = editor();
+        let before = editor.canvas().clone();
+        let mut tool = Resize::default();
+        let handle = Handle::new("resize", spot, Role::Resize);
+        assert_eq!(handle.cursor(), cursor);
+        let mut pointer = pointer(Hit::Handle {
+            owner: "a".into(),
+            handle,
+        });
+        assert!(tool.press(&pointer, &mut Hand::new(&mut editor)));
+        pointer.hit = Hit::Nothing;
+        pointer.at = point(40.0, 30.0);
+        tool.drag(&pointer, &mut Hand::new(&mut editor));
+        assert_eq!(tool.cursor(), Some(cursor));
+        assert_eq!(tool.held(), Some("a"));
+        tool.cancel(&mut Hand::new(&mut editor));
+        assert_eq!(tool.cursor(), None);
+        assert_eq!(tool.held(), None);
+        assert_eq!(editor.painted(), &before);
+    }
+}
+
+#[test]
+fn resizing_outside_the_viewport_does_not_pan_or_keep_growing() {
+    for zoom in [0.25, 1.0, 4.0] {
+        let mut editor = editor();
+        editor.set_zoom(zoom);
+        let mut tool = Resize::default();
+        let mut pointer = pointer(Hit::Handle {
+            owner: "a".into(),
+            handle: Handle::corner(),
+        });
+        assert!(tool.press(&pointer, &mut Hand::new(&mut editor)));
+        pointer.hit = Hit::Nothing;
+        pointer.screen = point(px(1200.0), px(900.0));
+        pointer.at = point(1200.0 / zoom, 900.0 / zoom);
+        let pan = editor.pan();
+        tool.drag(&pointer, &mut Hand::new(&mut editor));
+        let resized = editor.painted().clone();
+        for _ in 0..10 {
+            assert!(!tool.drifts());
+            tool.drag(&pointer, &mut Hand::new(&mut editor));
+            assert_eq!(editor.painted(), &resized);
+        }
+        assert_eq!(editor.pan(), pan);
+        tool.release(&pointer, &mut Hand::new(&mut editor));
+        assert_eq!(tool.cursor(), None);
+        assert_eq!(tool.held(), None);
+        assert_eq!(editor.canvas(), &resized);
+        assert!(editor.undo());
+        assert!(!editor.can_undo());
+    }
 }

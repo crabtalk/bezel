@@ -1,6 +1,6 @@
 //! Node positions, node and label painting, and the edge layer.
 
-use super::*;
+use crate::view::*;
 
 impl CanvasView {
     /// Where each node paints this frame. A node the document moved glides
@@ -148,15 +148,7 @@ impl CanvasView {
                     cx,
                 );
                 let axes = declared.spot.resize_axes();
-                let cursor = match declared.role {
-                    Role::Resize => match axes {
-                        Some((0, _)) => CursorStyle::ResizeUpDown,
-                        Some((_, 0)) => CursorStyle::ResizeLeftRight,
-                        Some((x, y)) if x != y => CursorStyle::ResizeUpRightDownLeft,
-                        _ => CursorStyle::ResizeUpLeftDownRight,
-                    },
-                    _ => CursorStyle::Crosshair,
-                };
+                let cursor = declared.cursor();
                 let owner = node.id.clone();
                 let (handle_w, handle_h) = if declared.role == Role::Resize {
                     match axes {
@@ -327,7 +319,7 @@ impl CanvasView {
     ) -> impl IntoElement + use<> {
         let (z, pan) = (self.editor.zoom(), self.editor.pan());
         let grabbing = self.holding.is_some();
-        let holding = self.held().is_some();
+        let cursor = self.holding.and_then(|ix| self.tools[ix].cursor());
         let pending = &self.editor.pending;
         // Connectors a drop would cut, and the ones it would make.
         let cut: HashSet<&str> = pending
@@ -446,10 +438,8 @@ impl CanvasView {
                     );
                 }
                 guides(&frame, &caught, window, cx);
-                // Window-wide, so the hand stays closed wherever the pointer
-                // carries the node.
-                if holding {
-                    window.set_window_cursor_style(CursorStyle::ClosedHand);
+                if let Some(cursor) = cursor {
+                    window.set_window_cursor_style(cursor);
                 }
                 // A held press follows the pointer past the view's edge, so it
                 // listens to the window rather than to this element.
