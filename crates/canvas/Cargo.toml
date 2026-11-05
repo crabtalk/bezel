@@ -152,3 +152,7 @@ required-features = ["gpui"]
 [[test]]
 name = "view"
 required-features = ["gpui"]
+
+[[test]]
+name = "commands"
+required-features = ["gpui"]

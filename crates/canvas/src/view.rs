@@ -296,7 +296,7 @@ impl CanvasView {
                 canvas.node(&s.id).is_none()
             }
         });
-        if self.editor.take_rewound() || gone {
+        if self.editor.take_rewound() || gone || self.editor.options().read_only {
             self.editing = None;
         }
         // An open editor types at the zoom.
@@ -370,6 +370,9 @@ impl CanvasView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.editor.options().read_only {
+            return;
+        }
         self.stop_editing(window, cx);
         let Some(node) = self.editor.canvas().node(&id) else {
             return;
@@ -412,6 +415,9 @@ impl CanvasView {
 
     /// Edit an edge's label in place, its typing one undo step.
     fn edit_edge(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editor.options().read_only {
+            return;
+        }
         self.stop_editing(window, cx);
         let Some(edge) = self.editor.canvas().edge(&id) else {
             return;

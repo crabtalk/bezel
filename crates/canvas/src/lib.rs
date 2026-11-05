@@ -36,6 +36,8 @@ pub use model::Canvas;
 pub use snap::Snap;
 
 #[cfg(feature = "gpui")]
+mod commands;
+#[cfg(feature = "gpui")]
 mod document;
 #[cfg(feature = "gpui")]
 pub mod edge;

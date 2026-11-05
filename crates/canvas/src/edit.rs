@@ -241,6 +241,9 @@ impl CanvasEditor {
     /// first, against the document before the batch. `false` when one was
     /// refused, and then none lands.
     pub fn submit(&mut self, changes: impl IntoIterator<Item = Change>) -> bool {
+        if self.options.read_only {
+            return false;
+        }
         let changes: Vec<Change> = match &self.filter {
             Some(filter) => match changes
                 .into_iter()
@@ -271,6 +274,9 @@ impl CanvasEditor {
     /// landed through [`Self::submit`] or [`Self::apply`]. `false` when there
     /// is none.
     pub fn undo(&mut self) -> bool {
+        if self.options.read_only {
+            return false;
+        }
         let Some(changes) = self.document.undo() else {
             return false;
         };
@@ -279,6 +285,9 @@ impl CanvasEditor {
     }
 
     pub fn redo(&mut self) -> bool {
+        if self.options.read_only {
+            return false;
+        }
         let Some(changes) = self.document.redo() else {
             return false;
         };
@@ -287,11 +296,11 @@ impl CanvasEditor {
     }
 
     pub fn can_undo(&self) -> bool {
-        self.document.can_undo()
+        !self.options.read_only && self.document.can_undo()
     }
 
     pub fn can_redo(&self) -> bool {
-        self.document.can_redo()
+        !self.options.read_only && self.document.can_redo()
     }
 
     /// Typing after a step taken back starts a step of its own.
@@ -348,6 +357,9 @@ impl CanvasEditor {
     }
 
     pub fn node_can(&self, id: &str, what: Capability) -> bool {
+        if self.options.read_only && what != Capability::Selectable {
+            return false;
+        }
         self.document
             .canvas
             .node(id)
@@ -355,6 +367,9 @@ impl CanvasEditor {
     }
 
     pub fn edge_can(&self, id: &str, what: Capability) -> bool {
+        if self.options.read_only && what != Capability::Selectable {
+            return false;
+        }
         self.document
             .canvas
             .edge(id)
@@ -665,8 +680,7 @@ impl CanvasEditor {
     pub fn add_root(&mut self, at: (i64, i64)) -> Option<String> {
         let node = self.kinds.fresh(None);
         let at = (at.0 - node.width / 2, at.1 - node.height / 2);
-        let root = mindmap::root(&self.document.canvas, node, at);
-        self.added(Some(vec![root]))
+        self.add_node(node, at)
     }
 
     /// A connector out of `from`'s `side` let go at `at`, as the layout reads
@@ -706,7 +720,7 @@ impl CanvasEditor {
 
     /// A batch that adds a node, as one undo step through the filter; the
     /// node selected and brought into view.
-    fn added(&mut self, changes: Option<Vec<Change>>) -> Option<String> {
+    pub(crate) fn added(&mut self, changes: Option<Vec<Change>>) -> Option<String> {
         let changes = changes?;
         let id = change::added(&changes)?.to_owned();
         let group = self.next_group();

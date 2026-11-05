@@ -21,6 +21,7 @@ use crate::snap::{Axis, Guide};
 /// What the canvas is tuned by.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Options {
+    pub read_only: bool,
     pub choose_connection_node: bool,
     pub external_drops: bool,
     pub min_zoom: f32,
@@ -57,6 +58,7 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            read_only: false,
             choose_connection_node: false,
             external_drops: false,
             min_zoom: 0.25,
