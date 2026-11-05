@@ -21,6 +21,8 @@ use crate::snap::{Axis, Guide};
 /// What the canvas is tuned by.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Options {
+    pub choose_connection_node: bool,
+    pub external_drops: bool,
     pub min_zoom: f32,
     pub max_zoom: f32,
     /// One chord's zoom.
@@ -55,6 +57,8 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            choose_connection_node: false,
+            external_drops: false,
             min_zoom: 0.25,
             max_zoom: 4.0,
             zoom_step: 1.25,

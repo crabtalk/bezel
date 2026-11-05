@@ -21,6 +21,8 @@ cx.subscribe(&view, |_, view, event, cx| {
 
 - Multiple panes share an `Entity<Document>` through `CanvasView::for_document`; selection and viewport stay with each view.
 - The document is [JSON Canvas 1.0](https://jsoncanvas.org/spec/1.0/). Fields the spec does not name survive a save.
+- Hosts use `canvas_point`, `item_at`, `edit_selected`, and `CanvasEvent::ContextMenu` for their own controls. Enable `Options::external_drops` for `FilesDropped` events.
+- With `Options::choose_connection_node`, a loose connector emits `ConnectionRequested`; complete it with `CanvasEditor::extend_connection`.
 - `CanvasEditor::arrange` aligns, distributes, lays out rows/columns/grids, or justifies a selection in one undo step.
 - Use `handle::frame` for resizing from every border and corner; `handle::sides_and_corner` keeps the compact mindmap handles.
 - Drag with Shift to constrain movement or preserve resize proportions, Space to bypass snapping, and Alt to duplicate. Space-drag pans over cards.

@@ -64,7 +64,7 @@ impl Pointer {
 
 /// What a tool asks the view for once its commands have landed — the view
 /// owns the editor typed into, so a tool names what it wants instead.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum Wish {
     #[default]
     Nothing,
@@ -74,6 +74,11 @@ pub enum Wish {
     EditEdge(String),
     /// Edit what was just added, its typing joining the add.
     EditAdded(String),
+    ChooseConnection {
+        from: String,
+        handle: Handle,
+        at: (i64, i64),
+    },
 }
 
 /// What a tool works on: the editor, and what it asks of the view.
@@ -548,6 +553,17 @@ impl Tool for Connect {
             return;
         }
         let at = (pointer.at.x.round() as i64, pointer.at.y.round() as i64);
+        if hand.editor.options().choose_connection_node
+            && hand.editor.node_under(at, &drawing.from).is_none()
+            && hand.editor.node_can(&drawing.from, Capability::Connectable)
+        {
+            hand.wish = Wish::ChooseConnection {
+                from: drawing.from,
+                handle: drawing.handle,
+                at,
+            };
+            return;
+        }
         let drawn = hand.editor.connect(&drawing.from, &drawing.handle, at);
         if let Some(added) = drawn {
             hand.wish = Wish::EditAdded(added);

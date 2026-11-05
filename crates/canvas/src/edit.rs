@@ -13,7 +13,8 @@
 
 use std::{cell::OnceCell, rc::Rc};
 
-use gpui::{Point, Size, point};
+use gpui::{Pixels, Point, Size, point};
+use std::path::PathBuf;
 
 use crate::{
     change::{self, Change},
@@ -35,6 +36,20 @@ use crate::{
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum CanvasEvent {
+    ContextMenu {
+        position: Point<Pixels>,
+        at: Point<f32>,
+        item: Option<Item>,
+    },
+    FilesDropped {
+        at: Point<f32>,
+        paths: Vec<PathBuf>,
+    },
+    ConnectionRequested {
+        from: String,
+        handle: Handle,
+        at: (i64, i64),
+    },
     /// A batch landed in the document, the view's own measured heights and
     /// layout included.
     Changed(Vec<Change>),
@@ -670,7 +685,22 @@ impl CanvasEditor {
             return None;
         }
         let node = self.template(from)?;
-        let changes = (self.layout.extend)(&self.document.canvas, from, side, at, node);
+        self.extend_connection(from, handle, at, node)
+    }
+
+    /// Complete a connection request with the host's chosen node.
+    pub fn extend_connection(
+        &mut self,
+        from: &str,
+        handle: &Handle,
+        at: (i64, i64),
+        node: Node,
+    ) -> Option<String> {
+        let side = handle.side()?;
+        if self.canvas().node(from).is_none() || !self.node_can(from, Capability::Connectable) {
+            return None;
+        }
+        let changes = (self.layout.extend)(self.canvas(), from, side, at, node);
         self.added(changes.map(|changes| named(changes, &handle.id, side)))
     }
 

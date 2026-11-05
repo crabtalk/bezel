@@ -14,10 +14,10 @@ use std::{
 use editor::{Chrome as EditorChrome, Editor, EditorEvent};
 use gpui::{
     AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId, Entity,
-    EventEmitter, FocusHandle, Focusable, HitboxBehavior, Hsla, KeyContext, KeyDownEvent,
-    KeyUpEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PinchEvent,
-    Pixels, Point, Render, ScrollWheelEvent, Subscription, WeakEntity, Window, canvas as painter,
-    div, point, prelude::*, px, size,
+    EventEmitter, ExternalPaths, FocusHandle, Focusable, HitboxBehavior, Hsla, KeyContext,
+    KeyDownEvent, KeyUpEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    PinchEvent, Pixels, Point, Render, ScrollWheelEvent, Subscription, WeakEntity, Window,
+    canvas as painter, div, point, prelude::*, px, size,
 };
 use motion::{AppExt as _, LAYOUT};
 use theme::{TextStyle, Theme, Typeset};
@@ -28,7 +28,7 @@ use crate::{
     document::{Document, DocumentEvent},
     drag::DragHandler,
     edge::{self, EdgeKinds},
-    edit::{CanvasEditor, CanvasEvent},
+    edit::{CanvasEditor, CanvasEvent, Item},
     handle::{Handle, Role, Which},
     kind::{self, Capability, Kinds, Look, PAD, RADIUS, Sizing, color},
     layout::{Arrow, Layout},
@@ -337,7 +337,7 @@ impl CanvasView {
         )
     }
 
-    fn canvas_point(&self, position: Point<Pixels>) -> Point<f32> {
+    pub fn canvas_point(&self, position: Point<Pixels>) -> Point<f32> {
         let (local, pan, zoom) = (self.local(position), self.editor.pan(), self.editor.zoom());
         point((local.x - pan.x) / zoom, (local.y - pan.y) / zoom)
     }
@@ -443,6 +443,15 @@ impl CanvasView {
             _changes: changes,
         });
         cx.notify();
+    }
+
+    pub fn edit_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.sync_document(cx);
+        if let Some(id) = self.editor.selected_edge().map(str::to_owned) {
+            self.edit_edge(id, window, cx);
+        } else if let Some(id) = self.editor.selected().map(str::to_owned) {
+            self.edit(id, None, window, cx);
+        }
     }
 
     /// An editor for text typed in place, at the zoom.
@@ -557,11 +566,7 @@ impl Render for CanvasView {
             }))
             .on_action(command::<keys::Remove>(cx, CanvasEditor::remove_selected))
             .on_action(cx.listener(|this, _: &keys::Edit, window, cx| {
-                if let Some(id) = this.editor.selected_edge().map(str::to_owned) {
-                    this.edit_edge(id, window, cx);
-                } else if let Some(id) = this.editor.selected().map(str::to_owned) {
-                    this.edit(id, None, window, cx);
-                }
+                this.edit_selected(window, cx);
             }))
             .on_action(command::<keys::SelectAll>(cx, CanvasEditor::select_all))
             .on_action(cx.listener(|this, _: &keys::Deselect, _, cx| {
@@ -623,6 +628,40 @@ impl Render for CanvasView {
                     this.press(event, Hit::Nothing, window, cx);
                 }),
             )
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(|this, event: &MouseDownEvent, window, cx| {
+                    this.sync_document(cx);
+                    let item = this.item_at(event.position);
+                    match &item {
+                        Some(Item::Node(id))
+                            if !this.editor.selected_nodes().contains(&id.as_str()) =>
+                        {
+                            this.update_editor(cx, |editor| editor.select(Some(id.clone())));
+                        }
+                        Some(Item::Edge(id)) => {
+                            this.update_editor(cx, |editor| editor.select_edge(Some(id.clone())));
+                        }
+                        _ => {}
+                    }
+                    window.focus(&this.focus, cx);
+                    cx.emit(CanvasEvent::ContextMenu {
+                        position: event.position,
+                        at: this.canvas_point(event.position),
+                        item,
+                    });
+                    cx.stop_propagation();
+                }),
+            )
+            .when(self.editor.options().external_drops, |element| {
+                element.on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
+                    cx.emit(CanvasEvent::FilesDropped {
+                        at: this.canvas_point(window.mouse_position()),
+                        paths: paths.paths().to_vec(),
+                    });
+                    cx.stop_propagation();
+                }))
+            })
             .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
                 this.modifiers = event.keystroke.modifiers;
                 if event.keystroke.key == "space" && this.editing.is_none() {
