@@ -19,6 +19,7 @@ cx.subscribe(&view, |_, view, event, cx| {
 }).detach();
 ```
 
+- Multiple panes share an `Entity<Document>` through `CanvasView::for_document`; selection and viewport stay with each view.
 - The document is [JSON Canvas 1.0](https://jsoncanvas.org/spec/1.0/). Fields the spec does not name survive a save.
 - Every canvas names a layout; there is no default.
 - gpui cannot transform an element, so a kind applies `look.zoom` to what it paints. A node of fixed size clips it.

@@ -18,6 +18,7 @@ use gpui::{Point, Size, point};
 use crate::{
     change::{self, Change},
     clip, contain,
+    document::Document,
     drag::DragHandler,
     edge::EdgeKinds,
     handle::Handle,
@@ -54,15 +55,8 @@ pub enum Item {
 /// sees the document and the change, nothing else.
 type Filter = Rc<dyn Fn(&Canvas, Change) -> Option<Change>>;
 
-/// One undoable edit: the changes that take it back, and the typing session it
-/// belongs to, which later typing joins.
-struct Step {
-    changes: Vec<Change>,
-    group: Option<u64>,
-}
-
 pub struct CanvasEditor {
-    canvas: Canvas,
+    pub(crate) document: Document,
     kinds: Kinds,
     edge_kinds: EdgeKinds,
     layout: Layout,
@@ -73,11 +67,7 @@ pub struct CanvasEditor {
     filter: Option<Filter>,
     /// Nodes, or one edge; the primary is last.
     selection: Vec<Item>,
-    undo: Vec<Step>,
-    redo: Vec<Step>,
-    /// The typing session edits now join, and the last one handed out.
     pub(crate) group: Option<u64>,
-    groups: u64,
     /// Where the canvas origin sits, in pixels from the view's top left.
     pan: Point<f32>,
     zoom: f32,
@@ -108,7 +98,7 @@ impl CanvasEditor {
     /// the spec's until [`Self::with_kinds`].
     pub fn new(canvas: Canvas, layout: Layout) -> Self {
         Self {
-            canvas,
+            document: Document::new(canvas),
             kinds: Kinds::new(),
             edge_kinds: EdgeKinds::new(),
             layout,
@@ -117,10 +107,7 @@ impl CanvasEditor {
             options: Options::default(),
             filter: None,
             selection: Vec::new(),
-            undo: Vec::new(),
-            redo: Vec::new(),
             group: None,
-            groups: 0,
             pan: point(0.0, 0.0),
             zoom: 1.0,
             viewport: None,
@@ -187,12 +174,12 @@ impl CanvasEditor {
 
     /// The document as a save would write it.
     pub fn canvas(&self) -> &Canvas {
-        &self.canvas
+        &self.document.canvas
     }
 
     /// The document with the gesture in hand over it: what paints.
     pub fn painted(&self) -> &Canvas {
-        self.preview.as_ref().unwrap_or(&self.canvas)
+        self.preview.as_ref().unwrap_or(&self.document.canvas)
     }
 
     pub fn kinds(&self) -> &Kinds {
@@ -216,10 +203,20 @@ impl CanvasEditor {
 
     /// A new document, with no history.
     pub fn set_canvas(&mut self, canvas: Canvas) {
-        self.canvas = canvas;
+        self.document = Document::new(canvas);
         self.containment.take();
-        (self.undo, self.redo, self.group) = (Vec::new(), Vec::new(), None);
+        self.group = None;
         self.clear_preview();
+        self.rewound = true;
+        self.prune();
+        self.stale = true;
+    }
+
+    pub(crate) fn take_document(&mut self, document: Document) {
+        self.document = document;
+        self.containment.take();
+        self.clear_preview();
+        self.group = None;
         self.rewound = true;
         self.prune();
         self.stale = true;
@@ -232,7 +229,7 @@ impl CanvasEditor {
         let changes: Vec<Change> = match &self.filter {
             Some(filter) => match changes
                 .into_iter()
-                .map(|change| filter(&self.canvas, change))
+                .map(|change| filter(&self.document.canvas, change))
                 .collect()
             {
                 Some(changes) => changes,
@@ -250,24 +247,8 @@ impl CanvasEditor {
         if changes.is_empty() {
             return;
         }
-        let undo = change::apply_all(&mut self.canvas, &changes);
-        if !undo.is_empty() {
-            self.redo.clear();
-            match self.undo.last_mut() {
-                Some(step) if self.group.is_some() && step.group == self.group => {
-                    step.changes.splice(0..0, undo);
-                }
-                _ => {
-                    self.undo.push(Step {
-                        changes: undo,
-                        group: self.group,
-                    });
-                    if self.undo.len() > self.options.history {
-                        self.undo.remove(0);
-                    }
-                }
-            }
-        }
+        self.document
+            .apply(&changes, self.group, self.options.history);
         self.landed(changes);
     }
 
@@ -275,38 +256,27 @@ impl CanvasEditor {
     /// landed through [`Self::submit`] or [`Self::apply`]. `false` when there
     /// is none.
     pub fn undo(&mut self) -> bool {
-        let Some(step) = self.undo.pop() else {
+        let Some(changes) = self.document.undo() else {
             return false;
         };
-        let redo = change::apply_all(&mut self.canvas, &step.changes);
-        self.redo.push(Step {
-            changes: redo,
-            group: None,
-        });
-        self.rewind(step.changes);
+        self.rewind(changes);
         true
     }
 
-    /// What `cmd-shift-z` does.
     pub fn redo(&mut self) -> bool {
-        let Some(step) = self.redo.pop() else {
+        let Some(changes) = self.document.redo() else {
             return false;
         };
-        let undo = change::apply_all(&mut self.canvas, &step.changes);
-        self.undo.push(Step {
-            changes: undo,
-            group: None,
-        });
-        self.rewind(step.changes);
+        self.rewind(changes);
         true
     }
 
     pub fn can_undo(&self) -> bool {
-        !self.undo.is_empty()
+        self.document.can_undo()
     }
 
     pub fn can_redo(&self) -> bool {
-        !self.redo.is_empty()
+        self.document.can_redo()
     }
 
     /// Typing after a step taken back starts a step of its own.
@@ -363,13 +333,15 @@ impl CanvasEditor {
     }
 
     pub fn node_can(&self, id: &str, what: Capability) -> bool {
-        self.canvas
+        self.document
+            .canvas
             .node(id)
             .is_some_and(|node| self.kinds.allows(node, what))
     }
 
     pub fn edge_can(&self, id: &str, what: Capability) -> bool {
-        self.canvas
+        self.document
+            .canvas
             .edge(id)
             .is_some_and(|edge| self.edge_kinds.allows(edge, what))
     }
@@ -411,7 +383,13 @@ impl CanvasEditor {
 
     /// What `cmd-a` does.
     pub fn select_all(&mut self) {
-        let ids = self.canvas.nodes.iter().map(|n| n.id.clone()).collect();
+        let ids = self
+            .document
+            .canvas
+            .nodes
+            .iter()
+            .map(|n| n.id.clone())
+            .collect();
         self.set_selection(ids);
     }
 
@@ -420,13 +398,13 @@ impl CanvasEditor {
         let kept = self
             .selected_nodes()
             .into_iter()
-            .filter(|id| self.canvas.node(id).is_some())
+            .filter(|id| self.document.canvas.node(id).is_some())
             .map(str::to_owned)
             .collect();
         self.set_selection(kept);
         if self
             .selected_edge()
-            .is_some_and(|id| self.canvas.edge(id).is_none())
+            .is_some_and(|id| self.document.canvas.edge(id).is_none())
         {
             self.select_edge(None);
         }
@@ -445,7 +423,7 @@ impl CanvasEditor {
         if self.selection.iter().all(|i| matches!(i, Item::Edge(_))) {
             return None;
         }
-        Some(clip::fragment(&self.canvas, &self.contents(&self.reach())).to_json())
+        Some(clip::fragment(&self.document.canvas, &self.contents(&self.reach())).to_json())
     }
 
     /// What `cmd-x` does: the copy, and the selection gone.
@@ -464,8 +442,11 @@ impl CanvasEditor {
         });
         let under = self
             .selected()
-            .and_then(|id| (self.layout.paste_under)(&self.canvas, id));
-        let at = match under.as_deref().and_then(|id| self.canvas.node(id)) {
+            .and_then(|id| (self.layout.paste_under)(&self.document.canvas, id));
+        let at = match under
+            .as_deref()
+            .and_then(|id| self.document.canvas.node(id))
+        {
             Some(parent) => (parent.x + parent.width + mindmap::GAP_X, parent.y),
             None => {
                 let (x, y) = self.center();
@@ -482,11 +463,11 @@ impl CanvasEditor {
         let Some(primary) = self.selected().map(str::to_owned) else {
             return;
         };
-        let fragment = clip::fragment(&self.canvas, &self.contents(&self.reach()));
+        let fragment = clip::fragment(&self.document.canvas, &self.contents(&self.reach()));
         let Some(((x, y), _)) = clip::bounds(&fragment) else {
             return;
         };
-        let under = (self.layout.duplicate_under)(&self.canvas, &primary);
+        let under = (self.layout.duplicate_under)(&self.document.canvas, &primary);
         self.place(
             &fragment,
             (
@@ -499,7 +480,7 @@ impl CanvasEditor {
 
     /// A fragment added through the filter, and selected.
     fn place(&mut self, fragment: &Canvas, at: (i64, i64), under: Option<&str>) {
-        let changes = clip::paste(&self.canvas, fragment, at, under);
+        let changes = clip::paste(&self.document.canvas, fragment, at, under);
         let added: Vec<String> = changes
             .iter()
             .filter_map(|change| match change {
@@ -517,7 +498,7 @@ impl CanvasEditor {
     fn reach(&self) -> Vec<String> {
         let mut ids: Vec<String> = Vec::new();
         for id in self.selected_nodes() {
-            for id in (self.layout.reach)(&self.canvas, id) {
+            for id in (self.layout.reach)(&self.document.canvas, id) {
                 if !ids.contains(&id) {
                     ids.push(id);
                 }
@@ -532,8 +513,9 @@ impl CanvasEditor {
     }
 
     fn containment(&self) -> &contain::Index {
-        self.containment
-            .get_or_init(|| contain::Index::new(&self.canvas, |node| self.kinds.holds(node)))
+        self.containment.get_or_init(|| {
+            contain::Index::new(&self.document.canvas, |node| self.kinds.holds(node))
+        })
     }
 
     pub(crate) fn painted_containment(&self) -> &contain::Index {
@@ -567,16 +549,16 @@ impl CanvasEditor {
         if ids.is_empty() {
             return;
         }
-        let next = mindmap::after_removal(&self.canvas, &primary);
+        let next = mindmap::after_removal(&self.document.canvas, &primary);
         if self.submit([Change::RemoveNodes { ids }]) {
-            self.select(next.filter(|next| self.canvas.node(next).is_some()));
+            self.select(next.filter(|next| self.document.canvas.node(next).is_some()));
         }
     }
 
     /// What an arrow does, the way the layout walks.
     pub fn select_toward(&mut self, arrow: Arrow) {
         let next = match self.selected() {
-            Some(id) => (self.layout.walk)(&self.canvas, id, arrow),
+            Some(id) => (self.layout.walk)(&self.document.canvas, id, arrow),
             None => self.first_root(),
         };
         if next.is_some() {
@@ -600,7 +582,7 @@ impl CanvasEditor {
         let step = self.snap.grid.unwrap_or(self.options.nudge);
         let ids = self.contents(&ids);
         let pin = self.layout.pins;
-        let changes = mindmap::carry(&self.canvas, &ids, (dx * step, dy * step), pin);
+        let changes = mindmap::carry(&self.document.canvas, &ids, (dx * step, dy * step), pin);
         self.submit(changes);
     }
 
@@ -614,10 +596,10 @@ impl CanvasEditor {
         let changes = match parent {
             Some(parent) => self
                 .template(&parent)
-                .and_then(|node| mindmap::child(&self.canvas, &parent, node)),
+                .and_then(|node| mindmap::child(&self.document.canvas, &parent, node)),
             None => {
                 let node = self.kinds.fresh(None);
-                Some(vec![mindmap::root(&self.canvas, node, (0, 0))])
+                Some(vec![mindmap::root(&self.document.canvas, node, (0, 0))])
             }
         };
         self.added(changes)
@@ -626,13 +608,13 @@ impl CanvasEditor {
     /// What `enter` does. A root has no siblings, so it adds a child.
     pub fn add_sibling(&mut self) -> Option<String> {
         let of = self.selected()?.to_owned();
-        let changes = match mindmap::parent(&self.canvas, &of).map(str::to_owned) {
+        let changes = match mindmap::parent(&self.document.canvas, &of).map(str::to_owned) {
             Some(parent) => self
                 .template(&parent)
-                .and_then(|node| mindmap::sibling(&self.canvas, &of, node)),
+                .and_then(|node| mindmap::sibling(&self.document.canvas, &of, node)),
             None => self
                 .template(&of)
-                .and_then(|node| mindmap::child(&self.canvas, &of, node)),
+                .and_then(|node| mindmap::child(&self.document.canvas, &of, node)),
         };
         self.added(changes)
     }
@@ -642,7 +624,7 @@ impl CanvasEditor {
     pub fn add_root(&mut self, at: (i64, i64)) -> Option<String> {
         let node = self.kinds.fresh(None);
         let at = (at.0 - node.width / 2, at.1 - node.height / 2);
-        let root = mindmap::root(&self.canvas, node, at);
+        let root = mindmap::root(&self.document.canvas, node, at);
         self.added(Some(vec![root]))
     }
 
@@ -656,13 +638,13 @@ impl CanvasEditor {
         }
         if let Some(to) = self.node_under(at, from).map(str::to_owned) {
             if self.node_can(&to, Capability::Connectable) {
-                let changes = (self.layout.link)(&self.canvas, from, side, &to);
+                let changes = (self.layout.link)(&self.document.canvas, from, side, &to);
                 self.submit(named(changes, &handle.id, side));
             }
             return None;
         }
         let node = self.template(from)?;
-        let changes = (self.layout.extend)(&self.canvas, from, side, at, node);
+        let changes = (self.layout.extend)(&self.document.canvas, from, side, at, node);
         self.added(changes.map(|changes| named(changes, &handle.id, side)))
     }
 
@@ -675,7 +657,7 @@ impl CanvasEditor {
         self.group = Some(group);
         let landed = self.submit(changes);
         self.group = None;
-        if !landed || self.canvas.node(&id).is_none() {
+        if !landed || self.document.canvas.node(&id).is_none() {
             return None;
         }
         self.select(Some(id.clone()));
@@ -686,25 +668,24 @@ impl CanvasEditor {
     /// The typing session of the last step, which typing into what it added
     /// joins.
     pub(crate) fn last_group(&self) -> Option<u64> {
-        self.undo.last().and_then(|step| step.group)
+        self.document.last_group()
     }
 
     pub(crate) fn next_group(&mut self) -> u64 {
-        self.groups += 1;
-        self.groups
+        self.document.next_group()
     }
 
     /// The first node no branch points at, which is what `tab` and an arrow
     /// reach for when nothing is selected.
     fn first_root(&self) -> Option<String> {
-        mindmap::roots(&self.canvas, |node| self.kinds.holds(node))
+        mindmap::roots(&self.document.canvas, |node| self.kinds.holds(node))
             .next()
             .map(|root| root.id.clone())
     }
 
     /// What `tab` makes under `parent`, from its kind.
     fn template(&self, parent: &str) -> Option<Node> {
-        let parent = self.canvas.node(parent)?;
+        let parent = self.document.canvas.node(parent)?;
         Some((self.kinds.get(&parent.kind).rules.child)(parent))
     }
 
@@ -772,7 +753,7 @@ impl CanvasEditor {
 
     /// What `shift-1` does: the whole document in view, no closer than 100%.
     pub fn fit(&mut self) {
-        self.show(extent(&self.canvas.nodes), 1.0);
+        self.show(extent(&self.document.canvas.nodes), 1.0);
     }
 
     /// What `shift-2` does: the selection in view.
@@ -780,7 +761,7 @@ impl CanvasEditor {
         let nodes = self
             .selected_nodes()
             .into_iter()
-            .filter_map(|id| self.canvas.node(id));
+            .filter_map(|id| self.document.canvas.node(id));
         self.show(extent(nodes), self.options.selection_zoom);
     }
 
@@ -851,7 +832,7 @@ impl CanvasEditor {
             .filter(|v| !self.touched && self.framed != Some(*v))
         {
             self.framed = Some(viewport);
-            self.pan = match extent(&self.canvas.nodes) {
+            self.pan = match extent(&self.document.canvas.nodes) {
                 None => point(viewport.width / 2.0, viewport.height / 2.0),
                 Some((x0, y0, x1, y1)) => {
                     let z = self.zoom;
@@ -917,6 +898,7 @@ impl CanvasEditor {
         self.layout = layout;
         if tidy {
             let unpins: Vec<Change> = self
+                .document
                 .canvas
                 .nodes
                 .iter()
@@ -979,7 +961,7 @@ impl CanvasEditor {
         let mut changes = Vec::new();
         for (id, height) in measured {
             if let Some(preview) = &mut self.preview
-                && preview.node(&id) != self.canvas.node(&id)
+                && preview.node(&id) != self.document.canvas.node(&id)
             {
                 // Measured at the size the gesture gave it.
                 if let Some(width) = preview
@@ -998,14 +980,19 @@ impl CanvasEditor {
                 }
                 continue;
             }
-            let Some(node) = self.canvas.node(&id).filter(|n| n.height != height) else {
+            let Some(node) = self
+                .document
+                .canvas
+                .node(&id)
+                .filter(|n| n.height != height)
+            else {
                 continue;
             };
             let change = Change::Resize {
                 size: (node.width, height),
                 id,
             };
-            change::apply(&mut self.canvas, &change);
+            self.document.derive(&change);
             if let Some(preview) = &mut self.preview {
                 change::apply(preview, &change);
                 self.preview_stale = true;
@@ -1016,10 +1003,10 @@ impl CanvasEditor {
         let (arrange, kinds) = (self.layout.arrange, &self.kinds);
         let holds = |node: &Node| kinds.holds(node);
         if std::mem::take(&mut self.stale) {
-            let moves = arrange(&self.canvas, held, &holds);
+            let moves = arrange(&self.document.canvas, held, &holds);
             if !moves.is_empty() {
                 let change = Change::MoveNodes { moves };
-                change::apply(&mut self.canvas, &change);
+                self.document.derive(&change);
                 changes.push(change);
             }
         }

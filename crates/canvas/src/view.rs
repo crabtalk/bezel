@@ -24,6 +24,7 @@ use web_time::Instant;
 
 use crate::{
     change::Change,
+    document::{Document, DocumentEvent},
     drag::DragHandler,
     edge::{self, EdgeKinds},
     edit::{CanvasEditor, CanvasEvent},
@@ -82,6 +83,8 @@ struct Session {
 
 pub struct CanvasView {
     editor: CanvasEditor,
+    pub document: Entity<Document>,
+    _document: Subscription,
     focus: FocusHandle,
     editing: Option<Session>,
     /// Every gesture, in the order a press is offered to them.
@@ -121,8 +124,32 @@ impl CanvasView {
     /// `layout` places the nodes; the kinds are what [`crate::AppExt::set_canvas_kinds`]
     /// named, else the spec's.
     pub fn new(canvas: Canvas, layout: Layout, cx: &mut Context<Self>) -> Self {
+        let document = cx.new(|_| Document::new(canvas));
+        Self::for_document(document, layout, cx)
+    }
+
+    pub fn for_document(
+        document: Entity<Document>,
+        layout: Layout,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let mut editor =
+            CanvasEditor::new(Canvas::default(), layout).with_kinds(kind::installed(cx));
+        editor.take_document(document.read(cx).clone());
+        let subscription = cx.subscribe(&document, |this, document, event: &DocumentEvent, cx| {
+            if event.by == Some(cx.entity_id()) {
+                return;
+            }
+            this.editor.take_document(document.read(cx).clone());
+            this.cancel(cx);
+            this.editing = None;
+            this.glide = None;
+            cx.notify();
+        });
         Self {
-            editor: CanvasEditor::new(canvas, layout).with_kinds(kind::installed(cx)),
+            editor,
+            document,
+            _document: subscription,
             focus: cx.focus_handle(),
             editing: None,
             tools: tool::defaults(),
@@ -207,6 +234,7 @@ impl CanvasView {
         cx: &mut Context<Self>,
         update: impl FnOnce(&mut CanvasEditor) -> R,
     ) -> R {
+        self.sync_document(cx);
         let answer = update(&mut self.editor);
         self.announce(cx);
         cx.notify();
@@ -238,6 +266,18 @@ impl CanvasView {
         }
     }
 
+    fn sync_document(&mut self, cx: &mut Context<Self>) {
+        let document = self.document.read(cx);
+        if self.editor.document.revision != document.revision
+            || !Rc::ptr_eq(&self.editor.document.canvas, &document.canvas)
+        {
+            self.editor.take_document(document.clone());
+            self.editing = None;
+            self.cancel(cx);
+            self.glide = None;
+        }
+    }
+
     /// Emit what the editor did, and close an editor whose target is gone or
     /// was taken back.
     fn announce(&mut self, cx: &mut Context<Self>) {
@@ -259,7 +299,25 @@ impl CanvasView {
                 .input
                 .update(cx, |input, cx| input.set_text_size(text, cx));
         }
-        for event in self.editor.take_events() {
+        let events = self.editor.take_events();
+        let changes: Vec<Change> = events
+            .iter()
+            .filter_map(|event| match event {
+                CanvasEvent::Changed(changes) => Some(changes.iter().cloned()),
+                _ => None,
+            })
+            .flatten()
+            .collect();
+        if !Rc::ptr_eq(&self.editor.document.canvas, &self.document.read(cx).canvas) {
+            let snapshot = self.editor.document.clone();
+            let by = Some(cx.entity_id());
+            self.document.update(cx, |document, cx| {
+                *document = snapshot;
+                cx.emit(DocumentEvent { by, changes });
+                cx.notify();
+            });
+        }
+        for event in events {
             cx.emit(event);
         }
     }
@@ -407,6 +465,7 @@ impl CanvasView {
 
 impl Render for CanvasView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.sync_document(cx);
         if let Some(bounds) = self.viewport.get() {
             let (w, h) = (bounds.size.width.as_f32(), bounds.size.height.as_f32());
             self.editor.set_viewport(size(w, h));

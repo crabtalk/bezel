@@ -37,7 +37,9 @@ pub use layout::Layout;
 pub use model::Canvas;
 pub use snap::Snap;
 
+mod document;
 pub mod edge;
+pub use document::{Document, DocumentEvent};
 mod edit;
 pub mod kind;
 mod minimap;
