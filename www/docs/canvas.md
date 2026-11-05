@@ -19,6 +19,7 @@ cx.subscribe(&view, |_, view, event, cx| {
 }).detach();
 ```
 
+- `Document::reload` loads external changes; `DocumentChange::Reloaded` distinguishes them from edits that should be saved.
 - Multiple panes share an `Entity<Document>` through `CanvasView::for_document`; selection and viewport stay with each view.
 - With `default-features = false`, the crate provides the model, changes, layouts and JSON Canvas import/export without GPUI.
 - The document is [JSON Canvas 1.0](https://jsoncanvas.org/spec/1.0/). Fields the spec does not name survive a save.

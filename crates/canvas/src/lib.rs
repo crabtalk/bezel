@@ -40,7 +40,7 @@ mod document;
 #[cfg(feature = "gpui")]
 pub mod edge;
 #[cfg(feature = "gpui")]
-pub use document::{Document, DocumentEvent};
+pub use document::{Document, DocumentChange, DocumentEvent};
 #[cfg(feature = "gpui")]
 mod edit;
 #[cfg(feature = "gpui")]

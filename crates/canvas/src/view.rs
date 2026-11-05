@@ -25,7 +25,7 @@ use web_time::Instant;
 
 use crate::{
     change::Change,
-    document::{Document, DocumentEvent},
+    document::{Document, DocumentChange, DocumentEvent},
     drag::DragHandler,
     edge::{self, EdgeKinds},
     edit::{CanvasEditor, CanvasEvent, Item},
@@ -320,7 +320,10 @@ impl CanvasView {
             let by = Some(cx.entity_id());
             self.document.update(cx, |document, cx| {
                 *document = snapshot;
-                cx.emit(DocumentEvent { by, changes });
+                cx.emit(DocumentEvent {
+                    by,
+                    change: DocumentChange::Edited(changes),
+                });
                 cx.notify();
             });
         }

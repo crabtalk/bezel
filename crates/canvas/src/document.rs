@@ -29,7 +29,13 @@ pub struct Document {
 
 pub struct DocumentEvent {
     pub(crate) by: Option<EntityId>,
-    pub changes: Vec<Change>,
+    pub change: DocumentChange,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum DocumentChange {
+    Edited(Vec<Change>),
+    Reloaded,
 }
 
 impl EventEmitter<DocumentEvent> for Document {}
@@ -57,7 +63,25 @@ impl Document {
             return;
         }
         self.apply(&changes, None, crate::Options::default().history);
-        cx.emit(DocumentEvent { by: None, changes });
+        cx.emit(DocumentEvent {
+            by: None,
+            change: DocumentChange::Edited(changes),
+        });
+        cx.notify();
+    }
+
+    /// Load an externally saved document, clearing history only when it changed.
+    pub fn reload(&mut self, canvas: Canvas, cx: &mut Context<Self>) {
+        if self.canvas.as_ref() == &canvas {
+            return;
+        }
+        let revision = self.revision + 1;
+        *self = Self::new(canvas);
+        self.revision = revision;
+        cx.emit(DocumentEvent {
+            by: None,
+            change: DocumentChange::Reloaded,
+        });
         cx.notify();
     }
 
