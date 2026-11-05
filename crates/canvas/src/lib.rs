@@ -18,6 +18,8 @@
 mod app;
 pub use app::AppExt;
 
+mod arrange;
+pub use arrange::Arrange;
 pub mod change;
 pub mod clip;
 pub mod contain;
