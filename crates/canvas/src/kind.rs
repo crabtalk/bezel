@@ -30,6 +30,7 @@ use gpui::{
 };
 use markdown::{Doc, Editing};
 use theme::{TextStyle, Theme, Typeset};
+use ui::scroll;
 
 use crate::{
     handle::{self, Handle},
@@ -74,6 +75,8 @@ pub struct Look {
     /// The view's scale. gpui does not transform an element, so the kind
     /// applies it to what it paints — `Typography::scaled`, `text_style_at`.
     pub zoom: f32,
+    pub selected: bool,
+    pub sizing: Sizing,
     /// The editor typing into the node while it is edited, for the kind to
     /// place where the field it edits shows.
     pub editor: Option<AnyElement>,
@@ -383,6 +386,26 @@ pub fn text() -> Kind {
         let content = match look.editor {
             Some(editor) => editor,
             None => render_text(&parsed, node, look.zoom, window, cx),
+        };
+        let content = if look.sizing == Sizing::Fixed {
+            div()
+                .size_full()
+                .min_h_0()
+                .overflow_hidden()
+                .child(
+                    scroll::claiming_pane(
+                        format!("canvas-text-{}", node.id),
+                        scroll::Axes::Vertical,
+                        window,
+                        cx,
+                    )
+                    .size_full()
+                    .when(!look.selected, |pane| pane.overflow_hidden())
+                    .child(div().flex_none().child(content)),
+                )
+                .into_any_element()
+        } else {
+            content
         };
         chrome(Chrome::Card, node, look.zoom, cx)
             .child(content)

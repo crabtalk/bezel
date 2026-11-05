@@ -95,6 +95,8 @@ impl CanvasView {
         } else {
             let look = Look {
                 zoom: z,
+                selected: picked.contains(&node.id.as_str()),
+                sizing: kind.rules.sizing,
                 editor: editing.map(|session| session.input.clone().into_any_element()),
             };
             (kind.render)(node, look, window, cx)
@@ -387,8 +389,19 @@ impl CanvasView {
                 if viewport.replace(Some(bounds)).map(|b| b.size) != Some(bounds.size) {
                     window.refresh();
                 }
+                window.insert_hitbox(bounds, gpui::HitboxBehavior::Normal)
             },
-            move |bounds, _, window, cx| {
+            move |bounds, hitbox, window, cx| {
+                let zoom_view = view.clone();
+                let hitbox = hitbox.clone();
+                window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+                    if phase == DispatchPhase::Capture
+                        && hitbox.should_handle_scroll(window)
+                        && (event.modifiers.platform || event.modifiers.control)
+                    {
+                        let _ = zoom_view.update(cx, |this, cx| this.wheel(event, window, cx));
+                    }
+                });
                 let origin = point(bounds.origin.x.as_f32(), bounds.origin.y.as_f32());
                 let screen =
                     |p: Point<f32>| point(origin.x + pan.x + p.x * z, origin.y + pan.y + p.y * z);
