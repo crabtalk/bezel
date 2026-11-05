@@ -76,6 +76,7 @@ fn group_drag_keeps_locked_nodes_selected_but_unmoved() {
         screen: point(px(10.0), px(10.0)),
         at: point(10.0, 10.0),
         button: MouseButton::Left,
+        space: false,
         modifiers: Modifiers::none(),
         clicks: 1,
         hit: Hit::Node("a".into()),

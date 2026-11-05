@@ -23,9 +23,16 @@ pub enum Which {
 pub enum Spot {
     /// On a node's side, `at` along it: 0 at its top or left corner, 1 at the
     /// other, 0.5 in the middle.
-    Side { side: Side, at: f32 },
+    Side {
+        side: Side,
+        at: f32,
+    },
     /// A node's bottom right corner.
     Corner,
+    CornerAt {
+        right: bool,
+        bottom: bool,
+    },
     /// Where an edge leaves or arrives.
     End(Which),
     /// Along an edge's path, 0 at its start and 1 at its end.
@@ -45,8 +52,31 @@ impl Spot {
                 Side::Left => (point(x, y + h * at), point(-1.0, 0.0)),
             },
             Self::Corner => (point(x + w, y + h), point(0.0, 0.0)),
+            Self::CornerAt { right, bottom } => (
+                point(
+                    x + if right { w } else { 0.0 },
+                    y + if bottom { h } else { 0.0 },
+                ),
+                point(0.0, 0.0),
+            ),
             Self::End(_) | Self::Along(_) => return None,
         })
+    }
+
+    pub(crate) fn resize_axes(self) -> Option<(i64, i64)> {
+        match self {
+            Self::Corner => Some((1, 1)),
+            Self::CornerAt { right, bottom } => {
+                Some((if right { 1 } else { -1 }, if bottom { 1 } else { -1 }))
+            }
+            Self::Side { side, .. } => Some(match side {
+                Side::Top => (0, -1),
+                Side::Right => (1, 0),
+                Side::Bottom => (0, 1),
+                Side::Left => (-1, 0),
+            }),
+            _ => None,
+        }
     }
 
     /// Where it sits along an edge's path. `None` when it is a node's.
@@ -55,7 +85,7 @@ impl Spot {
             Self::End(Which::From) => Some(path.start()),
             Self::End(Which::To) => Some(path.end()),
             Self::Along(t) => Some(path.at(t)),
-            Self::Side { .. } | Self::Corner => None,
+            Self::Side { .. } | Self::Corner | Self::CornerAt { .. } => None,
         }
     }
 }
@@ -125,6 +155,33 @@ pub fn sides_and_corner(_: &Node) -> Vec<Handle> {
         .into_iter()
         .chain([Handle::corner()])
         .collect()
+}
+
+/// Resize borders and corners, with connectors above the border midpoints.
+pub fn frame(_: &Node) -> Vec<Handle> {
+    let mut handles: Vec<Handle> = [Side::Top, Side::Right, Side::Bottom, Side::Left]
+        .into_iter()
+        .map(|side| {
+            Handle::new(
+                format!("resize-{}", name(side)),
+                Spot::Side { side, at: 0.5 },
+                Role::Resize,
+            )
+        })
+        .collect();
+    handles.extend(
+        [(false, false), (true, false), (false, true), (true, true)]
+            .into_iter()
+            .map(|(right, bottom)| {
+                Handle::new(
+                    format!("resize-{right}-{bottom}"),
+                    Spot::CornerAt { right, bottom },
+                    Role::Resize,
+                )
+            }),
+    );
+    handles.extend([Side::Top, Side::Right, Side::Bottom, Side::Left].map(Handle::connect));
+    handles
 }
 
 /// What the spec's edge declares: both ends, to carry onto another node.

@@ -417,6 +417,32 @@ impl CanvasEditor {
             .collect()
     }
 
+    pub fn bring_to_front(&mut self) {
+        let selected = self.selected_nodes();
+        let ids: Vec<String> = self
+            .canvas()
+            .nodes
+            .iter()
+            .filter(|node| !selected.contains(&node.id.as_str()))
+            .chain(
+                self.canvas()
+                    .nodes
+                    .iter()
+                    .filter(|node| selected.contains(&node.id.as_str())),
+            )
+            .map(|node| node.id.clone())
+            .collect();
+        if self
+            .canvas()
+            .nodes
+            .iter()
+            .map(|node| &node.id)
+            .ne(ids.iter())
+        {
+            self.submit([Change::OrderNodes { ids }]);
+        }
+    }
+
     /// What `cmd-c` copies: the selection, with its branches under a tree and
     /// everything it holds, as JSON Canvas.
     pub fn copy(&self) -> Option<String> {

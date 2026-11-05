@@ -200,6 +200,7 @@ fn preview_hit_testing_tracks_resize_measurements_kinds_and_cancel() {
         screen: point(px(400.0), px(300.0)),
         at: point(400.0, 300.0),
         button: MouseButton::Left,
+        space: false,
         modifiers: Modifiers::none(),
         clicks: 1,
         hit: Hit::Handle {

@@ -21,6 +21,8 @@ cx.subscribe(&view, |_, view, event, cx| {
 
 - Multiple panes share an `Entity<Document>` through `CanvasView::for_document`; selection and viewport stay with each view.
 - The document is [JSON Canvas 1.0](https://jsoncanvas.org/spec/1.0/). Fields the spec does not name survive a save.
+- Use `handle::frame` for resizing from every border and corner; `handle::sides_and_corner` keeps the compact mindmap handles.
+- Drag with Shift to constrain movement or preserve resize proportions, Space to bypass snapping, and Alt to duplicate. Space-drag pans over cards.
 - Use `kind::text().sizing(kind::Sizing::Fixed)` for saved card dimensions and scrolling while selected; the default grows with its content.
 - Every canvas names a layout; there is no default.
 - gpui cannot transform an element, so a kind applies `look.zoom` to what it paints. A node of fixed size clips it.

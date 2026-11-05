@@ -14,9 +14,10 @@ use std::{
 use editor::{Chrome as EditorChrome, Editor, EditorEvent};
 use gpui::{
     AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId, Entity,
-    EventEmitter, FocusHandle, Focusable, Hsla, KeyContext, Modifiers, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PinchEvent, Pixels, Point, Render, ScrollWheelEvent,
-    Subscription, WeakEntity, Window, canvas as painter, div, point, prelude::*, px, size,
+    EventEmitter, FocusHandle, Focusable, HitboxBehavior, Hsla, KeyContext, KeyDownEvent,
+    KeyUpEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PinchEvent,
+    Pixels, Point, Render, ScrollWheelEvent, Subscription, WeakEntity, Window, canvas as painter,
+    div, point, prelude::*, px, size,
 };
 use motion::{AppExt as _, LAYOUT};
 use theme::{TextStyle, Theme, Typeset};
@@ -85,12 +86,15 @@ pub struct CanvasView {
     editor: CanvasEditor,
     pub document: Entity<Document>,
     _document: Subscription,
+    _blur: Option<Subscription>,
     focus: FocusHandle,
     editing: Option<Session>,
     /// Every gesture, in the order a press is offered to them.
     tools: Vec<Box<dyn Tool>>,
     /// The tool holding the pointer until it comes up.
     holding: Option<usize>,
+    modifiers: Modifiers,
+    space: bool,
     style: Style,
     overlays: Overlays,
     /// Where each node was painted last frame.
@@ -150,10 +154,13 @@ impl CanvasView {
             editor,
             document,
             _document: subscription,
+            _blur: None,
             focus: cx.focus_handle(),
             editing: None,
             tools: tool::defaults(),
             holding: None,
+            modifiers: Modifiers::default(),
+            space: false,
             style: Style::default(),
             overlays: Overlays::new(),
             shown: HashMap::new(),
@@ -465,6 +472,13 @@ impl CanvasView {
 
 impl Render for CanvasView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self._blur.is_none() {
+            self._blur = Some(cx.on_blur(&self.focus, window, |this, _, cx| {
+                this.space = false;
+                this.modifiers = Modifiers::default();
+                this.cancel(cx);
+            }));
+        }
         self.sync_document(cx);
         if let Some(bounds) = self.viewport.get() {
             let (w, h) = (bounds.size.width.as_f32(), bounds.size.height.as_f32());
@@ -609,6 +623,19 @@ impl Render for CanvasView {
                     this.press(event, Hit::Nothing, window, cx);
                 }),
             )
+            .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                this.modifiers = event.keystroke.modifiers;
+                if event.keystroke.key == "space" && this.editing.is_none() {
+                    this.space = true;
+                    cx.stop_propagation();
+                }
+            }))
+            .on_key_up(cx.listener(|this, event: &KeyUpEvent, _, _| {
+                this.modifiers = event.keystroke.modifiers;
+                if event.keystroke.key == "space" {
+                    this.space = false;
+                }
+            }))
             .on_scroll_wheel(cx.listener(Self::wheel))
             .on_pinch(cx.listener(Self::pinch))
             .child(edges)

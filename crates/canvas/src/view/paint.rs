@@ -147,21 +147,39 @@ impl CanvasView {
                     window,
                     cx,
                 );
+                let axes = declared.spot.resize_axes();
                 let cursor = match declared.role {
-                    Role::Resize => CursorStyle::ResizeUpLeftDownRight,
+                    Role::Resize => match axes {
+                        Some((0, _)) => CursorStyle::ResizeUpDown,
+                        Some((_, 0)) => CursorStyle::ResizeLeftRight,
+                        Some((x, y)) if x != y => CursorStyle::ResizeUpRightDownLeft,
+                        _ => CursorStyle::ResizeUpLeftDownRight,
+                    },
                     _ => CursorStyle::Crosshair,
                 };
                 let owner = node.id.clone();
+                let (handle_w, handle_h) = if declared.role == Role::Resize {
+                    match axes {
+                        Some((0, _)) => (w, size),
+                        Some((_, 0)) => (size, h),
+                        _ => (size, size),
+                    }
+                } else {
+                    (size, size)
+                };
+                let border_handle =
+                    declared.role == Role::Resize && axes.is_some_and(|(x, y)| x == 0 || y == 0);
                 div()
                     .id(ElementId::Name(
                         format!("{}-{}", node.id, declared.id).into(),
                     ))
                     .absolute()
-                    .left(px(hx - size / 2.0))
-                    .top(px(hy - size / 2.0))
-                    .size(px(size))
+                    .left(px(hx - handle_w / 2.0))
+                    .top(px(hy - handle_h / 2.0))
+                    .w(px(handle_w))
+                    .h(px(handle_h))
                     .cursor(cursor)
-                    .child(look)
+                    .when(!border_handle, |element| element.child(look))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, event: &MouseDownEvent, window, cx| {
@@ -389,7 +407,7 @@ impl CanvasView {
                 if viewport.replace(Some(bounds)).map(|b| b.size) != Some(bounds.size) {
                     window.refresh();
                 }
-                window.insert_hitbox(bounds, gpui::HitboxBehavior::Normal)
+                window.insert_hitbox(bounds, HitboxBehavior::Normal)
             },
             move |bounds, hitbox, window, cx| {
                 let zoom_view = view.clone();
@@ -445,8 +463,10 @@ impl CanvasView {
                     window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
                         let held = matches!(event.button, MouseButton::Left | MouseButton::Middle);
                         if phase == DispatchPhase::Bubble && held {
-                            let _ =
-                                view.update(cx, |this, cx| this.lift(event.position, window, cx));
+                            let _ = view.update(cx, |this, cx| {
+                                this.modifiers = event.modifiers;
+                                this.lift(event.position, window, cx)
+                            });
                         }
                     });
                 }

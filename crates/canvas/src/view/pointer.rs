@@ -17,7 +17,8 @@ impl CanvasView {
             screen,
             at: self.canvas_point(screen),
             button: MouseButton::Left,
-            modifiers: Modifiers::default(),
+            modifiers: self.modifiers,
+            space: self.space,
             clicks: 1,
             hit,
         }
@@ -41,6 +42,7 @@ impl CanvasView {
         if typing {
             return;
         }
+        self.modifiers = event.modifiers;
         self.stop_editing(window, cx);
         window.focus(&self.focus, cx);
         let pointer = Pointer {
@@ -270,6 +272,7 @@ impl CanvasView {
             self.lift(event.position, window, cx);
             return;
         }
+        self.modifiers = event.modifiers;
         self.aim = Some(event.position);
         self.feed(event.position, cx);
     }
