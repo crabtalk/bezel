@@ -62,3 +62,6 @@ cx.subscribe(&view, |_, view, event, cx| {
 | `cmd-=` / `cmd--` / `cmd-0` | zoom in / out / reset |
 | `shift-1` / `shift-2` | fit everything / the selection |
 | `escape` | leave a node, drop the gesture in hand |
+
+Group backgrounds support JSON Canvas `cover`, `ratio`, and `repeat`. Repeated
+images retain their logical tile size as the canvas zooms.

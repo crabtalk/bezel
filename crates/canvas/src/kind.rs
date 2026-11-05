@@ -30,7 +30,7 @@ use gpui::{
 };
 use markdown::{Doc, Editing};
 use theme::{TextStyle, Theme, Typeset};
-use ui::scroll;
+use ui::{scroll, tiled_image::TiledImage};
 
 use crate::{
     handle::{self, Handle},
@@ -584,11 +584,14 @@ fn group_under(root: Option<Rc<Path>>) -> Kind {
             .as_deref()
             .and_then(|path| resolve(root.as_deref(), path))
             .map(|image| {
+                if node.background_style.as_deref() == Some("repeat") {
+                    return TiledImage::new(image).scale(zoom).into_any_element();
+                }
                 let fit = match node.background_style.as_deref() {
                     Some("ratio") => ObjectFit::Contain,
                     _ => ObjectFit::Cover,
                 };
-                img(image).size_full().object_fit(fit)
+                img(image).size_full().object_fit(fit).into_any_element()
             });
         let title = node.label.clone().unwrap_or_default();
         chrome(Chrome::Frame, node, zoom, cx)
