@@ -95,8 +95,9 @@ pub struct CanvasView {
     holding: Option<usize>,
     modifiers: Modifiers,
     space: bool,
-    style: Style,
-    overlays: Overlays,
+    pub(crate) style: Style,
+    pub(crate) exporting: bool,
+    pub(crate) overlays: Overlays,
     /// Where each node was painted last frame.
     shown: Positions,
     glide: Option<Glide>,
@@ -162,6 +163,7 @@ impl CanvasView {
             modifiers: Modifiers::default(),
             space: false,
             style: Style::default(),
+            exporting: false,
             overlays: Overlays::new(),
             shown: HashMap::new(),
             glide: None,
@@ -505,10 +507,12 @@ impl Render for CanvasView {
         self.drift(window, cx);
         let measured: Vec<(String, i64)> = self.measured.borrow_mut().drain().collect();
         let held = self.held().map(str::to_owned);
-        self.editor.reflow(measured, held.as_deref());
+        if !self.exporting {
+            self.editor.reflow(measured, held.as_deref());
+        }
         self.editor.frame();
         self.announce(cx);
-        let shown = self.positions(cx.reduced_motion(), window);
+        let shown = self.positions(self.exporting || cx.reduced_motion(), window);
         let theme = Theme::of(cx).clone();
         let edges = self.edge_layer(&theme, &shown, cx.entity().downgrade());
         // A container paints under what it holds. What a drag has in hand

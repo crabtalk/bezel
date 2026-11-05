@@ -214,6 +214,7 @@ pub struct Rules {
 
 #[derive(Clone)]
 pub struct Kind {
+    pub exportable: bool,
     pub rules: Rules,
     pub render: Paint,
     /// What a double-click does in place of editing.
@@ -227,6 +228,7 @@ impl Kind {
         render: impl Fn(&Node, Look, &mut Window, &mut App) -> AnyElement + 'static,
     ) -> Self {
         Self {
+            exportable: false,
             rules: Rules {
                 can: Capabilities::ALL,
                 sizing: Sizing::Fixed,
@@ -238,6 +240,12 @@ impl Kind {
             render: Rc::new(render),
             open: None,
         }
+    }
+
+    /// Marks a renderer that paints entirely through GPUI.
+    pub fn exportable(mut self) -> Self {
+        self.exportable = true;
+        self
     }
 
     /// Hold what sits inside its box, as a group does.
@@ -411,6 +419,7 @@ pub fn text() -> Kind {
             .child(content)
             .into_any_element()
     })
+    .exportable()
     .sizing(Sizing::Grows)
     .edit(Field::new(
         |node| node.text.clone().unwrap_or_default(),
@@ -435,6 +444,7 @@ pub fn link() -> Kind {
             .child(look.editor.unwrap_or(url))
             .into_any_element()
     })
+    .exportable()
     .edit(Field::new(
         |node| node.url.clone().unwrap_or_default(),
         |node, url| node.url = Some(url),
@@ -574,6 +584,7 @@ fn file_under(root: Option<Rc<Path>>) -> Kind {
             .child(look.editor.unwrap_or(content))
             .into_any_element()
     })
+    .exportable()
 }
 
 fn group_under(root: Option<Rc<Path>>) -> Kind {
@@ -612,6 +623,7 @@ fn group_under(root: Option<Rc<Path>>) -> Kind {
             .children(look.editor)
             .into_any_element()
     })
+    .exportable()
     .holds()
     .edit(Field::new(
         |node| node.label.clone().unwrap_or_default(),

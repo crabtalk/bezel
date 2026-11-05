@@ -17,6 +17,8 @@ pub mod clip;
 pub mod contain;
 pub mod drag;
 #[cfg(feature = "gpui")]
+pub mod export;
+#[cfg(feature = "gpui")]
 pub mod handle;
 pub mod json_canvas;
 pub mod layout;

@@ -65,3 +65,8 @@ cx.subscribe(&view, |_, view, event, cx| {
 
 Group backgrounds support JSON Canvas `cover`, `ratio`, and `repeat`. Repeated
 images retain their logical tile size as the canvas zooms.
+
+`CanvasView::export_image(export::Area::Canvas, scale, cx)` returns a task with
+an RGBA image; `Area::Viewport` keeps the current pan and zoom. Custom node
+renderers opt in with `Kind::exportable()` when they paint entirely through
+GPUI. Native content is refused. The host owns encoding and its save dialog.

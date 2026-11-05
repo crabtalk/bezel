@@ -21,9 +21,10 @@ workspace = true
 
 [features]
 default = ["gpui"]
-gpui = ["dep:editor", "dep:markdown", "dep:theme", "dep:ui", "dep:motion", "dep:gpui", "dep:web-time"]
+gpui = ["dep:editor", "dep:markdown", "dep:theme", "dep:ui", "dep:motion", "dep:gpui", "dep:web-time", "dep:image"]
 
 [dependencies]
+image = { workspace = true, optional = true }
 editor = { workspace = true, optional = true }
 markdown = { workspace = true, optional = true }
 theme = { workspace = true, optional = true }
@@ -155,4 +156,8 @@ required-features = ["gpui"]
 
 [[test]]
 name = "commands"
+required-features = ["gpui"]
+
+[[test]]
+name = "export"
 required-features = ["gpui"]

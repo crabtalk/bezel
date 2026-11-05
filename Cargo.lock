@@ -551,6 +551,7 @@ dependencies = [
  "bezel-motion",
  "bezel-theme",
  "bezel-ui",
+ "image",
  "serde",
  "serde_json",
  "web-time",
