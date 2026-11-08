@@ -36,6 +36,7 @@ use crate::{
     model::{Canvas, Edge, End, Node, Stroke},
     options::{Frame, Mark, Options, Overlays, Style},
     path::{self, Ends, Path, Rect},
+    presentation::{self, Detail, Measure},
     snap::Snap,
     tool::{self, Hand, Hit, Pointer, Sketch, Tool, Wish},
 };
@@ -104,6 +105,7 @@ pub struct CanvasView {
     viewport: Rc<Cell<Option<Bounds<Pixels>>>>,
     /// Growing node heights read at prepaint, in canvas units.
     measured: Rc<RefCell<HashMap<String, i64>>>,
+    content_heights: Rc<RefCell<HashMap<String, (i64, i64)>>>,
     /// Where a held press last was, and when its drift last moved the view.
     aim: Option<Point<Pixels>>,
     drifted: Option<Instant>,
@@ -169,6 +171,7 @@ impl CanvasView {
             glide: None,
             viewport: Rc::default(),
             measured: Rc::default(),
+            content_heights: Rc::default(),
             aim: None,
             drifted: None,
         }
@@ -303,7 +306,7 @@ impl CanvasView {
         }
         // An open editor types at the zoom.
         if let Some(session) = &self.editing {
-            let text = TextStyle::Body.painted() * self.editor.zoom();
+            let text = presentation::typography(cx, self.editor.zoom()).body.size();
             session
                 .input
                 .update(cx, |input, cx| input.set_text_size(text, cx));
@@ -465,9 +468,49 @@ impl CanvasView {
         }
     }
 
+    pub fn can_fit_content(&self) -> bool {
+        !self.editor.options().read_only
+            && self.editor.selected_nodes().iter().any(|id| {
+                self.editor.canvas().node(id).is_some_and(|node| {
+                    self.editor.node_can(id, Capability::Resizable)
+                        && self
+                            .content_heights
+                            .borrow()
+                            .get(*id)
+                            .is_some_and(|&(width, _)| width == node.width)
+                })
+            })
+    }
+
+    pub fn fit_to_content(&mut self, cx: &mut Context<Self>) {
+        self.sync_document(cx);
+        if self.editor.options().read_only {
+            return;
+        }
+        let heights = self.content_heights.borrow();
+        let changes: Vec<_> = self
+            .editor
+            .selected_nodes()
+            .into_iter()
+            .filter_map(|id| {
+                let mut node = self.editor.canvas().node(id)?.clone();
+                let &(width, height) = heights.get(id)?;
+                if width != node.width || !self.editor.node_can(id, Capability::Resizable) {
+                    return None;
+                }
+                node.height = height.max(self.editor.options().min_size.1);
+                Some(Change::UpdateNode { node })
+            })
+            .collect();
+        drop(heights);
+        self.update_editor(cx, |editor| {
+            editor.submit(changes);
+        });
+    }
+
     /// An editor for text typed in place, at the zoom.
     fn input(&self, value: &str, cx: &mut Context<Self>) -> Entity<Editor> {
-        let size = TextStyle::Body.painted() * self.editor.zoom();
+        let size = presentation::typography(cx, self.editor.zoom()).body.size();
         cx.new(|cx| {
             Editor::new(value, cx)
                 .with_chrome(EditorChrome {

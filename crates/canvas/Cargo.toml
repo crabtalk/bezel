@@ -161,3 +161,7 @@ required-features = ["gpui"]
 [[test]]
 name = "export"
 required-features = ["gpui"]
+
+[[test]]
+name = "presentation"
+required-features = ["gpui"]

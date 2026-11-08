@@ -96,7 +96,7 @@ pub struct Style {
     pub target_wash: f32,
     /// The accent wash inside a marquee.
     pub marquee_wash: f32,
-    /// Below this zoom a node paints as its box, its content unread.
+    /// Below this zoom edge labels are hidden.
     pub far_zoom: f32,
     /// The closest grid dots come, in screen pixels; a denser grid skips rows.
     pub dot_spacing: f32,
@@ -173,8 +173,6 @@ pub struct Overlays {
     pub drop: Painter,
     /// A handle its kind declared.
     pub handle: Painter,
-    /// A node too far out for its content to be read.
-    pub placeholder: Painter,
     /// Behind every node, when the snap settles on a grid.
     pub grid: Grid,
     /// The lines a drag caught on.
@@ -187,7 +185,6 @@ impl Overlays {
             ring: Rc::new(ring),
             drop: Rc::new(drop_wash),
             handle: Rc::new(handle),
-            placeholder: Rc::new(placeholder),
             grid: Rc::new(grid),
             guides: Rc::new(guides),
         }
@@ -288,16 +285,4 @@ pub fn guides(frame: &Frame, caught: &[Guide], window: &mut Window, cx: &mut App
 
 fn pt(at: Point<f32>) -> Point<Pixels> {
     point(px(at.x), px(at.y))
-}
-
-/// A plain box, for a node too small to read.
-pub fn placeholder(mark: &Mark, _: &mut Window, cx: &mut App) -> AnyElement {
-    let theme = Theme::of(cx);
-    div()
-        .size_full()
-        .rounded(px(RADIUS * mark.zoom))
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.surface_card)
-        .into_any_element()
 }

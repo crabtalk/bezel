@@ -198,6 +198,7 @@ pub(super) fn bookmark(
     theme: &Theme,
     cx: &App,
 ) -> AnyElement {
+    let scale = typography.body.size() / cx.typography().body.size();
     let preview = crate::app::link::preview(crate::Link::new(url, base), cx).unwrap_or_default();
     let host = SharedString::from(preview::host(url).to_string());
     let label = preview.label.clone().unwrap_or_else(|| host.clone());
@@ -226,8 +227,8 @@ pub(super) fn bookmark(
         .flex()
         .flex_col()
         .min_w_0()
-        .px(px(CARD_PADDING))
-        .py(px(CARD_PADDING - 2.0))
+        .px(px(CARD_PADDING * scale))
+        .py(px((CARD_PADDING - 2.0) * scale))
         .child(
             div()
                 .truncate()
@@ -247,13 +248,13 @@ pub(super) fn bookmark(
         .child(
             div()
                 .mt_auto()
-                .pt(px(6.0))
+                .pt(px(6.0 * scale))
                 .flex()
                 .items_center()
-                .gap(px(6.0))
+                .gap(px(6.0 * scale))
                 .text_size(px(typography.card.size()))
                 .text_color(theme.text_muted)
-                .child(mark(CARD_ICON))
+                .child(mark(CARD_ICON * scale))
                 .child(div().truncate().child(label)),
         );
 
@@ -265,9 +266,9 @@ pub(super) fn bookmark(
         .overflow_hidden()
         .child(match preview.image {
             Some(image) => corners(img(image).size_full().object_fit(ObjectFit::Cover), form)
-                .with_fallback(move || mark(CARD_COVER))
+                .with_fallback(move || mark(CARD_COVER * scale))
                 .into_any_element(),
-            None => mark(CARD_COVER),
+            None => mark(CARD_COVER * scale),
         });
 
     let open = url.to_string();
@@ -289,12 +290,12 @@ pub(super) fn bookmark(
 
     if matches!(form, Form::Embed(_)) {
         card.flex_col()
-            .child(picture.w_full().h(px(CARD_COVER_HEIGHT)))
+            .child(picture.w_full().h(px(CARD_COVER_HEIGHT * scale)))
             .child(words.w_full())
     } else {
-        card.h(px(CARD_HEIGHT))
+        card.h(px(CARD_HEIGHT * scale))
             .child(words.flex_1())
-            .child(picture.flex_none().w(px(CARD_IMAGE_WIDTH)).h_full())
+            .child(picture.flex_none().w(px(CARD_IMAGE_WIDTH * scale)).h_full())
     }
     .into_any_element()
 }

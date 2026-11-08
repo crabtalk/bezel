@@ -82,26 +82,37 @@ impl CanvasView {
         let editing = self.editing.as_ref().filter(|s| !s.edge && s.id == node.id);
         // A node being typed in keeps the editor's own cursor.
         let draggable = editing.is_none();
-        // Far out a node is a plain box, its content too small to read.
-        let far = z < self.style.far_zoom && draggable;
+        let detail = Detail::at(
+            w,
+            h,
+            presentation::typography(cx, z).body.size(),
+            self.exporting || !draggable,
+        );
         let mark = Mark {
             width: w,
             height: h,
             zoom: z,
             style: self.style,
         };
-        let content = if far {
-            (self.overlays.placeholder)(&mark, window, cx)
-        } else {
-            let look = Look {
+        let heights = self.content_heights.clone();
+        let (measured_node, width) = (node.id.clone(), node.width);
+        let look = Look {
+            zoom: z,
+            selected: picked.contains(&node.id.as_str()),
+            sizing: kind.rules.sizing,
+            detail,
+            measure: Measure {
                 zoom: z,
-                selected: picked.contains(&node.id.as_str()),
-                sizing: kind.rules.sizing,
-                editor: editing.map(|session| session.input.clone().into_any_element()),
-            };
-            (kind.render)(node, look, window, cx)
+                report: Rc::new(move |height| {
+                    heights
+                        .borrow_mut()
+                        .insert(measured_node.clone(), (width, height));
+                }),
+            },
+            editor: editing.map(|session| session.input.clone().into_any_element()),
         };
-        let grows = kind.rules.sizing == Sizing::Grows && !far;
+        let content = (kind.render)(node, look, window, cx);
+        let grows = kind.rules.sizing == Sizing::Grows && detail == Detail::Full;
         let selected = picked.contains(&node.id.as_str());
         // A drop, or a connector let go here, would connect to this node.
         let target = connecting == Some(node.id.as_str())

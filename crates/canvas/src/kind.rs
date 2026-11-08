@@ -16,7 +16,6 @@
 //! replaceable, and a type nothing names is [`unknown`]. [`chrome`] dresses a
 //! box the way they do.
 
-use markdown::AppExt as _;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -28,18 +27,23 @@ use gpui::{
     AnyElement, App, Div, Global, Hsla, ObjectFit, Styled, StyledImage, Window, div, img,
     prelude::*, px,
 };
-use markdown::{Doc, Editing};
+use markdown::{AppExt as _, BlockKind, Doc, Editing, Part};
 use theme::{TextStyle, Theme, Typeset};
-use ui::{scroll, tiled_image::TiledImage};
+use ui::{
+    icons::{self, Icon},
+    scroll,
+    tiled_image::TiledImage,
+};
 
 use crate::{
     handle::{self, Handle},
     mindmap::{NODE_HEIGHT, NODE_WIDTH},
     model::{self, Node, Shape},
+    presentation::{self, Detail, Measure},
 };
 
 /// Inside a dressed box, in canvas units.
-pub const PAD: f32 = 12.0;
+pub const PAD: f32 = 16.0;
 /// A dressed box's corners, in canvas units.
 pub const RADIUS: f32 = 8.0;
 /// A coloured frame's wash of its colour.
@@ -77,6 +81,8 @@ pub struct Look {
     pub zoom: f32,
     pub selected: bool,
     pub sizing: Sizing,
+    pub detail: Detail,
+    pub measure: Measure,
     /// The editor typing into the node while it is edited, for the kind to
     /// place where the field it edits shows.
     pub editor: Option<AnyElement>,
@@ -391,10 +397,33 @@ pub(crate) fn installed(cx: &App) -> Kinds {
 pub fn text() -> Kind {
     let parsed = Parsed::default();
     Kind::new(move |node, look, window, cx| {
+        if look.editor.is_none() && look.detail != Detail::Full {
+            let doc = parsed.read(node, cx);
+            let title = doc
+                .blocks
+                .iter()
+                .find_map(|block| match &block.kind {
+                    BlockKind::Heading { text, .. } if !text.text.trim().is_empty() => {
+                        Some(text.text.as_str())
+                    }
+                    _ => None,
+                })
+                .or_else(|| {
+                    doc.blocks.iter().find_map(|block| {
+                        block
+                            .text_at(Part::Body)
+                            .map(|text| text.text.as_str())
+                            .filter(|text| !text.trim().is_empty())
+                    })
+                })
+                .unwrap_or("Text");
+            return summary(node, title, None, look.detail, look.zoom, cx);
+        }
         let content = match look.editor {
             Some(editor) => editor,
             None => render_text(&parsed, node, look.zoom, window, cx),
         };
+        let content = look.measure.wrap(content, PAD * 2. + 2. / look.zoom);
         let content = if look.sizing == Sizing::Fixed {
             div()
                 .size_full()
@@ -435,6 +464,16 @@ pub fn file() -> Kind {
 /// Its URL in a card, which a double-click opens and `f2` edits.
 pub fn link() -> Kind {
     Kind::new(|node, look, _, cx| {
+        if look.editor.is_none() && look.detail != Detail::Full {
+            return summary(
+                node,
+                node.url.as_deref().unwrap_or("Link"),
+                Some(icons::text::Link.into()),
+                look.detail,
+                look.zoom,
+                cx,
+            );
+        }
         let url = label(
             node.url.clone().unwrap_or_default(),
             look.zoom,
@@ -570,6 +609,24 @@ pub fn is_image(path: &str) -> bool {
 fn file_under(root: Option<Rc<Path>>) -> Kind {
     Kind::new(move |node, look, _, cx| {
         let path = node.file.as_deref().unwrap_or_default();
+        if look.editor.is_none() {
+            if let Some(image) = resolve(root.as_deref(), path).filter(|_| is_image(path)) {
+                return chrome(Chrome::Bare, node, look.zoom, cx)
+                    .overflow_hidden()
+                    .child(img(image).size_full().object_fit(ObjectFit::Contain))
+                    .into_any_element();
+            }
+            if look.detail != Detail::Full {
+                return summary(
+                    node,
+                    path,
+                    Some(icons::files::File.into()),
+                    look.detail,
+                    look.zoom,
+                    cx,
+                );
+            }
+        }
         let content = match resolve(root.as_deref(), path).filter(|_| is_image(path)) {
             Some(image) => img(image)
                 .size_full()
@@ -608,18 +665,24 @@ fn group_under(root: Option<Rc<Path>>) -> Kind {
         chrome(Chrome::Frame, node, zoom, cx)
             .relative()
             .children(backdrop)
-            .when(!title.is_empty(), |d| {
-                d.child(
-                    div()
-                        .text_style_at(TextStyle::Callout, zoom)
-                        .absolute()
-                        .left_0()
-                        .bottom(px(node.height as f32 * zoom))
-                        .pb(px(4.0 * zoom))
-                        .text_color(Theme::of(cx).text_muted)
-                        .child(title),
-                )
-            })
+            .when(
+                !title.is_empty()
+                    && (look.detail == Detail::Full || node.width as f32 * zoom >= 48.),
+                |d| {
+                    d.child(
+                        div()
+                            .text_style_at(TextStyle::Callout, zoom.max(0.85))
+                            .w(px(node.width as f32 * zoom))
+                            .text_ellipsis()
+                            .absolute()
+                            .left_0()
+                            .bottom(px(node.height as f32 * zoom))
+                            .pb(px(4.0 * zoom))
+                            .text_color(Theme::of(cx).text_muted)
+                            .child(title),
+                    )
+                },
+            )
             .children(look.editor)
             .into_any_element()
     })
@@ -643,10 +706,33 @@ fn resolve(root: Option<&Path>, path: &str) -> Option<PathBuf> {
 }
 
 /// Parsed text kept between frames by node id, while its source holds.
-type Parsed = Rc<RefCell<HashMap<String, (String, Rc<Doc>)>>>;
+type Texts = HashMap<String, (String, Rc<Doc>)>;
+
+#[derive(Default)]
+struct Parsed(RefCell<Texts>);
 
 /// How many parsed texts are kept before they are all let go.
 const PARSED: usize = 4096;
+
+impl Parsed {
+    fn read(&self, node: &Node, cx: &App) -> Rc<Doc> {
+        let source = node.text.as_deref().unwrap_or_default();
+        {
+            let mut parsed = self.0.borrow_mut();
+            match parsed.get(&node.id) {
+                Some((was, doc)) if was == source => doc.clone(),
+                _ => {
+                    if parsed.len() >= PARSED {
+                        parsed.clear();
+                    }
+                    let doc = Rc::new(markdown::parse_with(source, &cx.marks()));
+                    parsed.insert(node.id.clone(), (source.to_owned(), doc.clone()));
+                    doc
+                }
+            }
+        }
+    }
+}
 
 fn render_text(
     parsed: &Parsed,
@@ -655,23 +741,9 @@ fn render_text(
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
-    let source = node.text.as_deref().unwrap_or_default();
-    let doc = {
-        let mut parsed = parsed.borrow_mut();
-        match parsed.get(&node.id) {
-            Some((was, doc)) if was == source => doc.clone(),
-            _ => {
-                if parsed.len() >= PARSED {
-                    parsed.clear();
-                }
-                let doc = Rc::new(markdown::parse_with(source, &cx.marks()));
-                parsed.insert(node.id.clone(), (source.to_owned(), doc.clone()));
-                doc
-            }
-        }
-    };
+    let doc = parsed.read(node, cx);
     let editing = Editing {
-        typography: Some(cx.typography().scaled(zoom)),
+        typography: Some(presentation::typography(cx, zoom)),
         ..Editing::default()
     };
     markdown::render_with(&doc, editing, window, cx)
@@ -682,5 +754,46 @@ fn label(text: String, zoom: f32, color: Hsla) -> AnyElement {
         .text_style_at(TextStyle::Callout, zoom)
         .text_color(color)
         .child(text)
+        .into_any_element()
+}
+
+pub fn summary(
+    node: &Node,
+    title: &str,
+    icon: Option<Icon>,
+    detail: Detail,
+    zoom: f32,
+    cx: &App,
+) -> AnyElement {
+    let size = if detail == Detail::Full {
+        presentation::typography(cx, zoom).body.size()
+    } else {
+        12. * TextStyle::Body.painted() / TextStyle::Body.size()
+    };
+    chrome(Chrome::Card, node, zoom, cx)
+        .when(detail != Detail::Full, |card| card.p(px(4.)))
+        .justify_center()
+        .when(detail != Detail::Silhouette, |card| {
+            card.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .children(icon.map(|icon| {
+                        icons::icon(icon)
+                            .size(px(size))
+                            .text_color(Theme::of(cx).text_muted)
+                    }))
+                    .child(
+                        div()
+                            .min_w_0()
+                            .text_size(px(size))
+                            .line_height(px(size * 1.4))
+                            .text_color(Theme::of(cx).text)
+                            .line_clamp(2)
+                            .child(title.to_owned()),
+                    ),
+            )
+        })
         .into_any_element()
 }
