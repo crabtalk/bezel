@@ -288,3 +288,56 @@ fn resizing_outside_the_viewport_does_not_pan_or_keep_growing() {
         assert!(!editor.can_undo());
     }
 }
+
+#[test]
+fn grid_drag_follows_each_pointer_step_and_settles_once_on_release() {
+    let mut editor = editor().with_snap(Snap {
+        grid: Some(20),
+        guides: false,
+    });
+    let mut tool = Select::default();
+    let mut pointer = pointer(Hit::Node("a".into()));
+    assert!(tool.press(&pointer, &mut Hand::new(&mut editor)));
+    for step in 4..=35 {
+        pointer.at = point(step as f32, 15.);
+        tool.drag(&pointer, &mut Hand::new(&mut editor));
+        let node = editor.painted().node("a").unwrap();
+        assert_eq!((node.x, node.y), (100 + step, 115));
+        assert_eq!(editor.canvas().node("a").unwrap().x, 100);
+    }
+    tool.release(&pointer, &mut Hand::new(&mut editor));
+    let node = editor.canvas().node("a").unwrap();
+    assert_eq!((node.x, node.y), (140, 120));
+    assert!(editor.undo());
+    assert_eq!(editor.canvas().node("a").unwrap().x, 100);
+    assert!(!editor.can_undo());
+}
+
+#[test]
+fn resizing_text_preserves_content_and_custom_fields_through_undo() {
+    let mut editor = editor();
+    let mut node = editor.canvas().node("a").unwrap().clone();
+    node.kind = "text".into();
+    node.text = Some("# Title\n\nParagraph one.\n\nParagraph two.".into());
+    node.extra
+        .insert("custom".into(), serde_json::json!({"keep": true}));
+    editor.apply([canvas::Change::UpdateNode { node: node.clone() }]);
+    let mut tool = Resize::default();
+    let mut pointer = pointer(Hit::Handle {
+        owner: "a".into(),
+        handle: Handle::corner(),
+    });
+    assert!(tool.press(&pointer, &mut Hand::new(&mut editor)));
+    pointer.at = point(-100., -60.);
+    tool.drag(&pointer, &mut Hand::new(&mut editor));
+    let preview = editor.painted().node("a").unwrap();
+    assert_eq!(preview.text, node.text);
+    assert_eq!(preview.extra.get("custom"), node.extra.get("custom"));
+    tool.release(&pointer, &mut Hand::new(&mut editor));
+    let resized = editor.canvas().node("a").unwrap();
+    assert_eq!((resized.width, resized.height), (100, 40));
+    assert_eq!(resized.text, node.text);
+    assert_eq!(resized.extra.get("custom"), node.extra.get("custom"));
+    assert!(editor.undo());
+    assert_eq!(editor.canvas().node("a"), Some(&node));
+}

@@ -65,3 +65,55 @@ fn a_child_drags_and_stays(cx: &mut TestAppContext) {
     assert_eq!((child.x, child.y), (origin.0 + 30, origin.1 + 50));
     assert!(mindmap::is_pinned(&child));
 }
+
+#[gpui::test]
+fn selections_and_group_contents_reach_the_same_drag_frame(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        theme::Theme::install(theme::Appearance::Dark, cx);
+        editor::init(cx);
+        canvas::init(cx);
+    });
+    let selection = r#"{"nodes":[{"id":"a","type":"link","x":100,"y":100,"width":200,"height":100},{"id":"b","type":"link","x":500,"y":300,"width":100,"height":100}]}"#;
+    let group = r#"{"nodes":[{"id":"group","type":"group","x":100,"y":100,"width":300,"height":200},{"id":"child","type":"link","x":160,"y":140,"width":80,"height":40}]}"#;
+    for (source, selected, from, probe, expected) in [
+        (selection, vec!["a", "b"], (200., 150.), (629., 380.), "b"),
+        (group, vec!["group"], (110., 110.), (269., 190.), "child"),
+    ] {
+        let window = cx.add_window(move |_, cx| {
+            CanvasView::new(Canvas::parse(source).unwrap(), layout::FREE, cx)
+        });
+        let view = window.root(cx).unwrap();
+        let mut visual = VisualTestContext::from_window(window.into(), cx);
+        visual.simulate_resize(size(px(800.), px(600.)));
+        view.update(&mut visual, |view, cx| {
+            view.update_editor(cx, |editor| {
+                editor.set_selection(selected.into_iter().map(str::to_owned).collect());
+            })
+        });
+        visual.update(|window, cx| {
+            window.draw(cx).clear(cx);
+        });
+        let (start, end, probe) = visual.update(|_, cx| {
+            let view = view.read(cx);
+            let bounds = view.bounds().unwrap();
+            let pan = view.editor().pan();
+            let zoom = view.editor().zoom();
+            let screen = |(x, y): (f32, f32)| {
+                bounds.origin + point(px(pan.x + x * zoom), px(pan.y + y * zoom))
+            };
+            (
+                screen(from),
+                screen((from.0 + 30., from.1 + 30.)),
+                screen(probe),
+            )
+        });
+        visual.simulate_mouse_down(start, MouseButton::Left, Modifiers::none());
+        visual.simulate_mouse_move(end, MouseButton::Left, Modifiers::none());
+        visual.update(|window, cx| {
+            window.draw(cx).clear(cx);
+        });
+        let item = visual.update(|_, cx| view.read(cx).item_at(probe));
+        assert_eq!(item, Some(canvas::Item::Node(expected.into())));
+        visual.simulate_mouse_up(end, MouseButton::Left, Modifiers::none());
+    }
+}

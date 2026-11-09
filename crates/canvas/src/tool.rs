@@ -9,7 +9,6 @@
 //! writes its own with the same trait. A tool reads and commands a
 //! [`CanvasEditor`] and says what it draws; the view paints it.
 
-use gpui::{CursorStyle, Modifiers, MouseButton, Pixels, Point};
 use crate::{
     change::{self, Change},
     clip, contain,
@@ -21,6 +20,7 @@ use crate::{
     model::{Canvas, Edge, Node, Side},
     snap::{self, Guide, Snap},
 };
+use gpui::{CursorStyle, Modifiers, MouseButton, Pixels, Point};
 
 /// What a press landed on.
 // A handle carries where it sits, which is a measure, not a whole number.
@@ -880,8 +880,11 @@ fn gesture(
         let to = (held.origin.0 + delta.0, held.origin.1 + delta.1);
         let reach = (editor.options().snap_reach / editor.zoom()).round() as i64;
         let size = (node.width, node.height);
-        let (settled, caught) =
-            snap::settle(editor.painted(), &moving, to, size, editor.snap(), reach);
+        let mut snapping = editor.snap();
+        if phase == Phase::Move {
+            snapping.grid = None;
+        }
+        let (settled, caught) = snap::settle(editor.painted(), &moving, to, size, snapping, reach);
         delta = (settled.0 - held.origin.0, settled.1 - held.origin.1);
         guides = caught;
     }

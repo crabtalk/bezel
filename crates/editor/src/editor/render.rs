@@ -417,15 +417,14 @@ impl Render for Editor {
                     .size_0(),
                 )
             })
-            // The document is inset by the gutter so the handle has somewhere
-            // to sit *inside* the editor. Outside it the handle is clipped by
-            // any scrolling ancestor, and a pointer over it never reaches
-            // `on_mouse_move`, which fires only while this element is the one
-            // under the pointer.
             .child(
                 div()
                     .w_full()
-                    .pl(gpui::px(layout.text_inset))
+                    .pl(gpui::px(if self.chrome.handle {
+                        layout.text_inset
+                    } else {
+                        0.
+                    }))
                     .child(match self.mode {
                         // The source is one text, so it paints as one text —
                         // the same caret, the same clicks, no block chrome to

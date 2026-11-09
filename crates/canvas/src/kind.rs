@@ -444,7 +444,14 @@ pub fn text() -> Kind {
         } else {
             content
         };
+        let vertical_padding = if look.sizing == Sizing::Fixed {
+            let line = presentation::typography(cx, look.zoom).body.line_height();
+            ((node.height as f32 * look.zoom - 2. - line) / 2.).clamp(0., PAD * look.zoom)
+        } else {
+            PAD * look.zoom
+        };
         chrome(Chrome::Card, node, look.zoom, cx)
+            .py(px(vertical_padding))
             .child(content)
             .into_any_element()
     })

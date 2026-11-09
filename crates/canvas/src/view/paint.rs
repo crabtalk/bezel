@@ -4,12 +4,14 @@ use crate::view::*;
 
 impl CanvasView {
     /// Where each node paints this frame. A node the document moved glides
-    /// there from where it was painted; the held node follows the pointer, and
-    /// a node never painted yet starts where it is.
+    /// there from where it was painted. Active gestures and newly painted
+    /// nodes use their preview positions directly.
     pub(super) fn positions(&mut self, reduced: bool, window: &mut Window) -> Positions {
-        let held = self.held().map(str::to_owned);
-        let fixed =
-            |id: &str, shown: &Positions| held.as_deref() == Some(id) || !shown.contains_key(id);
+        let direct = self.holding.is_some();
+        if direct {
+            self.glide = None;
+        }
+        let fixed = |id: &str, shown: &Positions| direct || !shown.contains_key(id);
         let canvas = self.editor.painted();
         let to: Positions = canvas
             .nodes
@@ -82,11 +84,12 @@ impl CanvasView {
         let editing = self.editing.as_ref().filter(|s| !s.edge && s.id == node.id);
         // A node being typed in keeps the editor's own cursor.
         let draggable = editing.is_none();
+        let selected = picked.contains(&node.id.as_str());
         let detail = Detail::at(
             w,
             h,
             presentation::typography(cx, z).body.size(),
-            self.exporting || !draggable,
+            self.exporting || selected || !draggable,
         );
         let mark = Mark {
             width: w,
@@ -98,7 +101,7 @@ impl CanvasView {
         let (measured_node, width) = (node.id.clone(), node.width);
         let look = Look {
             zoom: z,
-            selected: picked.contains(&node.id.as_str()),
+            selected,
             sizing: kind.rules.sizing,
             detail,
             measure: Measure {
@@ -113,7 +116,6 @@ impl CanvasView {
         };
         let content = (kind.render)(node, look, window, cx);
         let grows = kind.rules.sizing == Sizing::Grows && detail == Detail::Full;
-        let selected = picked.contains(&node.id.as_str());
         // A drop, or a connector let go here, would connect to this node.
         let target = connecting == Some(node.id.as_str())
             || self.held() != Some(node.id.as_str())

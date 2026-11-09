@@ -5,8 +5,6 @@ use theme::TextStyle;
 
 const BODY: f32 = 16.;
 const READABLE: f32 = 10.;
-const SUMMARY_WIDTH: f32 = 160.;
-const SUMMARY_HEIGHT: f32 = 64.;
 const LABEL_WIDTH: f32 = 48.;
 const LABEL_HEIGHT: f32 = 28.;
 
@@ -19,14 +17,12 @@ pub enum Detail {
 
 impl Detail {
     pub fn at(width: f32, height: f32, text: f32, full: bool) -> Self {
-        if full {
+        if full || text >= READABLE {
             Self::Full
         } else if width < LABEL_WIDTH || height < LABEL_HEIGHT {
             Self::Silhouette
-        } else if text < READABLE || width < SUMMARY_WIDTH || height < SUMMARY_HEIGHT {
-            Self::Summary
         } else {
-            Self::Full
+            Self::Summary
         }
     }
 }

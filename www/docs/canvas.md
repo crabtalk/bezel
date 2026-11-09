@@ -73,8 +73,14 @@ GPUI. Native content is refused. The host owns encoding and its save dialog.
 
 `presentation::typography(cx, zoom)` supplies canvas document sizes. Kinds
 receive `Look::detail` for full content, compact summaries or silhouettes;
-exports always request full content. Images retain their thumbnails.
+selected nodes and exports always request full content. Readable text stays
+full at small node sizes. Short fixed text cards reduce vertical padding.
+Images retain their thumbnails.
 
 A renderer can wrap its natural content with `Look::measure.wrap`, passing
 the padding around it in canvas units. `CanvasView::fit_to_content` applies
 the measured heights to selected nodes as one undo step, preserving width.
+
+Node drags follow the pointer between grid lines and settle to the grid on
+release. Object guides remain active during the drag. Selections and group
+contents move together without layout animation while the gesture is held.
