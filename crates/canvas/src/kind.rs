@@ -20,13 +20,13 @@ use crate::{
     handle::{self, Handle},
     mindmap::{NODE_HEIGHT, NODE_WIDTH},
     model::{self, Node, Shape},
-    presentation::{self, Detail, Measure},
+    presentation::Measure,
 };
 use gpui::{
-    AnyElement, App, Div, Global, Hsla, ObjectFit, Styled, StyledImage, Window, div, img,
-    prelude::*, px,
+    AnyElement, App, Div, Global, Hsla, ObjectFit, Pixels, Size, Styled, StyledImage, Window, div,
+    img, prelude::*, px,
 };
-use markdown::{AppExt as _, BlockKind, Doc, Editing, Part};
+use markdown::{AppExt as _, Doc, Editing, Typography};
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -73,17 +73,95 @@ pub enum Chrome {
 }
 
 /// What a node paints with.
-pub struct Look {
-    /// The view's scale. gpui does not transform an element, so the kind
-    /// applies it to what it paints — `Typography::scaled`, `text_style_at`.
+#[derive(Clone)]
+pub struct Card {
     pub zoom: f32,
+    pub size: Size<Pixels>,
+    pub typography: Typography,
     pub selected: bool,
     pub sizing: Sizing,
-    pub detail: Detail,
     pub measure: Measure,
-    /// The editor typing into the node while it is edited, for the kind to
-    /// place where the field it edits shows.
+}
+
+pub enum Content {
+    Flow(AnyElement),
+    Fill(AnyElement),
+}
+
+pub struct Look {
+    pub card: Card,
     pub editor: Option<AnyElement>,
+}
+
+impl Card {
+    pub fn render(
+        &self,
+        node: &Node,
+        header: Option<(String, Icon)>,
+        content: Content,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        let typography = self.typography;
+        let metadata = typography.body.size() * 13. / 16.;
+        let header_height = if header.is_some() {
+            metadata * 18. / 13. + 8. * self.zoom
+        } else {
+            0.
+        };
+        let padding = if self.sizing == Sizing::Fixed {
+            ((self.size.height.as_f32() - 2. - header_height - typography.body.line_height()) / 2.)
+                .clamp(0., PAD * self.zoom)
+        } else {
+            PAD * self.zoom
+        };
+        let content = match content {
+            Content::Flow(content) => {
+                let content = self
+                    .measure
+                    .wrap(content, (padding * 2. + 2. + header_height) / self.zoom);
+                if self.sizing == Sizing::Fixed {
+                    scroll::claiming_pane(
+                        format!("canvas-content-{}", node.id),
+                        scroll::Axes::Vertical,
+                        window,
+                        cx,
+                    )
+                    .flex_1()
+                    .min_h_0()
+                    .when(!self.selected, |pane| pane.overflow_hidden())
+                    .child(content)
+                    .into_any_element()
+                } else {
+                    content
+                }
+            }
+            Content::Fill(content) => div()
+                .flex_1()
+                .min_h_0()
+                .overflow_hidden()
+                .child(content)
+                .into_any_element(),
+        };
+        chrome(Chrome::Card, node, self.zoom, cx)
+            .min_h_0()
+            .py(px(padding))
+            .when(header.is_some(), |el| el.gap(px(8. * self.zoom)))
+            .children(header.map(|(title, mark)| {
+                div()
+                    .flex_none()
+                    .flex()
+                    .items_center()
+                    .gap(px(6. * self.zoom))
+                    .text_size(px(metadata))
+                    .line_height(px(metadata * 18. / 13.))
+                    .text_color(Theme::of(cx).text_muted)
+                    .child(icons::icon(mark).flex_none().size(px(14. * self.zoom)))
+                    .child(div().min_w_0().text_ellipsis().child(title))
+            }))
+            .child(content)
+            .into_any_element()
+    }
 }
 
 /// A node's content. See [`text_style`] and [`chrome`].
@@ -406,7 +484,7 @@ pub fn text() -> Kind {
         if node.is_label() {
             let content = match look.editor {
                 Some(editor) => editor,
-                None => render_text(&parsed, node, look.zoom, window, cx),
+                None => render_text(&parsed, node, look.card.typography, window, cx),
             };
             return div()
                 .w_full()
@@ -416,68 +494,15 @@ pub fn text() -> Kind {
                         .and_then(|value| color(Theme::of(cx), value))
                         .unwrap_or(Theme::of(cx).text),
                 )
-                .child(look.measure.wrap(content, 0.))
+                .child(look.card.measure.wrap(content, 0.))
                 .into_any_element();
-        }
-        if look.editor.is_none() && look.detail != Detail::Full {
-            let doc = parsed.read(node, cx);
-            let title = doc
-                .blocks
-                .iter()
-                .find_map(|block| match &block.kind {
-                    BlockKind::Heading { text, .. } if !text.text.trim().is_empty() => {
-                        Some(text.text.as_str())
-                    }
-                    _ => None,
-                })
-                .or_else(|| {
-                    doc.blocks.iter().find_map(|block| {
-                        block
-                            .text_at(Part::Body)
-                            .map(|text| text.text.as_str())
-                            .filter(|text| !text.trim().is_empty())
-                    })
-                })
-                .unwrap_or("Text");
-            return summary(node, title, None, look.detail, look.zoom, cx);
         }
         let content = match look.editor {
             Some(editor) => editor,
-            None => render_text(&parsed, node, look.zoom, window, cx),
+            None => render_text(&parsed, node, look.card.typography, window, cx),
         };
-        let content = look.measure.wrap(content, PAD * 2. + 2. / look.zoom);
-        let content = if look.sizing == Sizing::Fixed {
-            div()
-                .size_full()
-                .min_h_0()
-                .overflow_hidden()
-                .child(
-                    scroll::claiming_pane(
-                        format!("canvas-text-{}", node.id),
-                        scroll::Axes::Vertical,
-                        window,
-                        cx,
-                    )
-                    .size_full()
-                    .when(!look.selected, |pane| pane.overflow_hidden())
-                    .child(div().flex_none().child(content)),
-                )
-                .into_any_element()
-        } else {
-            content
-        };
-        let vertical_padding = if look.sizing == Sizing::Fixed {
-            let line = presentation::text_typography(cx, node.text_size(), look.zoom)
-                .body
-                .line_height();
-            ((node.height as f32 * look.zoom - 2. - line) / 2.).clamp(0., PAD * look.zoom)
-        } else {
-            PAD * look.zoom
-        };
-        chrome(Chrome::Card, node, look.zoom, cx)
-            .py(px(vertical_padding))
-            .child(content)
-            .into_any_element()
+        look.card
+            .render(node, None, Content::Flow(content), window, cx)
     })
     .exportable()
     .sizing(Sizing::Grows)
@@ -494,25 +519,19 @@ pub fn file() -> Kind {
 
 /// Its URL in a card, which a double-click opens and `f2` edits.
 pub fn link() -> Kind {
-    Kind::new(|node, look, _, cx| {
-        if look.editor.is_none() && look.detail != Detail::Full {
-            return summary(
-                node,
-                node.url.as_deref().unwrap_or("Link"),
-                Some(icons::text::Link.into()),
-                look.detail,
-                look.zoom,
-                cx,
-            );
-        }
+    Kind::new(|node, look, window, cx| {
         let url = label(
             node.url.clone().unwrap_or_default(),
-            look.zoom,
+            look.card.zoom,
             Theme::of(cx).accent,
         );
-        chrome(Chrome::Card, node, look.zoom, cx)
-            .child(look.editor.unwrap_or(url))
-            .into_any_element()
+        look.card.render(
+            node,
+            None,
+            Content::Flow(look.editor.unwrap_or(url)),
+            window,
+            cx,
+        )
     })
     .exportable()
     .edit(Field::new(
@@ -534,11 +553,10 @@ pub fn group() -> Kind {
 
 /// A type no kind names: its name, faint, in a card.
 pub fn unknown() -> Kind {
-    Kind::new(|node, look, _, cx| {
-        let name = label(node.kind.clone(), look.zoom, Theme::of(cx).text_faint);
-        chrome(Chrome::Card, node, look.zoom, cx)
-            .child(name)
-            .into_any_element()
+    Kind::new(|node, look, window, cx| {
+        let name = label(node.kind.clone(), look.card.zoom, Theme::of(cx).text_faint);
+        look.card
+            .render(node, None, Content::Flow(name), window, cx)
     })
 }
 
@@ -638,25 +656,15 @@ pub fn is_image(path: &str) -> bool {
 }
 
 fn file_under(root: Option<Rc<Path>>) -> Kind {
-    Kind::new(move |node, look, _, cx| {
+    Kind::new(move |node, look, window, cx| {
         let path = node.file.as_deref().unwrap_or_default();
-        if look.editor.is_none() {
-            if let Some(image) = resolve(root.as_deref(), path).filter(|_| is_image(path)) {
-                return chrome(Chrome::Bare, node, look.zoom, cx)
-                    .overflow_hidden()
-                    .child(img(image).size_full().object_fit(ObjectFit::Contain))
-                    .into_any_element();
-            }
-            if look.detail != Detail::Full {
-                return summary(
-                    node,
-                    path,
-                    Some(icons::files::File.into()),
-                    look.detail,
-                    look.zoom,
-                    cx,
-                );
-            }
+        if look.editor.is_none()
+            && let Some(image) = resolve(root.as_deref(), path).filter(|_| is_image(path))
+        {
+            return chrome(Chrome::Bare, node, look.card.zoom, cx)
+                .overflow_hidden()
+                .child(img(image).size_full().object_fit(ObjectFit::Contain))
+                .into_any_element();
         }
         let content = match resolve(root.as_deref(), path).filter(|_| is_image(path)) {
             Some(image) => img(image)
@@ -665,19 +673,27 @@ fn file_under(root: Option<Rc<Path>>) -> Kind {
                 .into_any_element(),
             None => {
                 let subpath = node.subpath.as_deref().unwrap_or_default();
-                label(format!("{path}{subpath}"), look.zoom, Theme::of(cx).text)
+                label(
+                    format!("{path}{subpath}"),
+                    look.card.zoom,
+                    Theme::of(cx).text,
+                )
             }
         };
-        chrome(Chrome::Card, node, look.zoom, cx)
-            .child(look.editor.unwrap_or(content))
-            .into_any_element()
+        look.card.render(
+            node,
+            None,
+            Content::Flow(look.editor.unwrap_or(content)),
+            window,
+            cx,
+        )
     })
     .exportable()
 }
 
 fn group_under(root: Option<Rc<Path>>) -> Kind {
     Kind::new(move |node, look, _, cx| {
-        let zoom = look.zoom;
+        let zoom = look.card.zoom;
         let backdrop = node
             .background
             .as_deref()
@@ -696,24 +712,20 @@ fn group_under(root: Option<Rc<Path>>) -> Kind {
         chrome(Chrome::Frame, node, zoom, cx)
             .relative()
             .children(backdrop)
-            .when(
-                !title.is_empty()
-                    && (look.detail == Detail::Full || node.width as f32 * zoom >= 48.),
-                |d| {
-                    d.child(
-                        div()
-                            .text_style_at(TextStyle::Callout, zoom.max(0.85))
-                            .w(px(node.width as f32 * zoom))
-                            .text_ellipsis()
-                            .absolute()
-                            .left_0()
-                            .bottom(px(node.height as f32 * zoom))
-                            .pb(px(4.0 * zoom))
-                            .text_color(Theme::of(cx).text_muted)
-                            .child(title),
-                    )
-                },
-            )
+            .when(!title.is_empty(), |d| {
+                d.child(
+                    div()
+                        .text_style_at(TextStyle::Callout, zoom)
+                        .w(px(node.width as f32 * zoom))
+                        .text_ellipsis()
+                        .absolute()
+                        .left_0()
+                        .bottom(px(node.height as f32 * zoom))
+                        .pb(px(4.0 * zoom))
+                        .text_color(Theme::of(cx).text_muted)
+                        .child(title),
+                )
+            })
             .children(look.editor)
             .into_any_element()
     })
@@ -768,13 +780,13 @@ impl Parsed {
 fn render_text(
     parsed: &Parsed,
     node: &Node,
-    zoom: f32,
+    typography: Typography,
     window: &mut Window,
     cx: &mut App,
 ) -> AnyElement {
     let doc = parsed.read(node, cx);
     let editing = Editing {
-        typography: Some(presentation::text_typography(cx, node.text_size(), zoom)),
+        typography: Some(typography),
         ..Editing::default()
     };
     markdown::render_with(&doc, editing, window, cx)
@@ -785,46 +797,5 @@ fn label(text: String, zoom: f32, color: Hsla) -> AnyElement {
         .text_style_at(TextStyle::Callout, zoom)
         .text_color(color)
         .child(text)
-        .into_any_element()
-}
-
-pub fn summary(
-    node: &Node,
-    title: &str,
-    icon: Option<Icon>,
-    detail: Detail,
-    zoom: f32,
-    cx: &App,
-) -> AnyElement {
-    let size = if detail == Detail::Full {
-        presentation::typography(cx, zoom).body.size()
-    } else {
-        12. * TextStyle::Body.painted() / TextStyle::Body.size()
-    };
-    chrome(Chrome::Card, node, zoom, cx)
-        .when(detail != Detail::Full, |card| card.p(px(4.)))
-        .justify_center()
-        .when(detail != Detail::Silhouette, |card| {
-            card.child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(6.))
-                    .children(icon.map(|icon| {
-                        icons::icon(icon)
-                            .size(px(size))
-                            .text_color(Theme::of(cx).text_muted)
-                    }))
-                    .child(
-                        div()
-                            .min_w_0()
-                            .text_size(px(size))
-                            .line_height(px(size * 1.4))
-                            .text_color(Theme::of(cx).text)
-                            .line_clamp(2)
-                            .child(title.to_owned()),
-                    ),
-            )
-        })
         .into_any_element()
 }

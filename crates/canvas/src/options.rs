@@ -96,8 +96,6 @@ pub struct Style {
     pub target_wash: f32,
     /// The accent wash inside a marquee.
     pub marquee_wash: f32,
-    /// Edge labels at the default text size are hidden below this zoom.
-    pub far_zoom: f32,
     /// The closest grid dots come, in screen pixels; a denser grid skips rows.
     pub dot_spacing: f32,
     /// A grid dot, in screen pixels.
@@ -114,7 +112,6 @@ impl Default for Style {
             cut: 0.25,
             target_wash: 0.12,
             marquee_wash: 0.08,
-            far_zoom: 0.4,
             dot_spacing: 12.0,
             dot: 1.5,
         }

@@ -17,8 +17,7 @@ use std::{
     rc::Rc,
     sync::Arc,
 };
-use ui::AppExt as _;
-use ui::widgets::Layout as _;
+use ui::{AppExt as _, widgets::Layout as _};
 
 use gpui::{
     AnyElement, App, BorderStyle, Bounds, CursorStyle, ElementId, FontStyle, FontWeight, Hsla,
@@ -42,7 +41,7 @@ mod code;
 mod column;
 mod layouts;
 mod media;
-pub use media::hover_bookmark;
+pub use media::{Bookmark, hover_bookmark};
 pub mod selectable;
 mod source;
 mod table;

@@ -31,7 +31,7 @@ cx.subscribe(&view, |_, view, event, cx| {
 - Drag with Shift to constrain movement or preserve resize proportions, Space to bypass snapping, and Alt to duplicate. Space-drag pans over cards.
 - Use `kind::text().sizing(kind::Sizing::Fixed)` for saved card dimensions and scrolling while selected; the default grows with its content.
 - Every canvas names a layout; there is no default.
-- gpui cannot transform an element, so a kind applies `look.zoom` to what it paints. A node of fixed size clips it.
+- gpui cannot transform an element, so a kind applies `look.card.zoom` to what it paints. A node of fixed size clips it.
 - `CanvasEditor` is the canvas without a window. Headless, call `editor.take_events()` regularly.
 
 ## Make it yours
@@ -71,15 +71,15 @@ an RGBA image; `Area::Viewport` keeps the current pan and zoom. Custom node
 renderers opt in with `Kind::exportable()` when they paint entirely through
 GPUI. Native content is refused. The host owns encoding and its save dialog.
 
-`presentation::typography(cx, zoom)` supplies canvas document sizes. Kinds
-receive `Look::detail` for full content, compact summaries or silhouettes;
-selected nodes and exports always request full content. Readable text stays
-full at small node sizes. Short fixed text cards reduce vertical padding.
-Images retain their thumbnails.
+`presentation::typography(cx, zoom)` supplies canvas document sizes. Content
+scales with zoom without switching to summaries or hiding connection labels.
+`Look::card.render` lays out a card's header and content. Fixed cards scroll
+when selected; growing cards measure their content. Short fixed cards reduce
+vertical padding.
 
-A renderer can wrap its natural content with `Look::measure.wrap`, passing
-the padding around it in canvas units. `CanvasView::fit_to_content` applies
-the measured heights to selected nodes as one undo step, preserving width.
+Custom renderers can use `Look::card.measure.wrap` to report their natural
+content height, including padding in canvas units. `CanvasView::fit_to_content`
+applies measured heights to selected nodes as one undo step, preserving width.
 
 Node drags follow the pointer between grid lines and settle to the grid on
 release. Object guides remain active during the drag. Selections and group

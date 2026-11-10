@@ -85,14 +85,6 @@ impl CanvasView {
         // A node being typed in keeps the editor's own cursor.
         let draggable = editing.is_none();
         let selected = picked.contains(&node.id.as_str());
-        let detail = Detail::at(
-            w,
-            h,
-            presentation::text_typography(cx, node.text_size(), z)
-                .body
-                .size(),
-            self.exporting || node.is_label() || selected || !draggable,
-        );
         let mark = Mark {
             width: w,
             height: h,
@@ -102,22 +94,25 @@ impl CanvasView {
         let heights = self.content_heights.clone();
         let (measured_node, width) = (node.id.clone(), node.width);
         let look = Look {
-            zoom: z,
-            selected,
-            sizing: self.editor.kinds().sizing(node),
-            detail,
-            measure: Measure {
+            card: Card {
                 zoom: z,
-                report: Rc::new(move |height| {
-                    heights
-                        .borrow_mut()
-                        .insert(measured_node.clone(), (width, height));
-                }),
+                size: size(px(w), px(h)),
+                typography: presentation::text_typography(cx, node.text_size(), z),
+                selected,
+                sizing: self.editor.kinds().sizing(node),
+                measure: Measure {
+                    zoom: z,
+                    report: Rc::new(move |height| {
+                        heights
+                            .borrow_mut()
+                            .insert(measured_node.clone(), (width, height));
+                    }),
+                },
             },
             editor: editing.map(|session| session.input.clone().into_any_element()),
         };
         let content = (kind.render)(node, look, window, cx);
-        let grows = self.editor.kinds().sizing(node) == Sizing::Grows && detail == Detail::Full;
+        let grows = self.editor.kinds().sizing(node) == Sizing::Grows;
         // A drop, or a connector let go here, would connect to this node.
         let target = connecting == Some(node.id.as_str())
             || self.held() != Some(node.id.as_str())
@@ -281,7 +276,7 @@ impl CanvasView {
                     .map(|field| (field.read)(edge))
                     .filter(|label| !label.is_empty());
                 let label_scale = edge.text_size() / model::TEXT_SIZE;
-                if editing.is_none() && (text.is_none() || z * label_scale < self.style.far_zoom) {
+                if editing.is_none() && text.is_none() {
                     return None;
                 }
                 let middle = self.path_of(&nodes, shown, edge)?.middle();

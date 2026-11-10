@@ -3,29 +3,6 @@ use gpui::{AnyElement, App, canvas, div, prelude::*};
 use markdown::{AppExt as _, Typography};
 use std::rc::Rc;
 use theme::TextStyle;
-const READABLE: f32 = 10.;
-const LABEL_WIDTH: f32 = 48.;
-const LABEL_HEIGHT: f32 = 28.;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Detail {
-    Full,
-    Summary,
-    Silhouette,
-}
-
-impl Detail {
-    pub fn at(width: f32, height: f32, text: f32, full: bool) -> Self {
-        if full || text >= READABLE {
-            Self::Full
-        } else if width < LABEL_WIDTH || height < LABEL_HEIGHT {
-            Self::Silhouette
-        } else {
-            Self::Summary
-        }
-    }
-}
-
 pub fn typography(cx: &App, zoom: f32) -> Typography {
     text_typography(cx, model::TEXT_SIZE, zoom)
 }
