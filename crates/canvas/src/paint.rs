@@ -7,7 +7,7 @@ use gpui::{Bounds, Hsla, PathBuilder, Pixels, Point, Rgba, Window, point, px};
 use theme::Theme;
 
 use crate::{
-    model::{End, Shape, Stroke},
+    model::{End, Node, Shape, Stroke},
     path::Path,
 };
 
@@ -36,6 +36,15 @@ pub fn color(theme: &Theme, color: &str) -> Option<Hsla> {
         }),
         "6" => Some(theme.accent),
         hex => Rgba::try_from(hex).ok().map(Into::into),
+    }
+}
+
+impl Node {
+    pub fn text_color(&self, theme: &Theme) -> Option<Hsla> {
+        self.color
+            .as_deref()
+            .filter(|_| self.is_label())
+            .and_then(|value| color(theme, value))
     }
 }
 

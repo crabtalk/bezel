@@ -446,6 +446,7 @@ impl Render for Editor {
                                 },
                                 scroll: self.scroll.as_ref(),
                                 typography: Some(self.resolved_typography(cx)),
+                                text_color: self.text_color,
                                 ..Default::default()
                             },
                             cx,
@@ -463,6 +464,7 @@ impl Render for Editor {
                                 // hiding a place you can already be typing.
                                 caption: markdown::Caption::Shown,
                                 typography: Some(self.resolved_typography(cx)),
+                                text_color: self.text_color,
                                 // The editor's own press hit-tests
                                 // `checkbox_bounds`, which is what keeps a
                                 // toggle in the undo history.

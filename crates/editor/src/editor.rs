@@ -20,7 +20,7 @@ use crate::{
 };
 use gpui::{
     App, Context, CursorStyle, ElementInputHandler, Entity, EventEmitter, FocusHandle, Focusable,
-    KeyContext, MouseButton, Render, Styled as _, Task, Window, canvas, div, prelude::*,
+    Hsla, KeyContext, MouseButton, Render, Styled as _, Task, Window, canvas, div, prelude::*,
 };
 use markdown::{
     Affinity, Annotation, AppExt as _, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark,
@@ -447,6 +447,7 @@ pub struct Editor {
     text_size: Option<f32>,
     /// Overrides document text-size settings for an embedded editing surface.
     pub typography: Option<Typography>,
+    pub text_color: Option<Hsla>,
     /// The directory relative image paths resolve against.
     base: Option<std::path::PathBuf>,
     image_overlay: Option<markdown::ImageOverlay>,
@@ -531,6 +532,7 @@ impl Editor {
             handle_at: None,
             text_size: None,
             typography: None,
+            text_color: None,
             base: None,
             image_overlay: None,
             image_overlay_corner: markdown::ImageOverlayCorner::default(),

@@ -488,12 +488,6 @@ pub fn text() -> Kind {
             };
             return div()
                 .w_full()
-                .text_color(
-                    node.color
-                        .as_deref()
-                        .and_then(|value| color(Theme::of(cx), value))
-                        .unwrap_or(Theme::of(cx).text),
-                )
                 .child(look.card.measure.wrap(content, 0.))
                 .into_any_element();
         }
@@ -787,6 +781,7 @@ fn render_text(
     let doc = parsed.read(node, cx);
     let editing = Editing {
         typography: Some(typography),
+        text_color: node.text_color(Theme::of(cx)),
         ..Editing::default()
     };
     markdown::render_with(&doc, editing, window, cx)

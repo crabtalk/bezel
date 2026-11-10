@@ -311,8 +311,13 @@ impl CanvasView {
             }
             .unwrap_or(model::TEXT_SIZE);
             let typography = presentation::text_typography(cx, size, self.editor.zoom());
+            let text_color = (!session.edge)
+                .then(|| self.editor.canvas().node(&session.id))
+                .flatten()
+                .and_then(|node| node.text_color(Theme::of(cx)));
             session.input.update(cx, |input, cx| {
-                if input.typography != Some(typography) {
+                if input.typography != Some(typography) || input.text_color != text_color {
+                    input.text_color = text_color;
                     input.typography = Some(typography);
                     cx.notify();
                 }
@@ -393,6 +398,8 @@ impl CanvasView {
             return;
         };
         let input = self.input(&(field.read)(node), node.text_size(), cx);
+        let text_color = node.text_color(Theme::of(cx));
+        input.update(cx, |input, _| input.text_color = text_color);
         let changes = cx.subscribe(&input, move |this, input, event, cx| {
             if *event != EditorEvent::Changed {
                 return;
