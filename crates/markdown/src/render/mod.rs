@@ -17,8 +17,7 @@ use std::{
     rc::Rc,
     sync::Arc,
 };
-use ui::AppExt as _;
-use ui::widgets::Layout as _;
+use ui::{AppExt as _, widgets::Layout as _};
 
 use gpui::{
     AnyElement, App, BorderStyle, Bounds, CursorStyle, ElementId, FontStyle, FontWeight, Hsla,
@@ -42,7 +41,7 @@ mod code;
 mod column;
 mod layouts;
 mod media;
-pub use media::hover_bookmark;
+pub use media::{Bookmark, hover_bookmark};
 pub mod selectable;
 mod source;
 mod table;
@@ -295,6 +294,7 @@ pub struct Editing<'a> {
     /// [`Typography`] — a caller sizing one document apart from the rest
     /// passes [`Typography::scaled`].
     pub typography: Option<Typography>,
+    pub text_color: Option<Hsla>,
     /// Makes a task block's checkbox a control, and says who answers the
     /// press. `None` paints a mark.
     pub toggle: Option<Toggle>,
@@ -340,6 +340,16 @@ pub struct Editing<'a> {
     pub jump: Option<OnJump>,
 }
 
+impl Editing<'_> {
+    fn theme(&self, cx: &App) -> Theme {
+        let mut theme = Theme::of(cx).clone();
+        if let Some(color) = self.text_color {
+            theme.text = color;
+        }
+        theme
+    }
+}
+
 impl Default for Editing<'_> {
     fn default() -> Self {
         Self {
@@ -352,6 +362,7 @@ impl Default for Editing<'_> {
             placeholder: None,
             caption: Caption::default(),
             typography: None,
+            text_color: None,
             toggle: None,
             image: None,
             image_menu: None,
@@ -626,6 +637,7 @@ pub fn render(doc: &Doc, caption: Caption, window: &mut Window, cx: &mut App) ->
 /// the selection and owns the focus and the keys; painting a caret and a few
 /// quads is not worth a second renderer.
 pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut App) -> AnyElement {
+    let theme = editing.theme(cx);
     let Editing {
         selection,
         caret_on,
@@ -634,6 +646,7 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         placeholder,
         caption,
         typography,
+        text_color: _,
         toggle,
         image,
         image_menu,
@@ -648,9 +661,6 @@ pub fn render_with(doc: &Doc, editing: Editing, window: &mut Window, cx: &mut Ap
         scroll,
         jump,
     } = editing;
-    // Cloned once so the theme is readable while `cx` stays free for the
-    // element state the copy button needs.
-    let theme = Theme::of(cx).clone();
     let typography = typography.unwrap_or_else(|| cx.typography());
     let highlight = crate::paint::marks::highlight_paint_of(cx);
     let find = crate::paint::find::find_paint_of(cx);

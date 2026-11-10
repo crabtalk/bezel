@@ -9,19 +9,18 @@
 //! writes its own with the same trait. A tool reads and commands a
 //! [`CanvasEditor`] and says what it draws; the view paints it.
 
-use gpui::{Modifiers, MouseButton, Pixels, Point};
-
 use crate::{
     change::{self, Change},
-    contain,
+    clip, contain,
     drag::{Drag, Phase},
     edit::CanvasEditor,
     handle::{Handle, Role, Which},
     kind::{self, Capability, Sizing},
     mindmap,
-    model::{Edge, Node, Side},
+    model::{Canvas, Edge, Node, Side},
     snap::{self, Guide, Snap},
 };
+use gpui::{CursorStyle, Modifiers, MouseButton, Pixels, Point};
 
 /// What a press landed on.
 // A handle carries where it sits, which is a measure, not a whole number.
@@ -46,6 +45,7 @@ pub struct Pointer {
     pub at: Point<f32>,
     pub button: MouseButton,
     pub modifiers: Modifiers,
+    pub space: bool,
     pub clicks: usize,
     pub hit: Hit,
 }
@@ -63,7 +63,7 @@ impl Pointer {
 
 /// What a tool asks the view for once its commands have landed — the view
 /// owns the editor typed into, so a tool names what it wants instead.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum Wish {
     #[default]
     Nothing,
@@ -73,6 +73,11 @@ pub enum Wish {
     EditEdge(String),
     /// Edit what was just added, its typing joining the add.
     EditAdded(String),
+    ChooseConnection {
+        from: String,
+        handle: Handle,
+        at: (i64, i64),
+    },
 }
 
 /// What a tool works on: the editor, and what it asks of the view.
@@ -125,6 +130,11 @@ pub trait Tool {
         None
     }
 
+    /// The cursor while this tool holds the pointer.
+    fn cursor(&self) -> Option<CursorStyle> {
+        self.held().map(|_| CursorStyle::ClosedHand)
+    }
+
     /// Whether it is holding a gesture that a press near the view's edge
     /// should pan the view under.
     fn drifts(&self) -> bool {
@@ -136,6 +146,7 @@ pub trait Tool {
 /// and pan — in the order a press is offered to them.
 pub fn defaults() -> Vec<Box<dyn Tool>> {
     vec![
+        Box::new(SpacePan::default()),
         Box::new(Connect::default()),
         Box::new(Resize::default()),
         Box::new(Reconnect::default()),
@@ -184,6 +195,35 @@ impl Tool for Pan {
 
     fn cancel(&mut self, _: &mut Hand) {
         self.last = None;
+    }
+
+    fn cursor(&self) -> Option<CursorStyle> {
+        self.last.map(|_| CursorStyle::ClosedHand)
+    }
+}
+
+#[derive(Default)]
+pub struct SpacePan(Pan);
+
+impl Tool for SpacePan {
+    fn press(&mut self, pointer: &Pointer, _hand: &mut Hand) -> bool {
+        if !pointer.space || !pointer.left() {
+            return false;
+        }
+        self.0.last = Some(pointer.screen);
+        true
+    }
+    fn drag(&mut self, pointer: &Pointer, hand: &mut Hand) {
+        self.0.drag(pointer, hand);
+    }
+    fn release(&mut self, pointer: &Pointer, hand: &mut Hand) {
+        self.0.release(pointer, hand);
+    }
+    fn cancel(&mut self, hand: &mut Hand) {
+        self.0.cancel(hand);
+    }
+    fn cursor(&self) -> Option<CursorStyle> {
+        self.0.cursor()
     }
 }
 
@@ -315,6 +355,9 @@ struct Held {
     /// The canvas point the press began at.
     from: Point<f32>,
     moved: bool,
+    duplicate: Option<Canvas>,
+    additive: bool,
+    toggle: bool,
 }
 
 impl Tool for Select {
@@ -332,7 +375,7 @@ impl Tool for Select {
             .into_iter()
             .map(str::to_owned)
             .collect();
-        if pointer.modifiers.shift || pointer.modifiers.platform {
+        if pointer.modifiers.platform {
             let mut ids = selected;
             match ids.iter().position(|s| *s == id) {
                 Some(at) => drop(ids.remove(at)),
@@ -348,7 +391,7 @@ impl Tool for Select {
         }
         // Pressing one of a selection keeps the rest, to drag them together.
         let mut with: Vec<String> = selected.iter().filter(|s| **s != id).cloned().collect();
-        if with.len() == selected.len() {
+        if with.len() == selected.len() && !pointer.modifiers.shift {
             with.clear();
         }
         let ids = with.iter().cloned().chain([id.clone()]).collect();
@@ -357,13 +400,29 @@ impl Tool for Select {
             return true;
         }
         with.retain(|id| hand.editor.node_can(id, Capability::Draggable));
+        let duplicate = pointer.modifiers.alt.then(|| {
+            let ids = hand
+                .editor
+                .selected_nodes()
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+            clip::fragment(hand.editor.canvas(), &hand.editor.contents(&ids))
+        });
+        if duplicate.is_none() {
+            hand.editor.group = Some(hand.editor.next_group());
+            hand.editor.bring_to_front();
+        }
         if let Some(node) = hand.editor.canvas().node(&id) {
             self.held = Some(Held {
                 origin: (node.x, node.y),
-                id,
+                id: id.clone(),
                 with,
                 from: pointer.at,
                 moved: false,
+                duplicate,
+                additive: pointer.modifiers.shift,
+                toggle: pointer.modifiers.shift && selected.contains(&id),
             });
         }
         true
@@ -382,8 +441,14 @@ impl Tool for Select {
         }
         held.moved = true;
         let held = self.held.as_ref().expect("just held");
-        let (changes, guides) = gesture(hand.editor, held, pointer.at, Phase::Move);
-        preview(hand.editor, changes, guides);
+        let (changes, guides) = gesture(hand.editor, held, pointer, Phase::Move);
+        if held.duplicate.is_some() {
+            let mut shown = hand.editor.canvas().clone();
+            change::apply_all(&mut shown, &changes);
+            hand.editor.set_preview(shown, Vec::new(), guides);
+        } else {
+            preview(hand.editor, changes, guides);
+        }
     }
 
     fn release(&mut self, pointer: &Pointer, hand: &mut Hand) {
@@ -392,23 +457,44 @@ impl Tool for Select {
         };
         // A click on one of a selection, without a drag, selects just it.
         if !held.moved {
-            hand.editor.select(Some(held.id));
+            if held.toggle {
+                hand.editor.set_selection(held.with);
+            } else if !held.additive {
+                hand.editor.select(Some(held.id));
+            }
+            hand.editor.group = None;
             return;
         }
         hand.editor.clear_preview();
-        let (mut drop, _) = gesture(hand.editor, &held, pointer.at, Phase::Drop);
+        let (mut drop, _) = gesture(hand.editor, &held, pointer, Phase::Drop);
         let ids: Vec<String> = std::iter::once(held.id.clone())
             .chain(held.with.iter().cloned())
             .collect();
         // A node carried out of the container it names lets it go.
         let mut after = hand.editor.canvas().clone();
         change::apply_all(&mut after, &drop);
-        drop.extend(contain::loosen(&after, &ids));
-        hand.editor.submit(drop);
+        if held.duplicate.is_none() {
+            drop.extend(contain::loosen(&after, &ids));
+        }
+        let copies = if held.duplicate.is_some() {
+            drop.iter()
+                .filter_map(|change| match change {
+                    Change::AddNode { node, .. } => Some(node.id.clone()),
+                    _ => None,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        if hand.editor.submit(drop) && !copies.is_empty() {
+            hand.editor.set_selection(copies);
+        }
+        hand.editor.group = None;
     }
 
     fn cancel(&mut self, hand: &mut Hand) {
         self.held = None;
+        hand.editor.group = None;
         hand.editor.clear_preview();
     }
 
@@ -478,6 +564,17 @@ impl Tool for Connect {
             return;
         }
         let at = (pointer.at.x.round() as i64, pointer.at.y.round() as i64);
+        if hand.editor.options().choose_connection_node
+            && hand.editor.node_under(at, &drawing.from).is_none()
+            && hand.editor.node_can(&drawing.from, Capability::Connectable)
+        {
+            hand.wish = Wish::ChooseConnection {
+                from: drawing.from,
+                handle: drawing.handle,
+                at,
+            };
+            return;
+        }
         let drawn = hand.editor.connect(&drawing.from, &drawing.handle, at);
         if let Some(added) = drawn {
             hand.wish = Wish::EditAdded(added);
@@ -509,12 +606,10 @@ pub struct Resize {
 }
 
 struct Pulling {
-    id: String,
-    /// The canvas point the press began at.
+    node: Node,
     from: Point<f32>,
-    /// The box as the press found it.
-    size: (i64, i64),
-    /// Its content may run past the height it is pulled to.
+    axes: (i64, i64),
+    cursor: CursorStyle,
     grows: bool,
 }
 
@@ -532,11 +627,15 @@ impl Tool for Resize {
         let Some(found) = hand.editor.canvas().node(owner) else {
             return false;
         };
-        let grows = hand.editor.kinds().get(&found.kind).rules.sizing == Sizing::Grows;
+        let grows = hand.editor.kinds().sizing(found) == Sizing::Grows;
+        let Some(axes) = handle.spot.resize_axes() else {
+            return false;
+        };
         self.pulling = Some(Pulling {
-            id: owner.clone(),
+            node: found.clone(),
             from: pointer.at,
-            size: (found.width, found.height),
+            axes,
+            cursor: handle.cursor(),
             grows,
         });
         true
@@ -546,20 +645,62 @@ impl Tool for Resize {
         let Some(pulling) = &self.pulling else {
             return;
         };
+        let original = &pulling.node;
+        let (ax, ay) = pulling.axes;
         let snap = hand.editor.snap();
-        let grid = |value: i64| snap.grid.map_or(value, |step| snap::round_to(value, step));
-        let Some(mut node) = hand.editor.canvas().node(&pulling.id).cloned() else {
-            return;
+        let grid = |value: i64| {
+            if pointer.space {
+                value
+            } else {
+                snap.grid.map_or(value, |step| snap::round_to(value, step))
+            }
         };
-        let pulled = |to: f32, from: f32| (to - from).round() as i64;
-        let width = grid(pulling.size.0 + pulled(pointer.at.x, pulling.from.x));
-        let height = grid(pulling.size.1 + pulled(pointer.at.y, pulling.from.y));
-        (node.width, node.height) = (
-            width.max(hand.editor.options().min_size.0),
-            height.max(hand.editor.options().min_size.1),
-        );
+        let dx = (pointer.at.x - pulling.from.x).round() as i64;
+        let dy = (pointer.at.y - pulling.from.y).round() as i64;
+        let mut width = if ax == 0 {
+            original.width
+        } else {
+            grid(original.width + ax * dx)
+        };
+        let mut height = if ay == 0 {
+            original.height
+        } else {
+            grid(original.height + ay * dy)
+        };
+        let (min_w, min_h) = hand.editor.options().min_size;
+        let min_h = if original.is_label() { 1 } else { min_h };
+        let scales_text = original.is_label() && ax != 0 && ay != 0;
+        if scales_text || pointer.modifiers.shift && !original.is_label() {
+            let sx = width as f64 / original.width.max(1) as f64;
+            let sy = height as f64 / original.height.max(1) as f64;
+            let scale = if ax == 0 {
+                sy
+            } else if ay == 0 || (sx - 1.0).abs() >= (sy - 1.0).abs() {
+                sx
+            } else {
+                sy
+            };
+            let scale = scale
+                .max(min_w as f64 / original.width.max(1) as f64)
+                .max(min_h as f64 / original.height.max(1) as f64);
+            width = (original.width as f64 * scale).round() as i64;
+            height = (original.height as f64 * scale).round() as i64;
+        }
+        let mut node = original.clone();
+        node.width = width.max(min_w);
+        node.height = height.max(min_h);
+        if scales_text {
+            node = original.clone();
+            node.scale(width as f32 / original.width.max(1) as f32);
+        }
+        if ax < 0 {
+            node.x += original.width - node.width;
+        }
+        if ay < 0 {
+            node.y += original.height - node.height;
+        }
         // Measuring keeps a growing node as tall as its content.
-        if pulling.grows {
+        if pulling.grows && !node.is_label() {
             node.extra
                 .insert(kind::MIN_HEIGHT.into(), node.height.into());
         }
@@ -570,24 +711,16 @@ impl Tool for Resize {
 
     /// The pull lands as one change: a resize, or for a growing node the node
     /// with its least height.
-    fn release(&mut self, _: &Pointer, hand: &mut Hand) {
+    fn release(&mut self, pointer: &Pointer, hand: &mut Hand) {
+        self.drag(pointer, hand);
         let Some(pulling) = self.pulling.take() else {
             return;
         };
-        let now = hand.editor.painted().node(&pulling.id).cloned();
+        let now = hand.editor.painted().node(&pulling.node.id).cloned();
         hand.editor.clear_preview();
-        let Some(now) = now.filter(|now| hand.editor.canvas().node(&pulling.id) != Some(now))
-        else {
-            return;
-        };
-        let change = match pulling.grows {
-            true => Change::UpdateNode { node: now },
-            false => Change::Resize {
-                size: (now.width, now.height),
-                id: now.id,
-            },
-        };
-        hand.editor.submit([change]);
+        if let Some(node) = now.filter(|node| node != &pulling.node) {
+            hand.editor.submit([Change::UpdateNode { node }]);
+        }
     }
 
     fn cancel(&mut self, hand: &mut Hand) {
@@ -595,8 +728,14 @@ impl Tool for Resize {
         hand.editor.clear_preview();
     }
 
-    fn drifts(&self) -> bool {
-        self.pulling.is_some()
+    fn held(&self) -> Option<&str> {
+        self.pulling
+            .as_ref()
+            .map(|pulling| pulling.node.id.as_str())
+    }
+
+    fn cursor(&self) -> Option<CursorStyle> {
+        self.pulling.as_ref().map(|pulling| pulling.cursor)
     }
 }
 
@@ -707,15 +846,23 @@ fn preview(editor: &mut CanvasEditor, changes: Vec<Change>, guides: Vec<Guide>) 
 fn gesture(
     editor: &CanvasEditor,
     held: &Held,
-    at: Point<f32>,
+    pointer: &Pointer,
     phase: Phase,
 ) -> (Vec<Change>, Vec<Guide>) {
+    let at = pointer.at;
     // The pointer's travel in canvas units, which a drift under it is already
     // part of: both ends are read against the pan of their own frame.
     let mut delta = (
         (at.x - held.from.x).round() as i64,
         (at.y - held.from.y).round() as i64,
     );
+    if pointer.modifiers.shift {
+        if delta.0.abs() >= delta.1.abs() {
+            delta.1 = 0;
+        } else {
+            delta.0 = 0;
+        }
+    }
     let ids: Vec<String> = std::iter::once(held.id.clone())
         .chain(held.with.iter().cloned())
         .collect();
@@ -728,7 +875,8 @@ fn gesture(
         .cloned()
         .collect();
     let mut guides = Vec::new();
-    if editor.snap() != Snap::default()
+    if !pointer.space
+        && editor.snap() != Snap::default()
         && let Some(node) = canvas.node(&held.id)
     {
         let moving: Vec<String> = carried
@@ -738,10 +886,27 @@ fn gesture(
         let to = (held.origin.0 + delta.0, held.origin.1 + delta.1);
         let reach = (editor.options().snap_reach / editor.zoom()).round() as i64;
         let size = (node.width, node.height);
-        let (settled, caught) =
-            snap::settle(editor.painted(), &moving, to, size, editor.snap(), reach);
+        let mut snapping = editor.snap();
+        if phase == Phase::Move {
+            snapping.grid = None;
+        }
+        let (settled, caught) = snap::settle(editor.painted(), &moving, to, size, snapping, reach);
         delta = (settled.0 - held.origin.0, settled.1 - held.origin.1);
         guides = caught;
+    }
+    if pointer.modifiers.shift {
+        if (at.x - held.from.x).abs() >= (at.y - held.from.y).abs() {
+            delta.1 = 0;
+        } else {
+            delta.0 = 0;
+        }
+    }
+    if let Some(fragment) = &held.duplicate {
+        let ((x, y), _) = clip::bounds(fragment).expect("a selected node has bounds");
+        return (
+            clip::paste(canvas, fragment, (x + delta.0, y + delta.1), None),
+            guides,
+        );
     }
     // A node is not dropped on itself, on what it holds, or on what the layout
     // carries with it — its branch, under a tree.

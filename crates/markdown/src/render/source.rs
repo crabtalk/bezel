@@ -282,6 +282,7 @@ fn splice<T: Clone>(old: &[T], cut: Range<usize>, new: impl IntoIterator<Item = 
 /// Set at [`Typography::body`]'s size and leading, in [`Theme::font_body`].
 pub fn render_source(source: &SourceText, editing: Editing, cx: &mut App) -> AnyElement {
     let code: &str = &source.code;
+    let mut theme = editing.theme(cx);
     let Editing {
         selection,
         caret_on,
@@ -292,7 +293,6 @@ pub fn render_source(source: &SourceText, editing: Editing, cx: &mut App) -> Any
         scroll,
         ..
     } = editing;
-    let mut theme = Theme::of(cx).clone();
     theme.font_mono = theme.font_body.clone();
     let mut typography = typography.unwrap_or_else(|| cx.typography());
     typography.code = typography.body;

@@ -1,6 +1,8 @@
-use gpui::SharedString;
-
-use ui::popover::*;
+use gpui::{Anchor, SharedString, point, px, size};
+use ui::{
+    menu::MenuHeight,
+    popover::{placement::Placement, *},
+};
 
 #[test]
 fn trigger_press_note_distinguishes_dismiss_from_open() {
@@ -151,4 +153,58 @@ fn loadable_accessors() {
     assert_eq!(e.error(), Some("boom"));
     assert!(Loadable::<u32>::Loading.is_loading());
     assert_eq!(Loadable::<u32>::default(), Loadable::Idle);
+}
+
+#[test]
+fn menu_height_stays_compact_and_shrinks_to_available_space() {
+    let policy = MenuHeight::default();
+    assert_eq!(policy.rows, 12);
+    assert_eq!(policy.limit(px(800.)), policy.limit(px(2000.)));
+    assert_eq!(policy.limit(px(120.)), px(120.));
+    assert_eq!(policy.limit(px(-10.)), px(0.));
+    assert!(MenuHeight { rows: 6 }.limit(px(800.)) < policy.limit(px(800.)));
+}
+
+#[test]
+fn menus_flip_when_the_preferred_side_cannot_fit() {
+    let viewport = size(px(800.), px(600.));
+    let below = Placement::new(
+        Anchor::TopLeft,
+        point(px(100.), px(580.)),
+        px(300.),
+        viewport,
+        px(8.),
+        px(6.),
+    );
+    let origin = below.origin(size(px(200.), px(300.)));
+    assert_eq!(origin, point(px(100.), px(274.)));
+    assert!(below.available_height >= px(300.));
+
+    let above = Placement::new(
+        Anchor::BottomRight,
+        point(px(780.), px(20.)),
+        px(300.),
+        viewport,
+        px(8.),
+        px(6.),
+    );
+    let origin = above.origin(size(px(200.), px(300.)));
+    assert_eq!(origin, point(px(580.), px(26.)));
+    assert!(above.available_height >= px(300.));
+}
+
+#[test]
+fn menus_use_the_available_side_and_keep_window_margins() {
+    let placement = Placement::new(
+        Anchor::TopLeft,
+        point(px(390.), px(150.)),
+        px(500.),
+        size(px(400.), px(300.)),
+        px(8.),
+        px(6.),
+    );
+    assert_eq!(placement.available_height, px(136.));
+    let origin = placement.origin(size(px(200.), placement.available_height));
+    assert_eq!(origin, point(px(192.), px(156.)));
+    assert_eq!(origin.y + placement.available_height, px(292.));
 }

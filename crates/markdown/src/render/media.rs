@@ -180,15 +180,6 @@ pub(super) fn image(
         .into_any_element()
 }
 
-/// A bookmark, in Notion's proportions: a fixed-height row with the text on the
-/// left and an image panel of a fixed width on the right, all of it one click
-/// target. [`Form::Embed`] turns the row into a column and gives the image the
-/// card's full width instead.
-///
-/// The row is a fixed height with its footer pinned to the bottom, because a
-/// preview resolves *after* the card has painted — a blurb arriving into a box
-/// that grows would shove every block below it down the page. An embed's cover
-/// holds that height, so its text hugs.
 pub(super) fn bookmark(
     ix: usize,
     url: &str,
@@ -198,105 +189,168 @@ pub(super) fn bookmark(
     theme: &Theme,
     cx: &App,
 ) -> AnyElement {
-    let preview = crate::app::link::preview(crate::Link::new(url, base), cx).unwrap_or_default();
-    let host = SharedString::from(preview::host(url).to_string());
-    let label = preview.label.clone().unwrap_or_else(|| host.clone());
-    let title = preview
-        .title
-        .clone()
-        .unwrap_or_else(|| SharedString::from(url.to_string()));
-
-    // Owned, because the image panel's fallback outlives this call: gpui asks
-    // for the replacement element only once the fetch has failed.
-    let (icon, muted, wash) = (preview.icon.clone(), theme.text_muted, theme.element_hover);
-    let site = host.clone();
-    let mark = move |size: f32| {
-        let host = site.clone();
-        match icon.clone() {
-            Some(icon) => img(icon)
-                .size(px(size))
-                .rounded(px(size / 4.0))
-                .with_fallback(move || initial(&host, size, muted, wash))
-                .into_any_element(),
-            None => initial(&host, size, muted, wash),
-        }
-    };
-
-    let words = div()
-        .flex()
-        .flex_col()
-        .min_w_0()
-        .px(px(CARD_PADDING))
-        .py(px(CARD_PADDING - 2.0))
-        .child(
-            div()
-                .truncate()
-                .text_size(px(typography.body.size()))
-                .line_height(px(typography.body.line_height()))
-                .text_color(theme.text)
-                .child(title),
-        )
-        .children(preview.description.map(|blurb| {
-            div()
-                .line_clamp(2)
-                .text_size(px(typography.card.size()))
-                .line_height(px(typography.card.line_height()))
-                .text_color(theme.text_muted)
-                .child(blurb)
-        }))
-        .child(
-            div()
-                .mt_auto()
-                .pt(px(6.0))
-                .flex()
-                .items_center()
-                .gap(px(6.0))
-                .text_size(px(typography.card.size()))
-                .text_color(theme.text_muted)
-                .child(mark(CARD_ICON))
-                .child(div().truncate().child(label)),
-        );
-
-    let picture = corners(div(), form)
-        .bg(theme.surface)
-        .flex()
-        .items_center()
-        .justify_center()
-        .overflow_hidden()
-        .child(match preview.image {
-            Some(image) => corners(img(image).size_full().object_fit(ObjectFit::Cover), form)
-                .with_fallback(move || mark(CARD_COVER))
-                .into_any_element(),
-            None => mark(CARD_COVER),
-        });
-
-    let open = url.to_string();
-    let base = base.map(Path::to_path_buf);
-    let card = div()
-        .id(ElementId::named_usize("md-bookmark", ix))
-        .flex()
-        .w_full()
-        .overflow_hidden()
-        .rounded(px(Theme::button_radius()))
-        .border(px(CARD_BORDER))
-        .border_color(theme.border)
-        .bg(theme.surface_card)
-        .cursor(CursorStyle::PointingHand)
-        .hover(|el| el.bg(theme::over(theme.element_hover, theme.surface_card)))
-        .on_click(move |_, window, cx| {
-            crate::app::link::open(crate::Link::new(&open, base.as_deref()), window, cx)
-        });
-
-    if matches!(form, Form::Embed(_)) {
-        card.flex_col()
-            .child(picture.w_full().h(px(CARD_COVER_HEIGHT)))
-            .child(words.w_full())
-    } else {
-        card.h(px(CARD_HEIGHT))
-            .child(words.flex_1())
-            .child(picture.flex_none().w(px(CARD_IMAGE_WIDTH)).h_full())
+    Bookmark {
+        link: crate::Link::new(url, base),
+        form,
+        typography: *typography,
+        height: None,
     }
-    .into_any_element()
+    .element(ix, theme, cx)
+}
+
+pub struct Bookmark<'a> {
+    pub link: crate::Link<'a>,
+    pub form: Form,
+    pub typography: Typography,
+    /// A bounded card's total height in screen pixels.
+    pub height: Option<Pixels>,
+}
+
+impl Bookmark<'_> {
+    pub fn render(self, cx: &App) -> AnyElement {
+        self.element(0, Theme::of(cx), cx)
+    }
+
+    fn element(self, ix: usize, theme: &Theme, cx: &App) -> AnyElement {
+        let Self {
+            link,
+            form,
+            typography,
+            height,
+        } = self;
+        let crate::Link { url, base, .. } = link;
+        let scale = typography.body.size() / cx.typography().body.size();
+        let preview =
+            crate::app::link::preview(crate::Link::new(url, base), cx).unwrap_or_default();
+        let host = SharedString::from(preview::host(url).to_string());
+        let label = preview.label.clone().unwrap_or_else(|| host.clone());
+        let title = preview
+            .title
+            .clone()
+            .unwrap_or_else(|| SharedString::from(url.to_string()));
+
+        // Owned, because the image panel's fallback outlives this call: gpui asks
+        // for the replacement element only once the fetch has failed.
+        let (icon, muted, wash) = (preview.icon.clone(), theme.text_muted, theme.element_hover);
+        let site = host.clone();
+        let mark = move |size: f32| {
+            let host = site.clone();
+            match icon.clone() {
+                Some(icon) => img(icon)
+                    .size(px(size))
+                    .rounded(px(size / 4.0))
+                    .with_fallback(move || initial(&host, size, muted, wash))
+                    .into_any_element(),
+                None => initial(&host, size, muted, wash),
+            }
+        };
+
+        let padding = (CARD_PADDING - 2.0) * scale * 2.0 + CARD_BORDER * 2.0;
+        let footer = typography.card.line_height() + 6.0 * scale;
+        let title_lines = if height.is_some_and(|height| {
+            height.as_f32() < padding + footer + typography.body.line_height() * 2.0
+        }) {
+            1
+        } else {
+            2
+        };
+        let show_description = height.is_none_or(|height| {
+            height.as_f32()
+                >= padding
+                    + footer
+                    + typography.body.line_height() * title_lines as f32
+                    + typography.card.line_height() * 2.0
+        });
+        let words = div()
+            .flex()
+            .flex_col()
+            .min_w_0()
+            .px(px(CARD_PADDING * scale))
+            .py(px((CARD_PADDING - 2.0) * scale))
+            .child(
+                div()
+                    .when(height.is_none(), |el| el.truncate())
+                    .when(height.is_some(), |el| el.line_clamp(title_lines))
+                    .text_size(px(typography.body.size()))
+                    .line_height(px(typography.body.line_height()))
+                    .text_color(theme.text)
+                    .child(title),
+            )
+            .children(
+                preview
+                    .description
+                    .filter(|_| show_description)
+                    .map(|blurb| {
+                        div()
+                            .line_clamp(2)
+                            .text_size(px(typography.card.size()))
+                            .line_height(px(typography.card.line_height()))
+                            .text_color(theme.text_muted)
+                            .child(blurb)
+                    }),
+            )
+            .child(
+                div()
+                    .mt_auto()
+                    .flex_none()
+                    .pt(px(6.0 * scale))
+                    .flex()
+                    .items_center()
+                    .gap(px(6.0 * scale))
+                    .text_size(px(typography.card.size()))
+                    .text_color(theme.text_muted)
+                    .child(mark(CARD_ICON * scale))
+                    .child(div().truncate().child(label)),
+            );
+
+        let picture = corners(div(), form)
+            .bg(theme.surface)
+            .flex()
+            .items_center()
+            .justify_center()
+            .overflow_hidden()
+            .child(match preview.image {
+                Some(image) => corners(img(image).size_full().object_fit(ObjectFit::Cover), form)
+                    .with_fallback(move || mark(CARD_COVER * scale))
+                    .into_any_element(),
+                None => mark(CARD_COVER * scale),
+            });
+
+        let open = url.to_string();
+        let base = base.map(Path::to_path_buf);
+        let card = div()
+            .id(ElementId::named_usize("md-bookmark", ix))
+            .flex()
+            .w_full()
+            .overflow_hidden()
+            .rounded(px(Theme::button_radius()))
+            .border(px(CARD_BORDER))
+            .border_color(theme.border)
+            .bg(theme.surface_card)
+            .cursor(CursorStyle::PointingHand)
+            .hover(|el| el.bg(theme::over(theme.element_hover, theme.surface_card)))
+            .on_click(move |_, window, cx| {
+                crate::app::link::open(crate::Link::new(&open, base.as_deref()), window, cx)
+            });
+
+        if matches!(form, Form::Embed(_)) {
+            card.flex_col()
+                .when_some(height, |el, height| el.h(height))
+                .child(
+                    picture
+                        .w_full()
+                        .min_h_0()
+                        .when(height.is_some(), |el| el.flex_1())
+                        .when(height.is_none(), |el| el.h(px(CARD_COVER_HEIGHT * scale))),
+                )
+                .child(words.w_full().flex_none())
+        } else {
+            card.h(height.unwrap_or_else(|| px(CARD_HEIGHT * scale)))
+                .child(words.flex_1())
+                .child(picture.flex_none().w(px(CARD_IMAGE_WIDTH * scale)).h_full())
+        }
+        .into_any_element()
+    }
 }
 
 /// The card's corners, on the panel that reaches them: a content mask is a

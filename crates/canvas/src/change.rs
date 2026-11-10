@@ -14,6 +14,9 @@ use crate::model::{Canvas, Edge, Node};
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Change {
+    OrderNodes {
+        ids: Vec<String>,
+    },
     /// At `index` among the nodes, on top when `None`.
     AddNode {
         node: Node,
@@ -92,6 +95,20 @@ fn unroute(canvas: &mut Canvas, ids: &[&str]) -> Vec<Change> {
 /// Apply `change`, answering the changes that undo it.
 pub fn apply(canvas: &mut Canvas, change: &Change) -> Vec<Change> {
     match change {
+        Change::OrderNodes { ids } => {
+            let old: Vec<String> = canvas.nodes.iter().map(|node| node.id.clone()).collect();
+            canvas.nodes.sort_by_key(|node| {
+                ids.iter()
+                    .position(|id| *id == node.id)
+                    .unwrap_or(usize::MAX)
+            });
+            if canvas.nodes.iter().map(|node| &node.id).eq(old.iter()) {
+                Vec::new()
+            } else {
+                vec![Change::OrderNodes { ids: old }]
+            }
+        }
+
         Change::AddNode { node, index } => {
             let len = canvas.nodes.len();
             canvas

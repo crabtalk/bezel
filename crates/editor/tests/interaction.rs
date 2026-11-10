@@ -12,15 +12,13 @@
 //! all real. Column *values* here are therefore arbitrary; their relationships
 //! are not, and the relationships are what broke.
 
-use editor::AppExt as _;
-use std::sync::Mutex;
-
-use editor::{Editor, ImageStore, Source};
+use editor::{AppExt as _, Editor, ImageStore, Source};
 use gpui::{
     App, ClipboardEntry, ClipboardItem, ClipboardString, Context, Entity, EntityId, ExternalPaths,
     Focusable, Render, ScrollHandle, TestAppContext, VisualTestContext, Window, WindowHandle,
     point, prelude::*, px, size,
 };
+use std::sync::Mutex;
 
 const SOURCE: &str = "# Title\n\nA paragraph long enough that it has to wrap more than once inside the pane it is painted into, which is what makes it worth testing.\n\n- first\n- second\n\n> a quote";
 
@@ -2160,4 +2158,26 @@ fn a_shift_click_on_a_link_leaves_the_selection(cx: &mut TestAppContext) {
     assert_eq!(after, before);
     assert!(after.is_collapsed());
     assert_eq!(cx.cx.opened_url().as_deref(), Some("https://example.com"));
+}
+
+#[gpui::test]
+fn disabling_block_handles_removes_the_text_gutter(cx: &mut TestAppContext) {
+    for handle in [true, false] {
+        let (editor, mut visual) = open_built(
+            "Plain paragraph",
+            |editor| {
+                editor
+                    .with_chrome(editor::Chrome {
+                        handle,
+                        ..Default::default()
+                    })
+                    .with_text_size(16.)
+            },
+            cx,
+        );
+        let (origin, _) = caret(&editor, &mut visual);
+        let inset = visual.update(|_, cx| cx.editor_layout().text_inset);
+        assert_eq!(origin.x, px(if handle { inset } else { 0. }));
+        assert_eq!(origin.y, px(0.));
+    }
 }

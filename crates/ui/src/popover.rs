@@ -11,22 +11,8 @@
 //! classification) lives in free functions with unit tests; the elements only
 //! feed them measurements/events.
 
-mod anchor;
-mod modal;
-mod nav;
-mod parts;
-pub mod submenu;
-
-pub use anchor::*;
-pub use modal::*;
-pub use nav::*;
-pub use parts::*;
-pub use submenu::Chain;
-
 use crate::{icons, stack};
-use gpui::{
-    Anchor, AnyElement, ElementId, IntoElement, Pixels, Point, SharedString, div, prelude::*, px,
-};
+use gpui::{AnyElement, ElementId, IntoElement, Pixels, SharedString, div, prelude::*, px};
 use icons::Icon;
 use motion::{self as motion, AnimationExt as _, Fade, PULSE, Painter};
 use theme::{TextStyle, Theme, Typeset, ink};
@@ -37,6 +23,19 @@ const MODAL_LAYER: usize = 2;
 /// The deferred priority a menu and its submenus paint at: over a modal, so a
 /// menu opened inside one shows.
 const MENU_LAYER: usize = 3;
+
+mod anchor;
+mod modal;
+mod nav;
+mod parts;
+pub mod placement;
+pub mod submenu;
+
+pub use anchor::*;
+pub use modal::*;
+pub use nav::*;
+pub use parts::*;
+pub use submenu::Chain;
 
 // ---------------------------------------------------------------------------
 // Loadable — async slot state shared by pickers/settings pages

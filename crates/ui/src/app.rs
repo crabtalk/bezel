@@ -54,6 +54,11 @@ pub trait AppExt {
     /// and refreshes windows. Defaults to 12px.
     fn set_menu_indent(&mut self, indent: crate::menu::MenuIndent);
 
+    /// The compact menu height, in rows. Defaults to 12.
+    fn menu_height(&self) -> crate::menu::MenuHeight;
+
+    fn set_menu_height(&mut self, height: crate::menu::MenuHeight);
+
     /// Reads the menu panel widths.
     fn menu_width(&self) -> crate::menu::MenuWidth;
 
@@ -126,6 +131,14 @@ impl AppExt for App {
 
     fn set_menu_indent(&mut self, indent: crate::menu::MenuIndent) {
         crate::menu::set_indent(indent, self)
+    }
+
+    fn menu_height(&self) -> crate::menu::MenuHeight {
+        crate::menu::height(self)
+    }
+
+    fn set_menu_height(&mut self, height: crate::menu::MenuHeight) {
+        crate::menu::set_height(height, self)
     }
 
     fn menu_width(&self) -> crate::menu::MenuWidth {

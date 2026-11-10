@@ -54,3 +54,16 @@ fn minted_ids_are_free() {
         canvas.nodes.last_mut().unwrap().id = id;
     }
 }
+
+#[test]
+fn text_sizes_and_annotation_mode_round_trip_without_changing_legacy_cards() {
+    let canvas = Canvas::parse(r#"{"nodes":[{"id":"legacy","type":"text","x":0,"y":0,"width":200,"height":100},{"id":"label","type":"text","x":200,"y":0,"width":300,"height":60,"textMode":"label","fontSize":32}],"edges":[{"id":"edge","fromNode":"legacy","toNode":"label","fontSize":24}]}"#).unwrap();
+    assert!(!canvas.nodes[0].is_label());
+    assert_eq!(canvas.nodes[0].text_size(), 16.);
+    assert!(canvas.nodes[1].is_label());
+    assert_eq!(canvas.nodes[1].text_size(), 32.);
+    assert_eq!(canvas.edges[0].text_size(), 24.);
+    let again = Canvas::parse(&canvas.to_json()).unwrap();
+    assert_eq!(again.nodes, canvas.nodes);
+    assert_eq!(again.edges, canvas.edges);
+}

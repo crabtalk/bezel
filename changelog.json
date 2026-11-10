@@ -1,5 +1,32 @@
 [
   {
+    "version": "0.2.25",
+    "date": "2026-11-10",
+    "summary": "Shared canvas documents, richer editing and image export, consistent card presentation, and compact menus.",
+    "new": [
+      "`canvas::Document` shares canvas content and undo history across views and supports reloading from storage.",
+      "Canvas editing adds grouping, alignment and distribution, clipboard commands, read-only mode, and host events for context menus, file drops and connection requests.",
+      "`CanvasView::export_image` renders the full canvas or current viewport at a chosen scale.",
+      "Canvas nodes and connection labels support authored text sizes; text nodes support plain labels or document cards.",
+      "`ui::tiled_image::TiledImage` repeats images at their intrinsic size; canvas groups support tiled backgrounds.",
+      "`ui::menu::MenuHeight` configures the menu height limit, defaulting to 12 rows. `markdown::render::Bookmark` supports bounded preview cards."
+    ],
+    "changed": [
+      "Built on the published bezel-gpui 0.3.22 packages, including offscreen image rendering.",
+      "`bezel-canvas` exposes its JSON Canvas model without GPUI when default features are disabled.",
+      "Breaking: canvas `Look::zoom` moves to `Look::card.zoom`; the shared `Card` also carries resolved bounds, typography, sizing and measurement. `Style::far_zoom` and `Overlays::placeholder` are removed.",
+      "Breaking: canvas `Node` gains `font_size` and `text_mode`; `Edge` gains `font_size`. Markdown `Editing` gains `text_color`.",
+      "Canvas content scales with zoom without switching to summaries or hiding connection labels. Fixed cards share header and scrolling layout."
+    ],
+    "fixed": [
+      "Canvas dragging follows the pointer smoothly before snapping; resize cursors stay stable, and connections no longer drive node growth.",
+      "Plain-label colors apply in both display and edit modes, and authored text sizes remain consistent while editing.",
+      "Bounded bookmark previews keep their title and footer inside the card, with the image using the remaining space.",
+      "Menus use a compact height cap, flip around their anchor when needed, and scroll within the available space.",
+      "Table cell content fills the available width."
+    ]
+  },
+  {
     "version": "0.2.24",
     "date": "2026-11-02",
     "summary": "Resizable split panes, secondary buttons, monospace fields, and responsive menu reopening.",

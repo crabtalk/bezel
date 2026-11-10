@@ -13,7 +13,7 @@
 use canvas::{
     Canvas, CanvasView, Change, Kinds, Snap, change,
     drag::{self, DragHandler},
-    kind::{self, Chrome, Field, Kind, Look},
+    kind::{self, Content, Field, Kind, Look},
     layout::{self, Layout},
     mindmap,
     model::Node,
@@ -76,9 +76,9 @@ fn set_title(node: &mut Node, title: String) {
     node.extra.insert("title".into(), title.into());
 }
 
-fn session(node: &Node, look: Look, _: &mut Window, cx: &mut App) -> AnyElement {
+fn session(node: &Node, look: Look, window: &mut Window, cx: &mut App) -> AnyElement {
     let theme = Theme::of(cx);
-    let zoom = look.zoom;
+    let zoom = look.card.zoom;
     let turns = node
         .extra
         .get("turns")
@@ -91,7 +91,7 @@ fn session(node: &Node, look: Look, _: &mut Window, cx: &mut App) -> AnyElement 
             .child(title(node))
             .into_any_element()
     });
-    kind::chrome(Chrome::Card, node, zoom, cx)
+    let content = div()
         .child(title)
         .child(
             div()
@@ -99,7 +99,9 @@ fn session(node: &Node, look: Look, _: &mut Window, cx: &mut App) -> AnyElement 
                 .text_color(theme.text_muted)
                 .child(format!("Session · {turns} turns")),
         )
-        .into_any_element()
+        .into_any_element();
+    look.card
+        .render(node, None, Content::Flow(content), window, cx)
 }
 
 /// What dropping a node does, as the toolbar offers it.

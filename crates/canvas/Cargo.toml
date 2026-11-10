@@ -19,16 +19,149 @@ name = "canvas"
 [lints]
 workspace = true
 
+[features]
+default = ["gpui"]
+gpui = ["dep:editor", "dep:markdown", "dep:theme", "dep:ui", "dep:motion", "dep:gpui", "dep:web-time", "dep:image"]
+
 [dependencies]
-editor.workspace = true
-markdown.workspace = true
-theme.workspace = true
-ui.workspace = true
-motion.workspace = true
-gpui.workspace = true
-web-time.workspace = true
+image = { workspace = true, optional = true }
+editor = { workspace = true, optional = true }
+markdown = { workspace = true, optional = true }
+theme = { workspace = true, optional = true }
+ui = { workspace = true, optional = true }
+motion = { workspace = true, optional = true }
+gpui = { workspace = true, optional = true }
+web-time = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
 gpui = { workspace = true, features = ["test-support"] }
+
+[[test]]
+name = "alignment"
+required-features = ["gpui"]
+
+[[test]]
+name = "arrange"
+required-features = ["gpui"]
+
+[[test]]
+name = "capabilities"
+required-features = ["gpui"]
+
+[[test]]
+name = "contain"
+required-features = ["gpui"]
+
+[[test]]
+name = "custom"
+required-features = ["gpui"]
+
+[[test]]
+name = "document"
+required-features = ["gpui"]
+
+[[test]]
+name = "drag"
+required-features = ["gpui"]
+
+[[test]]
+name = "drops"
+required-features = ["gpui"]
+
+[[test]]
+name = "edge_kinds"
+required-features = ["gpui"]
+
+[[test]]
+name = "edges"
+required-features = ["gpui"]
+
+[[test]]
+name = "editor"
+required-features = ["gpui"]
+
+[[test]]
+name = "gestures"
+required-features = ["gpui"]
+
+[[test]]
+name = "groups"
+required-features = ["gpui"]
+
+[[test]]
+name = "handles"
+required-features = ["gpui"]
+
+[[test]]
+name = "history"
+required-features = ["gpui"]
+
+[[test]]
+name = "host"
+required-features = ["gpui"]
+
+[[test]]
+name = "kinds"
+required-features = ["gpui"]
+
+[[test]]
+name = "mindmap"
+required-features = ["gpui"]
+
+[[test]]
+name = "navigate"
+required-features = ["gpui"]
+
+[[test]]
+name = "options"
+required-features = ["gpui"]
+
+[[test]]
+name = "pin"
+required-features = ["gpui"]
+
+[[test]]
+name = "preview"
+required-features = ["gpui"]
+
+[[test]]
+name = "reflow"
+required-features = ["gpui"]
+
+[[test]]
+name = "resize"
+required-features = ["gpui"]
+
+[[test]]
+name = "routes"
+required-features = ["gpui"]
+
+[[test]]
+name = "scale"
+required-features = ["gpui"]
+
+[[test]]
+name = "sizing"
+required-features = ["gpui"]
+
+[[test]]
+name = "tools"
+required-features = ["gpui"]
+
+[[test]]
+name = "view"
+required-features = ["gpui"]
+
+[[test]]
+name = "commands"
+required-features = ["gpui"]
+
+[[test]]
+name = "export"
+required-features = ["gpui"]
+
+[[test]]
+name = "presentation"
+required-features = ["gpui"]

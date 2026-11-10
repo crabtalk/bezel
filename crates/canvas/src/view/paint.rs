@@ -1,15 +1,17 @@
 //! Node positions, node and label painting, and the edge layer.
 
-use super::*;
+use crate::view::*;
 
 impl CanvasView {
     /// Where each node paints this frame. A node the document moved glides
-    /// there from where it was painted; the held node follows the pointer, and
-    /// a node never painted yet starts where it is.
+    /// there from where it was painted. Active gestures and newly painted
+    /// nodes use their preview positions directly.
     pub(super) fn positions(&mut self, reduced: bool, window: &mut Window) -> Positions {
-        let held = self.held().map(str::to_owned);
-        let fixed =
-            |id: &str, shown: &Positions| held.as_deref() == Some(id) || !shown.contains_key(id);
+        let direct = self.holding.is_some();
+        if direct {
+            self.glide = None;
+        }
+        let fixed = |id: &str, shown: &Positions| direct || !shown.contains_key(id);
         let canvas = self.editor.painted();
         let to: Positions = canvas
             .nodes
@@ -82,25 +84,35 @@ impl CanvasView {
         let editing = self.editing.as_ref().filter(|s| !s.edge && s.id == node.id);
         // A node being typed in keeps the editor's own cursor.
         let draggable = editing.is_none();
-        // Far out a node is a plain box, its content too small to read.
-        let far = z < self.style.far_zoom && draggable;
+        let selected = picked.contains(&node.id.as_str());
         let mark = Mark {
             width: w,
             height: h,
             zoom: z,
             style: self.style,
         };
-        let content = if far {
-            (self.overlays.placeholder)(&mark, window, cx)
-        } else {
-            let look = Look {
+        let heights = self.content_heights.clone();
+        let (measured_node, width) = (node.id.clone(), node.width);
+        let look = Look {
+            card: Card {
                 zoom: z,
-                editor: editing.map(|session| session.input.clone().into_any_element()),
-            };
-            (kind.render)(node, look, window, cx)
+                size: size(px(w), px(h)),
+                typography: presentation::text_typography(cx, node.text_size(), z),
+                selected,
+                sizing: self.editor.kinds().sizing(node),
+                measure: Measure {
+                    zoom: z,
+                    report: Rc::new(move |height| {
+                        heights
+                            .borrow_mut()
+                            .insert(measured_node.clone(), (width, height));
+                    }),
+                },
+            },
+            editor: editing.map(|session| session.input.clone().into_any_element()),
         };
-        let grows = kind.rules.sizing == Sizing::Grows && !far;
-        let selected = picked.contains(&node.id.as_str());
+        let content = (kind.render)(node, look, window, cx);
+        let grows = self.editor.kinds().sizing(node) == Sizing::Grows;
         // A drop, or a connector let go here, would connect to this node.
         let target = connecting == Some(node.id.as_str())
             || self.held() != Some(node.id.as_str())
@@ -145,21 +157,31 @@ impl CanvasView {
                     window,
                     cx,
                 );
-                let cursor = match declared.role {
-                    Role::Resize => CursorStyle::ResizeUpLeftDownRight,
-                    _ => CursorStyle::Crosshair,
-                };
+                let axes = declared.spot.resize_axes();
+                let cursor = declared.cursor();
                 let owner = node.id.clone();
+                let (handle_w, handle_h) = if declared.role == Role::Resize {
+                    match axes {
+                        Some((0, _)) => (w, size),
+                        Some((_, 0)) => (size, h),
+                        _ => (size, size),
+                    }
+                } else {
+                    (size, size)
+                };
+                let border_handle =
+                    declared.role == Role::Resize && axes.is_some_and(|(x, y)| x == 0 || y == 0);
                 div()
                     .id(ElementId::Name(
                         format!("{}-{}", node.id, declared.id).into(),
                     ))
                     .absolute()
-                    .left(px(hx - size / 2.0))
-                    .top(px(hy - size / 2.0))
-                    .size(px(size))
+                    .left(px(hx - handle_w / 2.0))
+                    .top(px(hy - handle_h / 2.0))
+                    .w(px(handle_w))
+                    .h(px(handle_h))
                     .cursor(cursor)
-                    .child(look)
+                    .when(!border_handle, |element| element.child(look))
                     .on_mouse_down(
                         MouseButton::Left,
                         cx.listener(move |this, event: &MouseDownEvent, window, cx| {
@@ -186,7 +208,11 @@ impl CanvasView {
             .flex_col()
             .map(|d| {
                 if grows {
-                    let least = kind::min_height(node).unwrap_or(mindmap::NODE_HEIGHT);
+                    let least = if node.is_label() {
+                        1
+                    } else {
+                        kind::min_height(node).unwrap_or(mindmap::NODE_HEIGHT)
+                    };
                     d.min_h(px(least as f32 * z))
                 } else {
                     d.h(px(h))
@@ -249,19 +275,22 @@ impl CanvasView {
                     .as_ref()
                     .map(|field| (field.read)(edge))
                     .filter(|label| !label.is_empty());
-                if editing.is_none() && (text.is_none() || z < self.style.far_zoom) {
+                let label_scale = edge.text_size() / model::TEXT_SIZE;
+                if editing.is_none() && text.is_none() {
                     return None;
                 }
                 let middle = self.path_of(&nodes, shown, edge)?.middle();
                 let (x, y) = (pan.x + middle.x * z, pan.y + middle.y * z);
+                let typography = presentation::text_typography(cx, edge.text_size(), z);
                 let body = match editing {
                     Some(session) => div()
-                        .min_w(px(self.style.label.0 / 2.0 * z))
+                        .min_w(px(self.style.label.0 / 2.0 * z * label_scale))
                         .child(session.input.clone())
                         .into_any_element(),
                     None => div()
-                        .text_style_at(TextStyle::Callout, z)
-                        .text_color(theme.text_muted)
+                        .text_size(px(typography.body.size()))
+                        .line_height(px(typography.body.line_height()))
+                        .text_color(theme.text)
                         .child(text.unwrap_or_default())
                         .into_any_element(),
                 };
@@ -285,10 +314,10 @@ impl CanvasView {
                 Some(
                     div()
                         .absolute()
-                        .left(px(x - self.style.label.0 * z / 2.0))
-                        .top(px(y - self.style.label.1 * z / 2.0))
-                        .w(px(self.style.label.0 * z))
-                        .h(px(self.style.label.1 * z))
+                        .left(px(x - self.style.label.0 * z * label_scale / 2.0))
+                        .top(px(y - self.style.label.1 * z * label_scale / 2.0))
+                        .w(px(self.style.label.0 * z * label_scale))
+                        .h(px(self.style.label.1 * z * label_scale))
                         .flex()
                         .items_center()
                         .justify_center()
@@ -307,7 +336,7 @@ impl CanvasView {
     ) -> impl IntoElement + use<> {
         let (z, pan) = (self.editor.zoom(), self.editor.pan());
         let grabbing = self.holding.is_some();
-        let holding = self.held().is_some();
+        let cursor = self.holding.and_then(|ix| self.tools[ix].cursor());
         let pending = &self.editor.pending;
         // Connectors a drop would cut, and the ones it would make.
         let cut: HashSet<&str> = pending
@@ -387,8 +416,19 @@ impl CanvasView {
                 if viewport.replace(Some(bounds)).map(|b| b.size) != Some(bounds.size) {
                     window.refresh();
                 }
+                window.insert_hitbox(bounds, HitboxBehavior::Normal)
             },
-            move |bounds, _, window, cx| {
+            move |bounds, hitbox, window, cx| {
+                let zoom_view = view.clone();
+                let hitbox = hitbox.clone();
+                window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+                    if phase == DispatchPhase::Capture
+                        && hitbox.should_handle_scroll(window)
+                        && (event.modifiers.platform || event.modifiers.control)
+                    {
+                        let _ = zoom_view.update(cx, |this, cx| this.wheel(event, window, cx));
+                    }
+                });
                 let origin = point(bounds.origin.x.as_f32(), bounds.origin.y.as_f32());
                 let screen =
                     |p: Point<f32>| point(origin.x + pan.x + p.x * z, origin.y + pan.y + p.y * z);
@@ -415,10 +455,8 @@ impl CanvasView {
                     );
                 }
                 guides(&frame, &caught, window, cx);
-                // Window-wide, so the hand stays closed wherever the pointer
-                // carries the node.
-                if holding {
-                    window.set_window_cursor_style(CursorStyle::ClosedHand);
+                if let Some(cursor) = cursor {
+                    window.set_window_cursor_style(cursor);
                 }
                 // A held press follows the pointer past the view's edge, so it
                 // listens to the window rather than to this element.
@@ -432,8 +470,10 @@ impl CanvasView {
                     window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
                         let held = matches!(event.button, MouseButton::Left | MouseButton::Middle);
                         if phase == DispatchPhase::Bubble && held {
-                            let _ =
-                                view.update(cx, |this, cx| this.lift(event.position, window, cx));
+                            let _ = view.update(cx, |this, cx| {
+                                this.modifiers = event.modifiers;
+                                this.lift(event.position, window, cx)
+                            });
                         }
                     });
                 }

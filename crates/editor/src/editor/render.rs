@@ -276,9 +276,12 @@ impl Render for Editor {
             .on_action(cx.listener(Self::soft_break))
             .on_action(cx.listener(Self::insert_paragraph))
             .on_action(cx.listener(Self::indent))
-            .on_action(cx.listener(Self::increase_text_size))
-            .on_action(cx.listener(Self::decrease_text_size))
-            .on_action(cx.listener(Self::reset_text_size))
+            .when(self.typography.is_none(), |element| {
+                element
+                    .on_action(cx.listener(Self::increase_text_size))
+                    .on_action(cx.listener(Self::decrease_text_size))
+                    .on_action(cx.listener(Self::reset_text_size))
+            })
             .on_action(cx.listener(Self::outdent))
             .on_action(cx.listener(Self::dismiss))
             .on_action(cx.listener(Self::select_all))
@@ -417,15 +420,14 @@ impl Render for Editor {
                     .size_0(),
                 )
             })
-            // The document is inset by the gutter so the handle has somewhere
-            // to sit *inside* the editor. Outside it the handle is clipped by
-            // any scrolling ancestor, and a pointer over it never reaches
-            // `on_mouse_move`, which fires only while this element is the one
-            // under the pointer.
             .child(
                 div()
                     .w_full()
-                    .pl(gpui::px(layout.text_inset))
+                    .pl(gpui::px(if self.chrome.handle {
+                        layout.text_inset
+                    } else {
+                        0.
+                    }))
                     .child(match self.mode {
                         // The source is one text, so it paints as one text —
                         // the same caret, the same clicks, no block chrome to
@@ -443,10 +445,8 @@ impl Render for Editor {
                                     &[]
                                 },
                                 scroll: self.scroll.as_ref(),
-                                typography: Some(cx.typography().scaled(
-                                    text_size::resolve(self.text_size, cx)
-                                        / theme::base_text_size(),
-                                )),
+                                typography: Some(self.resolved_typography(cx)),
+                                text_color: self.text_color,
                                 ..Default::default()
                             },
                             cx,
@@ -463,13 +463,8 @@ impl Render for Editor {
                                 // painted — an editor that could hide it would be
                                 // hiding a place you can already be typing.
                                 caption: markdown::Caption::Shown,
-                                // The size is absolute, so the factor the ladder
-                                // is already scaled by comes back out of it —
-                                // otherwise the app's size and this one multiply.
-                                typography: Some(cx.typography().scaled(
-                                    text_size::resolve(self.text_size, cx)
-                                        / theme::base_text_size(),
-                                )),
+                                typography: Some(self.resolved_typography(cx)),
+                                text_color: self.text_color,
                                 // The editor's own press hit-tests
                                 // `checkbox_bounds`, which is what keeps a
                                 // toggle in the undo history.

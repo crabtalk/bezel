@@ -21,6 +21,9 @@ use crate::snap::{Axis, Guide};
 /// What the canvas is tuned by.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Options {
+    pub read_only: bool,
+    pub choose_connection_node: bool,
+    pub external_drops: bool,
     pub min_zoom: f32,
     pub max_zoom: f32,
     /// One chord's zoom.
@@ -55,6 +58,9 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            read_only: false,
+            choose_connection_node: false,
+            external_drops: false,
             min_zoom: 0.25,
             max_zoom: 4.0,
             zoom_step: 1.25,
@@ -90,8 +96,6 @@ pub struct Style {
     pub target_wash: f32,
     /// The accent wash inside a marquee.
     pub marquee_wash: f32,
-    /// Below this zoom a node paints as its box, its content unread.
-    pub far_zoom: f32,
     /// The closest grid dots come, in screen pixels; a denser grid skips rows.
     pub dot_spacing: f32,
     /// A grid dot, in screen pixels.
@@ -108,7 +112,6 @@ impl Default for Style {
             cut: 0.25,
             target_wash: 0.12,
             marquee_wash: 0.08,
-            far_zoom: 0.4,
             dot_spacing: 12.0,
             dot: 1.5,
         }
@@ -167,8 +170,6 @@ pub struct Overlays {
     pub drop: Painter,
     /// A handle its kind declared.
     pub handle: Painter,
-    /// A node too far out for its content to be read.
-    pub placeholder: Painter,
     /// Behind every node, when the snap settles on a grid.
     pub grid: Grid,
     /// The lines a drag caught on.
@@ -181,7 +182,6 @@ impl Overlays {
             ring: Rc::new(ring),
             drop: Rc::new(drop_wash),
             handle: Rc::new(handle),
-            placeholder: Rc::new(placeholder),
             grid: Rc::new(grid),
             guides: Rc::new(guides),
         }
@@ -282,16 +282,4 @@ pub fn guides(frame: &Frame, caught: &[Guide], window: &mut Window, cx: &mut App
 
 fn pt(at: Point<f32>) -> Point<Pixels> {
     point(px(at.x), px(at.y))
-}
-
-/// A plain box, for a node too small to read.
-pub fn placeholder(mark: &Mark, _: &mut Window, cx: &mut App) -> AnyElement {
-    let theme = Theme::of(cx);
-    div()
-        .size_full()
-        .rounded(px(RADIUS * mark.zoom))
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.surface_card)
-        .into_any_element()
 }

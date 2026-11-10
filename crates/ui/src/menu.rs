@@ -33,6 +33,7 @@ const SEGMENT_GLYPH: f32 = 16.0;
 
 /// How many rows a searchable submenu shows before it scrolls.
 const SEARCH_ROWS: f32 = 10.0;
+const DEFAULT_ROWS: usize = 12;
 
 actions!(
     bezel_menu,
@@ -65,6 +66,35 @@ pub(crate) fn indent(cx: &App) -> MenuIndent {
 /// Changes the step and repaints open windows.
 pub(crate) fn set_indent(indent: MenuIndent, cx: &mut App) {
     cx.set_global(indent);
+    cx.refresh_windows();
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MenuHeight {
+    pub rows: usize,
+}
+
+impl Default for MenuHeight {
+    fn default() -> Self {
+        Self { rows: DEFAULT_ROWS }
+    }
+}
+
+impl MenuHeight {
+    pub fn limit(self, available: Pixels) -> Pixels {
+        px(self.rows.max(1) as f32 * popover::menu_row_height() + 2. * popover::MENU_PAD)
+            .min(available.max(Pixels::ZERO))
+    }
+}
+
+impl Global for MenuHeight {}
+
+pub(crate) fn height(cx: &App) -> MenuHeight {
+    cx.try_global::<MenuHeight>().copied().unwrap_or_default()
+}
+
+pub(crate) fn set_height(height: MenuHeight, cx: &mut App) {
+    cx.set_global(height);
     cx.refresh_windows();
 }
 
@@ -766,9 +796,8 @@ pub fn edit_items(
 /// [`popover::menu_at`], …). Childed bare, it paints in flow, under every
 /// later sibling. Submenu panels are anchored here.
 ///
-/// Every panel is capped at the window's height less the snap margin either
-/// side, and scrolls its rows past that. A submenu hangs off its row wherever
-/// the row has scrolled to, outside the parent's clip.
+/// Panels scroll past [`MenuHeight`]'s limit. A submenu hangs off its row
+/// wherever the row has scrolled to, outside the parent's clip.
 ///
 /// The pointer moves the cursor rather than lighting a row of its own, so a
 /// submenu can only ever hang off the row that is live. Everything the pointer
@@ -882,7 +911,7 @@ impl<V: 'static> Tree<V> {
             }
         }
         let inset = px(popover::SNAP) + window.client_inset().unwrap_or(Pixels::ZERO);
-        let cap = window.viewport_size().height - inset * 2.0;
+        let cap = height(cx).limit(window.viewport_size().height - inset * 2.0);
         // A menu where nothing carries a glyph keeps no room for one — a bar's
         // menus would otherwise open with an empty column down their left.
         let gutter = items.iter().any(Item::has_icon);
@@ -1028,6 +1057,7 @@ impl<V: 'static> Tree<V> {
             .p_0()
             .flex()
             .flex_col()
+            .min_h_0()
             .max_h(cap)
             .map(|card| match (described, width.described) {
                 (true, Described::Fixed(wide)) => card.w(wide),

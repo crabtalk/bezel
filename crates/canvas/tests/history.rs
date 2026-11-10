@@ -217,6 +217,7 @@ fn shift_clicks_gather_a_selection_that_goes_together(cx: &mut TestAppContext) {
     click(a, Modifiers::none(), &mut cx);
     click(b, shift(), &mut cx);
     assert_eq!(selection(&view, &mut cx), ["a", "b"]);
+    let before_delete = doc(&view, &mut cx);
 
     press("backspace", &mut cx);
     let ids: Vec<String> = doc(&view, &mut cx)
@@ -230,10 +231,7 @@ fn shift_clicks_gather_a_selection_that_goes_together(cx: &mut TestAppContext) {
     let places = |canvas: Canvas| -> Vec<(String, i64, i64)> {
         canvas.nodes.into_iter().map(|n| (n.id, n.x, n.y)).collect()
     };
-    assert_eq!(
-        places(doc(&view, &mut cx)),
-        places(Canvas::parse(SCATTER).unwrap())
-    );
+    assert_eq!(places(doc(&view, &mut cx)), places(before_delete));
     press("cmd-a", &mut cx);
     assert_eq!(selection(&view, &mut cx).len(), 3);
     press("escape", &mut cx);

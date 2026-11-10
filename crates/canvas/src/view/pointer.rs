@@ -12,12 +12,38 @@ impl CanvasView {
         }
     }
 
+    /// The content under a window position, including nodes between layout frames.
+    pub fn item_at(&self, position: Point<Pixels>) -> Option<Item> {
+        let at = self.canvas_point(position);
+        let canvas = self.editor.painted();
+        let containment = self.editor.painted_containment();
+        let node = canvas
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| {
+                let position = self
+                    .shown
+                    .get(&node.id)
+                    .copied()
+                    .unwrap_or((node.x as f32, node.y as f32));
+                at.x >= position.0
+                    && at.x <= position.0 + node.width as f32
+                    && at.y >= position.1
+                    && at.y <= position.1 + node.height as f32
+            })
+            .max_by_key(|(index, node)| (containment.depth(&node.id), *index));
+        node.map(|(_, node)| Item::Node(node.id.clone()))
+            .or_else(|| self.edge_at(position).map(Item::Edge))
+    }
+
     pub(super) fn pointer(&self, screen: Point<Pixels>, hit: Hit) -> Pointer {
         Pointer {
             screen,
             at: self.canvas_point(screen),
             button: MouseButton::Left,
-            modifiers: Modifiers::default(),
+            modifiers: self.modifiers,
+            space: self.space,
             clicks: 1,
             hit,
         }
@@ -41,6 +67,7 @@ impl CanvasView {
         if typing {
             return;
         }
+        self.modifiers = event.modifiers;
         self.stop_editing(window, cx);
         window.focus(&self.focus, cx);
         let pointer = Pointer {
@@ -69,6 +96,9 @@ impl CanvasView {
     pub(super) fn grant(&mut self, wish: Wish, window: &mut Window, cx: &mut Context<Self>) {
         match wish {
             Wish::Nothing => {}
+            Wish::ChooseConnection { from, handle, at } => {
+                cx.emit(CanvasEvent::ConnectionRequested { from, handle, at });
+            }
             Wish::Enter(id) => {
                 let node = self.editor.canvas().node(&id).cloned();
                 let open = node
@@ -270,6 +300,7 @@ impl CanvasView {
             self.lift(event.position, window, cx);
             return;
         }
+        self.modifiers = event.modifiers;
         self.aim = Some(event.position);
         self.feed(event.position, cx);
     }
