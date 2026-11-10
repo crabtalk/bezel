@@ -202,9 +202,13 @@ pub fn row(
         row.hover(|s| s.bg(theme.element_hover))
     };
     row.children(columns.iter().zip(cells).map(|(column, content)| {
-        cell_frame(column)
-            .py(px(9.0))
-            .child(div().min_w_0().child(content))
+        cell_frame(column).py(px(9.0)).child(
+            div()
+                .min_w_0()
+                .w_full()
+                .when(column.align == Align::End, |cell| cell.text_right())
+                .child(content),
+        )
     }))
 }
 
