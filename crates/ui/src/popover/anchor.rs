@@ -1,6 +1,12 @@
 //! Menu layers anchored to a trigger, and their enter and exit motion.
 
-use super::*;
+use crate::popover::{self, Chain, placement::Placement, submenu};
+use gpui::{
+    Anchor, AnyElement, App, AvailableSpace, Bounds, Display, Element, FlexDirection,
+    GlobalElementId, InspectorElementId, IntoElement, LayoutId, Pixels, Point, Position,
+    SharedString, Style, Window, div, point, prelude::*, px, relative, size,
+};
+use theme::Theme;
 
 /// Pin a floating layer's origin to the trigger's top-left. The anchored
 /// element is absolutely positioned; without explicit insets its *static*
@@ -17,7 +23,7 @@ pub(super) fn pinned_layer(layer: AnyElement) -> AnyElement {
         .into_any_element()
 }
 
-/// Eased exit progress (0..=1) for a [`Popup`] closing instant, computed from
+/// Eased exit progress (0..=1) for a [`popover::Popup`] closing instant, computed from
 /// the wall clock at render time. Monotonic by construction — unlike the
 /// animation element's own clock, it can never replay from 0 mid-exit.
 pub(super) fn exit_progress(since: web_time::Instant) -> f32 {
@@ -41,7 +47,7 @@ pub(super) fn material_menu(content: AnyElement) -> AnyElement {
     crate::surface::popover(Theme::surface_radius(), content).into_any_element()
 }
 
-/// Entrance or exit motion for a popover layer. While exiting (the [`Popup`]
+/// Entrance or exit motion for a popover layer. While exiting (the [`popover::Popup`]
 /// closing phase, `exit = Some(progress)`) the content plays
 /// [`motion::menu_out`] under a fresh animation id (same-id reuse would
 /// inherit the entrance's finished clock and snap to the end state) and gets
@@ -66,27 +72,140 @@ pub(super) fn menu_layer(
     position: Option<Point<Pixels>>,
     gap: f32,
 ) -> AnyElement {
-    let content = material_menu(content);
-    let inner = match anchor {
-        Anchor::BottomLeft | Anchor::BottomRight => div().occlude().pb(px(gap)),
-        _ => div().occlude().pt(px(gap)),
+    gpui::deferred(Layer {
+        content: menu_motion(
+            id.into(),
+            closing.map(exit_progress),
+            div()
+                .occlude()
+                .flex()
+                .flex_col()
+                .min_h_0()
+                .child(material_menu(content)),
+        ),
+        anchor,
+        position,
+        gap,
+    })
+    .priority(popover::MENU_LAYER)
+    .into_any_element()
+}
+
+struct Layer {
+    content: AnyElement,
+    anchor: Anchor,
+    position: Option<Point<Pixels>>,
+    gap: f32,
+}
+
+impl Element for Layer {
+    type RequestLayoutState = LayoutId;
+    type PrepaintState = ();
+
+    fn id(&self) -> Option<gpui::ElementId> {
+        None
     }
-    .child(content);
-    let mut layer = gpui::anchored()
-        .anchor(anchor)
-        .snap_to_window_with_margin(px(SNAP));
-    if let Some(position) = position {
-        layer = layer.position(position);
+
+    fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
+        None
     }
-    gpui::deferred(layer.child(menu_motion(id.into(), closing.map(exit_progress), inner)))
-        .priority(MENU_LAYER)
-        .into_any_element()
+
+    fn request_layout(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> (LayoutId, LayoutId) {
+        let child = self.content.request_layout(window, cx);
+        let layout = window.request_layout(
+            Style {
+                position: Position::Absolute,
+                display: Display::Flex,
+                ..Style::default()
+            },
+            [],
+            cx,
+        );
+        (layout, child)
+    }
+
+    fn prepaint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        bounds: Bounds<Pixels>,
+        child: &mut LayoutId,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        let margin = px(popover::SNAP) + window.client_inset().unwrap_or(Pixels::ZERO);
+        let mut style = Style {
+            display: Display::Flex,
+            flex_direction: FlexDirection::Column,
+            ..Style::default()
+        };
+        style.max_size.height = relative(1.).into();
+        let constrained = window.request_layout(style, [*child], cx);
+        window.compute_layout(
+            constrained,
+            size(
+                AvailableSpace::MaxContent,
+                AvailableSpace::Definite(
+                    (window.viewport_size().height - margin * 2.).max(Pixels::ZERO),
+                ),
+            ),
+            cx,
+        );
+        let natural = window.layout_bounds(*child).size;
+        let placement = Placement::new(
+            self.anchor,
+            self.position.unwrap_or(bounds.origin),
+            natural.height,
+            window.viewport_size(),
+            margin,
+            px(self.gap),
+        );
+        // GPUI invalidates descendant bounds when this layout root is recomputed.
+        window.compute_layout(
+            constrained,
+            size(
+                AvailableSpace::MaxContent,
+                AvailableSpace::Definite(placement.available_height),
+            ),
+            cx,
+        );
+        let measured = window.layout_bounds(*child).size;
+        let origin = placement.origin(measured);
+        self.content
+            .prepaint_at(point(origin.x.round(), origin.y.round()), window, cx);
+    }
+
+    fn paint(
+        &mut self,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
+        _: Bounds<Pixels>,
+        _: &mut LayoutId,
+        _: &mut (),
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        self.content.paint(window, cx);
+    }
+}
+
+impl IntoElement for Layer {
+    type Element = Self;
+    fn into_element(self) -> Self {
+        self
+    }
 }
 
 /// Wrap popover content in a floating anchored layer attached to the trigger:
 /// the caller `.child(anchored_menu(...))`s this from the trigger element while
 /// open. The trigger must be `relative()`, as for every `anchored_menu_*`
-/// variant. Plays `menu-in` (0.14s fade + 2px drop); `closing` (the [`Popup`]
+/// variant. Plays `menu-in` (0.14s fade + 2px drop); `closing` (the [`popover::Popup`]
 /// exit phase) swaps in `menu-out`. Dismissal is the caller's
 /// `.on_mouse_down_out` on the content. The layer `.occlude()`s: hitboxes are
 /// paint-order only in gpui, so without it clicks on menu rows would ALSO fire
@@ -149,8 +268,7 @@ pub fn anchored_submenu(
 }
 
 /// [`anchored_menu`] opening UPWARD from the trigger (composer pickers, the
-/// user menu — anything anchored near the window bottom; Radix flips these
-/// automatically, gpui's `anchored` needs the side picked).
+/// user menu — anything anchored near the window bottom).
 pub fn anchored_menu_above(
     id: impl Into<SharedString>,
     content: AnyElement,
