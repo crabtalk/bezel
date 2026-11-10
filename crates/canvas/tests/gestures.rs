@@ -341,3 +341,54 @@ fn resizing_text_preserves_content_and_custom_fields_through_undo() {
     assert!(editor.undo());
     assert_eq!(editor.canvas().node("a"), Some(&node));
 }
+
+#[test]
+fn annotation_corners_scale_text_and_sides_only_change_wrapping_width() {
+    for (spot, delta, expected) in [
+        (Spot::Corner, point(200., 0.), (400, 200, 48.)),
+        (
+            Spot::Side {
+                side: Side::Right,
+                at: 0.5,
+            },
+            point(200., 70.),
+            (400, 100, 24.),
+        ),
+        (
+            Spot::CornerAt {
+                right: false,
+                bottom: false,
+            },
+            point(-200., 0.),
+            (400, 200, 48.),
+        ),
+    ] {
+        let canvas = Canvas::parse(r#"{"nodes":[{"id":"a","type":"text","x":100,"y":100,"width":200,"height":100,"text":"label","textMode":"label","fontSize":24}]}"#).unwrap();
+        let mut editor = CanvasEditor::new(canvas, layout::FREE);
+        let before = editor.canvas().clone();
+        let mut tool = Resize::default();
+        let mut pointer = pointer(Hit::Handle {
+            owner: "a".into(),
+            handle: Handle::new("resize", spot, Role::Resize),
+        });
+        assert!(tool.press(&pointer, &mut Hand::new(&mut editor)));
+        pointer.at = delta;
+        tool.drag(&pointer, &mut Hand::new(&mut editor));
+        tool.release(&pointer, &mut Hand::new(&mut editor));
+        let node = editor.canvas().node("a").unwrap();
+        assert_eq!((node.width, node.height, node.text_size()), expected);
+        assert_eq!(canvas::kind::min_height(node), None);
+        if matches!(
+            spot,
+            Spot::CornerAt {
+                right: false,
+                bottom: false
+            }
+        ) {
+            assert_eq!((node.x, node.y), (-100, 0));
+        }
+        assert!(editor.undo());
+        assert_eq!(editor.canvas(), &before);
+        assert!(!editor.can_undo());
+    }
+}

@@ -10,17 +10,6 @@
 //! needs one: a focus handle, key bindings, the platform input handler, and
 //! turning a click into a position.
 
-use gpui::{
-    App, Context, CursorStyle, ElementInputHandler, Entity, EventEmitter, FocusHandle, Focusable,
-    KeyContext, MouseButton, Render, Styled as _, Task, Window, canvas, div, prelude::*,
-};
-use markdown::{
-    Affinity, Annotation, AppExt as _, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark,
-    Part, Selection, Splice, Synced, Text, edit, edit::shortcut,
-};
-use std::{cell::RefCell, ops::Range, rc::Rc, time::Duration};
-use theme::Theme;
-
 use crate::{
     anchor::{Anchor, AnchorId, Delta},
     document::{Change, Document, DocumentEvent, Tracked},
@@ -29,6 +18,16 @@ use crate::{
     slash::{Slash, SlashAction, SlashAt},
     text_size,
 };
+use gpui::{
+    App, Context, CursorStyle, ElementInputHandler, Entity, EventEmitter, FocusHandle, Focusable,
+    KeyContext, MouseButton, Render, Styled as _, Task, Window, canvas, div, prelude::*,
+};
+use markdown::{
+    Affinity, Annotation, AppExt as _, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark,
+    Part, Selection, Splice, Synced, Text, Typography, edit, edit::shortcut,
+};
+use std::{cell::RefCell, ops::Range, rc::Rc, time::Duration};
+use theme::Theme;
 
 mod anchors;
 mod blocks;
@@ -446,6 +445,8 @@ pub struct Editor {
     /// What the chords move is the shared adjustment on top of this; the base
     /// itself is the app's alone.
     text_size: Option<f32>,
+    /// Overrides document text-size settings for an embedded editing surface.
+    pub typography: Option<Typography>,
     /// The directory relative image paths resolve against.
     base: Option<std::path::PathBuf>,
     image_overlay: Option<markdown::ImageOverlay>,
@@ -529,6 +530,7 @@ impl Editor {
             goal: None,
             handle_at: None,
             text_size: None,
+            typography: None,
             base: None,
             image_overlay: None,
             image_overlay_corner: markdown::ImageOverlayCorner::default(),
@@ -607,6 +609,13 @@ impl Editor {
     /// screen.
     pub fn text_size(&self) -> Option<f32> {
         self.text_size
+    }
+
+    pub fn resolved_typography(&self, cx: &App) -> Typography {
+        self.typography.unwrap_or_else(|| {
+            cx.typography()
+                .scaled(text_size::resolve(self.text_size, cx) / theme::base_text_size())
+        })
     }
 
     /// Resolve relative image paths against `dir` — the document's own folder,

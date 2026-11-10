@@ -4,11 +4,11 @@
 //! out where one lands from its [`Spot`], so a press finds it without waiting
 //! for a frame to be laid out, and an edge names the one it left from.
 
-use gpui::{CursorStyle, Point, point};
 use crate::{
     model::{Edge, Node, Side},
     path::{Anchor, Path, Rect},
 };
+use gpui::{CursorStyle, Point, point};
 
 /// Which end of an edge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -169,9 +169,10 @@ pub fn sides_and_corner(_: &Node) -> Vec<Handle> {
 }
 
 /// Resize borders and corners, with connectors above the border midpoints.
-pub fn frame(_: &Node) -> Vec<Handle> {
+pub fn frame(node: &Node) -> Vec<Handle> {
     let mut handles: Vec<Handle> = [Side::Top, Side::Right, Side::Bottom, Side::Left]
         .into_iter()
+        .filter(|side| !node.is_label() || matches!(side, Side::Left | Side::Right))
         .map(|side| {
             Handle::new(
                 format!("resize-{}", name(side)),

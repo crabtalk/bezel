@@ -96,7 +96,7 @@ pub struct Style {
     pub target_wash: f32,
     /// The accent wash inside a marquee.
     pub marquee_wash: f32,
-    /// Below this zoom edge labels are hidden.
+    /// Edge labels at the default text size are hidden below this zoom.
     pub far_zoom: f32,
     /// The closest grid dots come, in screen pixels; a denser grid skips rows.
     pub dot_spacing: f32,

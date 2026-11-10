@@ -8,15 +8,15 @@
 //! than an enum for the same reason — an app's own kind is a renderer away, not
 //! a fork of the format.
 
-use std::collections::HashMap;
-
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::{Map, Value};
+use std::collections::HashMap;
 
 pub const TEXT: &str = "text";
 pub const FILE: &str = "file";
 pub const LINK: &str = "link";
 pub const GROUP: &str = "group";
+pub const TEXT_SIZE: f32 = 16.;
 
 /// The version [`Canvas::to_json`] stamps: the release of bezel that wrote it.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -56,6 +56,10 @@ pub struct Node {
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_mode: Option<TextMode>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
     /// Starts with `#`.
@@ -100,6 +104,8 @@ pub struct Edge {
     pub color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<f32>,
     /// Where it runs, end to end, in canvas units. Empty leaves the route to
     /// its kind.
     #[serde(
@@ -113,6 +119,32 @@ pub struct Edge {
     pub style: Option<Stroke>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TextMode {
+    Card,
+    Label,
+}
+
+impl Node {
+    pub fn is_label(&self) -> bool {
+        self.kind == TEXT && self.text_mode == Some(TextMode::Label)
+    }
+
+    pub fn text_size(&self) -> f32 {
+        text_size(self.font_size)
+    }
+
+    pub fn scale(&mut self, factor: f32) {
+        if !factor.is_finite() || factor <= 0. {
+            return;
+        }
+        self.font_size = Some(self.text_size() * factor);
+        self.width = (self.width as f32 * factor).round().max(1.) as i64;
+        self.height = (self.height as f32 * factor).round().max(1.) as i64;
+    }
 }
 
 /// The outline a node paints.
@@ -222,7 +254,16 @@ impl Canvas {
     }
 }
 
+fn text_size(size: Option<f32>) -> f32 {
+    size.filter(|size| size.is_finite() && *size > 0.)
+        .unwrap_or(TEXT_SIZE)
+}
+
 impl Edge {
+    pub fn text_size(&self) -> f32 {
+        text_size(self.font_size)
+    }
+
     pub fn new(id: impl Into<String>, from: impl Into<String>, to: impl Into<String>) -> Self {
         Self {
             id: id.into(),

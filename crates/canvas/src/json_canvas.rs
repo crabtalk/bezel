@@ -21,8 +21,11 @@ pub fn export(canvas: &Canvas) -> String {
     spec.version = None;
     for node in &mut spec.nodes {
         node.shape = None;
+        node.font_size = None;
+        node.text_mode = None;
     }
     for edge in &mut spec.edges {
+        edge.font_size = None;
         edge.points.clear();
         edge.style = None;
         for end in [&mut edge.from_end, &mut edge.to_end] {

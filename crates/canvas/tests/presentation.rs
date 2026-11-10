@@ -169,3 +169,46 @@ fn selected_text_keeps_its_content_rendering_after_a_small_resize(cx: &mut TestA
         );
     });
 }
+
+#[gpui::test]
+fn embedded_editing_uses_canvas_typography_without_document_size_clamping(cx: &mut TestAppContext) {
+    use editor::AppExt as _;
+    cx.update(|cx| {
+        cx.set_editor_text_size(editor::TextSize {
+            min: 12.,
+            max: 24.,
+            step: 1.,
+        });
+        cx.adjust_editor_text_size(5.);
+        for authored in [16., 48., 96.] {
+            for zoom in [0.25, 0.5, 1., 2.] {
+                let expected = presentation::text_typography(cx, authored, zoom);
+                let input = cx.new(|cx| {
+                    let mut input = editor::Editor::new("## Heading\n\nBody", cx);
+                    input.typography = Some(expected);
+                    input
+                });
+                let actual = input.read(cx).resolved_typography(cx);
+                assert_eq!(actual.body, expected.body);
+                assert_eq!(actual.h2, expected.h2);
+                assert_eq!(actual.body.line_height(), expected.body.line_height());
+            }
+        }
+    });
+}
+
+#[test]
+fn annotation_sizing_grows_even_when_document_cards_have_fixed_geometry() {
+    let kinds = Kinds::new().with("text", kind::text().sizing(Sizing::Fixed));
+    let canvas = Canvas::parse(r#"{"nodes":[{"id":"card","type":"text","x":0,"y":0,"width":200,"height":100},{"id":"label","type":"text","x":200,"y":0,"width":200,"height":100,"textMode":"label"}]}"#).unwrap();
+    assert_eq!(kinds.sizing(&canvas.nodes[0]), Sizing::Fixed);
+    assert_eq!(kinds.sizing(&canvas.nodes[1]), Sizing::Grows);
+    let handles = handle::frame(&canvas.nodes[1]);
+    assert_eq!(
+        handles
+            .iter()
+            .filter(|handle| handle.role == canvas::handle::Role::Resize)
+            .count(),
+        6
+    );
+}

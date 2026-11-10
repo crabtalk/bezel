@@ -5,24 +5,6 @@
 //! transform for arbitrary elements — so content re-lays out at each zoom and
 //! stays sharp.
 
-use std::{
-    cell::{Cell, RefCell},
-    collections::{HashMap, HashSet},
-    rc::Rc,
-};
-
-use editor::{Chrome as EditorChrome, Editor, EditorEvent};
-use gpui::{
-    AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId, Entity,
-    EventEmitter, ExternalPaths, FocusHandle, Focusable, HitboxBehavior, Hsla, KeyContext,
-    KeyDownEvent, KeyUpEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    PinchEvent, Pixels, Point, Render, ScrollWheelEvent, Subscription, WeakEntity, Window,
-    canvas as painter, div, point, prelude::*, px, size,
-};
-use motion::{AppExt as _, LAYOUT};
-use theme::{TextStyle, Theme, Typeset};
-use web_time::Instant;
-
 use crate::{
     change::Change,
     document::{Document, DocumentChange, DocumentEvent},
@@ -33,13 +15,29 @@ use crate::{
     kind::{self, Capability, Kinds, Look, PAD, RADIUS, Sizing, color},
     layout::{Arrow, Layout},
     mindmap,
-    model::{Canvas, Edge, End, Node, Stroke},
+    model::{self, Canvas, Edge, End, Node, Stroke},
     options::{Frame, Mark, Options, Overlays, Style},
     path::{self, Ends, Path, Rect},
     presentation::{self, Detail, Measure},
     snap::Snap,
     tool::{self, Hand, Hit, Pointer, Sketch, Tool, Wish},
 };
+use editor::{Chrome as EditorChrome, Editor, EditorEvent};
+use gpui::{
+    AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId, Entity,
+    EventEmitter, ExternalPaths, FocusHandle, Focusable, HitboxBehavior, Hsla, KeyContext,
+    KeyDownEvent, KeyUpEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
+    PinchEvent, Pixels, Point, Render, ScrollWheelEvent, Subscription, WeakEntity, Window,
+    canvas as painter, div, point, prelude::*, px, size,
+};
+use motion::{AppExt as _, LAYOUT};
+use std::{
+    cell::{Cell, RefCell},
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
+use theme::Theme;
+use web_time::Instant;
 
 mod paint;
 mod pointer;
@@ -306,10 +304,19 @@ impl CanvasView {
         }
         // An open editor types at the zoom.
         if let Some(session) = &self.editing {
-            let text = presentation::typography(cx, self.editor.zoom()).body.size();
-            session
-                .input
-                .update(cx, |input, cx| input.set_text_size(text, cx));
+            let size = if session.edge {
+                self.editor.canvas().edge(&session.id).map(Edge::text_size)
+            } else {
+                self.editor.canvas().node(&session.id).map(Node::text_size)
+            }
+            .unwrap_or(model::TEXT_SIZE);
+            let typography = presentation::text_typography(cx, size, self.editor.zoom());
+            session.input.update(cx, |input, cx| {
+                if input.typography != Some(typography) {
+                    input.typography = Some(typography);
+                    cx.notify();
+                }
+            });
         }
         let events = self.editor.take_events();
         let changes: Vec<Change> = events
@@ -385,7 +392,7 @@ impl CanvasView {
         let Some(field) = self.editor.kinds().get(&node.kind).rules.edit.clone() else {
             return;
         };
-        let input = self.input(&(field.read)(node), cx);
+        let input = self.input(&(field.read)(node), node.text_size(), cx);
         let changes = cx.subscribe(&input, move |this, input, event, cx| {
             if *event != EditorEvent::Changed {
                 return;
@@ -430,7 +437,7 @@ impl CanvasView {
         let Some(field) = self.editor.edge_kinds().get(edge).rules.edit.clone() else {
             return;
         };
-        let input = self.input(&(field.read)(edge), cx);
+        let input = self.input(&(field.read)(edge), edge.text_size(), cx);
         let changes = cx.subscribe(&input, move |this, input, event, cx| {
             if *event != EditorEvent::Changed {
                 return;
@@ -509,10 +516,10 @@ impl CanvasView {
     }
 
     /// An editor for text typed in place, at the zoom.
-    fn input(&self, value: &str, cx: &mut Context<Self>) -> Entity<Editor> {
-        let size = presentation::typography(cx, self.editor.zoom()).body.size();
+    fn input(&self, value: &str, size: f32, cx: &mut Context<Self>) -> Entity<Editor> {
+        let typography = presentation::text_typography(cx, size, self.editor.zoom());
         cx.new(|cx| {
-            Editor::new(value, cx)
+            let mut input = Editor::new(value, cx)
                 .with_chrome(EditorChrome {
                     handle: false,
                     slash: false,
@@ -520,7 +527,9 @@ impl CanvasView {
                     paste: false,
                     mention: false,
                 })
-                .with_text_size(size)
+                .with_text_size(size);
+            input.typography = Some(typography);
+            input
         })
     }
 

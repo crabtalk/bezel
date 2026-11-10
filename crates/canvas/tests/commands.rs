@@ -111,3 +111,48 @@ fn supplied_nodes_keep_their_content_and_receive_a_fresh_id() {
     assert_eq!(added.file.as_deref(), Some("notes.md"));
     assert_eq!(editor.selected(), Some(id.as_str()));
 }
+
+#[test]
+fn authored_sizes_and_presentation_are_undoable_for_nodes_and_edges() {
+    let mut editor = editor();
+    editor.select_all();
+    let before = editor.canvas().clone();
+    assert_eq!(editor.selection_text_size(), Some(16.));
+    editor.set_selection_text_size(Some(32.));
+    assert_eq!(editor.selection_text_size(), Some(32.));
+    assert!(
+        editor
+            .canvas()
+            .nodes
+            .iter()
+            .all(|node| node.text_size() == 32.)
+    );
+    assert!(editor.undo());
+    assert_eq!(editor.canvas(), &before);
+    assert_eq!(
+        editor.selection_text_mode(),
+        Some(canvas::model::TextMode::Card)
+    );
+    editor.set_selection_text_mode(canvas::model::TextMode::Label);
+    assert_eq!(
+        editor.selection_text_mode(),
+        Some(canvas::model::TextMode::Label)
+    );
+    assert!(editor.canvas().nodes.iter().all(|node| node.is_label()));
+    assert!(editor.undo());
+    assert_eq!(editor.canvas(), &before);
+
+    editor.connect("a", &Handle::connect(Side::Right), (250, 120));
+    let edge = editor.canvas().edges[0].id.clone();
+    editor.select_edge(Some(edge.clone()));
+    editor.set_selection_text_size(Some(48.));
+    assert_eq!(editor.canvas().edge(&edge).unwrap().text_size(), 48.);
+    assert!(editor.undo());
+    assert_eq!(editor.canvas().edge(&edge).unwrap().font_size, None);
+
+    let before = editor.canvas().clone();
+    for size in [0., -1., f32::NAN, f32::INFINITY] {
+        editor.set_selection_text_size(Some(size));
+        assert_eq!(editor.canvas(), &before);
+    }
+}

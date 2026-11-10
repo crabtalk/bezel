@@ -1,9 +1,8 @@
+use crate::model;
 use gpui::{AnyElement, App, canvas, div, prelude::*};
 use markdown::{AppExt as _, Typography};
 use std::rc::Rc;
 use theme::TextStyle;
-
-const BODY: f32 = 16.;
 const READABLE: f32 = 10.;
 const LABEL_WIDTH: f32 = 48.;
 const LABEL_HEIGHT: f32 = 28.;
@@ -28,7 +27,11 @@ impl Detail {
 }
 
 pub fn typography(cx: &App, zoom: f32) -> Typography {
-    cx.typography().scaled(BODY / TextStyle::Body.size() * zoom)
+    text_typography(cx, model::TEXT_SIZE, zoom)
+}
+
+pub fn text_typography(cx: &App, size: f32, zoom: f32) -> Typography {
+    cx.typography().scaled(size / TextStyle::Body.size() * zoom)
 }
 
 #[derive(Clone)]

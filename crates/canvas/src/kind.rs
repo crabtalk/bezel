@@ -16,30 +16,28 @@
 //! replaceable, and a type nothing names is [`unknown`]. [`chrome`] dresses a
 //! box the way they do.
 
+use crate::{
+    handle::{self, Handle},
+    mindmap::{NODE_HEIGHT, NODE_WIDTH},
+    model::{self, Node, Shape},
+    presentation::{self, Detail, Measure},
+};
+use gpui::{
+    AnyElement, App, Div, Global, Hsla, ObjectFit, Styled, StyledImage, Window, div, img,
+    prelude::*, px,
+};
+use markdown::{AppExt as _, BlockKind, Doc, Editing, Part};
 use std::{
     cell::RefCell,
     collections::HashMap,
     path::{Path, PathBuf},
     rc::Rc,
 };
-
-use gpui::{
-    AnyElement, App, Div, Global, Hsla, ObjectFit, Styled, StyledImage, Window, div, img,
-    prelude::*, px,
-};
-use markdown::{AppExt as _, BlockKind, Doc, Editing, Part};
 use theme::{TextStyle, Theme, Typeset};
 use ui::{
     icons::{self, Icon},
     scroll,
     tiled_image::TiledImage,
-};
-
-use crate::{
-    handle::{self, Handle},
-    mindmap::{NODE_HEIGHT, NODE_WIDTH},
-    model::{self, Node, Shape},
-    presentation::{self, Detail, Measure},
 };
 
 /// Inside a dressed box, in canvas units.
@@ -351,6 +349,14 @@ impl Kinds {
         self.kinds.get(name).unwrap_or(&self.unknown)
     }
 
+    pub fn sizing(&self, node: &Node) -> Sizing {
+        if node.is_label() {
+            Sizing::Grows
+        } else {
+            self.get(&node.kind).rules.sizing
+        }
+    }
+
     /// Whether a node's kind holds what sits inside it.
     pub fn holds(&self, node: &Node) -> bool {
         self.get(&node.kind).rules.holds
@@ -397,6 +403,22 @@ pub(crate) fn installed(cx: &App) -> Kinds {
 pub fn text() -> Kind {
     let parsed = Parsed::default();
     Kind::new(move |node, look, window, cx| {
+        if node.is_label() {
+            let content = match look.editor {
+                Some(editor) => editor,
+                None => render_text(&parsed, node, look.zoom, window, cx),
+            };
+            return div()
+                .w_full()
+                .text_color(
+                    node.color
+                        .as_deref()
+                        .and_then(|value| color(Theme::of(cx), value))
+                        .unwrap_or(Theme::of(cx).text),
+                )
+                .child(look.measure.wrap(content, 0.))
+                .into_any_element();
+        }
         if look.editor.is_none() && look.detail != Detail::Full {
             let doc = parsed.read(node, cx);
             let title = doc
@@ -445,7 +467,9 @@ pub fn text() -> Kind {
             content
         };
         let vertical_padding = if look.sizing == Sizing::Fixed {
-            let line = presentation::typography(cx, look.zoom).body.line_height();
+            let line = presentation::text_typography(cx, node.text_size(), look.zoom)
+                .body
+                .line_height();
             ((node.height as f32 * look.zoom - 2. - line) / 2.).clamp(0., PAD * look.zoom)
         } else {
             PAD * look.zoom
@@ -750,7 +774,7 @@ fn render_text(
 ) -> AnyElement {
     let doc = parsed.read(node, cx);
     let editing = Editing {
-        typography: Some(presentation::typography(cx, zoom)),
+        typography: Some(presentation::text_typography(cx, node.text_size(), zoom)),
         ..Editing::default()
     };
     markdown::render_with(&doc, editing, window, cx)

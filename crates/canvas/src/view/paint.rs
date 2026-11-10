@@ -88,8 +88,10 @@ impl CanvasView {
         let detail = Detail::at(
             w,
             h,
-            presentation::typography(cx, z).body.size(),
-            self.exporting || selected || !draggable,
+            presentation::text_typography(cx, node.text_size(), z)
+                .body
+                .size(),
+            self.exporting || node.is_label() || selected || !draggable,
         );
         let mark = Mark {
             width: w,
@@ -102,7 +104,7 @@ impl CanvasView {
         let look = Look {
             zoom: z,
             selected,
-            sizing: kind.rules.sizing,
+            sizing: self.editor.kinds().sizing(node),
             detail,
             measure: Measure {
                 zoom: z,
@@ -115,7 +117,7 @@ impl CanvasView {
             editor: editing.map(|session| session.input.clone().into_any_element()),
         };
         let content = (kind.render)(node, look, window, cx);
-        let grows = kind.rules.sizing == Sizing::Grows && detail == Detail::Full;
+        let grows = self.editor.kinds().sizing(node) == Sizing::Grows && detail == Detail::Full;
         // A drop, or a connector let go here, would connect to this node.
         let target = connecting == Some(node.id.as_str())
             || self.held() != Some(node.id.as_str())
@@ -211,7 +213,11 @@ impl CanvasView {
             .flex_col()
             .map(|d| {
                 if grows {
-                    let least = kind::min_height(node).unwrap_or(mindmap::NODE_HEIGHT);
+                    let least = if node.is_label() {
+                        1
+                    } else {
+                        kind::min_height(node).unwrap_or(mindmap::NODE_HEIGHT)
+                    };
                     d.min_h(px(least as f32 * z))
                 } else {
                     d.h(px(h))
@@ -274,19 +280,22 @@ impl CanvasView {
                     .as_ref()
                     .map(|field| (field.read)(edge))
                     .filter(|label| !label.is_empty());
-                if editing.is_none() && (text.is_none() || z < self.style.far_zoom) {
+                let label_scale = edge.text_size() / model::TEXT_SIZE;
+                if editing.is_none() && (text.is_none() || z * label_scale < self.style.far_zoom) {
                     return None;
                 }
                 let middle = self.path_of(&nodes, shown, edge)?.middle();
                 let (x, y) = (pan.x + middle.x * z, pan.y + middle.y * z);
+                let typography = presentation::text_typography(cx, edge.text_size(), z);
                 let body = match editing {
                     Some(session) => div()
-                        .min_w(px(self.style.label.0 / 2.0 * z))
+                        .min_w(px(self.style.label.0 / 2.0 * z * label_scale))
                         .child(session.input.clone())
                         .into_any_element(),
                     None => div()
-                        .text_style_at(TextStyle::Callout, z)
-                        .text_color(theme.text_muted)
+                        .text_size(px(typography.body.size()))
+                        .line_height(px(typography.body.line_height()))
+                        .text_color(theme.text)
                         .child(text.unwrap_or_default())
                         .into_any_element(),
                 };
@@ -310,10 +319,10 @@ impl CanvasView {
                 Some(
                     div()
                         .absolute()
-                        .left(px(x - self.style.label.0 * z / 2.0))
-                        .top(px(y - self.style.label.1 * z / 2.0))
-                        .w(px(self.style.label.0 * z))
-                        .h(px(self.style.label.1 * z))
+                        .left(px(x - self.style.label.0 * z * label_scale / 2.0))
+                        .top(px(y - self.style.label.1 * z * label_scale / 2.0))
+                        .w(px(self.style.label.0 * z * label_scale))
+                        .h(px(self.style.label.1 * z * label_scale))
                         .flex()
                         .items_center()
                         .justify_center()

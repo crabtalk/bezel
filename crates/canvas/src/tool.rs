@@ -627,7 +627,7 @@ impl Tool for Resize {
         let Some(found) = hand.editor.canvas().node(owner) else {
             return false;
         };
-        let grows = hand.editor.kinds().get(&found.kind).rules.sizing == Sizing::Grows;
+        let grows = hand.editor.kinds().sizing(found) == Sizing::Grows;
         let Some(axes) = handle.spot.resize_axes() else {
             return false;
         };
@@ -668,7 +668,9 @@ impl Tool for Resize {
             grid(original.height + ay * dy)
         };
         let (min_w, min_h) = hand.editor.options().min_size;
-        if pointer.modifiers.shift {
+        let min_h = if original.is_label() { 1 } else { min_h };
+        let scales_text = original.is_label() && ax != 0 && ay != 0;
+        if scales_text || pointer.modifiers.shift && !original.is_label() {
             let sx = width as f64 / original.width.max(1) as f64;
             let sy = height as f64 / original.height.max(1) as f64;
             let scale = if ax == 0 {
@@ -687,6 +689,10 @@ impl Tool for Resize {
         let mut node = original.clone();
         node.width = width.max(min_w);
         node.height = height.max(min_h);
+        if scales_text {
+            node = original.clone();
+            node.scale(width as f32 / original.width.max(1) as f32);
+        }
         if ax < 0 {
             node.x += original.width - node.width;
         }
@@ -694,7 +700,7 @@ impl Tool for Resize {
             node.y += original.height - node.height;
         }
         // Measuring keeps a growing node as tall as its content.
-        if pulling.grows {
+        if pulling.grows && !node.is_label() {
             node.extra
                 .insert(kind::MIN_HEIGHT.into(), node.height.into());
         }
