@@ -1,6 +1,8 @@
 //! Node positions, node and label painting, and the edge layer.
 
 use crate::view::*;
+use gpui::{Anchor, anchored, deferred};
+use ui::{icons, widgets::Button};
 
 impl CanvasView {
     /// Where each node paints this frame. A node the document moved glides
@@ -81,7 +83,10 @@ impl CanvasView {
             }
         }
         let kind = self.editor.kinds().get(&node.kind);
-        let editing = self.editing.as_ref().filter(|s| !s.edge && s.id == node.id);
+        let editing = self
+            .editing
+            .as_ref()
+            .filter(|s| s.node_id() == Some(node.id.as_str()));
         // A node being typed in keeps the editor's own cursor.
         let draggable = editing.is_none();
         let selected = picked.contains(&node.id.as_str());
@@ -109,7 +114,7 @@ impl CanvasView {
                     }),
                 },
             },
-            editor: editing.map(|session| session.input.clone().into_any_element()),
+            editor: editing.and_then(|session| session.input.inline()),
         };
         let content = (kind.render)(node, look, window, cx);
         let grows = self.editor.kinds().sizing(node) == Sizing::Grows;
@@ -142,11 +147,6 @@ impl CanvasView {
         let handles: Vec<AnyElement> = declared
             .into_iter()
             .map(|declared| {
-                let (spot, _) = declared
-                    .spot
-                    .on(Rect::of(node, at))
-                    .unwrap_or((point(0.0, 0.0), point(0.0, 0.0)));
-                let (hx, hy) = ((spot.x - at.0) * z, (spot.y - at.1) * z);
                 let size = self.style.handle;
                 let look = (self.overlays.handle)(
                     &Mark {
@@ -160,15 +160,7 @@ impl CanvasView {
                 let axes = declared.spot.resize_axes();
                 let cursor = declared.cursor();
                 let owner = node.id.clone();
-                let (handle_w, handle_h) = if declared.role == Role::Resize {
-                    match axes {
-                        Some((0, _)) => (w, size),
-                        Some((_, 0)) => (size, h),
-                        _ => (size, size),
-                    }
-                } else {
-                    (size, size)
-                };
+                let bounds = declared.bounds(Rect { x: 0., y: 0., w, h }, size).unwrap();
                 let border_handle =
                     declared.role == Role::Resize && axes.is_some_and(|(x, y)| x == 0 || y == 0);
                 div()
@@ -176,10 +168,10 @@ impl CanvasView {
                         format!("{}-{}", node.id, declared.id).into(),
                     ))
                     .absolute()
-                    .left(px(hx - handle_w / 2.0))
-                    .top(px(hy - handle_h / 2.0))
-                    .w(px(handle_w))
-                    .h(px(handle_h))
+                    .left(px(bounds.origin.x))
+                    .top(px(bounds.origin.y))
+                    .w(px(bounds.size.width))
+                    .h(px(bounds.size.height))
                     .cursor(cursor)
                     .when(!border_handle, |element| element.child(look))
                     .on_mouse_down(
@@ -196,6 +188,62 @@ impl CanvasView {
                     .into_any_element()
             })
             .collect();
+
+        let open = (shows && kind.open.is_some()).then(|| {
+            let id = node.id.clone();
+            let origin = self
+                .viewport
+                .get()
+                .map_or(Point::default(), |bounds| bounds.origin);
+            deferred(
+                anchored()
+                    .anchor(Anchor::BottomRight)
+                    .position(point(origin.x + px(x + w), origin.y + px(y)))
+                    .offset(point(px(0.), px(-self.style.handle)))
+                    .snap_to_window_with_margin(px(self.style.handle))
+                    .child(
+                        div()
+                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                            .child(
+                                Button::new(
+                                    format!("canvas-open-{}", node.id),
+                                    if node.kind == model::LINK {
+                                        "Open link"
+                                    } else {
+                                        "Open source"
+                                    },
+                                )
+                                .icon(icons::arrows::ExternalLink)
+                                .on_press(cx.listener(
+                                    move |this, _, window, cx| {
+                                        this.open_node(&id, window, cx);
+                                    },
+                                )),
+                            ),
+                    ),
+            )
+        });
+        let surface = draggable.then(|| {
+            let id = node.id.clone();
+            div()
+                .id(ElementId::Name(
+                    format!("canvas-surface-{}", node.id).into(),
+                ))
+                .absolute()
+                .inset_0()
+                .block_mouse_except_scroll()
+                .cursor_grab()
+                .on_any_mouse_down(
+                    cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                        if event.button == MouseButton::Right {
+                            this.request_context_menu(event, window, cx);
+                        } else {
+                            cx.stop_propagation();
+                            this.press(event, Hit::Node(id.clone()), window, cx);
+                        }
+                    }),
+                )
+        });
 
         // The box is the canvas's; everything painted inside it is the kind's.
         let element = div()
@@ -238,9 +286,11 @@ impl CanvasView {
                     .size_full(),
                 )
             })
+            .children(surface)
             .children(wash)
             .children(ring)
             .children(handles)
+            .children(open)
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
@@ -265,7 +315,10 @@ impl CanvasView {
             .edges
             .iter()
             .filter_map(|edge| {
-                let editing = self.editing.as_ref().filter(|s| s.edge && s.id == edge.id);
+                let editing = self
+                    .editing
+                    .as_ref()
+                    .filter(|s| s.edge_id() == Some(edge.id.as_str()));
                 let text = self
                     .editor
                     .edge_kinds()
@@ -285,7 +338,7 @@ impl CanvasView {
                 let body = match editing {
                     Some(session) => div()
                         .min_w(px(self.style.label.0 / 2.0 * z * label_scale))
-                        .child(session.input.clone())
+                        .children(session.input.inline())
                         .into_any_element(),
                     None => div()
                         .text_size(px(typography.body.size()))

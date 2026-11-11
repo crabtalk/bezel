@@ -41,6 +41,12 @@ pub enum CanvasEvent {
         at: Point<f32>,
         item: Option<Item>,
     },
+    OpenRequested {
+        id: String,
+    },
+    EditRequested {
+        id: String,
+    },
     FilesDropped {
         at: Point<f32>,
         paths: Vec<PathBuf>,
@@ -268,6 +274,14 @@ impl CanvasEditor {
         self.document
             .apply(&changes, self.group, self.options.history);
         self.landed(changes);
+    }
+
+    pub(crate) fn cancel_group(&mut self) {
+        if let Some(group) = self.group
+            && let Some(changes) = self.document.cancel_group(group)
+        {
+            self.rewind(changes);
+        }
     }
 
     /// What `cmd-z` does: take back the last edit, past the filter — one that

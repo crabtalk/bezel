@@ -36,6 +36,7 @@ categories = ["gui"]
 rust-version = "1.90"
 
 [workspace.dependencies]
+url = "2"
 # The short names are taken on crates.io, so packages publish as `bezel-*`; the
 # key here and each crate's `[lib] name` are what the source imports.
 bezel = { path = "crates/bezel", version = "0.2.25" }

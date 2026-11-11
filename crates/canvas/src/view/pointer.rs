@@ -60,8 +60,8 @@ impl CanvasView {
     ) {
         // A press inside what is being typed in belongs to the editor.
         let typing = self.editing.as_ref().is_some_and(|session| match &hit {
-            Hit::Node(id) => !session.edge && session.id == *id,
-            Hit::Edge(id) => session.edge && session.id == *id,
+            Hit::Node(id) => session.node_id() == Some(id.as_str()),
+            Hit::Edge(id) => session.edge_id() == Some(id.as_str()),
             _ => false,
         });
         if typing {
@@ -100,13 +100,8 @@ impl CanvasView {
                 cx.emit(CanvasEvent::ConnectionRequested { from, handle, at });
             }
             Wish::Enter(id) => {
-                let node = self.editor.canvas().node(&id).cloned();
-                let open = node
-                    .as_ref()
-                    .and_then(|node| self.editor.kinds().get(&node.kind).open.clone());
-                match (open, node) {
-                    (Some(open), Some(node)) => open(&node, cx),
-                    _ => self.edit(id, None, window, cx),
+                if !self.open_node(&id, window, cx) {
+                    self.edit(id, None, window, cx);
                 }
             }
             Wish::EditEdge(id) => self.edit_edge(id, window, cx),
@@ -116,6 +111,47 @@ impl CanvasView {
                 self.edit(id, group, window, cx);
             }
         }
+    }
+
+    pub fn open_node(&mut self, id: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        self.sync_document(cx);
+        let Some(node) = self.editor.canvas().node(id).cloned() else {
+            return false;
+        };
+        match self.editor.kinds().get(&node.kind).open.clone() {
+            Some(kind::Open::Direct(open)) => open(&node, cx),
+            Some(kind::Open::Host) => cx.emit(CanvasEvent::OpenRequested { id: id.to_owned() }),
+            None => return false,
+        }
+        self.stop_editing(window, cx);
+        true
+    }
+
+    pub(super) fn request_context_menu(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.stop_editing(window, cx);
+        self.sync_document(cx);
+        let item = self.item_at(event.position);
+        match &item {
+            Some(Item::Node(id)) if !self.editor.selected_nodes().contains(&id.as_str()) => {
+                self.update_editor(cx, |editor| editor.select(Some(id.clone())));
+            }
+            Some(Item::Edge(id)) => {
+                self.update_editor(cx, |editor| editor.select_edge(Some(id.clone())));
+            }
+            _ => {}
+        }
+        window.focus(&self.focus, cx);
+        cx.emit(CanvasEvent::ContextMenu {
+            position: event.position,
+            at: self.canvas_point(event.position),
+            item,
+        });
+        cx.stop_propagation();
     }
 
     /// Hand the held tool where the pointer is now.
@@ -178,7 +214,7 @@ impl CanvasView {
         shown: &Positions,
         edge: &Edge,
     ) -> Option<Path> {
-        let ends = ends_of(nodes, shown, edge, self.editor.kinds())?;
+        let ends = paint::ends_of(nodes, shown, edge, self.editor.kinds())?;
         let settled = |id: &str| {
             let node = nodes.get(id);
             shown.get(id).is_none_or(|&(x, y)| {
