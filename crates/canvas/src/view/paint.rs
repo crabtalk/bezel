@@ -1,8 +1,6 @@
 //! Node positions, node and label painting, and the edge layer.
 
 use crate::view::*;
-use gpui::{Anchor, anchored, deferred};
-use ui::{icons, widgets::Button};
 
 impl CanvasView {
     /// Where each node paints this frame. A node the document moved glides
@@ -189,40 +187,6 @@ impl CanvasView {
             })
             .collect();
 
-        let open = (shows && kind.open.is_some()).then(|| {
-            let id = node.id.clone();
-            let origin = self
-                .viewport
-                .get()
-                .map_or(Point::default(), |bounds| bounds.origin);
-            deferred(
-                anchored()
-                    .anchor(Anchor::BottomRight)
-                    .position(point(origin.x + px(x + w), origin.y + px(y)))
-                    .offset(point(px(0.), px(-self.style.handle)))
-                    .snap_to_window_with_margin(px(self.style.handle))
-                    .child(
-                        div()
-                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .child(
-                                Button::new(
-                                    format!("canvas-open-{}", node.id),
-                                    if node.kind == model::LINK {
-                                        "Open link"
-                                    } else {
-                                        "Open source"
-                                    },
-                                )
-                                .icon(icons::arrows::ExternalLink)
-                                .on_press(cx.listener(
-                                    move |this, _, window, cx| {
-                                        this.open_node(&id, window, cx);
-                                    },
-                                )),
-                            ),
-                    ),
-            )
-        });
         let surface = draggable.then(|| {
             let id = node.id.clone();
             div()
@@ -290,7 +254,6 @@ impl CanvasView {
             .children(wash)
             .children(ring)
             .children(handles)
-            .children(open)
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(move |this, event: &MouseDownEvent, window, cx| {
