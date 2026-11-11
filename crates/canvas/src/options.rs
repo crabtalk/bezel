@@ -241,7 +241,7 @@ pub fn grid(frame: &Frame, step: i64, window: &mut Window, cx: &mut App) {
     if step <= 0 {
         return;
     }
-    let ink = Theme::of(cx).border;
+    let ink = Theme::of(cx).canvas_grid;
     let dot = frame.style.dot;
     let mut gap = step as f32 * frame.zoom;
     while gap < frame.style.dot_spacing {

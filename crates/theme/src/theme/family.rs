@@ -352,6 +352,8 @@ impl Theme {
             ("border_faint", &mut self.border_faint),
             ("border", &mut self.border),
             ("border_strong", &mut self.border_strong),
+            ("canvas_bg", &mut self.canvas_bg),
+            ("canvas_grid", &mut self.canvas_grid),
             ("text", &mut self.text),
             ("text_dim", &mut self.text_dim),
             ("solid", &mut self.solid),

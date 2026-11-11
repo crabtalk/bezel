@@ -222,6 +222,10 @@ pub struct Theme {
     pub border: Hsla,
     /// Stronger border for focused/raised edges.
     pub border_strong: Hsla,
+    /// Canvas workspace background.
+    pub canvas_bg: Hsla,
+    /// Canvas background grid dots.
+    pub canvas_grid: Hsla,
 
     // ---- paint: text ----
     /// Primary text. Translucent, like `text_muted` and `text_faint`: the
