@@ -104,6 +104,7 @@ pub struct CanvasEditor {
     /// The document as a gesture in hand would leave it.
     preview: Option<Preview>,
     preview_stale: bool,
+    presentation_revision: u64,
     containment: OnceCell<contain::Index>,
     preview_containment: OnceCell<contain::Index>,
     /// What a drop would do beyond its moves, drawn while a node is held.
@@ -139,6 +140,7 @@ impl CanvasEditor {
             stale: true,
             preview: None,
             preview_stale: false,
+            presentation_revision: 0,
             containment: OnceCell::new(),
             preview_containment: OnceCell::new(),
             pending: Vec::new(),
@@ -210,7 +212,12 @@ impl CanvasEditor {
         &self.kinds
     }
 
+    pub(crate) fn paint_revision(&self) -> (u64, u64) {
+        (self.document.revision, self.presentation_revision)
+    }
+
     pub fn set_kinds(&mut self, kinds: Kinds) {
+        self.presentation_revision += 1;
         self.kinds = kinds;
         self.containment.take();
         self.preview_containment.take();
@@ -1028,11 +1035,13 @@ impl CanvasEditor {
             preview.apply(&change);
         }
         self.preview_containment.take();
+        self.presentation_revision += 1;
         self.preview_stale = true;
         (self.pending, self.guides) = (pending, guides);
     }
 
     pub(crate) fn clear_preview(&mut self) {
+        self.presentation_revision += 1;
         self.preview = None;
         self.preview_containment.take();
         self.pending.clear();
@@ -1103,6 +1112,7 @@ impl CanvasEditor {
             && let Some(preview) = &mut self.preview
         {
             self.preview_containment.take();
+            self.presentation_revision += 1;
             let moves = arrange(&preview.canvas, held, &holds);
             preview.apply(&Change::MoveNodes { moves });
         }

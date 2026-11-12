@@ -6,58 +6,52 @@ impl CanvasView {
     /// Where each node paints this frame. A node the document moved glides
     /// there from where it was painted. Active gestures and newly painted
     /// nodes use their preview positions directly.
-    pub(super) fn positions(&mut self, reduced: bool, window: &mut Window) -> Positions {
+    pub(super) fn positions(&mut self, changed: bool, reduced: bool, window: &mut Window) {
         let direct = self.holding.is_some();
-        if direct {
+        let finish = self.glide.is_some() && (direct || reduced);
+        if direct || reduced {
             self.glide = None;
-        }
-        let fixed = |id: &str, shown: &Positions| direct || !shown.contains_key(id);
-        let canvas = self.editor.painted();
-        let to: Positions = canvas
-            .nodes
-            .iter()
-            .filter(|n| !fixed(&n.id, &self.shown))
-            .map(|n| (n.id.clone(), (n.x as f32, n.y as f32)))
-            .collect();
-        let moved = to.iter().any(|(id, at)| self.shown.get(id) != Some(at));
-        if reduced {
-            self.glide = None;
-        } else if moved && self.glide.as_ref().is_none_or(|glide| glide.to != to) {
-            self.glide = Some(Glide {
-                from: self.shown.clone(),
-                to,
-                since: Instant::now(),
-            });
-        }
-
-        let raw = self.glide.as_ref().map_or(1.0, |glide| {
-            let total = LAYOUT.total().mul_f32(motion::speed_scale());
-            glide.since.elapsed().as_secs_f32() / total.as_secs_f32().max(f32::EPSILON)
-        });
-        let t = LAYOUT.progress(raw);
-        let shown: Positions = canvas
-            .nodes
-            .iter()
-            .map(|n| {
-                let at = (n.x as f32, n.y as f32);
-                let from = self
-                    .glide
-                    .as_ref()
-                    .filter(|_| !fixed(&n.id, &self.shown))
-                    .and_then(|glide| glide.from.get(&n.id));
-                let at = from.map_or(at, |&from| {
-                    (motion::lerp(from.0, at.0, t), motion::lerp(from.1, at.1, t))
+        } else if changed {
+            let moved = self
+                .geometry
+                .positions
+                .iter()
+                .any(|(id, at)| self.shown.get(id).is_some_and(|shown| shown != at));
+            if moved {
+                self.glide = Some(Glide {
+                    from: self.shown.clone(),
+                    to: self.geometry.positions.clone(),
+                    since: Instant::now(),
                 });
-                (n.id.clone(), at)
-            })
-            .collect();
+            } else {
+                self.glide = None;
+            }
+        }
+        let Some(glide) = &self.glide else {
+            if changed || finish {
+                self.shown.clone_from(&self.geometry.positions);
+            }
+            return;
+        };
+        let total = LAYOUT.total().mul_f32(motion::speed_scale());
+        let raw = glide.since.elapsed().as_secs_f32() / total.as_secs_f32().max(f32::EPSILON);
+        let t = LAYOUT.progress(raw);
+        self.shown.retain(|id, _| glide.to.contains_key(id));
+        for (id, &at) in &glide.to {
+            let at = glide.from.get(id).map_or(at, |&from| {
+                (motion::lerp(from.0, at.0, t), motion::lerp(from.1, at.1, t))
+            });
+            if let Some(shown) = self.shown.get_mut(id) {
+                *shown = at;
+            } else {
+                self.shown.insert(id.clone(), at);
+            }
+        }
         if raw >= 1.0 {
             self.glide = None;
         } else {
             window.request_animation_frame();
         }
-        self.shown = shown.clone();
-        shown
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -20,7 +20,7 @@ use crate::{
     model::{Canvas, Edge, Node, Side},
     snap::{self, Guide, Snap},
 };
-use gpui::{self, Bounds, CursorStyle, Modifiers, MouseButton, Pixels, Point};
+use gpui::{CursorStyle, Modifiers, MouseButton, Pixels, Point};
 
 /// What a press landed on.
 // A handle carries where it sits, which is a measure, not a whole number.
@@ -887,9 +887,7 @@ fn gesture(
         if phase == Phase::Move {
             snapping.grid = None;
         }
-        let visible = editor
-            .visible()
-            .map(|(x, y, w, h)| Bounds::new(gpui::point(x, y), gpui::size(w, h)));
+        let visible = editor.visible();
         let (settled, caught) = snap::settle(
             editor.painted(),
             &moving,

@@ -21,7 +21,10 @@ use crate::{
     presentation::{self, Measure},
     snap::Snap,
     tool::{self, Hand, Hit, Pointer, Sketch, Tool, Wish},
-    view::editing::{Session, Target},
+    view::{
+        editing::{Session, Target},
+        geometry::Geometry,
+    },
 };
 use gpui::{
     AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId, Entity,
@@ -40,6 +43,7 @@ use theme::Theme;
 use web_time::Instant;
 
 mod editing;
+mod geometry;
 mod paint;
 mod pointer;
 
@@ -91,6 +95,7 @@ pub struct CanvasView {
     pub(crate) overlays: Overlays,
     /// Where each node was painted last frame.
     shown: Positions,
+    geometry: Geometry,
     glide: Option<Glide>,
     viewport: Rc<Cell<Option<Bounds<Pixels>>>>,
     /// Growing node heights read at prepaint, in canvas units.
@@ -158,6 +163,7 @@ impl CanvasView {
             exporting: false,
             overlays: Overlays::new(),
             shown: HashMap::new(),
+            geometry: Geometry::default(),
             glide: None,
             viewport: Rc::default(),
             measured: Rc::default(),
@@ -422,36 +428,26 @@ impl Render for CanvasView {
         }
         self.editor.frame();
         self.announce(cx);
-        let shown = self.positions(self.exporting || cx.reduced_motion(), window);
+        let changed = self.geometry.refresh(&self.editor, held.as_deref());
+        self.positions(changed, self.exporting || cx.reduced_motion(), window);
+        let shown = &self.shown;
         let theme = Theme::of(cx).clone();
-        let edges = self.edge_layer(&theme, &shown, cx.entity().downgrade());
-        // A container paints under what it holds. What a drag has in hand
-        // paints last, with what it holds, over whatever it is carried across.
+        let edges = self.edge_layer(&theme, shown, cx.entity().downgrade());
         let canvas = self.editor.painted();
-        let containment = self.editor.painted_containment();
-        let carried: HashSet<String> = match self.held() {
-            Some(id) => containment
-                .with_contents(&[id.to_owned()])
-                .into_iter()
-                .collect(),
-            None => HashSet::new(),
-        };
-        let mut order: Vec<usize> = (0..canvas.nodes.len()).collect();
-        order.sort_by_key(|ix| {
-            let id = &canvas.nodes[*ix].id;
-            (carried.contains(id), containment.depth(id))
-        });
         let connecting = self.connect_target();
         let picked = self.editor.selected_nodes();
-        let nodes: Vec<AnyElement> = order
-            .into_iter()
+        let nodes: Vec<AnyElement> = self
+            .geometry
+            .order
+            .iter()
+            .copied()
             .filter_map(|ix| {
                 let at = shown[&canvas.nodes[ix].id];
                 self.paint_node(ix, at, connecting.as_deref(), &picked, window, cx)
             })
             .collect();
-        let labels = self.labels(&theme, &shown, cx);
-        let edge_handles = self.edge_handles(&theme, &shown, cx);
+        let labels = self.labels(&theme, shown, cx);
+        let edge_handles = self.edge_handles(&theme, shown, cx);
         let marquee = match self.sketch() {
             Some(Sketch::Box { from, to }) => {
                 let (pan, zoom) = (self.editor.pan(), self.editor.zoom());
