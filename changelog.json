@@ -1,5 +1,26 @@
 [
   {
+    "version": "0.2.26",
+    "date": "2026-11-12",
+    "summary": "Faster canvas rendering, content-specific editors, and reliable node controls.",
+    "new": [
+      "Canvas fields select text, document, name, URL or external editors through `Field::with_control`; `Kind::open_in_host` delegates opening to the host.",
+      "`Kind::retained` opts fixed-size node bodies into caching across camera movement.",
+      "Themes expose dedicated canvas background and grid colors."
+    ],
+    "changed": [
+      "Built on the published bezel-gpui 0.3.23 packages.",
+      "Canvas rendering retains geometry, gesture previews and edge paths across updates, and culls connection labels using measured bounds.",
+      "Automatic Open source and Open link buttons above nodes are removed.",
+      "Breaking: `kind::Open` becomes an enum, `Field` gains `control`, `Kind` gains `retained`, and `snap::settle` takes visible bounds."
+    ],
+    "fixed": [
+      "Node controls receive pointer interactions above the drag surface.",
+      "Layout measurement changes invalidate the canvas view.",
+      "The platform modifier toggles object snapping during gestures; alignment guides consider visible nodes."
+    ]
+  },
+  {
     "version": "0.2.25",
     "date": "2026-11-10",
     "summary": "Shared canvas documents, richer editing and image export, consistent card presentation, and compact menus.",
