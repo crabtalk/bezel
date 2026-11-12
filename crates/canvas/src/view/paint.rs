@@ -114,6 +114,11 @@ impl CanvasView {
             },
             editor: editing.and_then(|session| session.input.inline()),
         };
+        let controls = kind
+            .controls
+            .as_ref()
+            .filter(|_| editing.is_none() && !self.exporting)
+            .and_then(|controls| controls(node, &look.card, window, cx));
         let content = (kind.render)(node, look, window, cx);
         let grows = self.editor.kinds().sizing(node) == Sizing::Grows;
         // A drop, or a connector let go here, would connect to this node.
@@ -254,6 +259,7 @@ impl CanvasView {
             .children(surface)
             .children(wash)
             .children(ring)
+            .children(controls)
             .children(handles)
             .on_mouse_down(
                 MouseButton::Left,

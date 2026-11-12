@@ -164,6 +164,8 @@ impl Card {
     }
 }
 
+pub type Controls = Rc<dyn Fn(&Node, &Card, &mut Window, &mut App) -> Option<AnyElement>>;
+
 /// A node's content. See [`text_style`] and [`chrome`].
 pub type Paint = Rc<dyn Fn(&Node, Look, &mut Window, &mut App) -> AnyElement>;
 pub type Read = Rc<dyn Fn(&Node) -> String>;
@@ -321,6 +323,8 @@ pub struct Kind {
     pub exportable: bool,
     pub rules: Rules,
     pub render: Paint,
+    /// Interactive content above the drag hitbox and below selection handles.
+    pub controls: Option<Controls>,
     /// What a double-click does in place of editing.
     pub open: Option<Open>,
 }
@@ -342,6 +346,7 @@ impl Kind {
                 handles: handle::sides_and_corner,
             },
             render: Rc::new(render),
+            controls: None,
             open: None,
         }
     }
@@ -379,6 +384,14 @@ impl Kind {
 
     pub fn edit(mut self, field: Field) -> Self {
         self.rules.edit = Some(field);
+        self
+    }
+
+    pub fn controls(
+        mut self,
+        controls: impl Fn(&Node, &Card, &mut Window, &mut App) -> Option<AnyElement> + 'static,
+    ) -> Self {
+        self.controls = Some(Rc::new(controls));
         self
     }
 
