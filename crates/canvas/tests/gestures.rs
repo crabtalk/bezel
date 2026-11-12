@@ -5,7 +5,7 @@ use canvas::{
     model::Side,
     tool::{Hand, Hit, Pointer, Resize, Select, SpacePan, Tool},
 };
-use gpui::{CursorStyle, Modifiers, MouseButton, point, px};
+use gpui::{CursorStyle, Modifiers, MouseButton, point, px, size};
 
 fn editor() -> CanvasEditor {
     CanvasEditor::new(Canvas::parse(r#"{"nodes":[{"id":"a","type":"link","x":100,"y":100,"width":200,"height":100},{"id":"b","type":"link","x":500,"y":300,"width":100,"height":100}]}"#).unwrap(), layout::FREE)
@@ -390,5 +390,55 @@ fn annotation_corners_scale_text_and_sides_only_change_wrapping_width() {
         assert!(editor.undo());
         assert_eq!(editor.canvas(), &before);
         assert!(!editor.can_undo());
+    }
+}
+
+#[test]
+fn the_platform_modifier_inverts_object_snapping_during_a_drag() {
+    for always_snap in [false, true] {
+        let mut editor = editor().with_snap(Snap {
+            grid: None,
+            guides: always_snap,
+        });
+        let mut tool = Select::default();
+        let mut pointer = pointer(Hit::Node("a".into()));
+        assert!(tool.press(&pointer, &mut Hand::new(&mut editor)));
+        pointer.at = point(197., 40.);
+        for modifier in [false, true, false] {
+            pointer.modifiers.platform = modifier;
+            tool.drag(&pointer, &mut Hand::new(&mut editor));
+            let expected = if always_snap ^ modifier { 300 } else { 297 };
+            assert_eq!(editor.painted().node("a").unwrap().x, expected);
+        }
+        tool.release(&pointer, &mut Hand::new(&mut editor));
+        assert_eq!(
+            editor.canvas().node("a").unwrap().x,
+            if always_snap { 300 } else { 297 }
+        );
+    }
+}
+
+#[test]
+fn object_snapping_ignores_targets_outside_the_viewport() {
+    for (pan, zoom, expected) in [
+        (point(0., 0.), 1., 497),
+        (point(-400., -200.), 1., 500),
+        (point(0., 0.), 0.5, 500),
+    ] {
+        let mut editor = editor().with_snap(Snap {
+            grid: None,
+            guides: true,
+        });
+        editor.set_viewport(size(400., 400.));
+        editor.zoom_about(zoom, point(0., 0.));
+        editor.pan_by(pan.x, pan.y);
+        let mut tool = Select::default();
+        let mut pointer = pointer(Hit::Node("a".into()));
+        assert!(tool.press(&pointer, &mut Hand::new(&mut editor)));
+        pointer.at = point(397., 40.);
+        tool.drag(&pointer, &mut Hand::new(&mut editor));
+        assert_eq!(editor.painted().node("a").unwrap().x, expected);
+        tool.release(&pointer, &mut Hand::new(&mut editor));
+        assert_eq!(editor.canvas().node("a").unwrap().x, expected);
     }
 }

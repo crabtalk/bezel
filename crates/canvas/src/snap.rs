@@ -2,6 +2,7 @@
 //! grid.
 
 use crate::model::{Canvas, Node};
+use gpui::{self, Bounds};
 
 /// How moving boxes settle. Neither, unless an app says.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -39,12 +40,21 @@ pub fn settle(
     size: (i64, i64),
     snap: Snap,
     reach: i64,
+    visible: Option<Bounds<f32>>,
 ) -> ((i64, i64), Vec<Guide>) {
     let others: Vec<&Node> = match snap.guides {
         true => canvas
             .nodes
             .iter()
             .filter(|node| !moving.contains(&node.id))
+            .filter(|node| {
+                visible.is_none_or(|bounds| {
+                    bounds.intersects(&Bounds::new(
+                        gpui::point(node.x as f32, node.y as f32),
+                        gpui::size(node.width as f32, node.height as f32),
+                    ))
+                })
+            })
             .collect(),
         false => Vec::new(),
     };

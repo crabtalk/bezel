@@ -26,9 +26,9 @@ use crate::{
 use gpui::{
     AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId, Entity,
     EventEmitter, ExternalPaths, FocusHandle, Focusable, HitboxBehavior, Hsla, KeyContext,
-    KeyDownEvent, KeyUpEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    PinchEvent, Pixels, Point, Render, ScrollWheelEvent, Subscription, WeakEntity, Window,
-    canvas as painter, div, point, prelude::*, px, size,
+    KeyDownEvent, KeyUpEvent, Modifiers, ModifiersChangedEvent, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, PinchEvent, Pixels, Point, Render, ScrollWheelEvent,
+    Subscription, WeakEntity, Window, canvas as painter, div, point, prelude::*, px, size,
 };
 use motion::{AppExt as _, LAYOUT};
 use std::{
@@ -576,6 +576,12 @@ impl Render for CanvasView {
                 this.modifiers = event.keystroke.modifiers;
                 if event.keystroke.key == "space" {
                     this.space = false;
+                }
+            }))
+            .on_modifiers_changed(cx.listener(|this, event: &ModifiersChangedEvent, _, cx| {
+                this.modifiers = event.modifiers;
+                if let Some(position) = this.aim {
+                    this.feed(position, cx);
                 }
             }))
             .on_scroll_wheel(cx.listener(Self::wheel))
