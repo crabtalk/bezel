@@ -140,6 +140,7 @@ impl CanvasView {
         };
         let (id, measured_id) = (node.id.clone(), node.id.clone());
         let (measured, height) = (self.measured.clone(), node.height);
+        let owner = cx.entity_id();
         let wash = target.then(|| (self.overlays.drop)(&mark, window, cx));
         let ring = (selected || target).then(|| (self.overlays.ring)(&mark, window, cx));
         let handles: Vec<AnyElement> = declared
@@ -235,11 +236,11 @@ impl CanvasView {
             .when(grows, |d| {
                 d.child(
                     painter(
-                        move |bounds, window, _| {
+                        move |bounds, _, cx| {
                             let now = (bounds.size.height.as_f32() / z).round() as i64;
                             if now != height {
                                 measured.borrow_mut().insert(measured_id, now);
-                                window.refresh();
+                                cx.notify(owner);
                             }
                         },
                         |_, _, _, _| {},
@@ -427,10 +428,11 @@ impl CanvasView {
         let (grid, guides) = (self.overlays.grid.clone(), self.overlays.guides.clone());
         let caught = self.editor.guides.clone();
         let viewport = self.viewport.clone();
+        let owner = view.entity_id();
         painter(
-            move |bounds, window, _| {
+            move |bounds, window, cx| {
                 if viewport.replace(Some(bounds)).map(|b| b.size) != Some(bounds.size) {
-                    window.refresh();
+                    cx.notify(owner);
                 }
                 window.insert_hitbox(bounds, HitboxBehavior::Normal)
             },
