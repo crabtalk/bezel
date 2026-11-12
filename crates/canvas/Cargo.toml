@@ -174,3 +174,7 @@ required-features = ["gpui"]
 [[test]]
 name = "interaction"
 required-features = ["gpui"]
+
+[[test]]
+name = "performance"
+required-features = ["gpui"]

@@ -28,6 +28,7 @@ use crate::{
     mindmap,
     model::{Canvas, Node, Side},
     options::Options,
+    preview::Preview,
     snap::{Guide, Snap},
 };
 
@@ -101,7 +102,7 @@ pub struct CanvasEditor {
     reveal: Option<String>,
     stale: bool,
     /// The document as a gesture in hand would leave it.
-    preview: Option<Canvas>,
+    preview: Option<Preview>,
     preview_stale: bool,
     containment: OnceCell<contain::Index>,
     preview_containment: OnceCell<contain::Index>,
@@ -200,7 +201,9 @@ impl CanvasEditor {
 
     /// The document with the gesture in hand over it: what paints.
     pub fn painted(&self) -> &Canvas {
-        self.preview.as_ref().unwrap_or(&self.document.canvas)
+        self.preview
+            .as_ref()
+            .map_or(&self.document.canvas, |preview| &preview.canvas)
     }
 
     pub fn kinds(&self) -> &Kinds {
@@ -590,9 +593,9 @@ impl CanvasEditor {
 
     pub(crate) fn painted_containment(&self) -> &contain::Index {
         match &self.preview {
-            Some(preview) => self
-                .preview_containment
-                .get_or_init(|| contain::Index::new(preview, |node| self.kinds.holds(node))),
+            Some(preview) => self.preview_containment.get_or_init(|| {
+                contain::Index::new(&preview.canvas, |node| self.kinds.holds(node))
+            }),
             None => self.containment(),
         }
     }
@@ -1011,15 +1014,19 @@ impl CanvasEditor {
         self.snap = snap;
     }
 
-    /// Show `preview` in place of the document until [`Self::clear_preview`]:
-    /// what a gesture in hand would leave, and what else its drop would do.
     pub(crate) fn set_preview(
         &mut self,
-        preview: Canvas,
+        changes: Vec<Change>,
         pending: Vec<Change>,
         guides: Vec<Guide>,
     ) {
-        self.preview = Some(preview);
+        let preview = self
+            .preview
+            .get_or_insert_with(|| Preview::new(self.document.canvas.clone()));
+        preview.reset(&self.document.canvas);
+        for change in changes {
+            preview.apply(&change);
+        }
         self.preview_containment.take();
         self.preview_stale = true;
         (self.pending, self.guides) = (pending, guides);
@@ -1045,21 +1052,19 @@ impl CanvasEditor {
         let mut changes = Vec::new();
         for (id, height) in measured {
             if let Some(preview) = &mut self.preview
-                && preview.node(&id) != self.document.canvas.node(&id)
+                && preview.canvas.node(&id) != self.document.canvas.node(&id)
             {
                 // Measured at the size the gesture gave it.
                 if let Some(width) = preview
+                    .canvas
                     .node(&id)
                     .filter(|n| n.height != height)
                     .map(|n| n.width)
                 {
-                    change::apply(
-                        preview,
-                        &Change::Resize {
-                            id,
-                            size: (width, height),
-                        },
-                    );
+                    preview.apply(&Change::Resize {
+                        id,
+                        size: (width, height),
+                    });
                     self.preview_stale = true;
                 }
                 continue;
@@ -1078,7 +1083,7 @@ impl CanvasEditor {
             };
             self.document.derive(&change);
             if let Some(preview) = &mut self.preview {
-                change::apply(preview, &change);
+                preview.apply(&change);
                 self.preview_stale = true;
             }
             changes.push(change);
@@ -1098,8 +1103,8 @@ impl CanvasEditor {
             && let Some(preview) = &mut self.preview
         {
             self.preview_containment.take();
-            let moves = arrange(preview, held, &holds);
-            change::apply(preview, &Change::MoveNodes { moves });
+            let moves = arrange(&preview.canvas, held, &holds);
+            preview.apply(&Change::MoveNodes { moves });
         }
         if !changes.is_empty() {
             self.containment.take();

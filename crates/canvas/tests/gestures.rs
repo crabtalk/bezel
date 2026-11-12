@@ -442,3 +442,64 @@ fn object_snapping_ignores_targets_outside_the_viewport() {
         assert_eq!(editor.canvas().node("a").unwrap().x, expected);
     }
 }
+
+#[test]
+fn dragging_reuses_unaffected_node_content() {
+    let mut editor = editor();
+    let mut node = editor.canvas().node("b").unwrap().clone();
+    node.text = Some("retained content".repeat(100));
+    editor.submit([canvas::Change::UpdateNode { node }]);
+    let mut select = Select::default();
+    let mut pointer = pointer(Hit::Node("a".into()));
+    select.press(&pointer, &mut Hand::new(&mut editor));
+    pointer.at = point(30., 20.);
+    select.drag(&pointer, &mut Hand::new(&mut editor));
+    let content = editor
+        .painted()
+        .node("b")
+        .unwrap()
+        .text
+        .as_ref()
+        .unwrap()
+        .as_ptr();
+    for step in 4..20 {
+        pointer.at = point(step as f32 * 10., 20.);
+        select.drag(&pointer, &mut Hand::new(&mut editor));
+        editor.reflow([], Some("a"));
+        assert_eq!(
+            editor
+                .painted()
+                .node("b")
+                .unwrap()
+                .text
+                .as_ref()
+                .unwrap()
+                .as_ptr(),
+            content
+        );
+    }
+    select.cancel(&mut Hand::new(&mut editor));
+    assert_eq!(editor.painted(), editor.canvas());
+    assert_eq!(editor.canvas().node("a").unwrap().x, 100);
+}
+
+#[test]
+fn repeated_duplicate_previews_leave_only_the_final_copy() {
+    let mut editor = editor();
+    let mut select = Select::default();
+    let mut pointer = pointer(Hit::Node("a".into()));
+    pointer.modifiers.alt = true;
+    select.press(&pointer, &mut Hand::new(&mut editor));
+    for step in 1..10 {
+        pointer.at = point(step as f32 * 10., 20.);
+        select.drag(&pointer, &mut Hand::new(&mut editor));
+        editor.reflow([], Some("a"));
+        assert_eq!(editor.painted().nodes.len(), 3);
+        assert_eq!(editor.canvas().nodes.len(), 2);
+    }
+    select.release(&pointer, &mut Hand::new(&mut editor));
+    assert_eq!(editor.canvas().nodes.len(), 3);
+    assert_eq!(editor.canvas().nodes.last().unwrap().x, 190);
+    assert!(editor.undo());
+    assert_eq!(editor.canvas().nodes.len(), 2);
+}
