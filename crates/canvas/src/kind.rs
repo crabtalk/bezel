@@ -321,6 +321,7 @@ pub struct Rules {
 #[derive(Clone)]
 pub struct Kind {
     pub exportable: bool,
+    pub retained: bool,
     pub rules: Rules,
     pub render: Paint,
     /// Interactive content above the drag hitbox and below selection handles.
@@ -337,6 +338,7 @@ impl Kind {
     ) -> Self {
         Self {
             exportable: false,
+            retained: false,
             rules: Rules {
                 can: Capabilities::ALL,
                 sizing: Sizing::Fixed,
@@ -349,6 +351,13 @@ impl Kind {
             controls: None,
             open: None,
         }
+    }
+
+    /// The renderer ignores node position and observes external state through
+    /// child views. Fixed-size bodies can be cached independently of overlays.
+    pub fn retained(mut self) -> Self {
+        self.retained = true;
+        self
     }
 
     /// Marks a renderer that paints entirely through GPUI.
@@ -538,6 +547,7 @@ pub fn text() -> Kind {
         look.card
             .render(node, None, Content::Flow(content), window, cx)
     })
+    .retained()
     .exportable()
     .sizing(Sizing::Grows)
     .edit(
@@ -576,6 +586,7 @@ pub fn link() -> Kind {
             cx,
         )
     })
+    .retained()
     .exportable()
     .edit(
         Field::new(

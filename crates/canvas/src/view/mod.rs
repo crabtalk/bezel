@@ -42,6 +42,7 @@ use std::{
 use theme::Theme;
 use web_time::Instant;
 
+mod body;
 mod edge_paths;
 mod editing;
 mod geometry;

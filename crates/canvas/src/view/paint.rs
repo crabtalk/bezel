@@ -1,6 +1,6 @@
 //! Node positions, node and label painting, and the edge layer.
 
-use crate::view::*;
+use crate::view::{body, *};
 
 impl CanvasView {
     /// Where each node paints this frame. A node the document moved glides
@@ -114,7 +114,15 @@ impl CanvasView {
             .as_ref()
             .filter(|_| editing.is_none() && !self.exporting)
             .and_then(|controls| controls(node, &look.card, window, cx));
-        let content = (kind.render)(node, look, window, cx);
+        let content = if kind.retained
+            && editing.is_none()
+            && !self.exporting
+            && look.card.sizing == Sizing::Fixed
+        {
+            body::render(node, look.card, kind.render.clone(), window, cx)
+        } else {
+            (kind.render)(node, look, window, cx)
+        };
         let grows = self.editor.kinds().sizing(node) == Sizing::Grows;
         // A drop, or a connector let go here, would connect to this node.
         let target = connecting == Some(node.id.as_str())
