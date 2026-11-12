@@ -153,8 +153,9 @@ impl CanvasView {
         let ring = (selected || target).then(|| (self.overlays.ring)(&mark, window, cx));
         let handles: Vec<AnyElement> = declared
             .into_iter()
-            .map(|declared| {
+            .filter_map(|declared| {
                 let size = self.style.handle;
+                let bounds = declared.bounds(Rect { x: 0., y: 0., w, h }, size)?;
                 let look = (self.overlays.handle)(
                     &Mark {
                         width: size,
@@ -167,32 +168,33 @@ impl CanvasView {
                 let axes = declared.spot.resize_axes();
                 let cursor = declared.cursor();
                 let owner = node.id.clone();
-                let bounds = declared.bounds(Rect { x: 0., y: 0., w, h }, size).unwrap();
                 let border_handle =
                     declared.role == Role::Resize && axes.is_some_and(|(x, y)| x == 0 || y == 0);
-                div()
-                    .id(ElementId::Name(
-                        format!("{}-{}", node.id, declared.id).into(),
-                    ))
-                    .absolute()
-                    .left(px(bounds.origin.x))
-                    .top(px(bounds.origin.y))
-                    .w(px(bounds.size.width))
-                    .h(px(bounds.size.height))
-                    .cursor(cursor)
-                    .when(!border_handle, |element| element.child(look))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, event: &MouseDownEvent, window, cx| {
-                            cx.stop_propagation();
-                            let hit = Hit::Handle {
-                                owner: owner.clone(),
-                                handle: declared.clone(),
-                            };
-                            this.press(event, hit, window, cx);
-                        }),
-                    )
-                    .into_any_element()
+                Some(
+                    div()
+                        .id(ElementId::Name(
+                            format!("{}-{}", node.id, declared.id).into(),
+                        ))
+                        .absolute()
+                        .left(px(bounds.origin.x))
+                        .top(px(bounds.origin.y))
+                        .w(px(bounds.size.width))
+                        .h(px(bounds.size.height))
+                        .cursor(cursor)
+                        .when(!border_handle, |element| element.child(look))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, event: &MouseDownEvent, window, cx| {
+                                cx.stop_propagation();
+                                let hit = Hit::Handle {
+                                    owner: owner.clone(),
+                                    handle: declared.clone(),
+                                };
+                                this.press(event, hit, window, cx);
+                            }),
+                        )
+                        .into_any_element(),
+                )
             })
             .collect();
 

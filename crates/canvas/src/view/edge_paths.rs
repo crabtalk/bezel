@@ -1,6 +1,5 @@
 use crate::{
     change::Change,
-    edge::Draw,
     edit::CanvasEditor,
     path::{self, Ends, Path},
     view::{Positions, paint},
@@ -13,13 +12,14 @@ use std::{
 struct Cached {
     ends: Ends,
     points: Vec<[i64; 2]>,
-    draw: Draw,
+    kind: Option<String>,
     path: Rc<Path>,
 }
 
 #[derive(Default)]
 pub(super) struct EdgePaths {
     paths: HashMap<String, Cached>,
+    kinds_revision: u64,
 }
 
 impl EdgePaths {
@@ -28,6 +28,10 @@ impl EdgePaths {
     }
 
     pub fn refresh(&mut self, editor: &CanvasEditor, shown: &Positions) {
+        if self.kinds_revision != editor.edge_kinds_revision {
+            self.paths.clear();
+            self.kinds_revision = editor.edge_kinds_revision;
+        }
         let canvas = editor.painted();
         let nodes = canvas.lookup();
         let edges = canvas
@@ -59,9 +63,7 @@ impl EdgePaths {
             let draw = editor.edge_kinds().get(edge).path;
             live.insert(edge.id.as_str());
             if self.paths.get(&edge.id).is_some_and(|cached| {
-                cached.ends == ends
-                    && cached.points == points
-                    && std::ptr::fn_addr_eq(cached.draw, draw)
+                cached.ends == ends && cached.points == points && cached.kind == edge.kind
             }) {
                 continue;
             }
@@ -71,7 +73,7 @@ impl EdgePaths {
                 Cached {
                     ends,
                     points: points.to_vec(),
-                    draw,
+                    kind: edge.kind.clone(),
                     path: Rc::new(path),
                 },
             );

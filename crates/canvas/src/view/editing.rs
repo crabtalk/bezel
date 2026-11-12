@@ -18,7 +18,7 @@ use ui::{
     popover,
     widgets::Button,
 };
-use url::Url;
+use url::{ParseError, Url};
 
 pub(super) const FIELD_CONTEXT: &str = "BezelCanvasField";
 pub(super) const TEXT_CONTEXT: &str = "BezelCanvasText";
@@ -180,13 +180,15 @@ impl CanvasView {
     ) {
         let (input, changes) = if control == Control::Document {
             let input = cx.new(|cx| {
-                Editor::new(value, cx).with_chrome(Chrome {
-                    handle: false,
-                    slash: false,
-                    language: false,
-                    paste: false,
-                    mention: false,
-                })
+                Editor::new(value, cx)
+                    .with_placeholder("Type text…")
+                    .with_chrome(Chrome {
+                        handle: false,
+                        slash: false,
+                        language: false,
+                        paste: false,
+                        mention: false,
+                    })
             });
             let changes = cx.subscribe(&input, |this, _, event: &EditorEvent, cx| {
                 if *event == EditorEvent::Changed {
@@ -366,28 +368,28 @@ impl CanvasView {
         }
         let value = session.input.source(cx);
         let value = value.trim();
-        let parsed = Url::parse(value);
-        let Some(url) = parsed
-            .ok()
-            .filter(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
-        else {
-            self.editing.as_mut().unwrap().error =
-                Some("Enter a complete http:// or https:// URL.".into());
+        if value.is_empty()
+            || !matches!(
+                Url::parse(value),
+                Ok(_) | Err(ParseError::RelativeUrlWithoutBase)
+            )
+        {
+            self.editing.as_mut().unwrap().error = Some("Enter a valid URL or path.".into());
             cx.notify();
             return;
-        };
+        }
         let session = self.editing.take().unwrap();
         match session.target {
             Target::New { mut node, at } => {
                 if let Some(field) = &self.editor.kinds().get(&node.kind).rules.edit {
-                    (field.write)(&mut node, url.into());
+                    (field.write)(&mut node, value.to_owned());
                 }
                 self.update_editor(cx, |editor| editor.add_node(*node, at));
             }
             Target::Node(id) => {
                 if let Some(mut node) = self.editor.canvas().node(&id).cloned() {
                     if let Some(field) = &self.editor.kinds().get(&node.kind).rules.edit {
-                        (field.write)(&mut node, url.into());
+                        (field.write)(&mut node, value.to_owned());
                     }
                     self.update_editor(cx, |editor| editor.submit([Change::UpdateNode { node }]));
                 }
@@ -480,3 +482,7 @@ impl CanvasView {
         ))
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/editing.rs"]
+mod tests;

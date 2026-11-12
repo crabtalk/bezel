@@ -105,6 +105,7 @@ pub struct CanvasEditor {
     preview: Option<Preview>,
     preview_stale: bool,
     presentation_revision: u64,
+    pub(crate) edge_kinds_revision: u64,
     containment: OnceCell<contain::Index>,
     preview_containment: OnceCell<contain::Index>,
     /// What a drop would do beyond its moves, drawn while a node is held.
@@ -141,6 +142,7 @@ impl CanvasEditor {
             preview: None,
             preview_stale: false,
             presentation_revision: 0,
+            edge_kinds_revision: 0,
             containment: OnceCell::new(),
             preview_containment: OnceCell::new(),
             pending: Vec::new(),
@@ -229,12 +231,14 @@ impl CanvasEditor {
     }
 
     pub fn set_edge_kinds(&mut self, kinds: EdgeKinds) {
+        self.edge_kinds_revision += 1;
         self.presentation_revision += 1;
         self.edge_kinds = kinds;
     }
 
     /// A new document, with no history.
     pub fn set_canvas(&mut self, canvas: Canvas) {
+        self.presentation_revision += 1;
         self.document = Document::new(canvas);
         self.containment.take();
         self.group = None;
@@ -245,6 +249,7 @@ impl CanvasEditor {
     }
 
     pub(crate) fn take_document(&mut self, document: Document) {
+        self.presentation_revision += 1;
         self.document = document;
         self.containment.take();
         self.clear_preview();

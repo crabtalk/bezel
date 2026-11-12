@@ -323,6 +323,7 @@ pub struct Kind {
     pub exportable: bool,
     pub retained: bool,
     pub rules: Rules,
+    /// Pointer interactions belong in `controls`; the drag surface covers this content.
     pub render: Paint,
     /// Interactive content above the drag hitbox and below selection handles.
     pub controls: Option<Controls>,

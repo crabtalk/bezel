@@ -190,7 +190,7 @@ pub fn sides_and_corner(_: &Node) -> Vec<Handle> {
         .collect()
 }
 
-/// Resize borders and corners, with connectors at the side midpoints.
+/// Resize borders and corners, with connectors outside the side midpoints.
 pub fn frame(node: &Node) -> Vec<Handle> {
     let mut handles: Vec<Handle> = [Side::Top, Side::Right, Side::Bottom, Side::Left]
         .into_iter()

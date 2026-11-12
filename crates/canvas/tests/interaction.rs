@@ -6,7 +6,9 @@ use canvas::{
     path::Rect,
     tool::{Hand, Hit, Pointer, Select, Tool as _, Wish},
 };
-use gpui::{Modifiers, MouseButton, TestAppContext, point, px};
+use gpui::{
+    Modifiers, MouseButton, TestAppContext, VisualTestContext, div, point, prelude::*, px, size,
+};
 use std::{cell::Cell, rc::Rc};
 
 fn canvas() -> Canvas {
@@ -118,4 +120,83 @@ fn host_activation_requests_the_original_node_without_mutating_it(cx: &mut TestA
         })
         .unwrap();
     assert_eq!(count.get(), 1);
+}
+
+#[gpui::test]
+fn controls_receive_clicks_above_the_drag_surface(cx: &mut TestAppContext) {
+    cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
+    let clicks = Rc::new(Cell::new(0));
+    let clicked = clicks.clone();
+    let window = cx.add_window(move |_, cx| {
+        CanvasView::new(canvas(), layout::FREE, cx).with_kinds(Kinds::new().with(
+            model::LINK,
+            kind::link().controls(move |_, _, _, _| {
+                let clicked = clicked.clone();
+                Some(
+                    div()
+                        .id("node-control")
+                        .absolute()
+                        .left(px(20.))
+                        .top(px(20.))
+                        .w(px(40.))
+                        .h(px(30.))
+                        .debug_selector(|| "node-control".into())
+                        .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                            clicked.set(clicked.get() + 1);
+                            cx.stop_propagation();
+                        })
+                        .into_any_element(),
+                )
+            }),
+        ))
+    });
+    let view = window.root(cx).unwrap();
+    let mut cx = VisualTestContext::from_window(window.into(), cx);
+    cx.simulate_resize(size(px(800.), px(600.)));
+    for _ in 0..3 {
+        cx.update(|window, cx| window.draw(cx).clear(cx));
+    }
+    let at = cx.debug_bounds("node-control").unwrap().center();
+    cx.simulate_click(at, Modifiers::none());
+    assert_eq!(clicks.get(), 1);
+    cx.update(|_, cx| assert!(view.read(cx).editor().selected().is_none()));
+}
+
+#[gpui::test]
+fn external_editing_requests_the_selected_node(cx: &mut TestAppContext) {
+    cx.update(|cx| theme::Theme::install(theme::Appearance::Dark, cx));
+    let window = cx.add_window(|_, cx| {
+        CanvasView::new(canvas(), layout::FREE, cx).with_kinds(
+            Kinds::new().with(
+                model::LINK,
+                kind::link().edit(
+                    kind::Field::new(
+                        |node| node.url.clone().unwrap_or_default(),
+                        |node, url| node.url = Some(url),
+                    )
+                    .with_control(|_| kind::Control::External),
+                ),
+            ),
+        )
+    });
+    let view = window.root(cx).unwrap();
+    let requested = Rc::new(Cell::new(0));
+    let count = requested.clone();
+    let _subscription = cx.update(|cx| {
+        cx.subscribe(&view, move |_, event: &CanvasEvent, _| {
+            if let CanvasEvent::EditRequested { id } = event {
+                assert_eq!(id, "link");
+                count.set(count.get() + 1);
+            }
+        })
+    });
+    window
+        .update(cx, |view, window, cx| {
+            view.update_editor(cx, |editor| editor.select(Some("link".into())));
+            view.edit_selected(window, cx);
+            assert_eq!(view.editor().canvas(), &canvas());
+            assert!(!view.editor().can_undo());
+        })
+        .unwrap();
+    assert_eq!(requested.get(), 1);
 }

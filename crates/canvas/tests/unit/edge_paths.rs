@@ -95,3 +95,18 @@ fn routes_kinds_and_removed_edges_update_the_shared_paths() {
     assert!(paths.get("a").is_none());
     assert!(paths.get("b").is_some());
 }
+
+#[test]
+fn replacing_kinds_with_the_same_function_invalidates_paths() {
+    let mut editor = editor();
+    let mut paths = EdgePaths::default();
+    let shown = Positions::new();
+    paths.refresh(&editor, &shown);
+    let before = paths.get("a").unwrap().clone();
+    editor.set_edge_kinds(editor.edge_kinds().clone());
+    paths.refresh(&editor, &shown);
+    assert!(!Rc::ptr_eq(paths.get("a").unwrap(), &before));
+    let before = paths.get("a").unwrap().clone();
+    paths.refresh(&editor, &shown);
+    assert!(Rc::ptr_eq(paths.get("a").unwrap(), &before));
+}

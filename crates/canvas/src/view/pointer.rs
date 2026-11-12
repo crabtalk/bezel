@@ -226,7 +226,7 @@ impl CanvasView {
             .into_iter()
             .filter(|declared| matches!(declared.role, Role::Reconnect(_)))
             .filter_map(|declared| {
-                let at = declared.spot.along(&path)?;
+                let at = declared.spot.along(path)?;
                 let (x, y) = (pan.x + at.x * z, pan.y + at.y * z);
                 let owner = id.clone();
                 Some(

@@ -1,5 +1,6 @@
 use crate::{
     change::Change,
+    document::Document,
     edit::CanvasEditor,
     kind, layout,
     model::{Canvas, GROUP, LINK, Node},
@@ -125,4 +126,20 @@ fn camera_geometry_workload() {
         "5,000 nodes, 1,000 camera geometry checks: {:?}",
         start.elapsed()
     );
+}
+
+#[test]
+fn swapping_documents_with_equal_revisions_invalidates_geometry() {
+    let mut editor = editor();
+    let mut geometry = Geometry::default();
+    geometry.refresh(&editor, None);
+    let mut replacement = editor.canvas().clone();
+    replacement.node_mut("child").unwrap().x = 900;
+    editor.take_document(Document::new(replacement.clone()));
+    assert!(geometry.refresh(&editor, None));
+    assert_eq!(geometry.positions["child"].0, 900.);
+    replacement.node_mut("child").unwrap().x = 1200;
+    editor.set_canvas(replacement);
+    assert!(geometry.refresh(&editor, None));
+    assert_eq!(geometry.positions["child"].0, 1200.);
 }

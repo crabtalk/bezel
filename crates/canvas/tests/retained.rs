@@ -1,4 +1,4 @@
-use canvas::{Canvas, CanvasView, Kinds, kind::Kind, layout};
+use canvas::{Canvas, CanvasView, Kinds, change::Change, kind::Kind, layout};
 use gpui::{TestAppContext, VisualTestContext, div, prelude::*, px, rgb, size};
 use std::{cell::Cell, rc::Rc};
 
@@ -33,4 +33,16 @@ fn retained_fixed_bodies_skip_camera_renders_and_invalidate_on_zoom(cx: &mut Tes
     });
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert!(renders.get() > before);
+    let before = renders.get();
+    view.update(&mut cx, |view, cx| {
+        view.update_editor(cx, |editor| {
+            let mut node = editor.canvas().node("a").unwrap().clone();
+            node.label = Some("Updated content".into());
+            editor.submit([Change::UpdateNode { node }]);
+        });
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert_eq!(renders.get(), before + 1);
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert_eq!(renders.get(), before + 1);
 }

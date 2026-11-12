@@ -11,13 +11,15 @@
     "changed": [
       "Built on the published bezel-gpui 0.3.23 packages.",
       "Canvas rendering retains geometry, gesture previews and edge paths across updates, and culls connection labels using measured bounds.",
-      "Automatic Open source and Open link buttons above nodes are removed.",
-      "Breaking: `kind::Open` becomes an enum, `Field` gains `control`, `Kind` gains `retained`, and `snap::settle` takes visible bounds."
+      "Breaking: `kind::Open` callbacks are renamed to `OpenHandler`; `Open` is now an enum. `Field` gains `control`; `Kind` gains `retained` and `controls`; `snap::settle` takes visible bounds.",
+      "Breaking: `CanvasEvent` gains `OpenRequested` and `EditRequested`; `Theme` gains `canvas_bg` and `canvas_grid`.",
+      "Breaking: the canvas drag surface intercepts node-body mouse events. Put interactive elements in `Kind::controls`, above the drag surface."
     ],
     "fixed": [
       "Node controls receive pointer interactions above the drag surface.",
       "Layout measurement changes invalidate the canvas view.",
-      "The platform modifier toggles object snapping during gestures; alignment guides consider visible nodes."
+      "The platform modifier toggles alignment guides during gestures; guide candidates are limited to visible nodes.",
+      "Link editing preserves relative URLs, local paths and non-HTTP schemes."
     ]
   },
   {
