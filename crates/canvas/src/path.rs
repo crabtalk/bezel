@@ -48,7 +48,7 @@ impl Rect {
 
 /// What an edge kind is handed: the boxes it joins, the sides it was told to
 /// leave from, and the ends it wears.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Ends {
     pub from: Rect,
     pub to: Rect,

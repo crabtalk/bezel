@@ -17,7 +17,7 @@ use crate::{
     mindmap,
     model::{self, Canvas, Edge, End, Node, Stroke},
     options::{Frame, Mark, Options, Overlays, Style},
-    path::{self, Ends, Path, Rect},
+    path::{Ends, Path, Rect},
     presentation::{self, Measure},
     snap::Snap,
     tool::{self, Hand, Hit, Pointer, Sketch, Tool, Wish},
@@ -42,6 +42,7 @@ use std::{
 use theme::Theme;
 use web_time::Instant;
 
+mod edge_paths;
 mod editing;
 mod geometry;
 mod paint;
@@ -429,10 +430,13 @@ impl Render for CanvasView {
         self.editor.frame();
         self.announce(cx);
         let changed = self.geometry.refresh(&self.editor, held.as_deref());
-        self.positions(changed, self.exporting || cx.reduced_motion(), window);
+        let animated = self.positions(changed, self.exporting || cx.reduced_motion(), window);
+        if changed || animated {
+            self.geometry.paths.refresh(&self.editor, &self.shown);
+        }
         let shown = &self.shown;
         let theme = Theme::of(cx).clone();
-        let edges = self.edge_layer(&theme, shown, cx.entity().downgrade());
+        let edges = self.edge_layer(&theme, cx.entity().downgrade());
         let canvas = self.editor.painted();
         let connecting = self.connect_target();
         let picked = self.editor.selected_nodes();
@@ -446,8 +450,8 @@ impl Render for CanvasView {
                 self.paint_node(ix, at, connecting.as_deref(), &picked, window, cx)
             })
             .collect();
-        let labels = self.labels(&theme, shown, cx);
-        let edge_handles = self.edge_handles(&theme, shown, cx);
+        let labels = self.labels(&theme, cx);
+        let edge_handles = self.edge_handles(&theme, cx);
         let marquee = match self.sketch() {
             Some(Sketch::Box { from, to }) => {
                 let (pan, zoom) = (self.editor.pan(), self.editor.zoom());

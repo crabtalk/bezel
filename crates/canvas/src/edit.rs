@@ -229,6 +229,7 @@ impl CanvasEditor {
     }
 
     pub fn set_edge_kinds(&mut self, kinds: EdgeKinds) {
+        self.presentation_revision += 1;
         self.edge_kinds = kinds;
     }
 

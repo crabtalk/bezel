@@ -1,4 +1,7 @@
-use crate::{edit::CanvasEditor, view::Positions};
+use crate::{
+    edit::CanvasEditor,
+    view::{Positions, edge_paths::EdgePaths},
+};
 use std::collections::HashSet;
 
 #[derive(Default)]
@@ -7,6 +10,7 @@ pub(super) struct Geometry {
     held: Option<String>,
     pub positions: Positions,
     pub order: Vec<usize>,
+    pub paths: EdgePaths,
 }
 
 impl Geometry {

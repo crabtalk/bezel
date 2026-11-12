@@ -6,7 +6,7 @@ impl CanvasView {
     /// Where each node paints this frame. A node the document moved glides
     /// there from where it was painted. Active gestures and newly painted
     /// nodes use their preview positions directly.
-    pub(super) fn positions(&mut self, changed: bool, reduced: bool, window: &mut Window) {
+    pub(super) fn positions(&mut self, changed: bool, reduced: bool, window: &mut Window) -> bool {
         let direct = self.holding.is_some();
         let finish = self.glide.is_some() && (direct || reduced);
         if direct || reduced {
@@ -31,7 +31,7 @@ impl CanvasView {
             if changed || finish {
                 self.shown.clone_from(&self.geometry.positions);
             }
-            return;
+            return finish;
         };
         let total = LAYOUT.total().mul_f32(motion::speed_scale());
         let raw = glide.since.elapsed().as_secs_f32() / total.as_secs_f32().max(f32::EPSILON);
@@ -52,6 +52,7 @@ impl CanvasView {
         } else {
             window.request_animation_frame();
         }
+        true
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -266,15 +267,9 @@ impl CanvasView {
     }
 
     /// Edge labels, at the middle of their curves, and the one being typed.
-    pub(super) fn labels(
-        &self,
-        theme: &Theme,
-        shown: &Positions,
-        cx: &mut Context<Self>,
-    ) -> Vec<AnyElement> {
+    pub(super) fn labels(&self, theme: &Theme, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let (z, pan) = (self.editor.zoom(), self.editor.pan());
         let canvas = self.editor.painted();
-        let nodes = canvas.lookup();
         canvas
             .edges
             .iter()
@@ -296,7 +291,7 @@ impl CanvasView {
                 if editing.is_none() && text.is_none() {
                     return None;
                 }
-                let middle = self.path_of(&nodes, shown, edge)?.middle();
+                let middle = self.geometry.paths.get(&edge.id)?.middle();
                 let (x, y) = (pan.x + middle.x * z, pan.y + middle.y * z);
                 let typography = presentation::text_typography(cx, edge.text_size(), z);
                 let body = match editing {
@@ -348,7 +343,6 @@ impl CanvasView {
     pub(super) fn edge_layer(
         &self,
         theme: &Theme,
-        shown: &Positions,
         view: WeakEntity<Self>,
     ) -> impl IntoElement + use<> {
         let (z, pan) = (self.editor.zoom(), self.editor.pan());
@@ -366,14 +360,13 @@ impl CanvasView {
             .collect();
         // Each curve in view, its colour and its weight.
         let canvas = self.editor.painted();
-        let nodes = canvas.lookup();
         let seen = self.editor.visible();
         let picked = self.editor.selected_edge();
-        let mut strokes: Vec<(Path, Stroke, Hsla, f32)> = canvas
+        let mut strokes: Vec<(Rc<Path>, Stroke, Hsla, f32)> = canvas
             .edges
             .iter()
             .filter_map(|edge| {
-                let path = self.path_of(&nodes, shown, edge)?;
+                let path = self.geometry.paths.get(&edge.id)?.clone();
                 let (x0, y0, x1, y1) = path.hull();
                 if seen.is_some_and(|(x, y, w, h)| x1 < x || x0 > x + w || y1 < y || y0 > y + h) {
                     return None;
@@ -398,14 +391,15 @@ impl CanvasView {
             let Change::AddEdge { edge, .. } = change else {
                 return None;
             };
-            let path = self.path_of(&nodes, shown, edge)?;
+            let path = self.geometry.paths.get(&edge.id)?.clone();
             Some((path, Stroke::Solid, theme.accent, 1.0))
         }));
         // The connector being drawn, out to the pointer.
         if let Some(Sketch::Connector { from, side, to }) = self.sketch()
             && let Some(node) = canvas.node(&from)
         {
-            let at = shown
+            let at = self
+                .shown
                 .get(&from)
                 .copied()
                 .unwrap_or((node.x as f32, node.y as f32));
@@ -421,7 +415,7 @@ impl CanvasView {
                 from_end: End::None,
                 to_end: End::Arrow,
             };
-            strokes.push((loose, Stroke::Solid, theme.accent, 1.0));
+            strokes.push((Rc::new(loose), Stroke::Solid, theme.accent, 1.0));
         }
         let step = self.editor.snap().grid;
         let (arrow_size, style) = (self.style.arrow, self.style);

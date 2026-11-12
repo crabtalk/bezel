@@ -206,34 +206,8 @@ impl CanvasView {
         self.editor.node_under(at, &from).map(str::to_owned)
     }
 
-    /// Where an edge runs: its route while both its nodes sit where the
-    /// document puts them, else as its kind draws it.
-    pub(super) fn path_of(
-        &self,
-        nodes: &HashMap<&str, &Node>,
-        shown: &Positions,
-        edge: &Edge,
-    ) -> Option<Path> {
-        let ends = paint::ends_of(nodes, shown, edge, self.editor.kinds())?;
-        let settled = |id: &str| {
-            let node = nodes.get(id);
-            shown.get(id).is_none_or(|&(x, y)| {
-                node.is_some_and(|node| (x, y) == (node.x as f32, node.y as f32))
-            })
-        };
-        let routed = (settled(&edge.from_node) && settled(&edge.to_node))
-            .then(|| path::route(&ends, &edge.points))
-            .flatten();
-        Some(routed.unwrap_or_else(|| (self.editor.edge_kinds().get(edge).path)(&ends)))
-    }
-
     /// The handles the picked edge's kind declares, along its path.
-    pub(super) fn edge_handles(
-        &self,
-        theme: &Theme,
-        shown: &Positions,
-        cx: &mut Context<Self>,
-    ) -> Vec<AnyElement> {
+    pub(super) fn edge_handles(&self, theme: &Theme, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let Some(id) = self.editor.selected_edge().map(str::to_owned) else {
             return Vec::new();
         };
@@ -241,11 +215,10 @@ impl CanvasView {
             return Vec::new();
         }
         let canvas = self.editor.painted();
-        let nodes = canvas.lookup();
         let Some(edge) = canvas.edge(&id) else {
             return Vec::new();
         };
-        let Some(path) = self.path_of(&nodes, shown, edge) else {
+        let Some(path) = self.geometry.paths.get(&edge.id) else {
             return Vec::new();
         };
         let (z, pan) = (self.editor.zoom(), self.editor.pan());
@@ -292,14 +265,15 @@ impl CanvasView {
         let at = self.canvas_point(position);
         let zoom = self.editor.zoom();
         let canvas = self.editor.painted();
-        let nodes = canvas.lookup();
         canvas
             .edges
             .iter()
             .rev()
             .find(|edge| {
                 let reach = self.editor.edge_kinds().get(edge).reach / zoom;
-                self.path_of(&nodes, &self.shown, edge)
+                self.geometry
+                    .paths
+                    .get(&edge.id)
                     .is_some_and(|path| path.distance(at) <= reach)
             })
             .map(|edge| edge.id.clone())
