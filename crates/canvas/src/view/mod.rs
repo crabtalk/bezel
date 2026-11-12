@@ -45,6 +45,7 @@ use web_time::Instant;
 mod edge_paths;
 mod editing;
 mod geometry;
+mod labels;
 mod paint;
 mod pointer;
 
@@ -102,6 +103,7 @@ pub struct CanvasView {
     /// Growing node heights read at prepaint, in canvas units.
     measured: Rc<RefCell<HashMap<String, i64>>>,
     content_heights: Rc<RefCell<HashMap<String, (i64, i64)>>>,
+    label_layouts: Rc<RefCell<HashMap<String, labels::Layout>>>,
     /// Where a held press last was, and when its drift last moved the view.
     aim: Option<Point<Pixels>>,
     drifted: Option<Instant>,
@@ -169,6 +171,7 @@ impl CanvasView {
             viewport: Rc::default(),
             measured: Rc::default(),
             content_heights: Rc::default(),
+            label_layouts: Rc::default(),
             aim: None,
             drifted: None,
         }
@@ -450,7 +453,7 @@ impl Render for CanvasView {
                 self.paint_node(ix, at, connecting.as_deref(), &picked, window, cx)
             })
             .collect();
-        let labels = self.labels(&theme, cx);
+        let labels = self.labels(&theme, window, cx);
         let edge_handles = self.edge_handles(&theme, cx);
         let marquee = match self.sketch() {
             Some(Sketch::Box { from, to }) => {
