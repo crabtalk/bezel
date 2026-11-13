@@ -196,14 +196,14 @@ impl QuadrantModel {
 
         let text_top = capped(config.quadrant_text_top_padding, 5.0, 0.0, 200.0);
         let mut quadrants = String::new();
-        for k in 0..4 {
+        for (k, quadrant) in self.quadrants.iter().enumerate() {
             let x = if k == 0 || k == 3 {
                 left + w - tile_w
             } else {
                 left
             };
             let y = if k < 2 { top } else { top + h - tile_h };
-            let text = label(self.quadrants[k].as_ref(), size, tile_w - 16.0);
+            let text = label(quadrant.as_ref(), size, tile_w - 16.0);
             let center = Point::new(
                 x + tile_w / 2.0,
                 if has_points {

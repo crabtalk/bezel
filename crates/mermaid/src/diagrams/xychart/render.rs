@@ -657,8 +657,8 @@ impl Render for XyChartModel {
                     (bar as f64 - (bars_f - 1.0) / 2.0) * thickness - (thickness - gap) / 2.0;
                 bar += 1;
                 rects.clear();
-                for i in 0..n {
-                    let Some(value) = finite(plot.data[i].1) else {
+                for (i, &(_, value)) in plot.data.iter().take(n).enumerate() {
+                    let Some(value) = finite(value) else {
                         continue;
                     };
                     let c = place(i, n);
