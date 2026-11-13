@@ -114,6 +114,17 @@ impl Document {
         self.revision += 1;
     }
 
+    pub(crate) fn cancel_group(&mut self, group: u64) -> Option<Vec<Change>> {
+        let history = Rc::make_mut(&mut self.history);
+        if history.undo.last()?.group != Some(group) {
+            return None;
+        }
+        let step = history.undo.pop()?;
+        change::apply_all(Rc::make_mut(&mut self.canvas), &step.changes);
+        self.revision += 1;
+        Some(step.changes)
+    }
+
     pub(crate) fn undo(&mut self) -> Option<Vec<Change>> {
         let history = Rc::make_mut(&mut self.history);
         let step = history.undo.pop()?;

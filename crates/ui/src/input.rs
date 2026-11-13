@@ -22,7 +22,7 @@ use std::{borrow::Cow, ops::Range, time::Duration};
 use gpui::{
     App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId,
     ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, Global,
-    GlobalElementId, KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
+    GlobalElementId, Hsla, KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, PaintQuad, Pixels, Point, SharedString, Style, Task, TextRun, UTF16Selection,
     UnderlineStyle, Window, WrappedLine, actions, div, fill, prelude::*, px, relative,
 };
@@ -376,6 +376,7 @@ pub enum EditKind {
 /// A text field. [`Shape`] decides whether it is one line or many; everything
 /// else about it is the same either way.
 pub struct TextField {
+    pub text_color: Option<Hsla>,
     focus_handle: FocusHandle,
     content: SharedString,
     placeholder: SharedString,
@@ -456,6 +457,7 @@ impl TextField {
             // A field is a tab stop from birth; a stateless control needs
             // `focus::focusable` because its handle lives in the caller.
             focus_handle: cx.focus_handle().tab_stop(true),
+            text_color: None,
             frame: true,
             content: "".into(),
             placeholder: "".into(),

@@ -275,8 +275,8 @@ impl C4Model {
             });
         }
         let root = 0;
-        for at in 0..groups.len() {
-            if let Some(parent) = db.boundaries[at].parent {
+        for (at, boundary) in db.boundaries.iter().enumerate() {
+            if let Some(parent) = boundary.parent {
                 groups[parent].kids.push(at);
             }
         }
@@ -288,8 +288,7 @@ impl C4Model {
         while i < order.len() {
             let parent = order[i];
             let depth = depths[&parent];
-            for k in 0..groups[parent].kids.len() {
-                let kid = groups[parent].kids[k];
+            for &kid in &groups[parent].kids {
                 depths.insert(kid, depth + 1.0);
                 order.push(kid);
             }

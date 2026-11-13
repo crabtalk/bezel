@@ -20,7 +20,8 @@ use crate::{
 };
 use gpui::{
     App, Context, CursorStyle, ElementInputHandler, Entity, EventEmitter, FocusHandle, Focusable,
-    Hsla, KeyContext, MouseButton, Render, Styled as _, Task, Window, canvas, div, prelude::*,
+    Hsla, KeyContext, MouseButton, Render, SharedString, Styled as _, Task, Window, canvas, div,
+    prelude::*,
 };
 use markdown::{
     Affinity, Annotation, AppExt as _, Block, BlockKind, BlockLayouts, Cursor, Doc, Form, Mark,
@@ -158,7 +159,7 @@ pub struct Formatting {
     /// What the caret's block is called in [`turns`], or `None` for a block the
     /// menu does not offer. Matched on the kind and a heading's level alone: a
     /// list numbered from 7 and a fence tagged `rs` report their row.
-    pub block: Option<gpui::SharedString>,
+    pub block: Option<SharedString>,
     /// The quote the caret's block sits in — see [`quotes`].
     pub quote: Option<markdown::Quoted>,
     /// Whether [`Mark::Code`] here makes a fence out of the selection rather
@@ -343,6 +344,7 @@ pub struct Editor {
     /// Which of the editor's own affordances paint. The app's, so one document
     /// can carry the lot and another none of it.
     chrome: Chrome,
+    placeholder: Option<SharedString>,
     /// In [`Mode::Source`] `doc` is one fenced block holding the markdown, so
     /// every operation below that is about *blocks* asks [`Editor::blocks`]
     /// first.
@@ -493,6 +495,7 @@ impl Editor {
             source_view: None,
             source_spans: None,
             chrome: Chrome::default(),
+            placeholder: None,
             focus_handle: cx.focus_handle(),
             marked: None,
             layouts: BlockLayouts::default(),
@@ -548,6 +551,11 @@ impl Editor {
     /// Which of the editor's own affordances to paint. See [`Chrome`].
     pub fn with_chrome(mut self, chrome: Chrome) -> Self {
         self.chrome = chrome;
+        self
+    }
+
+    pub fn with_placeholder(mut self, placeholder: impl Into<SharedString>) -> Self {
+        self.placeholder = Some(placeholder.into());
         self
     }
 

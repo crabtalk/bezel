@@ -458,7 +458,13 @@ impl Render for Editor {
                                 caret_on: self.caret_on,
                                 layouts: Some(&self.layouts),
                                 annotations: &self.annotations(),
-                                placeholder: focused.then(|| PLACEHOLDER.into()),
+                                placeholder: if focused {
+                                    self.placeholder
+                                        .clone()
+                                        .or_else(|| self.chrome.slash.then(|| PLACEHOLDER.into()))
+                                } else {
+                                    None
+                                },
                                 // A caret goes into the caption here, so it is always
                                 // painted — an editor that could hide it would be
                                 // hiding a place you can already be typing.

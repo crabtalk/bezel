@@ -17,18 +17,21 @@ use crate::{
     mindmap,
     model::{self, Canvas, Edge, End, Node, Stroke},
     options::{Frame, Mark, Options, Overlays, Style},
-    path::{self, Ends, Path, Rect},
+    path::{Ends, Path, Rect},
     presentation::{self, Measure},
     snap::Snap,
     tool::{self, Hand, Hit, Pointer, Sketch, Tool, Wish},
+    view::{
+        editing::{Session, Target},
+        geometry::Geometry,
+    },
 };
-use editor::{Chrome as EditorChrome, Editor, EditorEvent};
 use gpui::{
     AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId, Entity,
     EventEmitter, ExternalPaths, FocusHandle, Focusable, HitboxBehavior, Hsla, KeyContext,
-    KeyDownEvent, KeyUpEvent, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent,
-    PinchEvent, Pixels, Point, Render, ScrollWheelEvent, Subscription, WeakEntity, Window,
-    canvas as painter, div, point, prelude::*, px, size,
+    KeyDownEvent, KeyUpEvent, Modifiers, ModifiersChangedEvent, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, PinchEvent, Pixels, Point, Render, ScrollWheelEvent,
+    Subscription, WeakEntity, Window, canvas as painter, div, point, prelude::*, px, size,
 };
 use motion::{AppExt as _, LAYOUT};
 use std::{
@@ -39,10 +42,13 @@ use std::{
 use theme::Theme;
 use web_time::Instant;
 
+mod body;
+mod edge_paths;
+mod editing;
+mod geometry;
+mod labels;
 mod paint;
 mod pointer;
-
-use paint::*;
 
 /// The key context the canvas binds in.
 pub const CONTEXT: &str = "BezelCanvas";
@@ -59,6 +65,7 @@ pub mod keys;
 
 /// Install the canvas key bindings. Call after `editor::init`.
 pub fn init(cx: &mut App) {
+    ui::input::init(cx);
     cx.bind_keys(keys::bindings());
 }
 
@@ -71,14 +78,6 @@ struct Glide {
     from: Positions,
     to: Positions,
     since: Instant,
-}
-
-struct Session {
-    id: String,
-    /// An edge's label, not a node.
-    edge: bool,
-    input: Entity<Editor>,
-    _changes: Subscription,
 }
 
 pub struct CanvasView {
@@ -99,11 +98,13 @@ pub struct CanvasView {
     pub(crate) overlays: Overlays,
     /// Where each node was painted last frame.
     shown: Positions,
+    geometry: Geometry,
     glide: Option<Glide>,
     viewport: Rc<Cell<Option<Bounds<Pixels>>>>,
     /// Growing node heights read at prepaint, in canvas units.
     measured: Rc<RefCell<HashMap<String, i64>>>,
     content_heights: Rc<RefCell<HashMap<String, (i64, i64)>>>,
+    label_layouts: Rc<RefCell<HashMap<String, labels::Layout>>>,
     /// Where a held press last was, and when its drift last moved the view.
     aim: Option<Point<Pixels>>,
     drifted: Option<Instant>,
@@ -166,10 +167,12 @@ impl CanvasView {
             exporting: false,
             overlays: Overlays::new(),
             shown: HashMap::new(),
+            geometry: Geometry::default(),
             glide: None,
             viewport: Rc::default(),
             measured: Rc::default(),
             content_heights: Rc::default(),
+            label_layouts: Rc::default(),
             aim: None,
             drifted: None,
         }
@@ -292,37 +295,19 @@ impl CanvasView {
     /// was taken back.
     fn announce(&mut self, cx: &mut Context<Self>) {
         let canvas = self.editor.canvas();
-        let gone = self.editing.as_ref().is_some_and(|s| {
-            if s.edge {
-                canvas.edge(&s.id).is_none()
-            } else {
-                canvas.node(&s.id).is_none()
-            }
-        });
+        let gone = self
+            .editing
+            .as_ref()
+            .is_some_and(|session| match &session.target {
+                Target::Node(id) => canvas.node(id).is_none(),
+                Target::Edge(id) => canvas.edge(id).is_none(),
+                Target::New { .. } => false,
+            });
         if self.editor.take_rewound() || gone || self.editor.options().read_only {
             self.editing = None;
+            self.editor.group = None;
         }
-        // An open editor types at the zoom.
-        if let Some(session) = &self.editing {
-            let size = if session.edge {
-                self.editor.canvas().edge(&session.id).map(Edge::text_size)
-            } else {
-                self.editor.canvas().node(&session.id).map(Node::text_size)
-            }
-            .unwrap_or(model::TEXT_SIZE);
-            let typography = presentation::text_typography(cx, size, self.editor.zoom());
-            let text_color = (!session.edge)
-                .then(|| self.editor.canvas().node(&session.id))
-                .flatten()
-                .and_then(|node| node.text_color(Theme::of(cx)));
-            session.input.update(cx, |input, cx| {
-                if input.typography != Some(typography) || input.text_color != text_color {
-                    input.text_color = text_color;
-                    input.typography = Some(typography);
-                    cx.notify();
-                }
-            });
-        }
+        self.sync_input(cx);
         let events = self.editor.take_events();
         let changes: Vec<Change> = events
             .iter()
@@ -373,112 +358,14 @@ impl CanvasView {
     }
 
     /// Edit what a command just added, its typing joining the add.
-    fn edit_added(&mut self, added: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(id) = added {
-            self.grant(Wish::EditAdded(id), window, cx);
-        }
-    }
-
-    /// Edit `id` in place, its typing one undo step: `group`'s, or a new one.
-    fn edit(
+    pub fn edit_added(
         &mut self,
-        id: String,
-        group: Option<u64>,
+        added: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.editor.options().read_only {
-            return;
-        }
-        self.stop_editing(window, cx);
-        let Some(node) = self.editor.canvas().node(&id) else {
-            return;
-        };
-        let Some(field) = self.editor.kinds().get(&node.kind).rules.edit.clone() else {
-            return;
-        };
-        let input = self.input(&(field.read)(node), node.text_size(), cx);
-        let text_color = node.text_color(Theme::of(cx));
-        input.update(cx, |input, _| input.text_color = text_color);
-        let changes = cx.subscribe(&input, move |this, input, event, cx| {
-            if *event != EditorEvent::Changed {
-                return;
-            }
-            let Some(mut node) = this
-                .editing
-                .as_ref()
-                .filter(|s| !s.edge)
-                .and_then(|s| this.editor.canvas().node(&s.id))
-                .cloned()
-            else {
-                return;
-            };
-            (field.write)(&mut node, input.read(cx).source());
-            this.update_editor(cx, |editor| editor.submit([Change::UpdateNode { node }]));
-        });
-        window.focus(&input.focus_handle(cx), cx);
-        // A press that opened it would hand focus back to the canvas.
-        window.prevent_default();
-        self.editor.group = Some(match group {
-            Some(group) => group,
-            None => self.editor.next_group(),
-        });
-        self.editing = Some(Session {
-            id,
-            edge: false,
-            input,
-            _changes: changes,
-        });
-        cx.notify();
-    }
-
-    /// Edit an edge's label in place, its typing one undo step.
-    fn edit_edge(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        if self.editor.options().read_only {
-            return;
-        }
-        self.stop_editing(window, cx);
-        let Some(edge) = self.editor.canvas().edge(&id) else {
-            return;
-        };
-        let Some(field) = self.editor.edge_kinds().get(edge).rules.edit.clone() else {
-            return;
-        };
-        let input = self.input(&(field.read)(edge), edge.text_size(), cx);
-        let changes = cx.subscribe(&input, move |this, input, event, cx| {
-            if *event != EditorEvent::Changed {
-                return;
-            }
-            let Some(mut edge) = this
-                .editing
-                .as_ref()
-                .filter(|s| s.edge)
-                .and_then(|s| this.editor.canvas().edge(&s.id))
-                .cloned()
-            else {
-                return;
-            };
-            (field.write)(&mut edge, input.read(cx).source());
-            this.update_editor(cx, |editor| editor.submit([Change::UpdateEdge { edge }]));
-        });
-        window.focus(&input.focus_handle(cx), cx);
-        window.prevent_default();
-        self.editor.group = Some(self.editor.next_group());
-        self.editing = Some(Session {
-            id,
-            edge: true,
-            input,
-            _changes: changes,
-        });
-        cx.notify();
-    }
-
-    pub fn edit_selected(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.sync_document(cx);
-        if let Some(id) = self.editor.selected_edge().map(str::to_owned) {
-            self.edit_edge(id, window, cx);
-        } else if let Some(id) = self.editor.selected().map(str::to_owned) {
-            self.edit(id, None, window, cx);
+        if let Some(id) = added {
+            self.grant(Wish::EditAdded(id), window, cx);
         }
     }
 
@@ -521,41 +408,16 @@ impl CanvasView {
             editor.submit(changes);
         });
     }
-
-    /// An editor for text typed in place, at the zoom.
-    fn input(&self, value: &str, size: f32, cx: &mut Context<Self>) -> Entity<Editor> {
-        let typography = presentation::text_typography(cx, size, self.editor.zoom());
-        cx.new(|cx| {
-            let mut input = Editor::new(value, cx)
-                .with_chrome(EditorChrome {
-                    handle: false,
-                    slash: false,
-                    language: false,
-                    paste: false,
-                    mention: false,
-                })
-                .with_text_size(size);
-            input.typography = Some(typography);
-            input
-        })
-    }
-
-    fn stop_editing(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.editor.group = None;
-        if self.editing.take().is_some() {
-            window.focus(&self.focus, cx);
-            cx.notify();
-        }
-    }
 }
 
 impl Render for CanvasView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self._blur.is_none() {
-            self._blur = Some(cx.on_blur(&self.focus, window, |this, _, cx| {
+            self._blur = Some(cx.on_focus_out(&self.focus, window, |this, _, _, cx| {
                 this.space = false;
                 this.modifiers = Modifiers::default();
                 this.cancel(cx);
+                this.end_editing(cx);
             }));
         }
         self.sync_document(cx);
@@ -571,36 +433,29 @@ impl Render for CanvasView {
         }
         self.editor.frame();
         self.announce(cx);
-        let shown = self.positions(self.exporting || cx.reduced_motion(), window);
+        let changed = self.geometry.refresh(&self.editor, held.as_deref());
+        let animated = self.positions(changed, self.exporting || cx.reduced_motion(), window);
+        if changed || animated {
+            self.geometry.paths.refresh(&self.editor, &self.shown);
+        }
+        let shown = &self.shown;
         let theme = Theme::of(cx).clone();
-        let edges = self.edge_layer(&theme, &shown, cx.entity().downgrade());
-        // A container paints under what it holds. What a drag has in hand
-        // paints last, with what it holds, over whatever it is carried across.
+        let edges = self.edge_layer(&theme, cx.entity().downgrade());
         let canvas = self.editor.painted();
-        let containment = self.editor.painted_containment();
-        let carried: HashSet<String> = match self.held() {
-            Some(id) => containment
-                .with_contents(&[id.to_owned()])
-                .into_iter()
-                .collect(),
-            None => HashSet::new(),
-        };
-        let mut order: Vec<usize> = (0..canvas.nodes.len()).collect();
-        order.sort_by_key(|ix| {
-            let id = &canvas.nodes[*ix].id;
-            (carried.contains(id), containment.depth(id))
-        });
         let connecting = self.connect_target();
         let picked = self.editor.selected_nodes();
-        let nodes: Vec<AnyElement> = order
-            .into_iter()
+        let nodes: Vec<AnyElement> = self
+            .geometry
+            .order
+            .iter()
+            .copied()
             .filter_map(|ix| {
                 let at = shown[&canvas.nodes[ix].id];
                 self.paint_node(ix, at, connecting.as_deref(), &picked, window, cx)
             })
             .collect();
-        let labels = self.labels(&theme, &shown, cx);
-        let edge_handles = self.edge_handles(&theme, &shown, cx);
+        let labels = self.labels(&theme, window, cx);
+        let edge_handles = self.edge_handles(&theme, cx);
         let marquee = match self.sketch() {
             Some(Sketch::Box { from, to }) => {
                 let (pan, zoom) = (self.editor.pan(), self.editor.zoom());
@@ -621,8 +476,10 @@ impl Render for CanvasView {
             _ => None,
         };
 
+        let prompt = self.edit_prompt(window, cx);
         div()
             .id("bezel-canvas")
+            .bg(theme.canvas_bg)
             .key_context(key_context())
             .track_focus(&self.focus)
             .relative()
@@ -639,6 +496,9 @@ impl Render for CanvasView {
             .on_action(command::<keys::Remove>(cx, CanvasEditor::remove_selected))
             .on_action(cx.listener(|this, _: &keys::Edit, window, cx| {
                 this.edit_selected(window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &keys::ConfirmEditing, window, cx| {
+                this.confirm_editing(window, cx)
             }))
             .on_action(command::<keys::SelectAll>(cx, CanvasEditor::select_all))
             .on_action(cx.listener(|this, _: &keys::Deselect, _, cx| {
@@ -700,31 +560,7 @@ impl Render for CanvasView {
                     this.press(event, Hit::Nothing, window, cx);
                 }),
             )
-            .on_mouse_down(
-                MouseButton::Right,
-                cx.listener(|this, event: &MouseDownEvent, window, cx| {
-                    this.sync_document(cx);
-                    let item = this.item_at(event.position);
-                    match &item {
-                        Some(Item::Node(id))
-                            if !this.editor.selected_nodes().contains(&id.as_str()) =>
-                        {
-                            this.update_editor(cx, |editor| editor.select(Some(id.clone())));
-                        }
-                        Some(Item::Edge(id)) => {
-                            this.update_editor(cx, |editor| editor.select_edge(Some(id.clone())));
-                        }
-                        _ => {}
-                    }
-                    window.focus(&this.focus, cx);
-                    cx.emit(CanvasEvent::ContextMenu {
-                        position: event.position,
-                        at: this.canvas_point(event.position),
-                        item,
-                    });
-                    cx.stop_propagation();
-                }),
-            )
+            .on_mouse_down(MouseButton::Right, cx.listener(Self::request_context_menu))
             .when(self.editor.options().external_drops, |element| {
                 element.on_drop(cx.listener(|this, paths: &ExternalPaths, window, cx| {
                     cx.emit(CanvasEvent::FilesDropped {
@@ -747,6 +583,12 @@ impl Render for CanvasView {
                     this.space = false;
                 }
             }))
+            .on_modifiers_changed(cx.listener(|this, event: &ModifiersChangedEvent, _, cx| {
+                this.modifiers = event.modifiers;
+                if let Some(position) = this.aim {
+                    this.feed(position, cx);
+                }
+            }))
             .on_scroll_wheel(cx.listener(Self::wheel))
             .on_pinch(cx.listener(Self::pinch))
             .child(edges)
@@ -754,5 +596,6 @@ impl Render for CanvasView {
             .children(nodes)
             .children(edge_handles)
             .children(marquee)
+            .children(prompt)
     }
 }

@@ -164,16 +164,35 @@ impl Card {
     }
 }
 
+pub type Controls = Rc<dyn Fn(&Node, &Card, &mut Window, &mut App) -> Option<AnyElement>>;
+
 /// A node's content. See [`text_style`] and [`chrome`].
 pub type Paint = Rc<dyn Fn(&Node, Look, &mut Window, &mut App) -> AnyElement>;
 pub type Read = Rc<dyn Fn(&Node) -> String>;
 pub type Write = Rc<dyn Fn(&mut Node, String)>;
-pub type Open = Rc<dyn Fn(&Node, &mut App)>;
+pub type OpenHandler = Rc<dyn Fn(&Node, &mut App)>;
+
+#[derive(Clone)]
+pub enum Open {
+    Direct(OpenHandler),
+    Host,
+}
 pub type Child = Rc<dyn Fn(&Node) -> Node>;
 
-/// The string field editing a node in place changes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Control {
+    Text,
+    #[default]
+    Document,
+    Name,
+    Url,
+    External,
+}
+
+/// The field and control used to edit a node.
 #[derive(Clone)]
 pub struct Field {
+    pub control: fn(&Node) -> Control,
     pub read: Read,
     pub write: Write,
 }
@@ -184,9 +203,14 @@ impl Field {
         write: impl Fn(&mut Node, String) + 'static,
     ) -> Self {
         Self {
+            control: |_| Control::Document,
             read: Rc::new(read),
             write: Rc::new(write),
         }
+    }
+    pub fn with_control(mut self, control: fn(&Node) -> Control) -> Self {
+        self.control = control;
+        self
     }
 }
 
@@ -297,8 +321,12 @@ pub struct Rules {
 #[derive(Clone)]
 pub struct Kind {
     pub exportable: bool,
+    pub retained: bool,
     pub rules: Rules,
+    /// Pointer interactions belong in `controls`; the drag surface covers this content.
     pub render: Paint,
+    /// Interactive content above the drag hitbox and below selection handles.
+    pub controls: Option<Controls>,
     /// What a double-click does in place of editing.
     pub open: Option<Open>,
 }
@@ -311,6 +339,7 @@ impl Kind {
     ) -> Self {
         Self {
             exportable: false,
+            retained: false,
             rules: Rules {
                 can: Capabilities::ALL,
                 sizing: Sizing::Fixed,
@@ -320,8 +349,16 @@ impl Kind {
                 handles: handle::sides_and_corner,
             },
             render: Rc::new(render),
+            controls: None,
             open: None,
         }
+    }
+
+    /// The renderer ignores node position and observes external state through
+    /// child views. Fixed-size bodies can be cached independently of overlays.
+    pub fn retained(mut self) -> Self {
+        self.retained = true;
+        self
     }
 
     /// Marks a renderer that paints entirely through GPUI.
@@ -360,8 +397,21 @@ impl Kind {
         self
     }
 
+    pub fn controls(
+        mut self,
+        controls: impl Fn(&Node, &Card, &mut Window, &mut App) -> Option<AnyElement> + 'static,
+    ) -> Self {
+        self.controls = Some(Rc::new(controls));
+        self
+    }
+
     pub fn open(mut self, open: impl Fn(&Node, &mut App) + 'static) -> Self {
-        self.open = Some(Rc::new(open));
+        self.open = Some(Open::Direct(Rc::new(open)));
+        self
+    }
+
+    pub fn open_in_host(mut self) -> Self {
+        self.open = Some(Open::Host);
         self
     }
 
@@ -498,12 +548,22 @@ pub fn text() -> Kind {
         look.card
             .render(node, None, Content::Flow(content), window, cx)
     })
+    .retained()
     .exportable()
     .sizing(Sizing::Grows)
-    .edit(Field::new(
-        |node| node.text.clone().unwrap_or_default(),
-        |node, text| node.text = Some(text),
-    ))
+    .edit(
+        Field::new(
+            |node| node.text.clone().unwrap_or_default(),
+            |node, text| node.text = Some(text),
+        )
+        .with_control(|node| {
+            if node.is_label() {
+                Control::Text
+            } else {
+                Control::Document
+            }
+        }),
+    )
 }
 
 /// Its path in a card. [`Kinds::with_root`] previews images.
@@ -527,11 +587,15 @@ pub fn link() -> Kind {
             cx,
         )
     })
+    .retained()
     .exportable()
-    .edit(Field::new(
-        |node| node.url.clone().unwrap_or_default(),
-        |node, url| node.url = Some(url),
-    ))
+    .edit(
+        Field::new(
+            |node| node.url.clone().unwrap_or_default(),
+            |node, url| node.url = Some(url),
+        )
+        .with_control(|_| Control::Url),
+    )
     .open(|node, cx| {
         if let Some(url) = &node.url {
             cx.open_url(url);
@@ -706,7 +770,7 @@ fn group_under(root: Option<Rc<Path>>) -> Kind {
         chrome(Chrome::Frame, node, zoom, cx)
             .relative()
             .children(backdrop)
-            .when(!title.is_empty(), |d| {
+            .when(look.editor.is_none() && !title.is_empty(), |d| {
                 d.child(
                     div()
                         .text_style_at(TextStyle::Callout, zoom)
@@ -720,15 +784,26 @@ fn group_under(root: Option<Rc<Path>>) -> Kind {
                         .child(title),
                 )
             })
-            .children(look.editor)
+            .children(look.editor.map(|editor| {
+                div()
+                    .absolute()
+                    .left_0()
+                    .bottom(px(node.height as f32 * zoom))
+                    .w(px(node.width as f32 * zoom))
+                    .pb(px(4. * zoom))
+                    .child(editor)
+            }))
             .into_any_element()
     })
     .exportable()
     .holds()
-    .edit(Field::new(
-        |node| node.label.clone().unwrap_or_default(),
-        |node, label| node.label = Some(label),
-    ))
+    .edit(
+        Field::new(
+            |node| node.label.clone().unwrap_or_default(),
+            |node, label| node.label = Some(label),
+        )
+        .with_control(|_| Control::Name),
+    )
 }
 
 /// `path` under `root`, or as it is when absolute.

@@ -28,6 +28,7 @@ use crate::{
     mindmap,
     model::{Canvas, Node, Side},
     options::Options,
+    preview::Preview,
     snap::{Guide, Snap},
 };
 
@@ -40,6 +41,12 @@ pub enum CanvasEvent {
         position: Point<Pixels>,
         at: Point<f32>,
         item: Option<Item>,
+    },
+    OpenRequested {
+        id: String,
+    },
+    EditRequested {
+        id: String,
     },
     FilesDropped {
         at: Point<f32>,
@@ -95,8 +102,10 @@ pub struct CanvasEditor {
     reveal: Option<String>,
     stale: bool,
     /// The document as a gesture in hand would leave it.
-    preview: Option<Canvas>,
+    preview: Option<Preview>,
     preview_stale: bool,
+    presentation_revision: u64,
+    pub(crate) edge_kinds_revision: u64,
     containment: OnceCell<contain::Index>,
     preview_containment: OnceCell<contain::Index>,
     /// What a drop would do beyond its moves, drawn while a node is held.
@@ -132,6 +141,8 @@ impl CanvasEditor {
             stale: true,
             preview: None,
             preview_stale: false,
+            presentation_revision: 0,
+            edge_kinds_revision: 0,
             containment: OnceCell::new(),
             preview_containment: OnceCell::new(),
             pending: Vec::new(),
@@ -194,14 +205,21 @@ impl CanvasEditor {
 
     /// The document with the gesture in hand over it: what paints.
     pub fn painted(&self) -> &Canvas {
-        self.preview.as_ref().unwrap_or(&self.document.canvas)
+        self.preview
+            .as_ref()
+            .map_or(&self.document.canvas, |preview| &preview.canvas)
     }
 
     pub fn kinds(&self) -> &Kinds {
         &self.kinds
     }
 
+    pub(crate) fn paint_revision(&self) -> (u64, u64) {
+        (self.document.revision, self.presentation_revision)
+    }
+
     pub fn set_kinds(&mut self, kinds: Kinds) {
+        self.presentation_revision += 1;
         self.kinds = kinds;
         self.containment.take();
         self.preview_containment.take();
@@ -213,11 +231,14 @@ impl CanvasEditor {
     }
 
     pub fn set_edge_kinds(&mut self, kinds: EdgeKinds) {
+        self.edge_kinds_revision += 1;
+        self.presentation_revision += 1;
         self.edge_kinds = kinds;
     }
 
     /// A new document, with no history.
     pub fn set_canvas(&mut self, canvas: Canvas) {
+        self.presentation_revision += 1;
         self.document = Document::new(canvas);
         self.containment.take();
         self.group = None;
@@ -228,6 +249,7 @@ impl CanvasEditor {
     }
 
     pub(crate) fn take_document(&mut self, document: Document) {
+        self.presentation_revision += 1;
         self.document = document;
         self.containment.take();
         self.clear_preview();
@@ -268,6 +290,14 @@ impl CanvasEditor {
         self.document
             .apply(&changes, self.group, self.options.history);
         self.landed(changes);
+    }
+
+    pub(crate) fn cancel_group(&mut self) {
+        if let Some(group) = self.group
+            && let Some(changes) = self.document.cancel_group(group)
+        {
+            self.rewind(changes);
+        }
     }
 
     /// What `cmd-z` does: take back the last edit, past the filter — one that
@@ -576,9 +606,9 @@ impl CanvasEditor {
 
     pub(crate) fn painted_containment(&self) -> &contain::Index {
         match &self.preview {
-            Some(preview) => self
-                .preview_containment
-                .get_or_init(|| contain::Index::new(preview, |node| self.kinds.holds(node))),
+            Some(preview) => self.preview_containment.get_or_init(|| {
+                contain::Index::new(&preview.canvas, |node| self.kinds.holds(node))
+            }),
             None => self.containment(),
         }
     }
@@ -997,21 +1027,27 @@ impl CanvasEditor {
         self.snap = snap;
     }
 
-    /// Show `preview` in place of the document until [`Self::clear_preview`]:
-    /// what a gesture in hand would leave, and what else its drop would do.
     pub(crate) fn set_preview(
         &mut self,
-        preview: Canvas,
+        changes: Vec<Change>,
         pending: Vec<Change>,
         guides: Vec<Guide>,
     ) {
-        self.preview = Some(preview);
+        let preview = self
+            .preview
+            .get_or_insert_with(|| Preview::new(self.document.canvas.clone()));
+        preview.reset(&self.document.canvas);
+        for change in changes {
+            preview.apply(&change);
+        }
         self.preview_containment.take();
+        self.presentation_revision += 1;
         self.preview_stale = true;
         (self.pending, self.guides) = (pending, guides);
     }
 
     pub(crate) fn clear_preview(&mut self) {
+        self.presentation_revision += 1;
         self.preview = None;
         self.preview_containment.take();
         self.pending.clear();
@@ -1031,21 +1067,19 @@ impl CanvasEditor {
         let mut changes = Vec::new();
         for (id, height) in measured {
             if let Some(preview) = &mut self.preview
-                && preview.node(&id) != self.document.canvas.node(&id)
+                && preview.canvas.node(&id) != self.document.canvas.node(&id)
             {
                 // Measured at the size the gesture gave it.
                 if let Some(width) = preview
+                    .canvas
                     .node(&id)
                     .filter(|n| n.height != height)
                     .map(|n| n.width)
                 {
-                    change::apply(
-                        preview,
-                        &Change::Resize {
-                            id,
-                            size: (width, height),
-                        },
-                    );
+                    preview.apply(&Change::Resize {
+                        id,
+                        size: (width, height),
+                    });
                     self.preview_stale = true;
                 }
                 continue;
@@ -1064,7 +1098,7 @@ impl CanvasEditor {
             };
             self.document.derive(&change);
             if let Some(preview) = &mut self.preview {
-                change::apply(preview, &change);
+                preview.apply(&change);
                 self.preview_stale = true;
             }
             changes.push(change);
@@ -1084,8 +1118,9 @@ impl CanvasEditor {
             && let Some(preview) = &mut self.preview
         {
             self.preview_containment.take();
-            let moves = arrange(preview, held, &holds);
-            change::apply(preview, &Change::MoveNodes { moves });
+            self.presentation_revision += 1;
+            let moves = arrange(&preview.canvas, held, &holds);
+            preview.apply(&Change::MoveNodes { moves });
         }
         if !changes.is_empty() {
             self.containment.take();

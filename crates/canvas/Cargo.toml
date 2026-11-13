@@ -21,9 +21,10 @@ workspace = true
 
 [features]
 default = ["gpui"]
-gpui = ["dep:editor", "dep:markdown", "dep:theme", "dep:ui", "dep:motion", "dep:gpui", "dep:web-time", "dep:image"]
+gpui = ["dep:editor", "dep:markdown", "dep:theme", "dep:ui", "dep:motion", "dep:gpui", "dep:web-time", "dep:image", "dep:url"]
 
 [dependencies]
+url = { workspace = true, optional = true }
 image = { workspace = true, optional = true }
 editor = { workspace = true, optional = true }
 markdown = { workspace = true, optional = true }
@@ -164,4 +165,16 @@ required-features = ["gpui"]
 
 [[test]]
 name = "presentation"
+required-features = ["gpui"]
+
+[[test]]
+name = "editing"
+required-features = ["gpui"]
+
+[[test]]
+name = "interaction"
+required-features = ["gpui"]
+
+[[test]]
+name = "performance"
 required-features = ["gpui"]

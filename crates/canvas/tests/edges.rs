@@ -139,7 +139,7 @@ fn a_side_handle_draws_a_connector(cx: &mut TestAppContext) {
     select(&view, "b", &mut cx);
     // b's bottom handle onto a.
     let (from, to) = (
-        screen(&view, (500, 40), &mut cx),
+        screen(&view, (500, 40), &mut cx) + point(px(0.), px(12.)),
         screen(&view, (100, 20), &mut cx),
     );
     drag(from, to, &mut cx);
@@ -151,7 +151,7 @@ fn a_side_handle_draws_a_connector(cx: &mut TestAppContext) {
     // Onto nothing, a node is made there.
     select(&view, "a", &mut cx);
     let (from, to) = (
-        screen(&view, (100, 40), &mut cx),
+        screen(&view, (100, 40), &mut cx) + point(px(0.), px(12.)),
         screen(&view, (100, 300), &mut cx),
     );
     drag(from, to, &mut cx);
@@ -173,7 +173,7 @@ fn under_a_tree_a_connector_to_a_node_is_a_cross_link(cx: &mut TestAppContext) {
     };
     let a = doc(&view, &mut cx).node("a").cloned().unwrap();
     drag(
-        screen(&view, (bx + 100, by + bh), &mut cx),
+        screen(&view, (bx + 100, by + bh), &mut cx) + point(px(0.), px(12.)),
         screen(&view, (a.x + 100, a.y + 20), &mut cx),
         &mut cx,
     );

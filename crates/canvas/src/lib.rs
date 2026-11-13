@@ -56,6 +56,8 @@ pub mod options;
 #[cfg(feature = "gpui")]
 pub mod presentation;
 #[cfg(feature = "gpui")]
+mod preview;
+#[cfg(feature = "gpui")]
 pub mod tool;
 #[cfg(feature = "gpui")]
 mod view;

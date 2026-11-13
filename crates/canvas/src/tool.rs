@@ -443,9 +443,7 @@ impl Tool for Select {
         let held = self.held.as_ref().expect("just held");
         let (changes, guides) = gesture(hand.editor, held, pointer, Phase::Move);
         if held.duplicate.is_some() {
-            let mut shown = hand.editor.canvas().clone();
-            change::apply_all(&mut shown, &changes);
-            hand.editor.set_preview(shown, Vec::new(), guides);
+            hand.editor.set_preview(changes, Vec::new(), guides);
         } else {
             preview(hand.editor, changes, guides);
         }
@@ -704,9 +702,8 @@ impl Tool for Resize {
             node.extra
                 .insert(kind::MIN_HEIGHT.into(), node.height.into());
         }
-        let mut shown = hand.editor.canvas().clone();
-        change::apply(&mut shown, &Change::UpdateNode { node });
-        hand.editor.set_preview(shown, Vec::new(), Vec::new());
+        hand.editor
+            .set_preview(vec![Change::UpdateNode { node }], Vec::new(), Vec::new());
     }
 
     /// The pull lands as one change: a resize, or for a growing node the node
@@ -778,9 +775,8 @@ impl Tool for Reconnect {
             hand.editor.clear_preview();
             return;
         };
-        let mut shown = hand.editor.canvas().clone();
-        change::apply(&mut shown, &Change::UpdateEdge { edge });
-        hand.editor.set_preview(shown, Vec::new(), Vec::new());
+        hand.editor
+            .set_preview(vec![Change::UpdateEdge { edge }], Vec::new(), Vec::new());
     }
 
     fn release(&mut self, pointer: &Pointer, hand: &mut Hand) {
@@ -830,11 +826,11 @@ fn carried(editor: &CanvasEditor, carrying: &Carrying, at: (i64, i64)) -> Option
 /// The held node's moves shown over the document, and the rest of what the
 /// drop would do kept to draw.
 fn preview(editor: &mut CanvasEditor, changes: Vec<Change>, guides: Vec<Guide>) {
-    let mut shown = editor.canvas().clone();
+    let mut shown = Vec::new();
     let mut pending = Vec::new();
     for change in changes {
         match change {
-            Change::MoveNodes { .. } => drop(change::apply(&mut shown, &change)),
+            Change::MoveNodes { .. } => shown.push(change),
             other => pending.push(other),
         }
     }
@@ -875,8 +871,10 @@ fn gesture(
         .cloned()
         .collect();
     let mut guides = Vec::new();
+    let mut snapping = editor.snap();
+    snapping.guides ^= pointer.modifiers.platform;
     if !pointer.space
-        && editor.snap() != Snap::default()
+        && snapping != Snap::default()
         && let Some(node) = canvas.node(&held.id)
     {
         let moving: Vec<String> = carried
@@ -886,11 +884,19 @@ fn gesture(
         let to = (held.origin.0 + delta.0, held.origin.1 + delta.1);
         let reach = (editor.options().snap_reach / editor.zoom()).round() as i64;
         let size = (node.width, node.height);
-        let mut snapping = editor.snap();
         if phase == Phase::Move {
             snapping.grid = None;
         }
-        let (settled, caught) = snap::settle(editor.painted(), &moving, to, size, snapping, reach);
+        let visible = editor.visible();
+        let (settled, caught) = snap::settle(
+            editor.painted(),
+            &moving,
+            to,
+            size,
+            snapping,
+            reach,
+            visible,
+        );
         delta = (settled.0 - held.origin.0, settled.1 - held.origin.1);
         guides = caught;
     }

@@ -29,7 +29,15 @@ fn a_box_catches_on_a_line_another_shares() {
         grid: None,
         guides: true,
     };
-    let (at, guides) = snap::settle(&canvas, &["b".into()], (3, 200), (100, 40), guides_only, 6);
+    let (at, guides) = snap::settle(
+        &canvas,
+        &["b".into()],
+        (3, 200),
+        (100, 40),
+        guides_only,
+        6,
+        None,
+    );
     assert_eq!(at, (0, 200));
     assert_eq!(
         guides,
@@ -48,7 +56,7 @@ fn off_the_lines_a_box_lands_on_the_grid() {
         grid: Some(20),
         guides: true,
     };
-    let (at, guides) = snap::settle(&Canvas::default(), &[], (33, 47), (100, 40), both, 6);
+    let (at, guides) = snap::settle(&Canvas::default(), &[], (33, 47), (100, 40), both, 6, None);
     assert_eq!(at, (40, 40));
     assert!(guides.is_empty());
     assert_eq!(snap::round_to(-31, 20), -40);

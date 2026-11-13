@@ -39,12 +39,21 @@ pub fn settle(
     size: (i64, i64),
     snap: Snap,
     reach: i64,
+    visible: Option<(f32, f32, f32, f32)>,
 ) -> ((i64, i64), Vec<Guide>) {
     let others: Vec<&Node> = match snap.guides {
         true => canvas
             .nodes
             .iter()
             .filter(|node| !moving.contains(&node.id))
+            .filter(|node| {
+                visible.is_none_or(|(x, y, w, h)| {
+                    node.x as f32 <= x + w
+                        && node.y as f32 <= y + h
+                        && (node.x + node.width) as f32 >= x
+                        && (node.y + node.height) as f32 >= y
+                })
+            })
             .collect(),
         false => Vec::new(),
     };

@@ -309,7 +309,7 @@ impl Render for TextField {
             .text_size(px(self.metrics.size()))
             .font_weight(self.metrics.weight)
             .line_height(px(self.metrics.line_height()))
-            .text_color(theme.text)
+            .text_color(self.text_color.unwrap_or(theme.text))
             .child(TextFieldElement { field: cx.entity() })
             .children(self.edit_menu(_window, cx))
     }

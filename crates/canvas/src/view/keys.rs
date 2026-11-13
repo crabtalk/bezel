@@ -1,5 +1,6 @@
 //! Every action the canvas answers to, and the chords bound to it.
 
+use crate::view::{self, editing};
 use gpui::{KeyBinding, actions};
 
 actions!(
@@ -10,6 +11,7 @@ actions!(
         Remove,
         Edit,
         StopEditing,
+        ConfirmEditing,
         SelectLeft,
         SelectRight,
         SelectUp,
@@ -37,9 +39,12 @@ actions!(
 /// The default keymap, as data. Escape is bound over the editor's own so
 /// it leaves a node, which is why [`super::init`] runs after `editor::init`.
 pub fn bindings() -> Vec<KeyBinding> {
-    let ctx = Some(super::CONTEXT);
-    let editing = format!("{} > {}", super::CONTEXT, editor::CONTEXT);
+    let ctx = Some(view::CONTEXT);
+    let editing = format!("{} > {}", view::CONTEXT, editor::CONTEXT);
     let mut bindings = vec![
+        KeyBinding::new("enter", ConfirmEditing, Some(editing::FIELD_CONTEXT)),
+        KeyBinding::new("escape", StopEditing, Some(editing::FIELD_CONTEXT)),
+        KeyBinding::new("escape", StopEditing, Some(editing::TEXT_CONTEXT)),
         KeyBinding::new("tab", AddChild, ctx),
         KeyBinding::new("enter", AddSibling, ctx),
         KeyBinding::new("backspace", Remove, ctx),

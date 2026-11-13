@@ -8,7 +8,7 @@ use crate::{
     model::{Edge, Node, Side},
     path::{Anchor, Path, Rect},
 };
-use gpui::{CursorStyle, Point, point};
+use gpui::{self, Bounds, CursorStyle, Point, point};
 
 /// Which end of an edge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -118,6 +118,28 @@ impl Handle {
         }
     }
 
+    /// Hit bounds in the same screen coordinates as `rect`; `size` is in pixels.
+    pub fn bounds(&self, rect: Rect, size: f32) -> Option<Bounds<f32>> {
+        let (mut center, out) = self.spot.on(rect)?;
+        let axes = self.spot.resize_axes();
+        let (width, height) = if self.role == Role::Resize {
+            match axes {
+                Some((0, _)) => (rect.w, size),
+                Some((_, 0)) => (size, rect.h),
+                _ => (size, size),
+            }
+        } else {
+            if self.role == Role::Connect {
+                center += out * (size * 1.5);
+            }
+            (size, size)
+        };
+        Some(Bounds::new(
+            point(center.x - width / 2., center.y - height / 2.),
+            gpui::size(width, height),
+        ))
+    }
+
     pub fn cursor(&self) -> CursorStyle {
         match self.role {
             Role::Resize => match self.spot.resize_axes() {
@@ -168,7 +190,7 @@ pub fn sides_and_corner(_: &Node) -> Vec<Handle> {
         .collect()
 }
 
-/// Resize borders and corners, with connectors above the border midpoints.
+/// Resize borders and corners, with connectors outside the side midpoints.
 pub fn frame(node: &Node) -> Vec<Handle> {
     let mut handles: Vec<Handle> = [Side::Top, Side::Right, Side::Bottom, Side::Left]
         .into_iter()
