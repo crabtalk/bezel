@@ -29,6 +29,7 @@ inspector = ["wry/devtools"]
 anyhow.workspace = true
 gpui.workspace = true
 ui.workspace = true
+theme.workspace = true
 tracing.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -113,3 +114,10 @@ web-sys = { version = "0.3", features = [
 
 [dev-dependencies]
 gpui_platform.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+sha2.workspace = true
+
+[build-dependencies]
+cc.workspace = true

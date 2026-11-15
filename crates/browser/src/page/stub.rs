@@ -1,18 +1,26 @@
-use crate::page::{Edit, Page, Present};
+use crate::page::{Edit, Page, Present, Report};
 use gpui::{App, Bounds, Pixels, Window, native_view::NativeViewState};
 use std::rc::Rc;
 
 pub(super) const BINDS_EDITS: bool = false;
 
-pub(super) struct State;
+pub(crate) struct State;
 
 impl State {
-    pub(super) fn new(_cx: &App, _input: Rc<NativeViewState>) -> Self {
+    pub(super) fn new(
+        _cx: &App,
+        _input: Rc<NativeViewState>,
+        _reports: async_channel::Sender<Report>,
+    ) -> Self {
         Self
     }
 }
 
 impl Page {
+    pub(crate) fn ready(&self) -> bool {
+        false
+    }
+
     pub(super) fn place(this: &Rc<Self>, bounds: Bounds<Pixels>, window: &Window, _cx: &mut App) {
         this.uncover();
         this.window.set(Some(window.window_handle()));

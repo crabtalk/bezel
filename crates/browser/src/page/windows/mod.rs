@@ -7,7 +7,7 @@ mod accelerator;
 
 pub(super) const BINDS_EDITS: bool = false;
 
-pub(super) struct State {
+pub(crate) struct State {
     /// Whether the page holds keyboard focus, as WebView2 last reported.
     focused: Rc<Cell<bool>>,
     keys: Rc<accelerator::Keys>,
@@ -17,7 +17,11 @@ pub(super) struct State {
 }
 
 impl State {
-    pub(super) fn new(cx: &App, _input: Rc<NativeViewState>) -> Self {
+    pub(super) fn new(
+        cx: &App,
+        _input: Rc<NativeViewState>,
+        _reports: async_channel::Sender<Report>,
+    ) -> Self {
         Self {
             focused: Rc::new(Cell::new(false)),
             keys: Rc::new(accelerator::Keys::new(cx)),

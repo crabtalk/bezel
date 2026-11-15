@@ -13,6 +13,8 @@ pub struct DataStore {
 }
 
 impl DataStore {
+    pub const SUPPORTS_MANAGEMENT: bool = cfg!(any(target_os = "macos", target_os = "linux"));
+
     pub fn new() -> Self {
         Self::default()
     }
@@ -25,7 +27,7 @@ impl DataStore {
         self
     }
 
-    /// Windows: the directory the store lives in. Pages built with
+    /// Linux and Windows: the directory the store lives in. Pages built with
     /// one directory share one store. Ignored on macOS.
     pub fn with_directory(mut self, directory: impl Into<PathBuf>) -> Self {
         self.directory = Some(directory.into());
@@ -42,9 +44,8 @@ impl DataStore {
 
     /// Clears the cookies, storage and cache this store keeps. Every page
     /// built with the store must be closed first. Resolves to whether it was
-    /// cleared: an
-    /// incognito store keeps nothing and resolves `true`. Resolves `false` off
-    /// macOS.
+    /// cleared. An incognito store keeps nothing and resolves `true`.
+    /// Supported on macOS and Linux; resolves `false` elsewhere.
     ///
     /// On macOS before 14 an identifier's store is the default one.
     pub fn clear(&self, cx: &App) -> Task<bool> {
@@ -59,8 +60,8 @@ impl DataStore {
             .spawn(async move { answer.recv().await.unwrap_or(false) })
     }
 
-    /// What this store holds. Resolves `None` where the platform cannot tell:
-    /// off macOS. An incognito store holds nothing.
+    /// What this store holds. Supported on macOS and Linux; resolves `None`
+    /// elsewhere. An incognito store holds nothing.
     pub fn usage(&self, cx: &App) -> Task<Option<Usage>> {
         if self.incognito {
             return Task::ready(Some(Usage::default()));

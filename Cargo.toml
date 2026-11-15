@@ -36,6 +36,8 @@ categories = ["gui"]
 rust-version = "1.90"
 
 [workspace.dependencies]
+cc = "1"
+sha2 = "0.10"
 anyhow = "1"
 url = "2"
 # The short names are taken on crates.io, so packages publish as `bezel-*`; the

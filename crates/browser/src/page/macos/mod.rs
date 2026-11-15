@@ -14,14 +14,18 @@ mod press;
 
 pub(super) const BINDS_EDITS: bool = true;
 
-pub(super) struct State {
+pub(crate) struct State {
     cursor: OnceCell<cursor::Watch>,
     press: OnceCell<Option<press::Monitor>>,
     root: Rc<input::GuiRoot>,
 }
 
 impl State {
-    pub(super) fn new(_cx: &App, input: Rc<NativeViewState>) -> Self {
+    pub(super) fn new(
+        _cx: &App,
+        input: Rc<NativeViewState>,
+        _reports: async_channel::Sender<Report>,
+    ) -> Self {
         Self {
             cursor: OnceCell::new(),
             press: OnceCell::new(),

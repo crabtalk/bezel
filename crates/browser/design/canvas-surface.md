@@ -44,9 +44,9 @@ and restart must not wait on the UI thread.
 
 | Platform | Existing or available path | Boundary |
 | --- | --- | --- |
-| Linux | WPEPlatform DMA-BUF or shared-memory frames | Requires the WPE backend and GPUI import and scheduling APIs |
+| Linux | WPEPlatform DMA-BUF or shared-memory frames | Backend and GPUI import/scheduling implemented locally; Linux verification pending |
 | macOS | Live WKWebView hosted between GPU layers | Fixed viewport, native transforms, scene clips and overlay hit regions; GPU-only exports exclude native content |
-| Windows | WebView2 CapturePreview; composition hosting APIs | DirectComposition hosting alone is not a GPUI texture; continuous capture and input require their own implementation |
+| Windows | WebView2 composition controller and Windows Graphics Capture | GPUI shared D3D texture import implemented locally; browser capture and transformed input unfinished |
 | Web | Existing iframe overlay | Does not provide same-origin-independent composited pixels; excluded from this native surface contract |
 
 Linux's WPE implementation is not a macOS or Windows backend. Do not claim
@@ -73,9 +73,19 @@ Headless scene tests and compilation do not establish real WebKit behavior for
 IME, pointer capture, animations, native appearance or many-page GPU costs.
 Those properties have not been exercised through desktop UI checks.
 
-Windows needs a WebView2 presentation and input path with the same contract.
-CapturePreview and composition hosting are candidate APIs, not an implemented
-surface. Keep platform work separate from the shared canvas integration.
+Windows still needs a WebView2 capture/hosting and input path with this contract.
+Microsoft's WebView2CompositionControl uses continuous Windows Graphics Capture.
+GPUI now accepts shared BGRA D3D textures and producer fences on the DX12 queue.
+The browser must supply bounded capture buffers, same-adapter resources and
+completion ownership. WebView2's composition controller owns keyboard/IME;
+the host must establish caret and popup placement under canvas transforms.
+Repeated CapturePreview is not the selected live path. Protected video is
+excluded by Graphics Capture.
+
+The existing Wry backend creates a windowed controller; it cannot be cast into
+composition-controller hosting. The live backend requires direct WebView2 COM
+creation and lifecycle ownership. Windows compilation and runtime checks are
+user-owned; the capture/hosting backend has not been implemented.
 
 The canvas release requires these platform prerequisites. Opening another
 browser panel to interact with a still does not meet the contract.
@@ -85,3 +95,5 @@ browser panel to interact with a still does not meet the contract.
 - [WPEPlatform](https://wpewebkit.org/about/architecture.html)
 - [WKWebView snapshots](https://developer.apple.com/documentation/webkit/wksnapshotconfiguration)
 - [WebView2 rendering APIs](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/overview-features-apis)
+
+- [Microsoft WebView2 composition control](https://github.com/MicrosoftEdge/WebView2Feedback/blob/main/specs/WPF_WebView2CompositionControl.md)

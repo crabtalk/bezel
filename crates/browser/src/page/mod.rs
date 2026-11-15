@@ -11,10 +11,18 @@ use std::{
 
 #[cfg_attr(target_os = "macos", path = "macos/mod.rs")]
 #[cfg_attr(target_os = "windows", path = "windows/mod.rs")]
-#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), path = "stub.rs")]
-mod platform;
+#[cfg_attr(target_os = "linux", path = "linux/mod.rs")]
+#[cfg_attr(
+    not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
+    path = "stub.rs"
+)]
+pub(crate) mod platform;
+mod script;
 
-trait Present {
+pub(crate) trait Present {
+    fn available(&self, window: &Window) -> bool {
+        window.native_surfaces.views
+    }
     const COMPOSITED: bool = false;
     fn paint(
         &self,
@@ -50,6 +58,8 @@ pub(crate) enum Report {
     Still(Option<Arc<RenderImage>>),
     /// The page was built, or failed to be, after the paint that asked for it.
     Built,
+    #[cfg(target_os = "linux")]
+    Linux(platform::Message),
 }
 
 /// Whether something is painted over the page.
@@ -94,7 +104,7 @@ pub(crate) struct Page {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     building: Cell<bool>,
     /// Where the page last sat; `None` before the first paint and while parked.
-    placed: Cell<Option<Bounds<Pixels>>>,
+    pub(crate) placed: Cell<Option<Bounds<Pixels>>>,
     pub(crate) presentation: Cell<Option<Presentation>>,
     pub(crate) input: Rc<NativeViewState>,
     /// The window the page is in; `None` before the first paint.
@@ -107,7 +117,7 @@ pub(crate) struct Page {
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     reports: async_channel::Sender<Report>,
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
-    platform: platform::State,
+    pub(crate) platform: platform::State,
 }
 
 impl Page {
@@ -142,8 +152,8 @@ impl Page {
             cover: RefCell::new(Cover::Off),
             dropped: RefCell::new(None),
             focus,
+            platform: platform::State::new(cx, input, reports.clone()),
             reports,
-            platform: platform::State::new(cx, input),
         }
     }
 }
@@ -237,53 +247,9 @@ impl Page {
     /// it.
     const PARKED: f64 = -20_000.0;
 
-    /// Run in the main frame, where wry defines `window.ipc`.
-    const MOVED: &str = "(() => {
-        const moved = () => window.ipc.postMessage('moved');
-        for (const name of ['pushState', 'replaceState']) {
-            const original = history[name];
-            history[name] = function (...args) {
-                const result = original.apply(this, args);
-                moved();
-                return result;
-            };
-        }
-        addEventListener('popstate', moved);
-        addEventListener('hashchange', moved);
-    })();";
-
-    /// Run in every frame. wry defines `window.ipc` in the main frame only on
-    /// macOS, so this posts to the handler behind it. Each message is
-    /// `{level, text}` as JSON.
-    // TODO: whether `chrome.webview` exists in a WebView2 iframe is unchecked.
-    const CONSOLE: &str = "(() => {
-        const handler = window.webkit?.messageHandlers?.ipc ?? window.chrome?.webview;
-        if (!handler) return;
-        const text = (value) => {
-            if (typeof value === 'string') return value;
-            if (value instanceof Error) return value.stack || String(value);
-            try {
-                return JSON.stringify(value) ?? String(value);
-            } catch {
-                return String(value);
-            }
-        };
-        const send = (level, values) => {
-            try {
-                handler.postMessage(JSON.stringify({ level, text: values.map(text).join(' ') }));
-            } catch {}
-        };
-        for (const level of ['debug', 'log', 'info', 'warn', 'error']) {
-            const original = console[level];
-            console[level] = function (...values) {
-                send(level, values);
-                return original.apply(this, values);
-            };
-        }
-        addEventListener('error', (event) => send('error', [event.error ?? event.message]));
-        addEventListener('unhandledrejection', (event) =>
-            send('error', ['Uncaught (in promise)', event.reason]));
-    })();";
+    pub(crate) fn ready(&self) -> bool {
+        self.view.get().is_some_and(Option::is_some)
+    }
 
     fn place(this: &Rc<Self>, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         this.uncover();
@@ -361,7 +327,7 @@ impl Page {
                 .with_url(url.as_str())
                 .with_bounds(rect(bounds))
                 .with_visible(false)
-                .with_initialization_script(Self::MOVED)
+                .with_initialization_script(script::MOVED)
                 .with_ipc_handler(move |request| {
                     let report = match request.body().as_str() {
                         "moved" => Report::Moved,
@@ -396,7 +362,7 @@ impl Page {
                 None => builder,
             };
             let builder = if self.console.get() {
-                builder.with_initialization_script_for_main_only(Self::CONSOLE, false)
+                builder.with_initialization_script_for_main_only(script::CONSOLE, false)
             } else {
                 builder
             };
@@ -580,8 +546,8 @@ impl raw_window_handle::HasWindowHandle for Parent {
     }
 }
 
-/// A console message the [`Page::CONSOLE`] script posted from `source`.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+/// A console message the [`script::CONSOLE`] script posted from `source`.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 fn logged(body: &str, source: String) -> Option<ConsoleMessage> {
     #[derive(serde::Deserialize)]
     struct Logged {

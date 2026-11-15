@@ -1,7 +1,7 @@
 # Linux browser runtime
 
-Accepted runtime policy, 14 November 2026. No Linux browser backend is
-implemented yet.
+The Linux backend uses a separate WPEPlatform helper. Platform compilation
+and runtime behavior still need verification on Linux.
 
 ## Runtime contract
 
@@ -20,6 +20,36 @@ transitive dependencies. The application does not install packages, enable
 third-party repositories or disable the WebKit sandbox automatically. Runtime
 setup must use the versioned package names below and check WPEPlatform
 availability, not merely the presence of a WebKit shared library.
+
+## Implementation
+
+The helper is compiled on Linux and extracted to a content-addressed executable
+under `$XDG_CACHE_HOME/bezel/browser` (or `~/.cache/bezel/browser`).
+`BEZEL_WPE_HELPER` overrides that executable for development. Only the helper
+links WPE libraries.
+
+Persistent pages share a helper per canonical profile directory. The default
+profile is `$XDG_DATA_HOME/bezel/browser/default`, falling back to
+`~/.local/share/bezel/browser/default`. Private pages use independent ephemeral
+sessions. Clearing a persistent store requires closing its pages first.
+
+The socket protocol carries bounded JSON packets and file descriptors. Commands
+are queued away from the UI thread. Startup, storage operations, shutdown and
+process reaping run in background tasks. Failure reaches `WebViewEvent::Error`;
+loading or reloading starts a new session after failure.
+
+WPE negotiates single-plane AR24 DMA-BUF modifiers with GPUI's Vulkan device.
+Unsupported imports use shared-memory frames. Producer buffers remain held until
+GPU reads finish. Presentation acknowledgments follow GPUI display callbacks.
+Viewport generations reject obsolete frames after resize.
+
+Pointer coordinates and IME caret bounds use the fixed page viewport and painted
+bounds. Text clipboard, edit commands, context menus and option menus cross the
+helper boundary; rich clipboard formats and an inspector UI are unavailable.
+
+The helper build requires a C compiler and pkg-config modules `wpe-webkit-2.0`
+(2.54+), `wpe-platform-2.0`, `json-glib-1.0`, `gbm`, `egl`, `glesv2` and
+`xkbcommon`. Runtime users do not need development headers or pkg-config.
 
 ## Package availability
 

@@ -1,7 +1,7 @@
 use crate::{
     DataStore,
     host::Host,
-    page::{Edit, Page, Report},
+    page::{Edit, Page, Present as _, Report},
 };
 use anyhow::{Result, ensure};
 use gpui::{
@@ -11,6 +11,9 @@ use gpui::{
 };
 use serde::de::DeserializeOwned;
 use std::{fmt, rc::Rc, time::Duration};
+use theme::{TextStyle, Typeset as _};
+#[cfg(target_os = "linux")]
+mod linux;
 
 /// A retained page, built after its first paint. Hiding it preserves document
 /// state; showing it in another window moves the same page there.
@@ -21,7 +24,7 @@ use std::{fmt, rc::Rc, time::Duration};
 /// AppKit handles page input, including keyboard focus and pointer gestures.
 ///
 /// Windows uses a native child-view overlay. A later [`ui::cover`] parks the page
-/// until uncovered. Linux has no rendered backend.
+/// until uncovered. Linux composes WPEPlatform buffers through GPUI.
 pub struct WebView {
     page: Rc<Page>,
     location: Option<String>,
@@ -33,6 +36,11 @@ pub struct WebView {
     focus_window: Option<AnyWindowHandle>,
     _focus: [Subscription; 2],
     _reports: Task<()>,
+    pub error: Option<String>,
+    #[cfg(target_os = "linux")]
+    menu: ui::context_menu::ContextMenu<Self>,
+    #[cfg(target_os = "linux")]
+    menu_was_open: bool,
 }
 
 /// Fixed logical page viewport and input ownership for a native canvas frame.
@@ -63,6 +71,8 @@ pub enum WebViewEvent {
     NewWindow(String),
     /// The page logged, with a page built [`WebView::with_console`].
     Console(ConsoleMessage),
+    /// The page backend or runtime failed.
+    Error(String),
 }
 
 /// One `console` call, uncaught error or unhandled rejection in the page.
@@ -120,6 +130,15 @@ impl fmt::Display for EvalError {
 impl std::error::Error for EvalError {}
 
 impl WebView {
+    pub const HAS_INSPECTOR: bool = cfg!(all(
+        feature = "inspector",
+        any(target_os = "macos", target_os = "windows")
+    ));
+
+    pub fn can_evaluate(&self) -> bool {
+        self.error.is_none() && self.page.ready()
+    }
+
     pub fn new(url: impl Into<String>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         Page::start(window, cx);
         bind_edits(cx);
@@ -134,8 +153,16 @@ impl WebView {
                 }
             }
         });
+        let page = Rc::new(Page::new(url.into(), focus, reports, cx));
+        #[cfg(target_os = "linux")]
+        let _ = page.platform.view.set(cx.entity().downgrade());
         Self {
-            page: Rc::new(Page::new(url.into(), focus, reports, cx)),
+            page,
+            error: None,
+            #[cfg(target_os = "linux")]
+            menu: ui::context_menu::ContextMenu::default(),
+            #[cfg(target_os = "linux")]
+            menu_was_open: false,
             location: None,
             title: String::new(),
             loading: false,
@@ -154,7 +181,7 @@ impl WebView {
         cx: &mut Context<Self>,
     ) -> Result<()> {
         ensure!(
-            Page::COMPOSITED && window.native_surfaces.views,
+            Page::COMPOSITED && self.page.platform.available(window),
             "live browser composition is unavailable on this backend"
         );
         if self.page.presentation.replace(presentation) == presentation {
@@ -266,6 +293,7 @@ impl WebView {
     /// Before the first paint, replaces the URL the page is built with.
     /// After it, navigates the page.
     pub fn load(&mut self, url: impl Into<String>) {
+        self.error = None;
         self.page.load(url.into());
     }
 
@@ -284,11 +312,13 @@ impl WebView {
     }
 
     pub fn reload(&mut self) {
+        self.error = None;
         self.page.reload();
     }
 
     /// Reloads from the network, past the cache.
     pub fn reload_bypassing_cache(&mut self) {
+        self.error = None;
         self.page.reload_bypassing_cache();
     }
 
@@ -336,6 +366,8 @@ impl WebView {
 
     fn report(&mut self, report: Report, cx: &mut Context<Self>) {
         match report {
+            #[cfg(target_os = "linux")]
+            Report::Linux(event) => self.linux_event(event, cx),
             // Deferred: the window's handlers may update this view.
             Report::Pressed => {
                 if self.page.holds_keys()
@@ -455,6 +487,36 @@ impl Render for WebView {
         if self.page.focus.is_focused(window) {
             self.page.watch_keys(window);
         }
+        let content = match &self.error {
+            Some(error) => div()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .p_6()
+                .child(
+                    div()
+                        .text_style(TextStyle::Body)
+                        .max_w(gpui::px(560.))
+                        .child(error.clone()),
+                )
+                .into_any_element(),
+            None => Host {
+                surface: self.page.clone(),
+            }
+            .into_any_element(),
+        };
+        #[cfg(target_os = "linux")]
+        let menu = {
+            if self.menu_was_open && !self.menu.is_open() {
+                self.page
+                    .platform
+                    .command(serde_json::json!({"cmd":"dismiss-menu"}));
+            }
+            self.menu_was_open = self.menu.is_open();
+            self.menu
+                .render("browser-page-menu", |this| &mut this.menu, window, cx)
+        };
         div()
             .size_full()
             .key_context(KEY_CONTEXT)
@@ -464,8 +526,16 @@ impl Render for WebView {
             .on_action(on_edit::<SelectAll>(Edit::SelectAll, cx))
             .on_action(on_edit::<Undo>(Edit::Undo, cx))
             .on_action(on_edit::<Redo>(Edit::Redo, cx))
-            .child(Host {
-                surface: self.page.clone(),
+            .child(content)
+            .children({
+                #[cfg(target_os = "linux")]
+                {
+                    menu
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    None::<gpui::AnyElement>
+                }
             })
     }
 }
@@ -480,6 +550,8 @@ fn on_edit<A: Action>(
 ) -> impl Fn(&A, &mut Window, &mut App) + 'static {
     cx.listener(move |this, _: &A, window, cx| {
         if this.page.window() == Some(window.window_handle()) {
+            #[cfg(target_os = "linux")]
+            this.page.platform.share_clipboard(cx);
             this.page.edit(edit);
         } else {
             cx.propagate();
@@ -497,12 +569,17 @@ fn bind_edits(cx: &mut App) {
     }
     cx.set_global(Bound);
     let context = Some(KEY_CONTEXT);
+    let modifier = if cfg!(target_os = "macos") {
+        "cmd"
+    } else {
+        "ctrl"
+    };
     cx.bind_keys([
-        KeyBinding::new("cmd-c", Copy, context),
-        KeyBinding::new("cmd-x", Cut, context),
-        KeyBinding::new("cmd-v", Paste, context),
-        KeyBinding::new("cmd-a", SelectAll, context),
-        KeyBinding::new("cmd-z", Undo, context),
-        KeyBinding::new("cmd-shift-z", Redo, context),
+        KeyBinding::new(&format!("{modifier}-c"), Copy, context),
+        KeyBinding::new(&format!("{modifier}-x"), Cut, context),
+        KeyBinding::new(&format!("{modifier}-v"), Paste, context),
+        KeyBinding::new(&format!("{modifier}-a"), SelectAll, context),
+        KeyBinding::new(&format!("{modifier}-z"), Undo, context),
+        KeyBinding::new(&format!("{modifier}-shift-z"), Redo, context),
     ]);
 }
