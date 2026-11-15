@@ -1,3 +1,4 @@
+use gpui::TestAppContext;
 use theme::{
     Appearance,
     appearance::{AppearanceMode, reports_the_os, resolve},
@@ -56,4 +57,38 @@ fn only_system_mode_hears_the_os() {
     assert!(reports_the_os(AppearanceMode::System));
     assert!(!reports_the_os(AppearanceMode::Light));
     assert!(!reports_the_os(AppearanceMode::Dark));
+}
+
+#[gpui::test]
+fn native_content_appearance_is_local_and_restores_nested_scopes(cx: &mut TestAppContext) {
+    let _appearance = theme::lock_appearance();
+    cx.update(|cx| {
+        theme::Theme::install_custom(theme::Theme::dark(), cx);
+        let app_text = theme::Theme::of(cx).text;
+        let app_ink = theme::ink(0.5);
+        theme::Theme::with_appearance(Appearance::Light, cx, |cx| {
+            assert_eq!(theme::Theme::of(cx).appearance, Appearance::Light);
+            assert_eq!(theme::current_appearance(), Appearance::Light);
+            assert_eq!(cx.global::<theme::Theme>().appearance, Appearance::Dark);
+            assert_eq!(cx.global::<theme::Theme>().text, app_text);
+            assert_ne!(theme::ink(0.5), app_ink);
+            theme::Theme::with_appearance(Appearance::Dark, cx, |cx| {
+                assert_eq!(theme::Theme::of(cx).appearance, Appearance::Dark);
+                assert_eq!(theme::current_appearance(), Appearance::Dark);
+            });
+            assert_eq!(theme::Theme::of(cx).appearance, Appearance::Light);
+            assert_eq!(theme::current_appearance(), Appearance::Light);
+        });
+        assert_eq!(theme::Theme::of(cx).text, app_text);
+        assert_eq!(theme::current_appearance(), Appearance::Dark);
+        assert_eq!(theme::ink(0.5), app_ink);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            theme::Theme::with_appearance(Appearance::Light, cx, |_| {
+                panic!("content builder failed")
+            });
+        }));
+        assert!(result.is_err());
+        assert_eq!(theme::Theme::of(cx).appearance, Appearance::Dark);
+        assert_eq!(theme::current_appearance(), Appearance::Dark);
+    });
 }

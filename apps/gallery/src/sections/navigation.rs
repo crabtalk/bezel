@@ -505,13 +505,13 @@ impl Gallery {
             }
 
             "control-bar" => {
-                let glyph = |name: &'static str, icon: &'static [u8]| {
+                let glyph = |theme: &Theme, name: &'static str, icon: &'static [u8]| {
                     let hover = theme.element_hover;
                     ui::control_bar::bar_button(icon, 30.0, theme.text_muted)
                         .id(name)
                         .hover(move |s| s.bg(hover))
                 };
-                let label = |copy: &'static str| {
+                let label = |theme: &Theme, copy: &'static str| {
                     div()
                         .text_style(TextStyle::Callout)
                         .text_color(theme.text_muted)
@@ -526,32 +526,24 @@ impl Gallery {
                          on axis.",
                     ))
                     .child(theme.field_label("Transport — Shape::Pill"))
-                    .child(ui::control_bar::control_bar(
-                        &theme,
-                        ControlBarShape::Pill,
-                        vec![
-                            glyph("shuffle", icons::glyph::Shuffle).into_any_element(),
-                            glyph("skip-back", icons::glyph::SkipBack).into_any_element(),
-                            glyph("play", icons::glyph::Play).into_any_element(),
-                            glyph("skip-forward", icons::glyph::SkipForward).into_any_element(),
-                            glyph("repeat", icons::glyph::Repeat).into_any_element(),
+                    .child(ui::control_bar::control_bar("control-bar-demo-0", ControlBarShape::Pill, move |theme, _, _| (vec![
+                            glyph(theme, "shuffle", icons::glyph::Shuffle).into_any_element(),
+                            glyph(theme, "skip-back", icons::glyph::SkipBack).into_any_element(),
+                            glyph(theme, "play", icons::glyph::Play).into_any_element(),
+                            glyph(theme, "skip-forward", icons::glyph::SkipForward).into_any_element(),
+                            glyph(theme, "repeat", icons::glyph::Repeat).into_any_element(),
                         ],
-                        Some(label("Grain").into_any_element()),
-                        vec![glyph("volume-2", icons::glyph::Volume2).into_any_element()],
-                    ))
+                        Some(label(theme, "Grain").into_any_element()),
+                        vec![glyph(theme, "volume-2", icons::glyph::Volume2).into_any_element()])))
                     // Rounded, not a stadium: a composer is not a media control,
                     // and the stadium reads as one.
                     .child(theme.field_label("Composer — Shape::Rounded"))
-                    .child(ui::control_bar::control_bar(
-                        &theme,
-                        ControlBarShape::Rounded,
-                        vec![glyph("plus", icons::glyph::Plus).into_any_element()],
-                        Some(label("Ask anything…").into_any_element()),
+                    .child(ui::control_bar::control_bar("control-bar-demo-1", ControlBarShape::Rounded, move |theme, _, _| (vec![glyph(theme, "plus", icons::glyph::Plus).into_any_element()],
+                        Some(label(theme, "Ask anything…").into_any_element()),
                         vec![
-                            glyph("mic", icons::glyph::Mic).into_any_element(),
-                            glyph("arrow-up", icons::glyph::ArrowUp).into_any_element(),
-                        ],
-                    ))
+                            glyph(theme, "mic", icons::glyph::Mic).into_any_element(),
+                            glyph(theme, "arrow-up", icons::glyph::ArrowUp).into_any_element(),
+                        ])))
                     .child(theme.field_label("Floating over content"))
                     // The same striped band the materials page uses, and the only
                     // place either shape's blur can be caught disagreeing with
@@ -579,26 +571,22 @@ impl Gallery {
                                     .right_0()
                                     .flex()
                                     .justify_center()
-                                    .child(ui::control_bar::control_bar(
-                                        &theme,
-                                        ControlBarShape::Pill,
-                                        vec![
-                                            glyph("panel-left", icons::glyph::PanelLeft)
+                                    .child(ui::control_bar::control_bar("control-bar-demo-2", ControlBarShape::Pill, move |theme, _, _| (vec![
+                                            glyph(theme, "panel-left", icons::glyph::PanelLeft)
                                                 .into_any_element(),
-                                            glyph("search", icons::glyph::Search)
+                                            glyph(theme, "search", icons::glyph::Search)
                                                 .into_any_element(),
                                         ],
                                         None,
                                         vec![
-                                            glyph(
+                                            glyph(theme,
                                                 "sliders-horizontal",
                                                 icons::glyph::SlidersHorizontal,
                                             )
                                             .into_any_element(),
-                                            glyph("settings", icons::glyph::Settings)
+                                            glyph(theme, "settings", icons::glyph::Settings)
                                                 .into_any_element(),
-                                        ],
-                                    )),
+                                        ]))),
                             ),
                     )
                     .into_any_element()
@@ -609,7 +597,7 @@ impl Gallery {
                 // hairline and a shadow — so demoing a look the app has not
                 // chosen means handing it a theme that has, the same rule the
                 // probe tunes glass by.
-                let card = |style: SurfaceStyle, tag: &'static str| {
+                let card = move |theme: &Theme, style: SurfaceStyle, tag: &'static str| {
                     let theme = Theme {
                         popover_surface: style,
                         ..theme.clone()
@@ -655,9 +643,9 @@ impl Gallery {
                                     .items_center()
                                     .justify_center()
                                     .child(ui::surface::of(
-                                        Theme::surface_radius(),
+                                        SharedString::from(format!("menu-demo-{tag}")),
                                         style,
-                                        card(style, tag),
+                                        move |theme, _, _| card(theme, style, tag),
                                     )),
                             )
                     };

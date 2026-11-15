@@ -518,6 +518,7 @@ dependencies = [
 name = "bezel-browser"
 version = "0.2.26"
 dependencies = [
+ "anyhow",
  "async-channel",
  "bezel-gpui",
  "bezel-gpui-platform",

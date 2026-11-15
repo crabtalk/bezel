@@ -19,7 +19,7 @@ use gpui::{Action, AnyView, App, Context, IntoElement, SharedString, Window, div
 
 use theme::{TextStyle, Theme, Typeset};
 
-use crate::{keys, popover, surface::Surfaced as _};
+use crate::{keys, popover, surface};
 
 pub struct Tooltip {
     text: SharedString,
@@ -96,29 +96,34 @@ impl Tooltip {
         keystroke: Option<SharedString>,
         cx: &App,
     ) -> gpui::AnyElement {
-        let theme = Theme::of(cx).clone();
-        // Tooltips are small and frequent, so this is a tighter card than
-        // `popover_card`: less padding, no menu rhythm.
-        popover::popover_card(&theme)
-            .px(px(8.0))
-            .py(px(5.0))
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(Theme::SPACE))
-            .text_style(TextStyle::Callout)
-            .text_color(theme.text)
-            .child(text.into())
-            .when_some(keystroke, |card, keystroke| {
-                card.child(
-                    div()
-                        .text_style(TextStyle::Subheadline)
-                        .text_color(theme.text_faint)
-                        .child(keystroke),
-                )
-            })
-            .surface(&theme, theme.popover_surface)
-            .into_any_element()
+        let text = text.into();
+        surface::of(
+            "tooltip",
+            Theme::of(cx).popover_surface,
+            move |theme, _, _| {
+                // Tooltips are small and frequent, so this is a tighter card than
+                // `popover_card`: less padding, no menu rhythm.
+                popover::popover_card(&theme)
+                    .px(px(8.0))
+                    .py(px(5.0))
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(Theme::SPACE))
+                    .text_style(TextStyle::Callout)
+                    .text_color(theme.text)
+                    .child(text)
+                    .when_some(keystroke, |card, keystroke| {
+                        card.child(
+                            div()
+                                .text_style(TextStyle::Subheadline)
+                                .text_color(theme.text_faint)
+                                .child(keystroke),
+                        )
+                    })
+            },
+        )
+        .into_any_element()
     }
 }
 

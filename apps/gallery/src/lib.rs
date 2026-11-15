@@ -39,7 +39,7 @@ use ui::{
     popover,
     scroll::{self, Axes, ScrollbarState, TransientState},
     stats::{self, Stats},
-    surface::Surfaced as _,
+    surface,
     table::{self, Column, Sort, Width},
     tabs, titlebar,
     tooltip::Tooltip,

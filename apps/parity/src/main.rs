@@ -21,8 +21,7 @@ use theme::{
 };
 use ui::{
     floating::{self, Floating},
-    focus,
-    surface::Surfaced as _,
+    focus, surface,
     widgets::{self, ButtonStyle, Buttons as _, Controls as _, SliderDrag},
 };
 
@@ -276,6 +275,7 @@ impl Render for Parity {
         let translucent = theme.vibrancy;
         // The card is painted from `spec` whichever chip named it, so the knobs
         // have one conduit into the lens.
+        #[cfg(not(target_os = "macos"))]
         let tuned = Theme {
             glass_regular: self.spec,
             glass_magnify: self.magnify * 32.0 - 16.0,
@@ -284,6 +284,10 @@ impl Render for Parity {
             ..theme.clone()
         };
         let clear = self.spec == theme.glass_clear;
+        #[cfg(target_os = "macos")]
+        let background = theme.window_bg();
+        #[cfg(not(target_os = "macos"))]
+        let background = tuned.window_bg();
 
         let at = self.at.at().unwrap_or_else(Self::home);
         let origin = window.bounds().origin;
@@ -380,7 +384,7 @@ impl Render for Parity {
                 .size_full()
                 .flex()
                 .flex_col()
-                .bg(tuned.window_bg())
+                .bg(background)
                 .text_color(theme.text)
                 .child(div().h(px(TOP)))
                 .child(
@@ -409,16 +413,20 @@ impl Render for Parity {
                                 .into_iter()
                                 .flatten(),
                         )
-                        .child(floating::panel(
-                            "glass",
-                            &self.at,
-                            Self::home(),
-                            div()
-                                .w(px(CARD))
-                                .h(px(CARD))
-                                .rounded(px(CARD_RADIUS))
-                                .surface(&tuned, SurfaceStyle::Glass(Glass::Regular)),
-                        )),
+                        .child(floating::panel("glass", &self.at, Self::home(), {
+                            let glass = surface::of(
+                                "parity-glass",
+                                SurfaceStyle::Glass(if clear {
+                                    Glass::Clear
+                                } else {
+                                    Glass::Regular
+                                }),
+                                |_, _, _| div().w(px(CARD)).h(px(CARD)).rounded(px(CARD_RADIUS)),
+                            );
+                            #[cfg(not(target_os = "macos"))]
+                            let glass = glass.optics(&tuned, SurfaceStyle::Glass(Glass::Regular));
+                            glass
+                        })),
                 )
                 .child(
                     div()
@@ -496,7 +504,7 @@ impl Render for Parity {
                                     },
                                 ))),
                         )
-                        .children(rows)
+                        .children(rows.filter(|_| !cfg!(target_os = "macos")))
                         .child(
                             div()
                                 .text_style(TextStyle::Caption)

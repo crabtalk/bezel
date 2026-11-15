@@ -1,23 +1,41 @@
-use crate::{ConsoleMessage, DataStore, LoadState, host::Surface};
-use gpui::{AnyWindowHandle, App, Bounds, FocusHandle, Keystroke, Pixels, RenderImage, Window};
+use crate::{ConsoleMessage, DataStore, LoadState, Presentation, host::Surface};
+use gpui::{
+    AnyWindowHandle, App, Bounds, FocusHandle, Hitbox, Keystroke, Pixels, RenderImage, Window,
+    native_view::NativeViewState,
+};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
     sync::Arc,
 };
 
-#[cfg_attr(target_os = "macos", path = "page/macos.rs")]
-#[cfg_attr(target_os = "windows", path = "page/windows.rs")]
-#[cfg_attr(
-    not(any(target_os = "macos", target_os = "windows")),
-    path = "page/stub.rs"
-)]
+#[cfg_attr(target_os = "macos", path = "macos/mod.rs")]
+#[cfg_attr(target_os = "windows", path = "windows/mod.rs")]
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), path = "stub.rs")]
 mod platform;
+
+trait Present {
+    const COMPOSITED: bool = false;
+    fn paint(
+        &self,
+        _page: &Rc<Page>,
+        _bounds: Bounds<Pixels>,
+        _hitbox: &Hitbox,
+        _owner: u64,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) {
+    }
+}
 
 /// Sent from the page's callbacks to the view.
 #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
 pub(crate) enum Report {
     Pressed,
+    #[cfg(target_os = "macos")]
+    Released(u64),
+    #[cfg(target_os = "macos")]
+    Presented(AnyWindowHandle),
     /// A key the page took that the keymap binds.
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     Key(Keystroke),
@@ -77,6 +95,8 @@ pub(crate) struct Page {
     building: Cell<bool>,
     /// Where the page last sat; `None` before the first paint and while parked.
     placed: Cell<Option<Bounds<Pixels>>>,
+    pub(crate) presentation: Cell<Option<Presentation>>,
+    pub(crate) input: Rc<NativeViewState>,
     /// The window the page is in; `None` before the first paint.
     window: Cell<Option<AnyWindowHandle>>,
     owner: Cell<u64>,
@@ -93,6 +113,7 @@ pub(crate) struct Page {
 impl Page {
     /// Whether the view binds the edit keys to [`Edit`]s.
     pub(crate) const BINDS_EDITS: bool = platform::BINDS_EDITS;
+    pub(crate) const COMPOSITED: bool = <platform::State as Present>::COMPOSITED;
 
     pub(crate) fn new(
         url: String,
@@ -100,6 +121,8 @@ impl Page {
         reports: async_channel::Sender<Report>,
         cx: &App,
     ) -> Self {
+        let input = Rc::new(NativeViewState::default());
+        input.enabled.set(true);
         Self {
             url: RefCell::new(url),
             user_agent: RefCell::new(None),
@@ -112,20 +135,41 @@ impl Page {
             #[cfg(any(target_os = "macos", target_os = "windows"))]
             building: Cell::new(false),
             placed: Cell::new(None),
+            presentation: Cell::new(None),
+            input: input.clone(),
             window: Cell::new(None),
             owner: Cell::new(0),
             cover: RefCell::new(Cover::Off),
             dropped: RefCell::new(None),
             focus,
             reports,
-            platform: platform::State::new(cx),
+            platform: platform::State::new(cx, input),
         }
     }
 }
 
 impl Surface for Page {
+    const COMPOSITED: bool = Page::COMPOSITED;
+
+    fn accepts_input(&self) -> bool {
+        self.presentation
+            .get()
+            .is_none_or(|presentation| presentation.interactive)
+    }
+
+    fn paint(
+        this: &Rc<Self>,
+        bounds: Bounds<Pixels>,
+        hitbox: &Hitbox,
+        owner: u64,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        this.platform.paint(this, bounds, hitbox, owner, window, cx);
+    }
+
     fn focus(&self) -> Option<&FocusHandle> {
-        Some(&self.focus)
+        self.accepts_input().then_some(&self.focus)
     }
 
     fn owner(&self) -> &Cell<u64> {
@@ -468,7 +512,7 @@ impl Page {
         let Some(view) = self.built() else {
             return;
         };
-        if self.placed.get().is_some() && !platform::closed(view) {
+        if Self::COMPOSITED || (self.placed.get().is_some() && !platform::closed(view)) {
             self.platform.take_keys(view);
         }
     }
@@ -476,7 +520,7 @@ impl Page {
     /// Hands keyboard focus back to gpui's view if the page holds it.
     pub(crate) fn give_keys(&self) {
         if let Some(view) = self.built()
-            && self.holds_keys()
+            && (Self::COMPOSITED || self.holds_keys())
         {
             self.platform.give_keys(view);
         }
@@ -489,6 +533,11 @@ impl Page {
         let Some(bounds) = self.placed.take() else {
             return;
         };
+        if Self::COMPOSITED {
+            self.platform.parked();
+            let _ = view.set_visible(false);
+            return;
+        }
         self.give_keys();
         self.platform.parked();
         let _ = view.set_visible(false);

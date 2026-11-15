@@ -13,8 +13,21 @@ use std::{
 };
 use ui::cover::{self, Mark};
 
-/// A native surface over the window that a [`Host`] places.
+/// A native surface placed or composited by a [`Host`].
 pub(crate) trait Surface: 'static {
+    const COMPOSITED: bool = false;
+    fn accepts_input(&self) -> bool {
+        true
+    }
+    fn paint(
+        _this: &Rc<Self>,
+        _bounds: Bounds<Pixels>,
+        _hitbox: &Hitbox,
+        _owner: u64,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) {
+    }
     fn focus(&self) -> Option<&FocusHandle>;
     /// The token of the [`Shown`] that placed the surface last.
     fn owner(&self) -> &Cell<u64>;
@@ -80,7 +93,14 @@ impl<S: Surface> Element for Host<S> {
             window.set_focus_handle(focus, cx);
         }
         (
-            window.insert_hitbox(bounds, HitboxBehavior::BlockMouse),
+            window.insert_hitbox(
+                bounds,
+                if self.surface.accepts_input() {
+                    HitboxBehavior::BlockMouse
+                } else {
+                    HitboxBehavior::Normal
+                },
+            ),
             cover::mark(),
         )
     }
@@ -98,20 +118,29 @@ impl<S: Surface> Element for Host<S> {
         // gpui's view tracks the pointer across the page's pixels too, and
         // resets the platform cursor whenever its own style under the pointer
         // changes, over whatever WebKit set.
-        window.set_cursor_style(CursorStyle::Arrow, hitbox);
+        if self.surface.accepts_input() {
+            window.set_cursor_style(CursorStyle::Arrow, hitbox);
+        }
         let Some(id) = id else { return };
-        let covered = cover::covered(*mark, bounds, window, cx);
+        let covered = !S::COMPOSITED && cover::covered(*mark, bounds, window, cx);
         let surface = self.surface.clone();
         window.with_element_state::<Shown<S>, _>(id, |shown, window| {
             let shown = shown.unwrap_or_else(|| Shown::new(surface.clone()));
-            surface.owner().set(shown.token);
-            if covered {
-                surface.cover();
+            if S::COMPOSITED {
+                S::paint(&surface, bounds, hitbox, shown.token, window, cx);
             } else {
-                S::place(&surface, bounds, window, cx);
+                surface.owner().set(shown.token);
+                if covered {
+                    surface.cover();
+                } else {
+                    S::place(&surface, bounds, window, cx);
+                }
             }
             ((), shown)
         });
+        if S::COMPOSITED {
+            return;
+        }
         if let Some(still) = self.surface.take_dropped() {
             let _ = window.drop_image(still);
         }

@@ -1,5 +1,5 @@
-use super::{Edit, Page};
-use gpui::{App, Bounds, Pixels, Window};
+use crate::page::{Edit, Page, Present};
+use gpui::{App, Bounds, Pixels, Window, native_view::NativeViewState};
 use std::rc::Rc;
 
 pub(super) const BINDS_EDITS: bool = false;
@@ -7,7 +7,7 @@ pub(super) const BINDS_EDITS: bool = false;
 pub(super) struct State;
 
 impl State {
-    pub(super) fn new(_cx: &App) -> Self {
+    pub(super) fn new(_cx: &App, _input: Rc<NativeViewState>) -> Self {
         Self
     }
 }
@@ -79,3 +79,5 @@ pub(super) fn store_usage(
 ) {
     done(None);
 }
+
+impl Present for State {}

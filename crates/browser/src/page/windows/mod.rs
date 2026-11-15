@@ -1,5 +1,5 @@
-use super::{Edit, Report};
-use gpui::{App, ForegroundExecutor, RenderImage, Window};
+use crate::page::{Edit, Present, Report};
+use gpui::{App, ForegroundExecutor, RenderImage, Window, native_view::NativeViewState};
 use std::{cell::Cell, rc::Rc, sync::Arc};
 use wry::WebViewExtWindows;
 
@@ -17,7 +17,7 @@ pub(super) struct State {
 }
 
 impl State {
-    pub(super) fn new(cx: &App) -> Self {
+    pub(super) fn new(cx: &App, _input: Rc<NativeViewState>) -> Self {
         Self {
             focused: Rc::new(Cell::new(false)),
             keys: Rc::new(accelerator::Keys::new(cx)),
@@ -243,3 +243,5 @@ pub(super) fn store_usage(
 ) {
     done(None);
 }
+
+impl Present for State {}

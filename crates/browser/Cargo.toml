@@ -26,6 +26,7 @@ default = []
 inspector = ["wry/devtools"]
 
 [dependencies]
+anyhow.workspace = true
 gpui.workspace = true
 ui.workspace = true
 tracing.workspace = true

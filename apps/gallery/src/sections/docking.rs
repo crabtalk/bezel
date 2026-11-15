@@ -3,8 +3,7 @@ use motion::Painter;
 use theme::Theme;
 use ui::{
     docking::{Dock, Drop, Zone},
-    drag::Carried as _,
-    tabs,
+    drag, tabs,
 };
 
 pub(crate) struct Demo {
@@ -71,14 +70,11 @@ impl Demo {
     pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let painter = Painter::of(cx);
         Self {
-            dock: Dock::new(painter, |id, _, cx| {
-                tabs::tab(
-                    Theme::of(cx),
-                    *id,
-                    tabs::Label::new(*id),
-                    tabs::State::Front,
-                )
-                .ghost(Theme::of(cx))
+            dock: Dock::new(painter, |id, _, _| {
+                let id = *id;
+                drag::ghost(id, move |theme, _, _| {
+                    tabs::tab(theme, id, tabs::Label::new(id), tabs::State::Front)
+                })
                 .into_any_element()
             }),
             panes: [vec!["Overview", "Notes", "Roadmap"], vec!["Preview"]]

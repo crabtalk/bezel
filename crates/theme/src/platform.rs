@@ -1,9 +1,7 @@
 //! What the renderer and the compositor will do behind our paint.
 
-/// Whether this build has the backdrop-blur primitive behind it — the lens a
-/// glass surface refracts through, and the frost a card lays over the content
-/// it covers. Metal's and wgpu's; it tracks the gpui in use rather than the
-/// platform, and the DirectX renderer carries no such primitive.
+/// Whether this build supplies floating material effects.
+/// macOS uses AppKit; web uses the renderer's material primitive.
 pub const LENSED: bool = cfg!(any(target_os = "macos", target_family = "wasm"));
 
 /// Whether the compositor blends a material behind a translucent window —

@@ -114,7 +114,7 @@ pub trait Buttons: ThemeExt {
     /// `align-items: stretch` would otherwise blow it out to the column's full
     /// width.
     ///
-    /// Glass is chained, not baked: `.surface(theme, theme.popover_surface)`
+    /// Build glass-backed controls inside `surface::of`.
     /// turns the track into the capsule a macOS 26 toolbar floats.
     fn control_group(&self) -> Div {
         let theme = self.theme();

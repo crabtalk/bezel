@@ -28,7 +28,7 @@ use motion::Painter;
 use theme::{Glass, SurfaceStyle, TextStyle, Theme, Typeset};
 use web_time::Instant;
 
-use crate::{popover, surface::Surfaced as _};
+use crate::{popover, surface};
 
 /// How often the meter refreshes once nothing else is drawing, and so the span
 /// each reading is measured over.
@@ -114,52 +114,45 @@ impl Render for Stats {
 
         self.painter.lease(1.0 / TICK.as_secs_f32(), LEASE, cx);
 
-        // Regular whatever the app mounts its menus on, and the card is handed
-        // the same choice — a card that thinks it is frost paints a fill, and a
-        // fill over a lens buries it.
-        let theme = Theme {
-            popover_surface: SurfaceStyle::Glass(Glass::Regular),
-            ..Theme::of(cx).clone()
-        };
         let reading = self.reading;
-        let card = popover::popover_card(&theme)
-            .w(px(WIDTH))
-            .p(px(10.0))
-            .flex()
-            .flex_col()
-            .gap(px(2.0))
-            .child(row(&theme, "FPS", format!("{:.0}", reading.fps)))
-            .child(row(
-                &theme,
-                "CPU",
-                reading
-                    .cpu
-                    .map_or_else(|| "—".to_string(), |cpu| format!("{cpu:.1}%")),
-            ))
-            .child(row(
-                &theme,
-                "GPU",
-                reading
-                    .gpu
-                    .map_or_else(|| "—".to_string(), |gpu| format!("{gpu:.1}%")),
-            ))
-            .child(row(
-                &theme,
-                "MEM",
-                reading.mem.map_or_else(
-                    || "—".to_string(),
-                    // Whole megabytes: a fourth digit and a decimal together
-                    // outgrow the value column, and this number moves in
-                    // megabytes anyway.
-                    |mem| format!("{:.0} MB", mem as f32 / 1e6),
-                ),
-            ));
-
-        // Regular, not clear: a meter floats over the thing it is measuring,
-        // and the everyday material is the one that both refracts and carries
-        // dense content. Its blur and its dimming come with the look — Apple
-        // exposes no way to ask for either, and neither does this.
-        card.surface(&theme, theme.popover_surface)
+        surface::of(
+            "stats",
+            SurfaceStyle::Glass(Glass::Regular),
+            move |theme, _, _| {
+                popover::popover_card(&theme)
+                    .w(px(WIDTH))
+                    .p(px(10.0))
+                    .flex()
+                    .flex_col()
+                    .gap(px(2.0))
+                    .child(row(&theme, "FPS", format!("{:.0}", reading.fps)))
+                    .child(row(
+                        &theme,
+                        "CPU",
+                        reading
+                            .cpu
+                            .map_or_else(|| "—".to_string(), |cpu| format!("{cpu:.1}%")),
+                    ))
+                    .child(row(
+                        &theme,
+                        "GPU",
+                        reading
+                            .gpu
+                            .map_or_else(|| "—".to_string(), |gpu| format!("{gpu:.1}%")),
+                    ))
+                    .child(row(
+                        &theme,
+                        "MEM",
+                        reading.mem.map_or_else(
+                            || "—".to_string(),
+                            // Whole megabytes: a fourth digit and a decimal together
+                            // outgrow the value column, and this number moves in
+                            // megabytes anyway.
+                            |mem| format!("{:.0} MB", mem as f32 / 1e6),
+                        ),
+                    ))
+            },
+        )
     }
 }
 

@@ -1,8 +1,8 @@
 # Browser surfaces in a design canvas
 
 Implementation contract, 14 November 2026. Pages must remain live and
-interactive inside the canvas on supported native platforms. No composited
-canvas surface is implemented yet.
+interactive inside the canvas on supported native platforms. macOS has a
+native/GPU presentation path; shared canvas integration remains separate.
 
 ## Geometry and frame ownership
 
@@ -26,7 +26,8 @@ GPU's final read, including error and device-loss paths.
 The host explicitly enables page input. In canvas mode, pointer and wheel
 events belong to the canvas. In page mode, the host maps screen coordinates
 through the inverse canvas transform into viewport coordinates before
-forwarding them. Pointer capture must finish a gesture even if it leaves the
+forwarding them on buffer-based backends. macOS uses AppKit view transforms
+and native event delivery. Pointer capture must finish a gesture even if it leaves the
 frame. Focus, IME cursor placement and native menus use the same transform.
 
 The host can return to canvas mode without destroying the page. Keyboard
@@ -44,7 +45,7 @@ and restart must not wait on the UI thread.
 | Platform | Existing or available path | Boundary |
 | --- | --- | --- |
 | Linux | WPEPlatform DMA-BUF or shared-memory frames | Requires the WPE backend and GPUI import and scheduling APIs |
-| macOS | WKWebView snapshots; native browser interaction | Public snapshots do not establish continuous texture output or interactive canvas embedding |
+| macOS | Live WKWebView hosted between GPU layers | Fixed viewport, native transforms, scene clips and overlay hit regions; GPU-only exports exclude native content |
 | Windows | WebView2 CapturePreview; composition hosting APIs | DirectComposition hosting alone is not a GPUI texture; continuous capture and input require their own implementation |
 | Web | Existing iframe overlay | Does not provide same-origin-independent composited pixels; excluded from this native surface contract |
 
@@ -54,12 +55,23 @@ exported or compared, but is not an interactive live page.
 
 ## Platform prerequisites
 
-macOS needs a live presentation and input path using public APIs. Evaluate
-WKWebView output and native composition together with GPUI's renderer;
-periodically capturing stills does not establish a suitable live path. The
-result must preserve fixed layout, canvas scaling, clipping, stacking, page
-input and animation. Record an API or performance limitation explicitly if
-those requirements cannot be met. No private WebKit API or Chromium dependency.
+macOS presents WKWebView in GPUI's native/GPU compositor through public AppKit
+APIs. `WebView::set_presentation` takes a fixed logical viewport and an explicit
+input flag. The compositor owns the native view's hierarchy, frame and visibility;
+the browser retains navigation and document state. AppKit handles transformed
+hit testing, scrolling, pointer gestures and IME. Scene hit regions prevent page
+input through overlaid GPUI controls. Cached scenes share live input state and
+consume keyboard-focus requests once. Successful presentation rebinds browser
+ownership when a cached page moves between windows.
+
+Native Liquid Glass hosts its foreground in `contentView`; related surfaces use
+native glass containers. The same material path applies over pages and other
+application content. No page snapshots are used for macOS display composition.
+Native views require a separate pixel-acquisition path for export.
+
+Headless scene tests and compilation do not establish real WebKit behavior for
+IME, pointer capture, animations, native appearance or many-page GPU costs.
+Those properties have not been exercised through desktop UI checks.
 
 Windows needs a WebView2 presentation and input path with the same contract.
 CapturePreview and composition hosting are candidate APIs, not an implemented

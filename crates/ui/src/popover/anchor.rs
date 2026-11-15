@@ -43,8 +43,8 @@ pub(super) fn exit_progress(since: web_time::Instant) -> f32 {
 /// names. It needs no exit ramp of its own: the primitive reads the element
 /// tree's opacity, so a layer playing `menu_out` fades its surface with
 /// everything else in it.
-pub(super) fn material_menu(content: AnyElement) -> AnyElement {
-    crate::surface::popover(Theme::surface_radius(), content).into_any_element()
+pub(super) fn material_menu(id: SharedString, content: AnyElement) -> AnyElement {
+    crate::surface::popover(id, Theme::surface_radius(), move |_, _, _| content).into_any_element()
 }
 
 /// Entrance or exit motion for a popover layer. While exiting (the [`popover::Popup`]
@@ -72,16 +72,17 @@ pub(super) fn menu_layer(
     position: Option<Point<Pixels>>,
     gap: f32,
 ) -> AnyElement {
+    let id = id.into();
     gpui::deferred(Layer {
         content: menu_motion(
-            id.into(),
+            id.clone(),
             closing.map(exit_progress),
             div()
                 .occlude()
                 .flex()
                 .flex_col()
                 .min_h_0()
-                .child(material_menu(content)),
+                .child(material_menu(id, content)),
         ),
         anchor,
         position,
@@ -260,11 +261,9 @@ pub fn anchored_submenu(
     chain: &Chain,
     closing: Option<web_time::Instant>,
 ) -> AnyElement {
-    let content = div().occlude().child(material_menu(content));
-    submenu::layer(
-        menu_motion(id.into(), closing.map(exit_progress), content),
-        chain,
-    )
+    let id = id.into();
+    let content = div().occlude().child(material_menu(id.clone(), content));
+    submenu::layer(menu_motion(id, closing.map(exit_progress), content), chain)
 }
 
 /// [`anchored_menu`] opening UPWARD from the trigger (composer pickers, the

@@ -24,7 +24,7 @@ use gpui::{AnyView, App, Context, IntoElement, SharedString, Window, div, prelud
 use crate::widgets::Content;
 use theme::{TextStyle, Theme, Typeset};
 
-use crate::{popover, surface::Surfaced as _};
+use crate::{popover, surface};
 
 pub struct HoverCard {
     title: SharedString,
@@ -76,45 +76,53 @@ impl HoverCard {
 
 impl Render for HoverCard {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = Theme::of(cx).clone();
-        let heading = div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap(px(10.0))
-            .when_some(self.initials.clone(), |row, initials| {
-                row.child(theme.avatar(initials))
-            })
-            .child(
-                div()
-                    .text_style(TextStyle::Headline)
-                    .text_color(theme.text)
-                    .child(self.title.clone()),
-            );
+        let title = self.title.clone();
+        let body = self.body.clone();
+        let initials = self.initials.clone();
+        let meta = self.meta.clone();
+        surface::of(
+            "hover-card",
+            Theme::of(cx).popover_surface,
+            move |theme, _, _| {
+                let heading = div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(10.0))
+                    .when_some(initials.clone(), |row, initials| {
+                        row.child(theme.avatar(initials))
+                    })
+                    .child(
+                        div()
+                            .text_style(TextStyle::Headline)
+                            .text_color(theme.text)
+                            .child(title.clone()),
+                    );
 
-        // Wider and airier than a tooltip: this holds prose, not a label.
-        popover::popover_card(&theme)
-            .w(px(280.0))
-            .p(px(12.0))
-            .flex()
-            .flex_col()
-            .gap(px(Theme::SPACE))
-            .child(heading)
-            .child(
-                div()
-                    .text_style(TextStyle::Callout)
-                    .line_height(px(18.0))
-                    .text_color(theme.text_muted)
-                    .child(self.body.clone()),
-            )
-            .when_some(self.meta.clone(), |card, meta| {
-                card.child(
-                    div()
-                        .text_style(TextStyle::Subheadline)
-                        .text_color(theme.text_faint)
-                        .child(meta),
-                )
-            })
-            .surface(&theme, theme.popover_surface)
+                // Wider and airier than a tooltip: this holds prose, not a label.
+                popover::popover_card(&theme)
+                    .w(px(280.0))
+                    .p(px(12.0))
+                    .flex()
+                    .flex_col()
+                    .gap(px(Theme::SPACE))
+                    .child(heading)
+                    .child(
+                        div()
+                            .text_style(TextStyle::Callout)
+                            .line_height(px(18.0))
+                            .text_color(theme.text_muted)
+                            .child(body.clone()),
+                    )
+                    .when_some(meta.clone(), |card, meta| {
+                        card.child(
+                            div()
+                                .text_style(TextStyle::Subheadline)
+                                .text_color(theme.text_faint)
+                                .child(meta),
+                        )
+                    })
+            },
+        )
     }
 }

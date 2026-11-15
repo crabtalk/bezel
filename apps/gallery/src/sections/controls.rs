@@ -614,19 +614,31 @@ impl Gallery {
                     .into_any_element()
             }),
         );
-        let lensed = row().children(toolbar.into_iter().map(|(glyph, name)| {
-            theme
-                .icon_button(
-                    glyph,
-                    ButtonStyle::Ghost,
-                    Some(Fade::new(view, format!("lens-{name}"))),
+        let gallery = cx.entity();
+        let style = theme.popover_surface;
+        let lensed = surface::group("control-group-materials", move |_, _, _| {
+            row().children(toolbar.into_iter().map(move |(glyph, name)| {
+                let gallery = gallery.clone();
+                surface::of(
+                    SharedString::from(format!("lens-{name}")),
+                    style,
+                    move |theme, _, cx| {
+                        gallery.update(cx, |_, cx| {
+                            theme
+                                .icon_button(
+                                    glyph,
+                                    ButtonStyle::Ghost,
+                                    Some(Fade::new(view, format!("lens-{name}"))),
+                                )
+                                .rounded_full()
+                                .id(SharedString::from(format!("lens-{name}")))
+                                .on_click(cx.listener(move |view, _, _, cx| view.press(name, cx)))
+                        })
+                    },
                 )
-                .rounded_full()
-                .id(SharedString::from(format!("lens-{name}")))
-                .on_click(cx.listener(move |view, _, _, cx| view.press(name, cx)))
-                .surface(&theme, theme.popover_surface)
                 .into_any_element()
-        }));
+            }))
+        });
         let split = theme
             .control_group()
             .child(

@@ -68,7 +68,9 @@ pub(super) fn modal_with(
     scrim: f32,
     on_dismiss: impl Fn(&gpui::MouseDownEvent, &mut gpui::Window, &mut gpui::App) + 'static,
 ) -> AnyElement {
-    let card = crate::surface::popover(corner_radius, card).into_any_element();
+    let id = id.into();
+    let card =
+        crate::surface::popover(id.clone(), corner_radius, move |_, _, _| card).into_any_element();
     gpui::deferred(
         gpui::anchored()
             .position(gpui::point(px(0.0), px(0.0)))
@@ -131,28 +133,40 @@ pub(super) const DIALOG_RADIUS: f32 = 16.0;
 /// its *inner* edge only — the corners against the window edge are off-screen
 /// — so it reads as pulled out of the window rather than floating near it.
 pub fn sheet_panel(theme: &Theme, side: Side) -> gpui::Div {
-    let card = div()
-        .size_full()
-        .flex()
-        .flex_col()
-        .shadow_lg()
-        .text_color(theme.text);
+    let card = div().size_full().flex().flex_col().text_color(theme.text);
+    let border = if cfg!(target_os = "macos") && theme.glass {
+        gpui::transparent_black()
+    } else {
+        theme.border
+    };
+    let card = if !cfg!(target_os = "macos") || !theme.glass {
+        card.shadow_lg()
+    } else {
+        card
+    };
     let card = match side {
         Side::Left => card
             .rounded_r(px(DIALOG_RADIUS))
             .border_r_1()
-            .border_color(theme.border),
+            .border_color(border),
         Side::Right => card
             .rounded_l(px(DIALOG_RADIUS))
             .border_l_1()
-            .border_color(theme.border),
+            .border_color(border),
         Side::Bottom => card
             .rounded_t(px(DIALOG_RADIUS))
             .border_t_1()
-            .border_color(theme.border),
+            .border_color(border),
     };
     if theme.glass {
-        card.bg(theme.glass_overlay())
+        #[cfg(target_os = "macos")]
+        {
+            card
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            card.bg(theme.glass_overlay())
+        }
     } else {
         card.bg(theme.surface_overlay)
     }
@@ -193,7 +207,11 @@ pub fn sheet(
         gpui::Axis::Horizontal => panel.top_0().bottom_0().w(extent),
         gpui::Axis::Vertical => panel.left_0().right_0().h(extent),
     };
-    let panel = panel.child(crate::surface::popover(DIALOG_RADIUS, content));
+    let panel = panel.child(crate::surface::popover(
+        "sheet-material",
+        DIALOG_RADIUS,
+        move |_, _, _| content,
+    ));
     // `t` runs 0 (fully off-screen) → 1 (seated against the edge).
     let seat = move |el: gpui::Div, t: f32| {
         let inset = extent * (t - 1.0);

@@ -34,4 +34,5 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
 serde_json.workspace = true

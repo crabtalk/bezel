@@ -3,39 +3,25 @@ use crate::{
     host::Host,
     page::{Edit, Page, Report},
 };
+use anyhow::{Result, ensure};
 use gpui::{
     Action, AnyWindowHandle, App, Context, EventEmitter, FocusHandle, Focusable, Global,
-    IntoElement, KeyBinding, Render, Subscription, Task, Window, actions, div, prelude::*,
+    IntoElement, KeyBinding, Render, Subscription, Task, Window, actions, div,
+    native_view::Viewport, prelude::*,
 };
 use serde::de::DeserializeOwned;
 use std::{fmt, rc::Rc, time::Duration};
 
-/// A webview showing one page.
+/// A retained page, built after its first paint. Hiding it preserves document
+/// state; showing it in another window moves the same page there.
 ///
-/// The page is built after the first time the view is painted, in the window
-/// it is painted in, and shows from the paint after that; until then its place
-/// is empty. It moves to each other window the view is painted in. It sits
-/// at the element's bounds in every frame the element is painted and is parked
-/// in every frame it is not. A parked page stays loaded. A view painted in two
-/// windows in turn moves its page on every paint.
+/// On macOS, GPUI composes the native view with its clips, overlays and materials.
+/// [`Self::set_presentation`] fixes the logical viewport independently of the
+/// displayed rectangle and controls whether native page input is enabled.
+/// AppKit handles page input, including keyboard focus and pointer gestures.
 ///
-/// The page takes keys while the view's focus handle is focused, and a press
-/// in the page focuses the handle. On macOS, a press on gpui's view outside
-/// the page takes the keys back, whether or not the handle loses focus, and
-/// key equivalents (cmd or ctrl held) reach gpui's key dispatch before the
-/// page sees them. On Windows, a key with ctrl or alt held, or a function key,
-/// goes to gpui's key dispatch in place of the page when the keymap binds it
-/// in the view's key context.
-///
-/// gpui elements behind the page are not hovered, and gpui's cursor over the
-/// page is the arrow. On macOS the page sets the cursor over itself.
-///
-/// In a frame where a [`ui::cover`] recorded after the view overlaps it, the
-/// page is parked. On macOS a still of the page, taken while it is still up,
-/// is painted in its place; until the still arrives the page stays over the
-/// cover. Elsewhere the place is left empty.
-///
-/// Paints nothing off macOS and Windows.
+/// Windows uses a native child-view overlay. A later [`ui::cover`] parks the page
+/// until uncovered. Linux has no rendered backend.
 pub struct WebView {
     page: Rc<Page>,
     location: Option<String>,
@@ -47,6 +33,13 @@ pub struct WebView {
     focus_window: Option<AnyWindowHandle>,
     _focus: [Subscription; 2],
     _reports: Task<()>,
+}
+
+/// Fixed logical page viewport and input ownership for a native canvas frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Presentation {
+    pub viewport: Viewport,
+    pub interactive: bool,
 }
 
 /// What the page reports about itself.
@@ -153,6 +146,34 @@ impl WebView {
         }
     }
 
+    /// `None` restores a responsive viewport and page input.
+    pub fn set_presentation(
+        &mut self,
+        presentation: Option<Presentation>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<()> {
+        ensure!(
+            Page::COMPOSITED && window.native_surfaces.views,
+            "live browser composition is unavailable on this backend"
+        );
+        if self.page.presentation.replace(presentation) == presentation {
+            return Ok(());
+        }
+        self.page
+            .input
+            .enabled
+            .set(presentation.is_none_or(|presentation| presentation.interactive));
+        if presentation.is_some_and(|presentation| !presentation.interactive) {
+            self.page.give_keys();
+            if self.page.focus.is_focused(window) {
+                window.blur(cx);
+            }
+        }
+        cx.notify();
+        Ok(())
+    }
+
     /// Focus listeners are per window.
     fn listen(
         focus: &FocusHandle,
@@ -161,10 +182,18 @@ impl WebView {
     ) -> [Subscription; 2] {
         [
             cx.on_focus(focus, window, |this: &mut Self, window, _| {
-                this.page.watch_keys(window);
-                this.page.take_keys()
+                if this.page.window() == Some(window.window_handle()) {
+                    this.page.watch_keys(window);
+                    this.page.take_keys();
+                }
             }),
-            cx.on_blur(focus, window, |this: &mut Self, _, _| this.page.give_keys()),
+            cx.on_blur(focus, window, |this: &mut Self, window, _| {
+                if this.page.window() == Some(window.window_handle())
+                    && (!Page::COMPOSITED || !this.page.focus.is_focused(window))
+                {
+                    this.page.give_keys();
+                }
+            }),
         ]
     }
 
@@ -318,6 +347,41 @@ impl WebView {
                     });
                 }
             }
+            #[cfg(target_os = "macos")]
+            Report::Released(generation) => {
+                if self.page.input.focus.get().generation == generation
+                    && let Some(handle) = self.page.window()
+                {
+                    let page = self.page.clone();
+                    App::defer(cx, move |cx| {
+                        let _ = handle.update(cx, |_, window, cx| {
+                            if page.input.focus.get().generation == generation
+                                && page.focus.is_focused(window)
+                            {
+                                window.blur(cx);
+                            }
+                        });
+                    });
+                }
+            }
+            #[cfg(target_os = "macos")]
+            Report::Presented(handle) => {
+                let view = cx.entity().downgrade();
+                App::defer(cx, move |cx| {
+                    let _ = handle.update(cx, |_, window, cx| {
+                        if let Some(view) = view.upgrade() {
+                            view.update(cx, |this, cx| {
+                                if this.page.window() == Some(handle)
+                                    && this.focus_window != Some(handle)
+                                {
+                                    this._focus = Self::listen(&this.page.focus, window, cx);
+                                    this.focus_window = Some(handle);
+                                }
+                            });
+                        }
+                    });
+                });
+            }
             Report::Key(keystroke) => {
                 if let Some(window) = self.page.window() {
                     App::defer(cx, move |cx| {
@@ -414,7 +478,13 @@ fn on_edit<A: Action>(
     edit: Edit,
     cx: &mut Context<WebView>,
 ) -> impl Fn(&A, &mut Window, &mut App) + 'static {
-    cx.listener(move |this, _: &A, _, _| this.page.edit(edit))
+    cx.listener(move |this, _: &A, window, cx| {
+        if this.page.window() == Some(window.window_handle()) {
+            this.page.edit(edit);
+        } else {
+            cx.propagate();
+        }
+    })
 }
 
 /// Binds the edit keys in the view's context, once per app.

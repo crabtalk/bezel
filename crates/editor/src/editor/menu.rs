@@ -14,11 +14,13 @@ use theme::{TextStyle, Theme, Typeset};
 use ui::{
     icons::Icon,
     menu::{Cursor, Hit, Item},
-    surface::Surfaced as _,
+    surface,
 };
 
-use crate::editor::{Dropped, Editor, HANDLE_SIZE, Line, TableTarget};
-use crate::{SlashAction, SlashAt};
+use crate::{
+    SlashAction, SlashAt,
+    editor::{Dropped, Editor, HANDLE_SIZE, Line, TableTarget},
+};
 
 /// What a row of a table line's menu does.
 type TableAction = Box<dyn Fn(&mut Editor, &mut Context<Editor>)>;
@@ -113,49 +115,53 @@ impl Editor {
         self.handle_at = placed.map(|(_, at)| at);
         let (ix, at) = placed?;
         let glyph = crate::handles::installed(cx).block;
-        let handle = div()
-            .id(BLOCK_HANDLE)
-            .group(BLOCK_HANDLE)
-            .debug_selector(|| BLOCK_HANDLE.to_string())
-            .absolute()
-            .left(at.x)
-            .top(at.y)
-            .w(px(HANDLE_SIZE))
-            .h(px(HANDLE_SIZE))
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded(px(4.0))
-            .cursor(CursorStyle::OpenHand)
-            .child(
-                ui::icons::icon(glyph)
-                    .size(px(BLOCK_HANDLE_GLYPH))
-                    .text_color(theme.text_faint)
-                    .group_hover(BLOCK_HANDLE, |el| el.text_color(theme.text_muted)),
-            )
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _: &gpui::MouseDownEvent, _, cx| {
-                    this.press_claimed = true;
-                    this.lifted = Some((ix, ix));
-                    // The menu belongs to the release. Opened here it would
-                    // occlude the very moves a drag downwards is made of,
-                    // and the drop target would never leave the block it
-                    // started on — so the press only dismisses, and the note
-                    // `trigger_press_matching` took is what tells the
-                    // release apart from a fresh open.
-                    ui::popover::close_popup(this, cx, |this| &mut this.block_menu);
-                    cx.notify();
-                }),
-            );
+        let editor = cx.entity();
         Some(
-            ui::popover::trigger_press_matching(
-                handle,
-                |this| &mut this.block_menu,
-                move |menu| menu.of.0 == ix,
-                cx,
-            )
-            .surface(theme, theme.popover_surface)
+            surface::of(BLOCK_HANDLE, theme.popover_surface, move |theme, _, cx| {
+                editor.update(cx, |_, cx| {
+                    let handle = div()
+                        .id(BLOCK_HANDLE)
+                        .group(BLOCK_HANDLE)
+                        .debug_selector(|| BLOCK_HANDLE.to_string())
+                        .absolute()
+                        .left(at.x)
+                        .top(at.y)
+                        .w(px(HANDLE_SIZE))
+                        .h(px(HANDLE_SIZE))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(4.0))
+                        .cursor(CursorStyle::OpenHand)
+                        .child(
+                            ui::icons::icon(glyph)
+                                .size(px(BLOCK_HANDLE_GLYPH))
+                                .text_color(theme.text_faint)
+                                .group_hover(BLOCK_HANDLE, |el| el.text_color(theme.text_muted)),
+                        )
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _: &gpui::MouseDownEvent, _, cx| {
+                                this.press_claimed = true;
+                                this.lifted = Some((ix, ix));
+                                // The menu belongs to the release. Opened here it would
+                                // occlude the very moves a drag downwards is made of,
+                                // and the drop target would never leave the block it
+                                // started on — so the press only dismisses, and the note
+                                // `trigger_press_matching` took is what tells the
+                                // release apart from a fresh open.
+                                ui::popover::close_popup(this, cx, |this| &mut this.block_menu);
+                                cx.notify();
+                            }),
+                        );
+                    ui::popover::trigger_press_matching(
+                        handle,
+                        |this| &mut this.block_menu,
+                        move |menu| menu.of.0 == ix,
+                        cx,
+                    )
+                })
+            })
             .into_any_element(),
         )
     }
@@ -288,60 +294,75 @@ impl Editor {
         let table = self.layouts.block_bounds(ix)?;
         let cell = self.layouts.cell_bounds(ix, part)?;
         let glyphs = crate::handles::installed(cx);
-        let handle = |id: &'static str, glyph: Icon, line: TableTarget, anchor: Point<Pixels>| {
-            let trigger = div()
-                .id(id)
-                .group(id)
-                .debug_selector(|| id.to_string())
-                .absolute()
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(4.0))
-                .cursor(CursorStyle::PointingHand)
-                .child(
-                    ui::icons::icon(glyph)
-                        .size(px(TABLE_HANDLE_GLYPH))
-                        .text_color(theme.text_faint)
-                        .group_hover(id, |el| el.text_color(theme.text_muted)),
-                )
-                .on_mouse_move(|_, _, cx| cx.stop_propagation())
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
-                        this.press_claimed = true;
-                        this.table_dragged = false;
-                        let from = match line {
-                            TableTarget::Row(row) => Line::Row(row),
-                            TableTarget::Column(column) => Line::Column(column),
-                            TableTarget::Cell { .. } => unreachable!(),
-                        };
-                        this.table_drag = Some(super::table::TableDrag {
-                            block: ix,
-                            line: from,
-                            start: event.position,
-                            to: None,
-                        });
-                        cx.notify();
-                    }),
-                );
-            ui::popover::trigger_press_matching(
-                trigger,
-                |this| &mut this.table_menu,
-                move |menu| menu.of == (ix, line),
-                cx,
-            )
-            .on_click(cx.listener(move |this, _, _, cx| {
-                if this.table_dragged {
-                    return;
-                }
-                if this.table_menu.take_press_was_open() {
-                    ui::popover::close_popup(this, cx, |this| &mut this.table_menu);
-                } else {
-                    this.table_menu.open(Dropped::new((ix, line), anchor));
-                    cx.notify();
-                }
-            }))
+        let editor = cx.entity();
+        let style = theme.popover_surface;
+        let handle = move |id: &'static str,
+                           glyph: Icon,
+                           line: TableTarget,
+                           anchor: Point<Pixels>,
+                           bounds: gpui::Bounds<Pixels>| {
+            let editor = editor.clone();
+            surface::of(id, style, move |theme, _, cx| {
+                editor.update(cx, |_, cx| {
+                    let trigger = div()
+                        .id(id)
+                        .group(id)
+                        .debug_selector(|| id.to_string())
+                        .absolute()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(4.0))
+                        .cursor(CursorStyle::PointingHand)
+                        .child(
+                            ui::icons::icon(glyph)
+                                .size(px(TABLE_HANDLE_GLYPH))
+                                .text_color(theme.text_faint)
+                                .group_hover(id, |el| el.text_color(theme.text_muted)),
+                        )
+                        .on_mouse_move(|_, _, cx| cx.stop_propagation())
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, event: &gpui::MouseDownEvent, _, cx| {
+                                this.press_claimed = true;
+                                this.table_dragged = false;
+                                let from = match line {
+                                    TableTarget::Row(row) => Line::Row(row),
+                                    TableTarget::Column(column) => Line::Column(column),
+                                    TableTarget::Cell { .. } => unreachable!(),
+                                };
+                                this.table_drag = Some(super::table::TableDrag {
+                                    block: ix,
+                                    line: from,
+                                    start: event.position,
+                                    to: None,
+                                });
+                                cx.notify();
+                            }),
+                        );
+                    ui::popover::trigger_press_matching(
+                        trigger,
+                        |this| &mut this.table_menu,
+                        move |menu| menu.of == (ix, line),
+                        cx,
+                    )
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        if this.table_dragged {
+                            return;
+                        }
+                        if this.table_menu.take_press_was_open() {
+                            ui::popover::close_popup(this, cx, |this| &mut this.table_menu);
+                        } else {
+                            this.table_menu.open(Dropped::new((ix, line), anchor));
+                            cx.notify();
+                        }
+                    }))
+                    .left(bounds.origin.x)
+                    .top(bounds.origin.y)
+                    .w(bounds.size.width)
+                    .h(bounds.size.height)
+                })
+            })
         };
         let row_mid = cell.origin.y + cell.size.height / 2.0;
         let column_mid = cell.origin.x + cell.size.width / 2.0;
@@ -351,32 +372,32 @@ impl Editor {
                 .top(px(0.0))
                 .left(px(0.0))
                 .size_full()
-                .child(
-                    handle(
-                        "table-row-handle",
-                        glyphs.row.clone(),
-                        TableTarget::Row(row),
-                        gpui::point(table.origin.x, row_mid),
-                    )
-                    .left(table.origin.x - self.origin.x)
-                    .top(row_mid - self.origin.y - px(TABLE_HANDLE_LONG / 2.0))
-                    .w(px(TABLE_HANDLE_THIN))
-                    .h(px(TABLE_HANDLE_LONG))
-                    .surface(theme, theme.popover_surface),
-                )
-                .child(
-                    handle(
-                        "table-column-handle",
-                        glyphs.column.clone(),
-                        TableTarget::Column(column),
-                        gpui::point(column_mid, table.origin.y),
-                    )
-                    .left(column_mid - self.origin.x - px(TABLE_HANDLE_LONG / 2.0))
-                    .top(table.origin.y - self.origin.y)
-                    .w(px(TABLE_HANDLE_LONG))
-                    .h(px(TABLE_HANDLE_THIN))
-                    .surface(theme, theme.popover_surface),
-                )
+                .child(handle(
+                    "table-row-handle",
+                    glyphs.row.clone(),
+                    TableTarget::Row(row),
+                    gpui::point(table.origin.x, row_mid),
+                    gpui::Bounds::new(
+                        gpui::point(
+                            table.origin.x - self.origin.x,
+                            row_mid - self.origin.y - px(TABLE_HANDLE_LONG / 2.0),
+                        ),
+                        gpui::size(px(TABLE_HANDLE_THIN), px(TABLE_HANDLE_LONG)),
+                    ),
+                ))
+                .child(handle(
+                    "table-column-handle",
+                    glyphs.column.clone(),
+                    TableTarget::Column(column),
+                    gpui::point(column_mid, table.origin.y),
+                    gpui::Bounds::new(
+                        gpui::point(
+                            column_mid - self.origin.x - px(TABLE_HANDLE_LONG / 2.0),
+                            table.origin.y - self.origin.y,
+                        ),
+                        gpui::size(px(TABLE_HANDLE_LONG), px(TABLE_HANDLE_THIN)),
+                    ),
+                ))
                 .into_any_element(),
         )
     }
