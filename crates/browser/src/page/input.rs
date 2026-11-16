@@ -1,6 +1,6 @@
 use crate::page::Page;
 use gpui::{
-    self, App, DispatchPhase, Hitbox, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent,
+    self, DispatchPhase, Hitbox, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, NavigationDirection, Pixels, Point, ScrollEvent, Window,
 };
 #[cfg(target_os = "linux")]
@@ -48,10 +48,10 @@ impl Page {
                 window.capture_pointer(hitbox.id);
                 self.platform.capture.set(Some(hitbox.id));
             }
-        } else if let Some(capture) = self.platform.capture.take() {
-            if window.captured_hitbox() == Some(capture) {
-                window.release_pointer();
-            }
+        } else if let Some(capture) = self.platform.capture.take()
+            && window.captured_hitbox() == Some(capture)
+        {
+            window.release_pointer();
         }
     }
 }
@@ -227,6 +227,7 @@ impl Page {
 }
 
 impl Page {
+    #[cfg(target_os = "linux")]
     pub(crate) fn screen_position(&self, position: Point<Pixels>) -> Option<Point<Pixels>> {
         let bounds = self.placed.get()?;
         let viewport = self

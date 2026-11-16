@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[lints]
+workspace = true
+
 [features]
 integration = ["dep:gpui", "dep:gpui_platform", "dep:libc", "dep:anyhow", "dep:serde_json", "dep:image", "dep:tracing"]
 

@@ -1,6 +1,7 @@
 //! Each section's body, by group, and the helpers they compose from.
 
 use crate::*;
+use ui::surface::Control;
 
 pub(crate) mod controls;
 pub(crate) mod data;
@@ -358,13 +359,14 @@ pub(crate) fn todo(
 /// doing something else than the mouse. Taking the behaviour once removes the
 /// chance.
 pub(crate) fn pressable<T: 'static>(
-    el: gpui::Div,
+    el: impl Into<Control>,
     id: impl Into<gpui::ElementId>,
     cx: &Context<T>,
     press: impl Fn(&mut T, &mut Context<T>) + Clone + 'static,
-) -> gpui::Stateful<gpui::Div> {
+) -> Control {
     let by_key = press.clone();
-    el.id(id)
+    el.into()
+        .id(id)
         .on_click(cx.listener(move |view, _, _, cx| press(view, cx)))
         .on_action(cx.listener(move |view, _: &focus::Activate, _, cx| by_key(view, cx)))
 }

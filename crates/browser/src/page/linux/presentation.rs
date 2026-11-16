@@ -396,52 +396,49 @@ impl Presenter {
         if !configuration.is_some_and(|config| config.generation == frame.generation) {
             return Ok(());
         }
-        let result = (|| -> Result<()> {
-            if image
-                .as_ref()
-                .is_none_or(|image| image.size(0) != frame.buffer.size())
-            {
-                self.retire();
-                *image = Some(Arc::new(RenderImage::blank(frame.buffer.size())?));
-            }
-            let target = image.as_ref().unwrap();
-            let key: gpui::AtlasKey = RenderImageParams::from((&**target, 0)).into();
-            if !self.atlases.iter().any(|(atlas, stored)| {
-                *stored == key
-                    && atlas
-                        .upgrade()
-                        .is_some_and(|atlas| Arc::ptr_eq(&atlas, &window.sprite_atlas))
-            }) {
-                self.atlases
-                    .push((Arc::downgrade(&window.sprite_atlas), key));
-            }
-            let empty = window.insert_blank_image(target, 0)?;
-            if next.is_some() || empty {
-                match frame.upload(target, window, self.current.clone()) {
-                    Ok(()) => {
-                        self.current = Some(frame.clone());
-                        self.waiting.take();
-                    }
-                    Err(error) if frame.buffer.hardware => {
-                        let _ = self
-                            .outbox
-                            .send(self.page, json!({"cmd":"readback","buffer":frame.lease.id}));
-                        self.waiting = Some(frame.clone());
-                        tracing::debug!("WPE frame requires pixel fallback: {error:#}");
-                    }
-                    Err(error) => return Err(error),
+        if image
+            .as_ref()
+            .is_none_or(|image| image.size(0) != frame.buffer.size())
+        {
+            self.retire();
+            *image = Some(Arc::new(RenderImage::blank(frame.buffer.size())?));
+        }
+        let target = image.as_ref().unwrap();
+        let key: gpui::AtlasKey = RenderImageParams::from((&**target, 0)).into();
+        if !self.atlases.iter().any(|(atlas, stored)| {
+            *stored == key
+                && atlas
+                    .upgrade()
+                    .is_some_and(|atlas| Arc::ptr_eq(&atlas, &window.sprite_atlas))
+        }) {
+            self.atlases
+                .push((Arc::downgrade(&window.sprite_atlas), key));
+        }
+        let empty = window.insert_blank_image(target, 0)?;
+        if next.is_some() || empty {
+            match frame.upload(target, window, self.current.clone()) {
+                Ok(()) => {
+                    self.current = Some(frame.clone());
+                    self.waiting.take();
                 }
+                Err(error) if frame.buffer.hardware => {
+                    let _ = self
+                        .outbox
+                        .send(self.page, json!({"cmd":"readback","buffer":frame.lease.id}));
+                    self.waiting = Some(frame.clone());
+                    tracing::debug!("WPE frame requires pixel fallback: {error:#}");
+                }
+                Err(error) => return Err(error),
             }
-            if self
-                .current
-                .as_ref()
-                .is_some_and(|shown| shown.generation == frame.generation)
-            {
-                window.paint_image(bounds, bounds, Default::default(), target.clone(), 0, false)?;
-            }
-            Ok(())
-        })();
-        result
+        }
+        if self
+            .current
+            .as_ref()
+            .is_some_and(|shown| shown.generation == frame.generation)
+        {
+            window.paint_image(bounds, bounds, Default::default(), target.clone(), 0, false)?;
+        }
+        Ok(())
     }
 }
 impl Drop for Presenter {

@@ -73,6 +73,7 @@ pub(crate) enum Report {
         answer: Result<String, String>,
     },
     /// A still of the page, taken for a cover; `None` if the capture failed.
+    #[cfg(target_os = "macos")]
     Still(Option<Arc<RenderImage>>),
     /// The page was built, or failed to be, after the paint that asked for it.
     Built,
@@ -81,6 +82,7 @@ pub(crate) enum Report {
 }
 
 impl Report {
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux", test))]
     pub(crate) fn evaluated(body: &str) -> Option<Self> {
         #[derive(serde::Deserialize)]
         struct Evaluation {
@@ -261,6 +263,7 @@ impl Surface for Page {
 
 impl Page {
     /// Parks the page for the still if it is still covered.
+    #[cfg(target_os = "macos")]
     pub(crate) fn captured(&self, still: Option<Arc<RenderImage>>) {
         if matches!(*self.cover.borrow(), Cover::Capturing) {
             Page::park(self);
@@ -273,7 +276,7 @@ impl Page {
         self.window.get()
     }
 
-    /// Run before the page is placed.
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
     fn uncover(&self) {
         if let Cover::On(still) = self.cover.replace(Cover::Off) {
             *self.dropped.borrow_mut() = still;

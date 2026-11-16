@@ -581,6 +581,7 @@ impl WebView {
             }
             Report::Opened(url) => cx.emit(WebViewEvent::NewWindow(url)),
             Report::Console(message) => cx.emit(WebViewEvent::Console(message)),
+            #[cfg(target_os = "macos")]
             Report::Still(still) => {
                 self.page.captured(still);
                 cx.notify();

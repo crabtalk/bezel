@@ -87,6 +87,12 @@ impl Control {
     }
 }
 
+impl From<Div> for Control {
+    fn from(inner: Div) -> Self {
+        Self::new(inner, false)
+    }
+}
+
 impl Styled for Control {
     fn style(&mut self) -> &mut StyleRefinement {
         self.inner.style()
@@ -338,27 +344,28 @@ impl Element for Surface {
             };
             if matches!(self.look, Look::Selection) {
                 let placed = self.selection.as_mut().unwrap()(bounds, window, cx);
-                if window.native_surfaces.materials && theme.glass {
-                    if let Some((placed, radius)) = placed {
-                        let material = MaterialStyle::Glass {
-                            clear: false,
-                            tint: self.tint,
-                            corner_radius: radius,
-                            interactive: true,
-                        };
-                        window.with_content_mask(Some(gpui::ContentMask::new(bounds)), |window| {
-                            window
-                                .paint_native_material(
-                                    id.expect("surface identity"),
-                                    &self.material,
-                                    material,
-                                    placed,
-                                    |window| self.child.as_mut().unwrap().paint(window, cx),
-                                )
-                                .expect("native material capability changed during paint");
-                        });
-                        return;
-                    }
+                if window.native_surfaces.materials
+                    && theme.glass
+                    && let Some((placed, radius)) = placed
+                {
+                    let material = MaterialStyle::Glass {
+                        clear: false,
+                        tint: self.tint,
+                        corner_radius: radius,
+                        interactive: true,
+                    };
+                    window.with_content_mask(Some(gpui::ContentMask::new(bounds)), |window| {
+                        window
+                            .paint_native_material(
+                                id.expect("surface identity"),
+                                &self.material,
+                                material,
+                                placed,
+                                |window| self.child.as_mut().unwrap().paint(window, cx),
+                            )
+                            .expect("native material capability changed during paint");
+                    });
+                    return;
                 }
                 self.child.as_mut().unwrap().paint(window, cx);
                 return;

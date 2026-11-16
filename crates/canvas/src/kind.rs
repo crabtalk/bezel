@@ -168,6 +168,7 @@ pub type Controls = Rc<dyn Fn(&Node, &Card, &mut Window, &mut App) -> Option<Any
 
 /// A node's content. See [`text_style`] and [`chrome`].
 pub type Paint = Rc<dyn Fn(&Node, Look, &mut Window, &mut App) -> AnyElement>;
+pub type PrepareExport = Rc<dyn Fn(&Node, &mut App) -> Task<Result<Paint, String>>>;
 pub type Read = Rc<dyn Fn(&Node) -> String>;
 pub type Write = Rc<dyn Fn(&mut Node, String)>;
 pub type OpenHandler = Rc<dyn Fn(&Node, &mut App)>;
@@ -321,7 +322,7 @@ pub struct Rules {
 #[derive(Clone)]
 pub struct Kind {
     pub exportable: bool,
-    pub prepare_export: Option<Rc<dyn Fn(&Node, &mut App) -> Task<Result<Paint, String>>>>,
+    pub prepare_export: Option<PrepareExport>,
     pub retained: bool,
     pub rules: Rules,
     /// Pointer interactions belong in `controls`; the drag surface covers this content.

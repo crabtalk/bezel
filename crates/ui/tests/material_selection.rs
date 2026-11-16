@@ -2,7 +2,7 @@ use gpui::{
     Bounds, Context, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext, Window,
     div, point, prelude::*, px, size,
 };
-use theme::{Appearance, Theme};
+use theme::Theme;
 use ui::{surface, tabs};
 
 struct Controls {
@@ -26,7 +26,15 @@ impl Render for Controls {
 
 #[gpui::test]
 fn native_selections_preserve_control_geometry_and_independent_clicks(cx: &mut TestAppContext) {
-    cx.update(|cx| Theme::install(Appearance::Dark, cx));
+    cx.update(|cx| {
+        Theme::install_custom(
+            Theme {
+                glass: true,
+                ..Theme::dark()
+            },
+            cx,
+        )
+    });
     let window = cx.add_window(|_, _| Controls { clicks: Vec::new() });
     let host = window.root(cx).unwrap();
     let mut visual = VisualTestContext::from_window(window.into(), cx);
@@ -65,7 +73,15 @@ impl Render for MovingSelection {
 
 #[gpui::test]
 fn moving_material_keeps_the_foreground_viewport(cx: &mut TestAppContext) {
-    cx.update(|cx| Theme::install(Appearance::Dark, cx));
+    cx.update(|cx| {
+        Theme::install_custom(
+            Theme {
+                glass: true,
+                ..Theme::dark()
+            },
+            cx,
+        )
+    });
     let window = cx.add_window(|_, _| MovingSelection);
     let mut visual = VisualTestContext::from_window(window.into(), cx);
     visual.simulate_resize(size(px(300.), px(80.)));

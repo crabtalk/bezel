@@ -164,6 +164,10 @@ impl Route {
         }
     }
 
+    #[allow(
+        deprecated,
+        reason = "Keep Atomic::fetch_update for Rust 1.90 compatibility."
+    )]
     fn packet(&self, kind: u8, bytes: &[u8]) -> io::Result<()> {
         let value = || serde_json::from_slice::<Value>(bytes).map_err(io::Error::other);
         match kind {
@@ -202,19 +206,17 @@ impl Route {
                 if let Some(message) = crate::page::logged(
                     std::str::from_utf8(bytes).map_err(io::Error::other)?,
                     source,
-                ) {
-                    if self
-                        .console_slots
-                        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
-                            (count < 128).then_some(count + 1)
-                        })
-                        .is_ok()
-                    {
-                        self.emit(Event::Console {
-                            message,
-                            _slot: ConsoleSlot(self.console_slots.clone()),
-                        });
-                    }
+                ) && self
+                    .console_slots
+                    .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                        (count < 128).then_some(count + 1)
+                    })
+                    .is_ok()
+                {
+                    self.emit(Event::Console {
+                        message,
+                        _slot: ConsoleSlot(self.console_slots.clone()),
+                    });
                 }
             }
             b'M' => self.emit(Event::Menu(value()?)),
@@ -514,6 +516,10 @@ impl Page {
         let _ = (this, bounds, window, cx);
         unreachable!("composited pages use scene paint");
     }
+    #[allow(
+        deprecated,
+        reason = "Keep Atomic::fetch_update for Rust 1.90 compatibility."
+    )]
     pub(crate) fn snapshot(&self, done: SnapshotDone) {
         let presenter = self.platform.presenter.borrow();
         let configuration = *self.platform.route.configuration.lock().unwrap();
@@ -599,6 +605,10 @@ impl Page {
     }
     #[cfg(feature = "inspector")]
     pub(crate) fn open_inspector(&self) {}
+    #[allow(
+        deprecated,
+        reason = "Keep Atomic::fetch_update for Rust 1.90 compatibility."
+    )]
     pub(crate) fn eval(&self, script: &str, done: impl FnOnce(String) + Send + 'static) -> bool {
         let route = &self.platform.route;
         let Ok(request) =

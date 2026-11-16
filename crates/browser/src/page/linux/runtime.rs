@@ -284,6 +284,10 @@ impl Worker {
         Ok(worker)
     }
 
+    #[allow(
+        deprecated,
+        reason = "Keep Atomic::fetch_update for Rust 1.90 compatibility."
+    )]
     pub(super) fn attach(self: &Arc<Self>, route: &Arc<Route>, epoch: u64) -> Result<Session> {
         let id = self
             .next_id

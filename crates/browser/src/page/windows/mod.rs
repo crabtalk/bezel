@@ -2,12 +2,12 @@ use crate::{
     DataStore, LoadState,
     page::{Edit, Page, Present, Report, script},
 };
-use anyhow::{Context as _, Result, ensure};
+use anyhow::{Context as _, Error, Result, ensure};
 use gpui::{
     self, App, Bounds, ForegroundExecutor, Hitbox, Pixels, Window,
     native_view::{NativeViewState, Viewport},
 };
-use raw_window_handle::{HasWindowHandle as _, RawWindowHandle};
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
 use std::{
     cell::{Cell, RefCell},
     path::PathBuf,
@@ -26,11 +26,11 @@ use windows::{
     System::{DispatcherQueue, DispatcherQueueController},
     UI::Composition::{Compositor, ContainerVisual},
     Win32::{
-        Foundation::{HWND, RECT},
+        Foundation::{self, HWND, RECT},
         System::WinRT::{self as winrt, DispatcherQueueOptions},
         UI::Input::KeyboardAndMouse,
     },
-    core::{BOOL, Interface as _, PCWSTR},
+    core::{BOOL, Error as WindowsError, Interface as _, PCWSTR, PWSTR},
 };
 use windows_numerics::{Vector2, Vector3};
 
@@ -219,9 +219,9 @@ impl Hosted {
         let (ready, result) = async_channel::bounded(1);
         let handler = callbacks::CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(
             move |status, environment| {
-                let _ = ready.try_send(
-                    status.and_then(|()| environment.ok_or_else(windows::core::Error::from_win32)),
-                );
+                let _ = ready.try_send(status.and_then(|()| {
+                    environment.ok_or_else(|| WindowsError::from(Foundation::E_POINTER))
+                }));
                 Ok(())
             },
         ));
@@ -242,11 +242,9 @@ impl Hosted {
         let (ready, result) = async_channel::bounded(1);
         let handler = callbacks::CreateCoreWebView2CompositionControllerCompletedHandler::create(
             Box::new(move |status, controller| {
-                let _ =
-                    ready
-                        .try_send(status.and_then(|()| {
-                            controller.ok_or_else(windows::core::Error::from_win32)
-                        }));
+                let _ = ready.try_send(status.and_then(|()| {
+                    controller.ok_or_else(|| WindowsError::from(Foundation::E_POINTER))
+                }));
                 Ok(())
             }),
         );
@@ -352,8 +350,9 @@ impl Hosted {
             self.web.add_NavigationStarting(
                 &callbacks::NavigationStartingEventHandler::create(Box::new(move |_, args| {
                     if let Some(args) = args {
-                        let mut uri = CoTaskMemPWSTR::default();
-                        args.Uri(uri.as_mut().as_pwstr())?;
+                        let mut uri = PWSTR::null();
+                        args.Uri(&mut uri)?;
+                        let uri = CoTaskMemPWSTR::from(uri);
                         let _ = reports.try_send(Report::Load(LoadState::Started, uri.to_string()));
                     }
                     Ok(())
@@ -364,8 +363,9 @@ impl Hosted {
             self.web.add_NavigationCompleted(
                 &callbacks::NavigationCompletedEventHandler::create(Box::new(move |web, args| {
                     if let Some(web) = web {
-                        let mut uri = CoTaskMemPWSTR::default();
-                        web.Source(uri.as_mut().as_pwstr())?;
+                        let mut uri = PWSTR::null();
+                        web.Source(&mut uri)?;
+                        let uri = CoTaskMemPWSTR::from(uri);
                         let _ =
                             reports.try_send(Report::Load(LoadState::Finished, uri.to_string()));
                     }
@@ -386,8 +386,9 @@ impl Hosted {
             self.web.add_DocumentTitleChanged(
                 &callbacks::DocumentTitleChangedEventHandler::create(Box::new(move |web, _| {
                     if let Some(web) = web {
-                        let mut title = CoTaskMemPWSTR::default();
-                        web.DocumentTitle(title.as_mut().as_pwstr())?;
+                        let mut title = PWSTR::null();
+                        web.DocumentTitle(&mut title)?;
+                        let title = CoTaskMemPWSTR::from(title);
                         let _ = reports.try_send(Report::Title(title.to_string()));
                     }
                     Ok(())
@@ -406,14 +407,16 @@ impl Hosted {
             self.web.add_WebMessageReceived(
                 &callbacks::WebMessageReceivedEventHandler::create(Box::new(move |_, args| {
                     if let Some(args) = args {
-                        let mut body = CoTaskMemPWSTR::default();
-                        args.TryGetWebMessageAsString(body.as_mut().as_pwstr())?;
+                        let mut body = PWSTR::null();
+                        args.TryGetWebMessageAsString(&mut body)?;
+                        let body = CoTaskMemPWSTR::from(body);
                         let body = body.to_string();
                         let report = if body == "moved" {
                             Some(Report::Moved)
                         } else {
-                            let mut source = CoTaskMemPWSTR::default();
-                            args.Source(source.as_mut().as_pwstr())?;
+                            let mut source = PWSTR::null();
+                            args.Source(&mut source)?;
+                            let source = CoTaskMemPWSTR::from(source);
                             Report::evaluated(&body).or_else(|| {
                                 crate::page::logged(&body, source.to_string()).map(Report::Console)
                             })
@@ -430,8 +433,9 @@ impl Hosted {
             self.web.add_NewWindowRequested(
                 &callbacks::NewWindowRequestedEventHandler::create(Box::new(move |_, args| {
                     if let Some(args) = args {
-                        let mut uri = CoTaskMemPWSTR::default();
-                        args.Uri(uri.as_mut().as_pwstr())?;
+                        let mut uri = PWSTR::null();
+                        args.Uri(&mut uri)?;
+                        let uri = CoTaskMemPWSTR::from(uri);
                         args.SetHandled(true)?;
                         let _ = reports.try_send(Report::Opened(uri.to_string()));
                     }
@@ -536,13 +540,13 @@ impl Present for State {
         hitbox: &Hitbox,
         owner: u64,
         window: &mut Window,
-        cx: &mut App,
+        _cx: &mut App,
     ) {
         if bounds.intersect(&window.content_mask().bounds).is_empty() {
             page.park();
             return;
         }
-        page.window.set(Some(window.window_handle()));
+        page.window.set(Some(Window::window_handle(window)));
         page.placed.set(Some(bounds));
         page.owner.set(owner);
         if self.hosted.borrow().is_none() {
@@ -575,7 +579,10 @@ impl Present for State {
 
 impl Page {
     fn parent(window: &Window) -> Result<HWND> {
-        match HasWindowHandle::window_handle(window)?.as_raw() {
+        match HasWindowHandle::window_handle(window)
+            .map_err(Error::msg)?
+            .as_raw()
+        {
             RawWindowHandle::Win32(handle) => Ok(HWND(handle.hwnd.get() as *mut _)),
             _ => anyhow::bail!("WebView2 requires a Windows host"),
         }
@@ -691,11 +698,11 @@ impl Page {
     pub(crate) fn location(&self) -> Option<String> {
         let hosted = self.platform.hosted.borrow();
         let hosted = hosted.as_ref()?;
-        let mut uri = CoTaskMemPWSTR::default();
+        let mut uri = PWSTR::null();
         unsafe {
-            hosted.web.Source(uri.as_mut().as_pwstr()).ok()?;
+            hosted.web.Source(&mut uri).ok()?;
         }
-        Some(uri.to_string())
+        Some(CoTaskMemPWSTR::from(uri).to_string())
     }
     pub(crate) fn eval(&self, script: &str, done: impl Fn(String) + Send + 'static) -> bool {
         let hosted = self.platform.hosted.borrow();
