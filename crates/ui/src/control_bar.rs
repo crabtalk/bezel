@@ -81,8 +81,7 @@ pub fn control_bar(
             .children(centre.map(|centre| div().flex_none().px(px(BAR_GAP)).child(centre)))
             .child(rail().flex_1().justify_end().children(trailing));
 
-        let bar = if native { bar } else { bar.shadow_lg() };
-        bar
+        if native { bar } else { bar.shadow_lg() }
     })
     .into_any_element()
 }

@@ -100,7 +100,7 @@ impl Render for HoverCard {
                     );
 
                 // Wider and airier than a tooltip: this holds prose, not a label.
-                popover::popover_card(&theme)
+                popover::popover_card(theme)
                     .w(px(280.0))
                     .p(px(12.0))
                     .flex()

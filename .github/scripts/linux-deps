@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
-# What gpui links against on Linux and the runner image does not carry: fonts,
-# and both display servers, since `gpui_linux` defaults to wayland + x11. The
-# generic toolchain — build-essential, pkg-config, libssl-dev — is already
-# there. Trimmed from zed's `script/linux`, which also installs what the editor
-# needs and bezel does not; zed runs it on every ubuntu job for the same reason.
-#
-# No vulkan driver: this builds and runs headless tests, and nothing here asks
-# a GPU for a frame. Add `mesa-vulkan-drivers` if that ever changes.
+# Native Linux builds require WPE WebKit 2.54+ with WPEPlatform.
 set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends \
+    build-essential \
+    pkg-config \
+    libssl-dev \
     libfontconfig-dev \
     libwayland-dev \
     libx11-xcb-dev \
-    libxkbcommon-x11-dev
+    libxkbcommon-x11-dev \
+    libwpewebkit-2.0-dev \
+    libjson-glib-dev \
+    libgbm-dev \
+    libegl-dev \
+    libgles-dev
+pkg-config --print-errors --exists \
+    'wpe-webkit-2.0 >= 2.54' wpe-platform-2.0 \
+    json-glib-1.0 gbm egl glesv2 xkbcommon

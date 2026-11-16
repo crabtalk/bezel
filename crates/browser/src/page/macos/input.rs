@@ -28,16 +28,16 @@ impl GuiRoot {
     pub(super) fn release(&self, page: &NSView) -> u64 {
         self.input
             .request_focus(false, self.window.get().map(|window| window.window_id()));
-        if let Some(root) = self.view.borrow().load() {
-            if let Some(window) = root.window() {
-                let owns_focus = window.firstResponder().is_some_and(|responder| {
-                    responder
-                        .downcast_ref::<NSView>()
-                        .is_some_and(|view| ptr::eq(view, page) || view.isDescendantOf(page))
-                });
-                if owns_focus {
-                    window.makeFirstResponder(Some(&root));
-                }
+        if let Some(root) = self.view.borrow().load()
+            && let Some(window) = root.window()
+        {
+            let owns_focus = window.firstResponder().is_some_and(|responder| {
+                responder
+                    .downcast_ref::<NSView>()
+                    .is_some_and(|view| ptr::eq(view, page) || view.isDescendantOf(page))
+            });
+            if owns_focus {
+                window.makeFirstResponder(Some(&root));
             }
         }
         self.input.focus.get().generation

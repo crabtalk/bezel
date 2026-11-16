@@ -17,6 +17,7 @@ use std::{
     path = "stub.rs"
 )]
 pub(crate) mod platform;
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod script;
 
 pub(crate) trait Present {

@@ -103,7 +103,7 @@ impl Tooltip {
             move |theme, _, _| {
                 // Tooltips are small and frequent, so this is a tighter card than
                 // `popover_card`: less padding, no menu rhythm.
-                popover::popover_card(&theme)
+                popover::popover_card(theme)
                     .px(px(8.0))
                     .py(px(5.0))
                     .flex()

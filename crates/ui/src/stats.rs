@@ -119,29 +119,29 @@ impl Render for Stats {
             "stats",
             SurfaceStyle::Glass(Glass::Regular),
             move |theme, _, _| {
-                popover::popover_card(&theme)
+                popover::popover_card(theme)
                     .w(px(WIDTH))
                     .p(px(10.0))
                     .flex()
                     .flex_col()
                     .gap(px(2.0))
-                    .child(row(&theme, "FPS", format!("{:.0}", reading.fps)))
+                    .child(row(theme, "FPS", format!("{:.0}", reading.fps)))
                     .child(row(
-                        &theme,
+                        theme,
                         "CPU",
                         reading
                             .cpu
                             .map_or_else(|| "—".to_string(), |cpu| format!("{cpu:.1}%")),
                     ))
                     .child(row(
-                        &theme,
+                        theme,
                         "GPU",
                         reading
                             .gpu
                             .map_or_else(|| "—".to_string(), |gpu| format!("{gpu:.1}%")),
                     ))
                     .child(row(
-                        &theme,
+                        theme,
                         "MEM",
                         reading.mem.map_or_else(
                             || "—".to_string(),

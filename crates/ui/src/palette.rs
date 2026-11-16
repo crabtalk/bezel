@@ -148,10 +148,10 @@ impl Render for CommandPalette {
             Theme::of(cx).popover_surface,
             move |theme, _, cx| {
                 view.update(cx, |this, cx| {
-                    popover::popover_card(&theme)
+                    popover::popover_card(theme)
                         .w(px(420.0))
                         .child(this.search.body(
-                            &theme,
+                            theme,
                             None,
                             None,
                             |view| &mut view.search,

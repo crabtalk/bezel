@@ -231,7 +231,7 @@ impl Gallery {
                                     {
                                         let answer = self.overlays.layer_answer.clone();
                                         surface::of("floating-band-material", theme.popover_surface, move |theme, _, _| {
-                                    popover::popover_card(&theme)
+                                    popover::popover_card(theme)
                                         .px(px(16.0))
                                         .child(match &answer {
                                             Some(what) => {

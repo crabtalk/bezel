@@ -67,7 +67,7 @@ impl Render for PendingKeys {
             }
         }
         surface::of("pending-keys", theme.popover_surface, move |theme, _, _| {
-            popover::popover_card(&theme)
+            popover::popover_card(theme)
                 .flex()
                 .flex_col()
                 .gap(px(4.0))
