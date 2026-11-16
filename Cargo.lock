@@ -547,6 +547,7 @@ dependencies = [
  "bezel-ui",
  "block2 0.6.2",
  "cc",
+ "futures",
  "image",
  "libc",
  "objc2 0.6.4",
@@ -564,6 +565,7 @@ dependencies = [
  "web-sys",
  "webview2-com",
  "windows 0.62.2",
+ "windows-numerics 0.3.1",
  "wry",
 ]
 

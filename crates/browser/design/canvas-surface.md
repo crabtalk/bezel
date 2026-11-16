@@ -1,8 +1,8 @@
 # Browser surfaces in a design canvas
 
 Implementation contract, 14 November 2026. Pages must remain live and
-interactive inside the canvas on supported native platforms. macOS has a
-native/GPU presentation path; shared canvas integration remains separate.
+interactive inside the canvas on supported native platforms. Native presentation is implemented for macOS, Linux and Windows.
+Windows platform compilation and runtime verification remain user-owned. Linux software rendering is covered by automated WPE/GPUI checks; physical GPU compatibility remains user-owned.
 
 ## Geometry and frame ownership
 
@@ -46,7 +46,7 @@ and restart must not wait on the UI thread.
 | --- | --- | --- |
 | Linux | WPEPlatform DMA-BUF or shared-memory frames | Public WPE platform integration and GPUI composition; software path verified, hardware review pending |
 | macOS | Live WKWebView hosted between GPU layers | Fixed viewport, native transforms, scene clips and overlay hit regions; GPU-only exports exclude native content |
-| Windows | WebView2 composition controller and Windows Graphics Capture | GPUI shared D3D texture import implemented locally; browser capture and transformed input unfinished |
+| Windows | WebView2 composition controller and Windows Graphics Capture | GPUI shared D3D texture import implemented locally; composition hosting, bounded capture and transformed pointer input implemented; Windows verification pending |
 | Web | Existing iframe overlay | Does not provide same-origin-independent composited pixels; excluded from this native surface contract |
 
 Linux's WPE implementation is not a macOS or Windows backend. Do not claim
@@ -67,30 +67,41 @@ ownership when a cached page moves between windows.
 Native Liquid Glass hosts its foreground in `contentView`; related surfaces use
 native glass containers. The same material path applies over pages and other
 application content. No page snapshots are used for macOS display composition.
-Native views require a separate pixel-acquisition path for export.
+`WebView::snapshot` copies the current viewport for export independently of
+live presentation.
 
 Headless scene tests and compilation do not establish real WebKit behavior for
 IME, pointer capture, animations, native appearance or many-page GPU costs.
 Those properties have not been exercised through desktop UI checks.
 
-Windows still needs a WebView2 capture/hosting and input path with this contract.
-Microsoft's WebView2CompositionControl uses continuous Windows Graphics Capture.
-GPUI now accepts shared BGRA D3D textures and producer fences on the DX12 queue.
-The browser must supply bounded capture buffers, same-adapter resources and
-completion ownership. WebView2's composition controller owns keyboard/IME;
-the host must establish caret and popup placement under canvas transforms.
-Repeated CapturePreview is not the selected live path. Protected video is
-excluded by Graphics Capture.
+Windows uses a WebView2 composition controller with continuous Windows
+Graphics Capture. The browser supplies bounded BGRA textures and producer
+fences on the atlas adapter. GPUI's D3D11 and Wgpu DX12 atlases wait and copy on
+the GPU, retaining resources through completion. WebView2 owns keyboard/IME;
+caret and native popup placement under transforms remain unverified. Protected
+video is excluded by Graphics Capture.
 
-The existing Wry backend creates a windowed controller; it cannot be cast into
-composition-controller hosting. The live backend requires direct WebView2 COM
-creation and lifecycle ownership. Windows compilation and runtime checks are
-user-owned; the capture/hosting backend has not been implemented.
+The Windows backend now creates composition controllers directly through
+WebView2 COM. A three-texture producer pool bounds capture resources. Restart
+epochs discard old events. The active D3D11 atlas and Wgpu's DX12 atlas both
+implement the shared-texture contract. Windows compilation and runtime checks
+are user-owned and have not run.
 
 The canvas release requires these platform prerequisites. Opening another
 browser panel to interact with a still does not meet the contract.
 
-Linux software rendering is covered by the independent WPE/GPUI harness. Physical GPU and distribution compatibility remain unverified.
+## Image export
+
+`WebView::snapshot` returns owned BGRA pixels. macOS uses WKWebView snapshots;
+Windows copies the retained capture texture through a staging resource; Linux
+uses the public WebKit snapshot API and exports a separate sealed pixel descriptor.
+Snapshot requests do not change live presentation to a CPU frame path. Loading,
+failed, unrendered and timed-out pages return errors.
+
+Canvas kinds can prepare an owned export renderer asynchronously. The existing
+canvas export pass composes those renderers with text and images at the chosen
+canvas geometry, clip and scale. An unavailable frame fails the export with
+its node id; it is never silently omitted.
 
 ## Sources
 

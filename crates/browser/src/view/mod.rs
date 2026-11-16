@@ -6,12 +6,27 @@ use crate::{
 use anyhow::{Result, ensure};
 use gpui::{
     Action, AnyWindowHandle, App, Context, EventEmitter, FocusHandle, Focusable, Global,
-    IntoElement, KeyBinding, Render, Subscription, Task, Window, actions, div,
+    IntoElement, KeyBinding, Render, RenderImage, Subscription, Task, Window, actions, div,
     native_view::Viewport, prelude::*,
 };
 use serde::de::DeserializeOwned;
-use std::{fmt, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    fmt,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 use theme::{TextStyle, Typeset as _};
+static EVALUATION_ID: AtomicU64 = AtomicU64::new(1);
+
+type EvaluationReplies =
+    Rc<RefCell<HashMap<u64, async_channel::Sender<Result<String, EvalError>>>>>;
+
 #[cfg(target_os = "linux")]
 mod linux;
 
@@ -23,10 +38,11 @@ mod linux;
 /// displayed rectangle and controls whether native page input is enabled.
 /// AppKit handles page input, including keyboard focus and pointer gestures.
 ///
-/// Windows uses a native child-view overlay. A later [`ui::cover`] parks the page
-/// until uncovered. Linux composes WPEPlatform buffers through GPUI.
+/// Linux composes WPEPlatform buffers through GPUI. Windows composes live
+/// WebView2 Graphics Capture frames through shared D3D textures.
 pub struct WebView {
     page: Rc<Page>,
+    evaluations: EvaluationReplies,
     location: Option<String>,
     title: String,
     loading: bool,
@@ -114,6 +130,7 @@ pub enum EvalError {
     Script,
     /// The JSON does not decode as the asked type.
     Decode(serde_json::Error),
+    JavaScript(String),
 }
 
 impl fmt::Display for EvalError {
@@ -123,6 +140,7 @@ impl fmt::Display for EvalError {
             Self::Timeout => f.write_str("script timed out"),
             Self::Script => f.write_str("script threw or returned no JSON value"),
             Self::Decode(error) => write!(f, "script value: {error}"),
+            Self::JavaScript(error) => f.write_str(error),
         }
     }
 }
@@ -157,6 +175,7 @@ impl WebView {
         #[cfg(target_os = "linux")]
         let _ = page.platform.view.set(cx.entity().downgrade());
         Self {
+            evaluations: Rc::default(),
             page,
             error: None,
             #[cfg(target_os = "linux")]
@@ -266,6 +285,13 @@ impl WebView {
         self
     }
 
+    /// Grants macOS file pages access to resources under `directory`.
+    /// Set before the page's first paint.
+    pub fn with_read_access(self, directory: impl Into<std::path::PathBuf>) -> Self {
+        *self.page.read_access.borrow_mut() = Some(directory.into());
+        self
+    }
+
     /// The store the page is built with, in place of the platform's default.
     /// Read at the first paint. A page keeps the store it was built with: a
     /// different store takes a new `WebView`.
@@ -309,6 +335,35 @@ impl WebView {
 
     pub fn forward(&mut self) {
         self.page.forward();
+    }
+
+    /// Copies the current page viewport into an owned BGRA image.
+    /// Loading, failed and unrendered pages return an error.
+    pub fn snapshot(&self, cx: &App) -> Task<Result<Arc<RenderImage>, String>> {
+        if self.loading || self.error.is_some() {
+            return Task::ready(Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "page is still loading".into())));
+        }
+        let (answer, answered) = async_channel::bounded(1);
+        let timer = answer.clone();
+        self.page.snapshot(Box::new(move |image| {
+            let _ = answer.try_send(image);
+        }));
+        let expired = cx.background_executor().timer(Duration::from_secs(10));
+        cx.foreground_executor()
+            .spawn(async move {
+                expired.await;
+                let _ = timer.try_send(Err("page snapshot timed out".into()));
+            })
+            .detach();
+        cx.foreground_executor().spawn(async move {
+            answered
+                .recv()
+                .await
+                .unwrap_or_else(|_| Err("page closed during snapshot".into()))
+        })
     }
 
     pub fn reload(&mut self) {
@@ -364,8 +419,68 @@ impl WebView {
         })
     }
 
+    /// Evaluates a main-frame expression and awaits its promise, if any.
+    /// The result must have a JSON representation. Timeout stops waiting;
+    /// it does not cancel JavaScript already running in the page.
+    pub fn eval_async<T: DeserializeOwned + 'static>(
+        &self,
+        script: &str,
+        timeout: Duration,
+        cx: &App,
+    ) -> Task<Result<T, EvalError>> {
+        let id = EVALUATION_ID.fetch_add(1, Ordering::Relaxed);
+        let (answer, answered) = async_channel::bounded(1);
+        self.evaluations.borrow_mut().insert(id, answer.clone());
+        let script = format!(
+            r#"void (async () => {{
+            const bridge = window.ipc ?? window.webkit?.messageHandlers?.ipc ?? window.chrome?.webview;
+            let reply;
+            try {{
+                const value = await (
+{script}
+);
+                const json = JSON.stringify(value ?? null);
+                if (json === undefined) throw new Error('result has no JSON representation');
+                reply = {{ evaluation: {id}, value: json }};
+            }} catch (error) {{
+                reply = {{ evaluation: {id}, error: String(error?.stack ?? error) }};
+            }}
+            bridge.postMessage(JSON.stringify(reply));
+        }})();"#
+        );
+        let script = format!("(() => {{ {script}\n return true; }})()");
+        let started = answer.clone();
+        if !self.page.eval(&script, move |value| {
+            if value != "true" {
+                let _ = started.try_send(Err(EvalError::Script));
+            }
+        }) {
+            self.evaluations.borrow_mut().remove(&id);
+            return Task::ready(Err(EvalError::Unavailable));
+        }
+        let expired = cx.background_executor().timer(timeout);
+        cx.foreground_executor()
+            .spawn(async move {
+                expired.await;
+                let _ = answer.try_send(Err(EvalError::Timeout));
+            })
+            .detach();
+        let evaluations = self.evaluations.clone();
+        cx.foreground_executor().spawn(async move {
+            let result = answered.recv().await;
+            evaluations.borrow_mut().remove(&id);
+            let json = result.map_err(|_| EvalError::Unavailable)??;
+            serde_json::from_str(&json).map_err(EvalError::Decode)
+        })
+    }
+
     fn report(&mut self, report: Report, cx: &mut Context<Self>) {
         match report {
+            Report::Evaluated { id, answer } => {
+                if let Some(reply) = self.evaluations.borrow_mut().remove(&id) {
+                    let _ = reply.try_send(answer.map_err(EvalError::JavaScript));
+                }
+            }
             #[cfg(target_os = "linux")]
             Report::Linux(event) => self.linux_event(event, cx),
             // Deferred: the window's handlers may update this view.
@@ -423,6 +538,28 @@ impl WebView {
                     });
                 }
             }
+            #[cfg(target_os = "windows")]
+            Report::Frame => cx.notify(),
+            #[cfg(target_os = "windows")]
+            Report::Windows { epoch, report } => {
+                if self
+                    .page
+                    .platform
+                    .epoch
+                    .load(std::sync::atomic::Ordering::Acquire)
+                    == epoch
+                {
+                    self.report(*report, cx);
+                }
+            }
+            #[cfg(target_os = "windows")]
+            Report::Failed(error) => {
+                self.page.platform.failed.set(true);
+                self.loading = false;
+                self.error = Some(error.clone());
+                cx.emit(WebViewEvent::Error(error));
+                cx.notify();
+            }
             Report::Moved => {
                 if let Some(url) = self.page.location() {
                     self.locate(url, cx);
@@ -462,6 +599,7 @@ impl WebView {
     }
 
     fn locate(&mut self, url: String, cx: &mut Context<Self>) {
+        *self.page.url.borrow_mut() = url.clone();
         if self.location.as_ref() != Some(&url) {
             self.location = Some(url.clone());
             cx.emit(WebViewEvent::Location(url));

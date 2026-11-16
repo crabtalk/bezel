@@ -237,7 +237,7 @@ impl Worker {
                             continue;
                         }
                         match kind {
-                            b'B' | b'X' | b'F' | b'K' => {
+                            b'B' | b'X' | b'F' | b'K' | b'P' => {
                                 let configuration = *route.configuration.lock().unwrap();
                                 let event = route.surface.lock().unwrap().receive(
                                     configuration,
@@ -247,7 +247,9 @@ impl Worker {
                                 match event {
                                     presentation::Received::Unchanged => (),
                                     presentation::Received::Changed => route.wake(),
-                                    presentation::Received::Snapshot { .. } => (),
+                                    presentation::Received::Snapshot { request, image } => {
+                                        route.snapshot_result(request, Ok(image))
+                                    }
                                 }
                             }
                             _ => route.packet(kind, &packet.bytes)?,

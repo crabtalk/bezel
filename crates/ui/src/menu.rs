@@ -15,6 +15,7 @@ use crate::{
     icons,
     input::{FieldEvent, TextField},
     keys, popover, scroll,
+    surface::Control,
     tooltip::Tooltip,
 };
 use gpui::{
@@ -1239,7 +1240,7 @@ impl<V: 'static> Tree<V> {
                     (true, true) => theme.text,
                     (true, false) => theme.text_muted,
                 };
-                let cell = div()
+                let cell = Control::new(div(), chosen)
                     .id(row_id(&self.id, &path))
                     .flex_1()
                     .min_w_0()

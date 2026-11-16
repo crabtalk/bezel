@@ -1,19 +1,19 @@
 //! The horizontal, single-region adapter for [`crate::drag`].
 
-use std::{cell::RefCell, rc::Rc};
-use web_time::Instant;
-
+use crate::{
+    drag::{self, Domain},
+    surface::{self, Control},
+    tabs::{GAP, Strip, TRACK_HEIGHT, TRACK_MIN_WIDTH, TRACK_PAD, Track},
+    widgets,
+};
 use gpui::{
-    App, Axis, Bounds, Corners, Div, ElementId, IntoElement, Pixels, Point, RenderOnce,
-    ScrollHandle, Stateful, Window, canvas, div, fill, prelude::*, px, relative, size,
-    transparent_black,
+    App, Axis, Bounds, Corners, ElementId, IntoElement, Pixels, Point, RenderOnce, ScrollHandle,
+    Window, canvas, div, fill, prelude::*, px, relative, size, transparent_black,
 };
 use motion::TAB_SLIDE;
+use std::{cell::RefCell, rc::Rc};
 use theme::Theme;
-
-use super::{GAP, Strip, TRACK_HEIGHT, TRACK_MIN_WIDTH, TRACK_PAD, Track};
-use crate::drag::{self, Domain};
-use crate::widgets;
+use web_time::Instant;
 
 /// Persistent gesture and animation state, one per strip.
 ///
@@ -134,7 +134,7 @@ impl<Id: Clone + PartialEq + 'static> Reorder<Id> {
         &self,
         id: impl Into<ElementId>,
         strip: &Strip<Id>,
-        tabs: impl IntoIterator<Item = (Id, Stateful<Div>)>,
+        tabs: impl IntoIterator<Item = (Id, Control)>,
     ) -> Bar<Id> {
         let tabs: Vec<_> = tabs.into_iter().collect();
         debug_assert!(tabs.iter().map(|(id, _)| id).eq(strip.tabs()));
@@ -178,7 +178,7 @@ type OnOutside<Id> = dyn Fn(&OutsideDrop<Id>, &mut Window, &mut App);
 pub struct Bar<Id: Clone + PartialEq + 'static> {
     reorder: Reorder<Id>,
     id: ElementId,
-    tabs: Vec<(Id, Stateful<Div>)>,
+    tabs: Vec<(Id, Control)>,
     active: Option<Id>,
     track: Option<Track>,
     moved: Option<Rc<OnMove>>,
@@ -208,7 +208,7 @@ impl<Id: Clone + PartialEq + 'static> Bar<Id> {
 }
 
 impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
-    fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
+    fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = Theme::of(cx).clone();
         let raised = theme.surface_raised;
         let Reorder {
@@ -221,11 +221,12 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
         pill.borrow_mut()
             .places
             .retain(|(id, _)| order.contains(id));
+        let native = window.native_surfaces.materials && theme.glass;
         let flat = track == Some(Track::Flat);
         // On a track the front tab's pill is drawn under the tabs rather than
         // by the tab, so it can slide between them. It is placed when painted:
         // every tab has been laid out and measured by then, this frame.
-        let under = track.map(|_| {
+        let under = track.filter(|_| !native).map(|_| {
             let (pill, active, theme) = (pill.clone(), active.clone(), theme.clone());
             canvas(
                 |_, _, _| {},
@@ -288,6 +289,7 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
                 let tab = match track {
                     None => tab.flex_none(),
                     Some(_) => tab
+                        .material(false)
                         .when(shown, |tab| tab.bg(transparent_black()).shadow(Vec::new()))
                         .child(measure)
                         .relative()
@@ -370,6 +372,25 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
                 })
                 .when(track == Track::Flat, |frame| frame.bg(transparent_black())),
         };
+        let region = if native && track.is_some() {
+            surface::selection("tab-selection", region, move |bounds, window, cx| {
+                let (at, sliding) = pill.borrow_mut().place(active.as_ref(), bounds.origin, cx);
+                if sliding {
+                    window.request_animation_frame();
+                }
+                at.map(|at| {
+                    let radius = if flat {
+                        px(Theme::control_radius())
+                    } else {
+                        at.size.height / 2.
+                    };
+                    (Bounds::new(bounds.origin + at.origin, at.size), radius)
+                })
+            })
+            .into_any_element()
+        } else {
+            region.into_any_element()
+        };
         frame
             .id(self.id)
             .relative()
@@ -377,6 +398,6 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
             .min_h_0()
             .flex()
             .flex_row()
-            .child(super::bar("tab-bar").viewport(region.into_any_element(), &scroll))
+            .child(super::bar("tab-bar").viewport(region, &scroll))
     }
 }

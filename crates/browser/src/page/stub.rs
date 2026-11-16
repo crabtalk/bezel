@@ -17,6 +17,10 @@ impl State {
 }
 
 impl Page {
+    pub(crate) fn snapshot(&self, done: crate::page::SnapshotDone) {
+        done(Err("page snapshots are unavailable on this platform".into()));
+    }
+
     pub(crate) fn ready(&self) -> bool {
         false
     }

@@ -1,6 +1,7 @@
 use crate::{CanvasEditor, CanvasView, clip};
 use gpui::{App, Point, Size, Task, point, px, size};
 use image::RgbaImage;
+use std::{collections::HashMap, rc::Rc};
 
 const PADDING: f32 = 32.;
 
@@ -54,6 +55,7 @@ impl CanvasView {
     ) -> Result<Task<gpui::Result<RgbaImage>>, String> {
         let editor = self.editor();
         let frame = area.frame(editor)?;
+        let mut pending = Vec::new();
         for node in &editor.canvas().nodes {
             if area == Area::Viewport {
                 let left = node.x as f32 * frame.zoom + frame.pan.x;
@@ -66,6 +68,10 @@ impl CanvasView {
                     continue;
                 }
             }
+            let kind = editor.kinds().get(&node.kind);
+            if let Some(prepare) = &kind.prepare_export {
+                pending.push((node.id.clone(), prepare(node, cx)));
+            }
             if !editor.kinds().get(&node.kind).exportable {
                 return Err(format!(
                     "node {} ({}) does not support image export",
@@ -74,28 +80,54 @@ impl CanvasView {
             }
         }
         let document = editor.canvas().clone();
-        let kinds = editor.kinds().clone();
+        let mut kinds = editor.kinds().clone();
         let edges = editor.edge_kinds().clone();
         let layout = editor.layout();
         let mut options = editor.options();
         options.read_only = true;
         let (style, overlays) = (self.style, self.overlays.clone());
-        cx.render_view_to_image(frame.size.map(px), scale, move |_, cx| {
-            let mut view = CanvasView::new(document, layout, cx)
-                .with_kinds(kinds)
-                .with_edge_kinds(edges)
-                .with_options(options)
-                .with_style(style)
-                .with_overlays(overlays);
-            view.exporting = true;
-            view.update_editor(cx, |editor| {
-                editor.set_viewport(frame.size);
-                editor.set_zoom(frame.zoom);
-                let pan = editor.pan();
-                editor.pan_by(frame.pan.x - pan.x, frame.pan.y - pan.y);
-            });
-            view
-        })
-        .map_err(|error| error.to_string())
+        Ok(cx.spawn(async move |cx| {
+            let mut prepared = HashMap::new();
+            for (id, task) in pending {
+                let paint = task
+                    .await
+                    .map_err(|error| std::io::Error::other(format!("node {id}: {error}")))?;
+                prepared.insert(id, paint);
+            }
+            let prepared = Rc::new(prepared);
+            for node in &document.nodes {
+                let original = kinds.get(&node.kind).clone();
+                if original.prepare_export.is_none() {
+                    continue;
+                }
+                let paint = original.render.clone();
+                let prepared = prepared.clone();
+                let mut kind = original;
+                kind.prepare_export = None;
+                kind.render = Rc::new(move |node, look, window, cx| {
+                    prepared.get(&node.id).unwrap_or(&paint)(node, look, window, cx)
+                });
+                kinds = kinds.with(&node.kind, kind);
+            }
+            let task = cx.update(move |cx| {
+                cx.render_view_to_image(frame.size.map(px), scale, move |_, cx| {
+                    let mut view = CanvasView::new(document, layout, cx)
+                        .with_kinds(kinds)
+                        .with_edge_kinds(edges)
+                        .with_options(options)
+                        .with_style(style)
+                        .with_overlays(overlays);
+                    view.exporting = true;
+                    view.update_editor(cx, |editor| {
+                        editor.set_viewport(frame.size);
+                        editor.set_zoom(frame.zoom);
+                        let pan = editor.pan();
+                        editor.pan_by(frame.pan.x - pan.x, frame.pan.y - pan.y);
+                    });
+                    view
+                })
+            })?;
+            task.await
+        }))
     }
 }

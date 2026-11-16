@@ -27,6 +27,7 @@ impl WebView {
         }
         let epoch = message.epoch;
         match message.event {
+            Event::Evaluated(report) => self.report(*report, cx),
             Event::Console { message, _slot } => {
                 cx.emit(WebViewEvent::Console(message));
             }

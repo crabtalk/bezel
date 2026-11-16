@@ -347,3 +347,26 @@ pub(super) fn store_usage(
         data.fetchDataRecordsOfTypes_completionHandler(&types, &handler);
     }
 }
+
+pub(super) fn navigate(
+    view: &wry::WebView,
+    url: &str,
+    read_access: Option<&std::path::Path>,
+) -> anyhow::Result<()> {
+    if let Some(directory) = read_access.filter(|_| url.starts_with("file:")) {
+        use objc2_foundation::{NSString, NSURL};
+        let url = NSURL::URLWithString(&NSString::from_str(url))
+            .ok_or_else(|| anyhow::anyhow!("invalid file URL"))?;
+        let root = NSURL::fileURLWithPath_isDirectory(
+            &NSString::from_str(&directory.to_string_lossy()),
+            true,
+        );
+        unsafe {
+            view.webview()
+                .loadFileURL_allowingReadAccessToURL(&url, &root);
+        }
+    } else {
+        view.load_url(url)?;
+    }
+    Ok(())
+}

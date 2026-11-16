@@ -36,6 +36,8 @@ categories = ["gui"]
 rust-version = "1.90"
 
 [workspace.dependencies]
+futures = "0.3"
+windows-numerics = "0.3"
 cc = "1"
 sha2 = "0.10"
 anyhow = "1"

@@ -1,11 +1,6 @@
 use crate::page::{Page, platform::State};
-use gpui::{
-    self, App, DispatchPhase, Hitbox, KeyDownEvent, KeyUpEvent, Modifiers, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, NavigationDirection, Pixels, Point,
-    ScrollWheelEvent, Window,
-};
+use gpui::{self, App, Modifiers, Pixels, Point};
 use serde_json::json;
-use std::rc::Rc;
 
 pub(crate) trait WpeModifiers {
     fn wpe_mask(self) -> u32;
@@ -19,168 +14,6 @@ impl WpeModifiers for Modifiers {
     }
 }
 
-trait WpeButton {
-    fn wpe_number(self) -> u32;
-}
-impl WpeButton for MouseButton {
-    fn wpe_number(self) -> u32 {
-        match self {
-            Self::Left => 1,
-            Self::Middle => 2,
-            Self::Right => 3,
-            Self::Navigate(NavigationDirection::Back) => 4,
-            Self::Navigate(NavigationDirection::Forward) => 5,
-        }
-    }
-}
-
-impl Page {
-    pub(crate) fn page_position(&self, position: Point<Pixels>) -> Option<Point<Pixels>> {
-        let bounds = self.placed.get()?;
-        let configuration = (*self.platform.route.configuration.lock().unwrap())?;
-        if bounds.size.width <= gpui::px(0.) || bounds.size.height <= gpui::px(0.) {
-            return None;
-        }
-        let local = position - bounds.origin;
-        Some(gpui::point(
-            local.x * (configuration.viewport.width / bounds.size.width),
-            local.y * (configuration.viewport.height / bounds.size.height),
-        ))
-    }
-
-    fn pointer(
-        &self,
-        kind: &str,
-        position: Point<Pixels>,
-        button: Option<MouseButton>,
-        modifiers: Modifiers,
-        count: usize,
-    ) {
-        let Some(local) = self.page_position(position) else {
-            return;
-        };
-        let button = button.map(WpeButton::wpe_number).unwrap_or(0);
-        if kind == "down" {
-            self.platform
-                .pressed
-                .set(self.platform.pressed.get() | (1 << button));
-        }
-        if kind == "up" {
-            if self.platform.pressed.get() & (1 << button) == 0 {
-                return;
-            }
-            self.platform
-                .pressed
-                .set(self.platform.pressed.get() & !(1 << button));
-        }
-        self.platform.command(json!({"cmd":kind,"x":f32::from(local.x),"y":f32::from(local.y),"button":button,"count":count,"mods":modifiers.wpe_mask()}));
-    }
-
-    pub(super) fn install_input(this: &Rc<Self>, hitbox: &Hitbox, window: &mut Window) {
-        let page = Rc::downgrade(this);
-        let hitbox = hitbox.clone();
-        let down_hitbox = hitbox.clone();
-        let scroll_hitbox = hitbox.clone();
-        window.on_mouse_event(move |event: &MouseDownEvent, phase, window, cx| {
-            let Some(page) = page.upgrade() else {
-                return;
-            };
-            if phase == DispatchPhase::Bubble
-                && page.input.enabled.get()
-                && down_hitbox.is_hovered(window)
-                && page.window.get() == Some(window.window_handle())
-            {
-                page.platform.share_clipboard(cx);
-                window.focus(&page.focus, cx);
-                window.capture_pointer(down_hitbox.id);
-                page.platform.capture.set(Some(down_hitbox.id));
-                page.pointer(
-                    "down",
-                    event.position,
-                    Some(event.button),
-                    event.modifiers,
-                    event.click_count,
-                );
-                cx.stop_propagation();
-            }
-        });
-        let page = Rc::downgrade(this);
-        window.on_mouse_event(move |event: &MouseMoveEvent, phase, window, cx| {
-            let Some(page) = page.upgrade() else {
-                return;
-            };
-            if phase == DispatchPhase::Bubble
-                && page.input.enabled.get()
-                && page.window.get() == Some(window.window_handle())
-                && (hitbox.is_hovered(window) || page.platform.pressed.get() != 0)
-            {
-                if hitbox.is_hovered(window) && !page.platform.hovered.replace(true) {
-                    page.pointer("enter", event.position, None, event.modifiers, 0);
-                }
-                page.pointer("move", event.position, None, event.modifiers, 0);
-                cx.stop_propagation();
-            } else if phase == DispatchPhase::Bubble && page.platform.hovered.replace(false) {
-                page.pointer("leave", event.position, None, event.modifiers, 0);
-            }
-        });
-        let page = Rc::downgrade(this);
-        window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
-            let Some(page) = page.upgrade() else {
-                return;
-            };
-            if phase == DispatchPhase::Bubble
-                && page.platform.pressed.get() & (1 << event.button.wpe_number()) != 0
-                && page.window.get() == Some(window.window_handle())
-            {
-                page.pointer("up", event.position, Some(event.button), event.modifiers, 0);
-                cx.stop_propagation();
-            }
-        });
-        let page = Rc::downgrade(this);
-        let hitbox = scroll_hitbox;
-        window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
-            let Some(page) = page.upgrade() else { return; };
-            if phase != DispatchPhase::Bubble || !page.input.enabled.get()
-                || page.window.get() != Some(window.window_handle()) || !hitbox.is_hovered(window) { return; }
-            let Some(position) = page.page_position(event.position) else { return; };
-            let (delta, precise) = match event.delta {
-                gpui::ScrollDelta::Pixels(delta) => (gpui::point(f32::from(delta.x), f32::from(delta.y)), true),
-                gpui::ScrollDelta::Lines(delta) => (delta, false),
-            };
-            page.platform.command(json!({"cmd":"scroll","x":f32::from(position.x),"y":f32::from(position.y),
-                "dx":delta.x / 3.,"dy":delta.y / 3.,"precise":precise,"stop":event.touch_phase == gpui::TouchPhase::Ended,"mods":event.modifiers.wpe_mask()}));
-            cx.stop_propagation();
-        });
-        let page = Rc::downgrade(this);
-        window.on_key_event(move |event: &KeyDownEvent, phase, window, cx| {
-            let Some(page) = page.upgrade() else {
-                return;
-            };
-            if phase == DispatchPhase::Bubble
-                && page.focus.is_focused(window)
-                && page.input.enabled.get()
-            {
-                page.platform.share_clipboard(cx);
-                page.platform.key(&event.keystroke, true);
-                cx.stop_propagation();
-            }
-        });
-        let page = Rc::downgrade(this);
-        window.on_key_event(move |event: &KeyUpEvent, phase, window, cx| {
-            let Some(page) = page.upgrade() else {
-                return;
-            };
-            if phase == DispatchPhase::Bubble
-                && page.focus.is_focused(window)
-                && page.input.enabled.get()
-            {
-                page.platform.key(&event.keystroke, false);
-                cx.stop_propagation();
-            }
-        });
-    }
-}
-
 impl State {
     pub(crate) fn share_clipboard(&self, cx: &App) {
         let text = cx
@@ -190,7 +23,7 @@ impl State {
         self.command(json!({"cmd":"clipboard","text":text}));
     }
 
-    fn key(&self, stroke: &gpui::Keystroke, down: bool) {
+    pub(crate) fn key(&self, stroke: &gpui::Keystroke, down: bool) {
         let printable = stroke.key_char.as_deref().filter(|text| {
             text.chars().count() == 1
                 && !text.chars().any(char::is_control)
@@ -250,18 +83,6 @@ pub(super) fn cursor_style(name: &str) -> gpui::CursorStyle {
 }
 
 impl Page {
-    pub(crate) fn screen_position(&self, position: Point<Pixels>) -> Option<Point<Pixels>> {
-        let bounds = self.placed.get()?;
-        let configuration = (*self.platform.route.configuration.lock().unwrap())?;
-        Some(
-            bounds.origin
-                + gpui::point(
-                    position.x * (bounds.size.width / configuration.viewport.width),
-                    position.y * (bounds.size.height / configuration.viewport.height),
-                ),
-        )
-    }
-
     pub(crate) fn caret_bounds(&self) -> Option<gpui::Bounds<Pixels>> {
         let input = self.platform.route.input.lock().unwrap();
         let caret = &input["caret"];
@@ -306,5 +127,28 @@ impl State {
         } else {
             String::new()
         };
+    }
+}
+
+impl crate::page::input::Input for State {
+    fn mouse(
+        &self,
+        kind: &str,
+        position: Point<Pixels>,
+        button: u32,
+        modifiers: Modifiers,
+        count: usize,
+    ) {
+        self.command(json!({"cmd":kind,"x":f32::from(position.x),"y":f32::from(position.y),"button":button,"count":count,"mods":modifiers.wpe_mask()}));
+    }
+    fn wheel(
+        &self,
+        position: Point<Pixels>,
+        delta: Point<f32>,
+        precise: bool,
+        stop: bool,
+        modifiers: Modifiers,
+    ) {
+        self.command(json!({"cmd":"scroll","x":f32::from(position.x),"y":f32::from(position.y),"dx":delta.x/3.,"dy":delta.y/3.,"precise":precise,"stop":stop,"mods":modifiers.wpe_mask()}));
     }
 }

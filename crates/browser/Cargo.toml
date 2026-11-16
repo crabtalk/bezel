@@ -74,6 +74,7 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
     "NSGeometry",
     "NSString",
     "NSUUID",
+    "NSURL",
 ] }
 objc2-web-kit = { version = "0.3", default-features = false, features = [
     "std",
@@ -87,15 +88,18 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
 ] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-wry = { version = "0.57", default-features = false }
+futures.workspace = true
+windows-numerics.workspace = true
 webview2-com = "0.39"
 raw-window-handle = "0.6"
 windows = { version = "0.62", features = [
+    "Foundation", "Graphics_Capture", "Graphics_DirectX_Direct3D11", "System", "UI_Composition",
+    "Win32_Graphics_Direct3D", "Win32_Graphics_Direct3D11", "Win32_Graphics_Dxgi_Common",
+    "Win32_System_WinRT", "Win32_System_WinRT_Direct3D11",
     "Win32_System_Com",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Shell",
 ] }
-image = { workspace = true, features = ["png"] }
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 raw-window-handle = "0.6"

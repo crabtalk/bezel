@@ -9,6 +9,8 @@ use std::{
     sync::Arc,
 };
 
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+mod input;
 #[cfg_attr(target_os = "macos", path = "macos/mod.rs")]
 #[cfg_attr(target_os = "windows", path = "windows/mod.rs")]
 #[cfg_attr(target_os = "linux", path = "linux/mod.rs")]
@@ -19,6 +21,8 @@ use std::{
 pub(crate) mod platform;
 #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod script;
+
+pub(crate) type SnapshotDone = Box<dyn FnOnce(Result<Arc<RenderImage>, String>) + Send>;
 
 pub(crate) trait Present {
     fn available(&self, window: &Window) -> bool {
@@ -41,6 +45,15 @@ pub(crate) trait Present {
 #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
 pub(crate) enum Report {
     Pressed,
+    #[cfg(target_os = "windows")]
+    Frame,
+    #[cfg(target_os = "windows")]
+    Windows {
+        epoch: u64,
+        report: Box<Report>,
+    },
+    #[cfg(target_os = "windows")]
+    Failed(String),
     #[cfg(target_os = "macos")]
     Released(u64),
     #[cfg(target_os = "macos")]
@@ -55,12 +68,37 @@ pub(crate) enum Report {
     /// The page asked for a window of its own, for this URL.
     Opened(String),
     Console(ConsoleMessage),
+    Evaluated {
+        id: u64,
+        answer: Result<String, String>,
+    },
     /// A still of the page, taken for a cover; `None` if the capture failed.
     Still(Option<Arc<RenderImage>>),
     /// The page was built, or failed to be, after the paint that asked for it.
     Built,
     #[cfg(target_os = "linux")]
     Linux(platform::Message),
+}
+
+impl Report {
+    pub(crate) fn evaluated(body: &str) -> Option<Self> {
+        #[derive(serde::Deserialize)]
+        struct Evaluation {
+            evaluation: u64,
+            value: Option<String>,
+            error: Option<String>,
+        }
+        let evaluation: Evaluation = serde_json::from_str(body).ok()?;
+        let answer = match (evaluation.value, evaluation.error) {
+            (Some(value), None) => Ok(value),
+            (None, Some(error)) => Err(error),
+            _ => return None,
+        };
+        Some(Self::Evaluated {
+            id: evaluation.evaluation,
+            answer,
+        })
+    }
 }
 
 /// Whether something is painted over the page.
@@ -89,20 +127,21 @@ pub(crate) enum Edit {
 pub(crate) struct Page {
     /// What the page is built with; unread once it is built.
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
-    url: RefCell<String>,
+    pub(crate) url: RefCell<String>,
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) user_agent: RefCell<Option<String>>,
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) store: RefCell<DataStore>,
+    pub(crate) read_access: RefCell<Option<std::path::PathBuf>>,
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) console: Cell<bool>,
     #[cfg(feature = "inspector")]
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) inspector: Cell<bool>,
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     view: std::cell::OnceCell<Option<wry::WebView>>,
     /// A build is on its way; see [`Page::request`].
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     building: Cell<bool>,
     /// Where the page last sat; `None` before the first paint and while parked.
     pub(crate) placed: Cell<Option<Bounds<Pixels>>>,
@@ -138,12 +177,13 @@ impl Page {
             url: RefCell::new(url),
             user_agent: RefCell::new(None),
             store: RefCell::new(DataStore::default()),
+            read_access: RefCell::new(None),
             console: Cell::new(false),
             #[cfg(feature = "inspector")]
             inspector: Cell::new(false),
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            #[cfg(target_os = "macos")]
             view: std::cell::OnceCell::new(),
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            #[cfg(target_os = "macos")]
             building: Cell::new(false),
             placed: Cell::new(None),
             presentation: Cell::new(None),
@@ -241,7 +281,7 @@ impl Page {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 impl Page {
     /// Where a parked page waits. Hidden alone, a WKWebView stays registered as
     /// a drag destination over its last rect and takes every drag that crosses
@@ -283,9 +323,6 @@ impl Page {
     /// Builds the page in a task of its own, between gpui updates, and reports
     /// [`Report::Built`] when it lands. The page is built hidden and shown by
     /// the next [`Page::place`].
-    ///
-    /// On Windows wry starts WebView2 by pumping the thread's messages, and a
-    /// message that enters gpui while the `App` is borrowed aborts the process.
     fn request(this: &Rc<Self>, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         if this.building.replace(true) {
             return;
@@ -325,15 +362,23 @@ impl Page {
             };
             let builder = builder
                 .with_incognito(store.incognito)
-                .with_url(url.as_str())
+                .with_url(
+                    if self.read_access.borrow().is_some() && url.starts_with("file:") {
+                        "about:blank"
+                    } else {
+                        url.as_str()
+                    },
+                )
                 .with_bounds(rect(bounds))
                 .with_visible(false)
                 .with_initialization_script(script::MOVED)
                 .with_ipc_handler(move |request| {
                     let report = match request.body().as_str() {
                         "moved" => Report::Moved,
-                        body => match logged(body, request.uri().to_string()) {
-                            Some(message) => Report::Console(message),
+                        body => match Report::evaluated(body).or_else(|| {
+                            logged(body, request.uri().to_string()).map(Report::Console)
+                        }) {
+                            Some(report) => report,
                             None => return,
                         },
                     };
@@ -376,11 +421,28 @@ impl Page {
                 .ok()
         })?;
         self.platform.attach(&view, &self.reports);
+        if self.read_access.borrow().is_some() && url.starts_with("file:") {
+            if let Err(error) =
+                platform::navigate(&view, &url, self.read_access.borrow().as_deref())
+            {
+                tracing::warn!(%error, "load local page");
+            }
+        }
         Some(view)
     }
 
     fn built(&self) -> Option<&wry::WebView> {
         self.view.get()?.as_ref()
+    }
+
+    pub(crate) fn snapshot(&self, done: SnapshotDone) {
+        let Some(view) = self.built() else {
+            done(Err("page has not rendered".into()));
+            return;
+        };
+        platform::capture(view, move |image| {
+            done(image.ok_or_else(|| "WebKit snapshot unavailable".into()))
+        });
     }
 
     /// Whether a still was asked for; it arrives as [`Report::Still`].
@@ -440,7 +502,7 @@ impl Page {
     pub(crate) fn load(&self, url: String) {
         match self.built() {
             Some(view) => {
-                let _ = view.load_url(&url);
+                let _ = platform::navigate(view, &url, self.read_access.borrow().as_deref());
             }
             None => *self.url.borrow_mut() = url,
         }
@@ -522,10 +584,10 @@ impl Page {
 
 /// The native window a page is built in, by its raw handle: the build runs
 /// while gpui's `Window` is not borrowed.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 struct Parent(raw_window_handle::RawWindowHandle);
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 impl Parent {
     fn of(window: &Window) -> Option<Self> {
         raw_window_handle::HasWindowHandle::window_handle(window)
@@ -534,7 +596,7 @@ impl Parent {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 impl raw_window_handle::HasWindowHandle for Parent {
     fn window_handle(
         &self,
@@ -574,7 +636,7 @@ fn logged(body: &str, source: String) -> Option<ConsoleMessage> {
 
 /// Runs `build` with the context for `directory`, or with none, which has wry
 /// make the page its own.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 fn with_context<T>(
     directory: Option<std::path::PathBuf>,
     build: impl FnOnce(Option<&mut wry::WebContext>) -> T,
@@ -588,7 +650,7 @@ fn with_context<T>(
 /// Runs `f` with the context for `directory`, `None` being the platform's
 /// default store. A context lives as long as the thread: pages built with it
 /// hold on to it.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 fn shared_context<T>(
     directory: Option<std::path::PathBuf>,
     f: impl FnOnce(&mut wry::WebContext) -> T,
@@ -620,7 +682,7 @@ pub(crate) fn store_usage(
     platform::store_usage(store, done);
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 fn rect(bounds: Bounds<Pixels>) -> wry::Rect {
     wry::Rect {
         position: wry::dpi::LogicalPosition::new(
@@ -659,3 +721,7 @@ mod tests {
         assert!(logged(r#"{"level":"trace","text":""}"#, String::new()).is_none());
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/evaluation.rs"]
+mod evaluation_tests;

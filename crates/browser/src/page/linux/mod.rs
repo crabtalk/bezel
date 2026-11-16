@@ -1,7 +1,7 @@
 use crate::{
     DataStore,
     page::{
-        Edit, Page, Present, Report,
+        Edit, Page, Present, Report, SnapshotDone,
         platform::{
             presentation::{Configuration, Presenter, Surface},
             runtime::Session,
@@ -54,6 +54,7 @@ pub(crate) enum Event {
     Error(String),
     Menu(Value),
     Clipboard(String),
+    Evaluated(Box<Report>),
     Console {
         message: crate::ConsoleMessage,
         _slot: ConsoleSlot,
@@ -84,6 +85,8 @@ pub(crate) struct Route {
     console_slots: Arc<AtomicUsize>,
     evaluations: Mutex<HashMap<u32, Evaluation>>,
     next_evaluation: AtomicU32,
+    snapshot_reply: Mutex<Option<(u32, SnapshotDone)>>,
+    next_snapshot: AtomicU32,
     store_reply: Option<std::sync::mpsc::SyncSender<Value>>,
 }
 
@@ -103,6 +106,8 @@ impl Route {
             console_slots: Arc::new(AtomicUsize::new(0)),
             evaluations: Mutex::default(),
             next_evaluation: AtomicU32::new(1),
+            snapshot_reply: Mutex::default(),
+            next_snapshot: AtomicU32::new(1),
             store_reply: None,
         }
     }
@@ -130,12 +135,32 @@ impl Route {
     }
 
     fn fail(&self, error: String) {
+        if let Some((_, done)) = self.snapshot_reply.lock().unwrap().take() {
+            done(Err(error.clone()));
+        }
         if !self.failure_reported.swap(true, Ordering::AcqRel) {
             self.emit(Event::Error(error));
         }
         let evaluations = std::mem::take(&mut *self.evaluations.lock().unwrap());
         for (_, evaluation) in evaluations {
             evaluation("null".into());
+        }
+    }
+
+    fn snapshot_result(&self, request: Option<u64>, result: Result<Arc<RenderImage>, String>) {
+        let callback = {
+            let mut pending = self.snapshot_reply.lock().unwrap();
+            if pending
+                .as_ref()
+                .is_some_and(|(id, _)| Some(*id as u64) == request)
+            {
+                pending.take()
+            } else {
+                None
+            }
+        };
+        if let Some((_, done)) = callback {
+            done(result);
         }
     }
 
@@ -161,6 +186,12 @@ impl Route {
                 self.wake();
             }
             b'L' => {
+                if let Some(report) =
+                    Report::evaluated(std::str::from_utf8(bytes).map_err(io::Error::other)?)
+                {
+                    self.emit(Event::Evaluated(Box::new(report)));
+                    return Ok(());
+                }
                 let source = self
                     .snapshot
                     .lock()
@@ -208,6 +239,10 @@ impl Route {
                     }
                 }
             }
+            b'Q' => {
+                let request = value()?["request"].as_u64();
+                self.snapshot_result(request, Err("page frame is no longer available".into()));
+            }
             b'D' => {
                 if let Some(reply) = &self.store_reply {
                     let _ = reply.try_send(value()?);
@@ -230,8 +265,8 @@ pub(crate) struct State {
     needs_load: Cell<bool>,
     focused: Cell<bool>,
     pub(crate) pressed: Cell<u8>,
-    hovered: Cell<bool>,
-    capture: Cell<Option<gpui::HitboxId>>,
+    pub(crate) hovered: Cell<bool>,
+    pub(crate) capture: Cell<Option<gpui::HitboxId>>,
     pub(crate) preedit: RefCell<String>,
 }
 
@@ -366,7 +401,11 @@ impl State {
         self.hovered.set(false);
         self.capture.set(None);
         let evaluations = std::mem::take(&mut *self.route.evaluations.lock().unwrap());
+        let snapshot = self.route.snapshot_reply.lock().unwrap().take();
         drop(_gate);
+        if let Some((_, done)) = snapshot {
+            done(Err("page restarted during snapshot".into()));
+        }
         for (_, evaluation) in evaluations {
             evaluation("null".into());
         }
@@ -434,16 +473,7 @@ impl Present for State {
         }
         let focused = page.input.enabled.get() && page.focus.is_focused(window);
         self.sync_focus(focused, window.is_window_active());
-        if self.pressed.get() != 0 {
-            if self.capture.get() == window.captured_hitbox() {
-                window.capture_pointer(hitbox.id);
-                self.capture.set(Some(hitbox.id));
-            }
-        } else if let Some(capture) = self.capture.take() {
-            if window.captured_hitbox() == Some(capture) {
-                window.release_pointer();
-            }
-        }
+        page.sync_pointer_capture(hitbox, window);
 
         if let Some(presenter) = self.presenter.borrow_mut().as_mut() {
             let configuration = *self.route.configuration.lock().unwrap();
@@ -484,6 +514,41 @@ impl Page {
         let _ = (this, bounds, window, cx);
         unreachable!("composited pages use scene paint");
     }
+    pub(crate) fn snapshot(&self, done: SnapshotDone) {
+        let presenter = self.platform.presenter.borrow();
+        let configuration = *self.platform.route.configuration.lock().unwrap();
+        let Some((buffer, generation)) = presenter
+            .as_ref()
+            .and_then(Presenter::snapshot_frame)
+            .filter(|(_, generation)| {
+                configuration.is_some_and(|config| config.generation == *generation)
+            })
+        else {
+            done(Err("page has no completed frame".into()));
+            return;
+        };
+        let route = &self.platform.route;
+        let Ok(request) =
+            route
+                .next_snapshot
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |id| id.checked_add(1))
+        else {
+            done(Err("snapshot request ids exhausted".into()));
+            return;
+        };
+        let previous = route
+            .snapshot_reply
+            .lock()
+            .unwrap()
+            .replace((request, done));
+        if let Some((_, done)) = previous {
+            done(Err("snapshot superseded".into()));
+        }
+        self.platform.command(
+            json!({"cmd":"snapshot","buffer":buffer,"generation":generation,"request":request}),
+        );
+    }
+
     pub(super) fn capture(&self) -> bool {
         false
     }

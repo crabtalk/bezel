@@ -1,8 +1,9 @@
 //! Floating surfaces with platform-owned material treatment.
 
 use gpui::{
-    self, AbsoluteLength, AnyElement, App, Bounds, Corners, Element, ElementId, GlobalElementId,
-    InspectorElementId, IntoElement, LayoutId, Pixels, Styled, Window,
+    self, AbsoluteLength, AnyElement, App, Bounds, Corners, Div, Element, ElementId,
+    GlobalElementId, InspectorElementId, InteractiveElement, Interactivity, IntoElement, LayoutId,
+    ParentElement, Pixels, RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Window,
     native_material::{MaterialState, MaterialStyle},
 };
 use theme::{Appearance, SurfaceStyle, Theme};
@@ -48,6 +49,91 @@ pub fn group<E: IntoElement>(
     })
 }
 
+/// A selection material whose bounds may move independently of its foreground.
+pub fn selection(
+    id: impl Into<ElementId>,
+    child: impl IntoElement,
+    place: impl FnMut(Bounds<Pixels>, &mut Window, &mut App) -> Option<(Bounds<Pixels>, Pixels)>
+    + 'static,
+) -> Surface {
+    let child = child.into_any_element();
+    let mut surface = Surface::new(id.into(), Look::Selection, move |_, _, _| {
+        (uniform(0.), child)
+    });
+    surface.selection = Some(Box::new(place));
+    surface
+}
+
+/// A control whose selected background uses the platform material.
+#[derive(gpui::IntoElement)]
+pub struct Control {
+    inner: Div,
+    selected: bool,
+}
+
+impl Control {
+    pub fn new(inner: Div, selected: bool) -> Self {
+        Self { inner, selected }
+    }
+
+    pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+        self.inner.interactivity().element_id = Some(id.into());
+        self
+    }
+
+    pub(crate) fn material(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
+    }
+}
+
+impl Styled for Control {
+    fn style(&mut self) -> &mut StyleRefinement {
+        self.inner.style()
+    }
+}
+
+impl ParentElement for Control {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.inner.extend(elements);
+    }
+}
+
+impl InteractiveElement for Control {
+    fn interactivity(&mut self) -> &mut Interactivity {
+        self.inner.interactivity()
+    }
+}
+
+impl StatefulInteractiveElement for Control {}
+
+impl RenderOnce for Control {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        if !self.selected || !window.native_surfaces.materials || !Theme::of(cx).glass {
+            return self.inner.into_any_element();
+        }
+        let id = Element::id(&self.inner).unwrap_or_else(|| "selection-material".into());
+        let corners = corners_of(&mut self.inner);
+        self.inner.style().background = None;
+        self.inner.style().box_shadow = Some(Vec::new());
+        selection(id, self.inner, move |bounds, window, _| {
+            let rem = window.rem_size();
+            let radius = [
+                corners.top_left,
+                corners.top_right,
+                corners.bottom_right,
+                corners.bottom_left,
+            ]
+            .into_iter()
+            .map(|radius| radius.to_pixels(rem))
+            .max()
+            .unwrap_or_default();
+            Some((bounds, radius))
+        })
+        .into_any_element()
+    }
+}
+
 fn uniform(radius: f32) -> Corners<AbsoluteLength> {
     let radius = AbsoluteLength::from(gpui::px(radius));
     Corners {
@@ -75,7 +161,11 @@ enum Look {
     Carried,
     Shipped(SurfaceStyle),
     Group,
+    Selection,
 }
+
+type Selection =
+    dyn FnMut(Bounds<Pixels>, &mut Window, &mut App) -> Option<(Bounds<Pixels>, Pixels)>;
 
 type Content = dyn FnOnce(&Theme, &mut Window, &mut App) -> (Corners<AbsoluteLength>, AnyElement);
 
@@ -95,6 +185,7 @@ pub struct Surface {
     build: Option<Box<Content>>,
     child: Option<AnyElement>,
     material: MaterialState,
+    selection: Option<Box<Selection>>,
     #[cfg(not(target_os = "macos"))]
     optics: Option<Optics>,
 }
@@ -132,6 +223,7 @@ impl Surface {
             build: Some(Box::new(build)),
             child: None,
             material: MaterialState::default(),
+            selection: None,
             #[cfg(not(target_os = "macos"))]
             optics: None,
         }
@@ -217,7 +309,7 @@ impl Element for Surface {
         window: &mut Window,
         cx: &mut App,
     ) {
-        if !matches!(self.look, Look::Group) {
+        if !matches!(self.look, Look::Group | Look::Selection) {
             crate::cover::record(bounds, window, cx);
         }
         Theme::with_appearance(self.appearance(cx), cx, |cx| {
@@ -242,8 +334,35 @@ impl Element for Surface {
                 Look::Popover => Some(theme.popover_surface),
                 Look::Carried => Some(theme.carried_surface),
                 Look::Shipped(style) => Some(style),
-                Look::Group => None,
+                Look::Group | Look::Selection => None,
             };
+            if matches!(self.look, Look::Selection) {
+                let placed = self.selection.as_mut().unwrap()(bounds, window, cx);
+                if window.native_surfaces.materials && theme.glass {
+                    if let Some((placed, radius)) = placed {
+                        let material = MaterialStyle::Glass {
+                            clear: false,
+                            tint: self.tint,
+                            corner_radius: radius,
+                            interactive: true,
+                        };
+                        window.with_content_mask(Some(gpui::ContentMask::new(bounds)), |window| {
+                            window
+                                .paint_native_material(
+                                    id.expect("surface identity"),
+                                    &self.material,
+                                    material,
+                                    placed,
+                                    |window| self.child.as_mut().unwrap().paint(window, cx),
+                                )
+                                .expect("native material capability changed during paint");
+                        });
+                        return;
+                    }
+                }
+                self.child.as_mut().unwrap().paint(window, cx);
+                return;
+            }
             if window.native_surfaces.materials && theme.glass {
                 let radius = corners
                     .top_left

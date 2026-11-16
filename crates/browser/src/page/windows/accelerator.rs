@@ -1,7 +1,7 @@
 //! WebView2 raises `AcceleratorKeyPressed` for a key the page is about to take
 //! while it holds focus; gpui's window never sees the key.
 
-use crate::page::Report;
+use crate::page::{Report, platform::Events};
 use gpui::{App, KeyContext, Keymap, Keystroke, Modifiers, Window};
 use std::{cell::RefCell, rc::Rc};
 use webview2_com::{
@@ -46,11 +46,7 @@ impl Keys {
     }
 }
 
-pub(super) fn attach(
-    controller: &ICoreWebView2Controller,
-    keys: Rc<Keys>,
-    reports: async_channel::Sender<Report>,
-) {
+pub(super) fn attach(controller: &ICoreWebView2Controller, keys: Rc<Keys>, reports: Events) {
     let mut token = 0;
     // SAFETY: called on the thread that owns the controller, which runs
     // the handler on the same thread.
