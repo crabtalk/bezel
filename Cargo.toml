@@ -29,7 +29,6 @@ edition = "2024"
 license = "MIT"
 authors = ["clearloop <tianyi.gc@gmail.com>"]
 repository = "https://github.com/crabtalk/bezel"
-homepage = "https://github.com/crabtalk/bezel"
 readme = "README.md"
 keywords = ["gpui", "gui", "ui", "components"]
 categories = ["gui"]

@@ -6,6 +6,7 @@ apt-get update
 apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
+    unzip \
     libssl-dev \
     libfontconfig-dev \
     libwayland-dev \
