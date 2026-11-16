@@ -81,7 +81,7 @@ impl Control {
         self
     }
 
-    pub(crate) fn material(mut self, selected: bool) -> Self {
+    pub fn material(mut self, selected: bool) -> Self {
         self.selected = selected;
         self
     }
