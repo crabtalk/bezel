@@ -255,7 +255,7 @@ impl Gallery {
                         // a chord that drifts.
                         .child(popover::key_hint_text(
                             &theme,
-                            keys::shortcut(&OpenPalette, window).unwrap_or_default(),
+                            keys::shortcut(&OpenPalette, window, cx).unwrap_or_default(),
                             "open palette",
                         ))
                         .when_some(self.last_command.clone(), |r, cmd| {

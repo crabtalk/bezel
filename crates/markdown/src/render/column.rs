@@ -83,14 +83,6 @@ pub(super) struct Built {
     element: AnyElement,
 }
 
-impl IntoElement for Column {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
-    }
-}
-
 impl Element for Column {
     type RequestLayoutState = ();
     type PrepaintState = Vec<Built>;

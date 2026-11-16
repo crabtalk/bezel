@@ -196,13 +196,6 @@ impl Element for Layer {
     }
 }
 
-impl IntoElement for Layer {
-    type Element = Self;
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
 /// Wrap popover content in a floating anchored layer attached to the trigger:
 /// the caller `.child(anchored_menu(...))`s this from the trigger element while
 /// open. The trigger must be `relative()`, as for every `anchored_menu_*`

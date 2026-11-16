@@ -610,11 +610,12 @@ fn vertical_motion_keeps_its_row_while_scrolling(cx: &mut TestAppContext) {
             .0
             .y
     });
-    cx.simulate_event(gpui::ScrollWheelEvent {
+    cx.simulate_event(gpui::ScrollEvent {
         position: point(px(100.0), px(35.0)),
         delta: gpui::ScrollDelta::Pixels(point(px(0.0), px(-35.0))),
         modifiers: Default::default(),
         touch_phase: gpui::TouchPhase::Moved,
+        source: Default::default(),
     });
     cx.run_until_parked();
     let after_y = cx.update(|_, cx| {

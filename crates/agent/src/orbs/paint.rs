@@ -106,7 +106,7 @@ pub fn paint_frame(
     // and the engine already emits dots back-to-front. The painter's algorithm
     // still holds. Confirmed by pixel-diffing the golden grid against a build
     // with this call removed: every dot-only orb came out byte-identical.
-    window.paint_layer(bounds, |window| {
+    window.paint_layer(|window| {
         paint_lines(window, bounds.origin, &frame.lines, dark);
         paint_dots(window, bounds.origin, frame, dark, r_min);
     });

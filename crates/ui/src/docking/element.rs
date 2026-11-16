@@ -57,15 +57,6 @@ struct SurfaceElement<P, I> {
     child: AnyElement,
 }
 
-impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> IntoElement
-    for SurfaceElement<P, I>
-{
-    type Element = Self;
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
 impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
     for SurfaceElement<P, I>
 {
@@ -219,12 +210,6 @@ pub struct Pane<P, I> {
     pub(super) child: AnyElement,
 }
 
-impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> IntoElement for Pane<P, I> {
-    type Element = Self;
-    fn into_element(self) -> Self {
-        self
-    }
-}
 impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element for Pane<P, I> {
     type RequestLayoutState = ();
     type PrepaintState = Bounds<Pixels>;

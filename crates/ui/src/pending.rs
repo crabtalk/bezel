@@ -56,10 +56,11 @@ impl Render for PendingKeys {
                 .cloned()
                 .map(KeybindingKeystroke::from_keystroke)
                 .collect::<Vec<_>>(),
+            cx,
         );
         let mut next: Vec<(SharedString, SharedString)> = Vec::new();
         for binding in window.possible_bindings_for_input(&held) {
-            let rest = keys::format(&binding.keystrokes()[held.len()..]);
+            let rest = keys::format(&binding.keystrokes()[held.len()..], cx);
             // A shadowed binding on the same keys cannot fire.
             if !next.iter().any(|(keys, _)| *keys == rest) {
                 next.push((rest, (self.label)(binding.action())));

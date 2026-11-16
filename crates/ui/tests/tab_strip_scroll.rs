@@ -1,5 +1,5 @@
 use gpui::{
-    Context, Modifiers, MouseButton, Render, ScrollDelta, ScrollWheelEvent, TestAppContext,
+    Context, Modifiers, MouseButton, Render, ScrollDelta, ScrollEvent, TestAppContext,
     VisualTestContext, Window, div, point, prelude::*, px, size,
 };
 use ui::{AppExt as _, scroll::Visibility, tabs};
@@ -73,11 +73,12 @@ fn open(sortable: bool, cx: &mut TestAppContext) -> (gpui::Entity<Host>, VisualT
 }
 
 fn wheel(cx: &mut VisualTestContext) {
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         position: point(px(90.), px(10.)),
         delta: ScrollDelta::Pixels(point(px(-40.), px(0.))),
         modifiers: Default::default(),
         touch_phase: Default::default(),
+        source: Default::default(),
     });
     cx.run_until_parked();
 }

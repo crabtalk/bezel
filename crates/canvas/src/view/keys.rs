@@ -1,7 +1,7 @@
 //! Every action the canvas answers to, and the chords bound to it.
 
 use crate::view::{self, editing};
-use gpui::{KeyBinding, actions};
+use gpui::{App, KeyBinding, actions};
 
 actions!(
     bezel_canvas,
@@ -38,7 +38,7 @@ actions!(
 
 /// The default keymap, as data. Escape is bound over the editor's own so
 /// it leaves a node, which is why [`super::init`] runs after `editor::init`.
-pub fn bindings() -> Vec<KeyBinding> {
+pub fn bindings(cx: &App) -> Vec<KeyBinding> {
     let ctx = Some(view::CONTEXT);
     let editing = format!("{} > {}", view::CONTEXT, editor::CONTEXT);
     let mut bindings = vec![
@@ -63,23 +63,26 @@ pub fn bindings() -> Vec<KeyBinding> {
         KeyBinding::new("shift-2", ZoomToSelection, ctx),
         KeyBinding::new("escape", StopEditing, Some(&editing)),
     ];
-    let platform = if cfg!(target_os = "macos") {
-        "cmd"
-    } else {
-        "ctrl"
-    };
-    let chord = |key: &str| format!("{platform}-{key}");
+    let is_mac = cx.platform_info().is_mac();
     bindings.extend([
-        KeyBinding::new(&chord("a"), SelectAll, ctx),
-        KeyBinding::new(&chord("z"), Undo, ctx),
-        KeyBinding::new(&chord("shift-z"), Redo, ctx),
-        KeyBinding::new(&chord("c"), Copy, ctx),
-        KeyBinding::new(&chord("x"), Cut, ctx),
-        KeyBinding::new(&chord("v"), Paste, ctx),
-        KeyBinding::new(&chord("d"), Duplicate, ctx),
-        KeyBinding::new(&chord("="), ZoomIn, ctx),
-        KeyBinding::new(&chord("-"), ZoomOut, ctx),
-        KeyBinding::new(&chord("0"), ResetZoom, ctx),
+        KeyBinding::new(if is_mac { "cmd-a" } else { "ctrl-a" }, SelectAll, ctx),
+        KeyBinding::new(if is_mac { "cmd-z" } else { "ctrl-z" }, Undo, ctx),
+        KeyBinding::new(
+            if is_mac {
+                "cmd-shift-z"
+            } else {
+                "ctrl-shift-z"
+            },
+            Redo,
+            ctx,
+        ),
+        KeyBinding::new(if is_mac { "cmd-c" } else { "ctrl-c" }, Copy, ctx),
+        KeyBinding::new(if is_mac { "cmd-x" } else { "ctrl-x" }, Cut, ctx),
+        KeyBinding::new(if is_mac { "cmd-v" } else { "ctrl-v" }, Paste, ctx),
+        KeyBinding::new(if is_mac { "cmd-d" } else { "ctrl-d" }, Duplicate, ctx),
+        KeyBinding::new(if is_mac { "cmd-=" } else { "ctrl-=" }, ZoomIn, ctx),
+        KeyBinding::new(if is_mac { "cmd--" } else { "ctrl--" }, ZoomOut, ctx),
+        KeyBinding::new(if is_mac { "cmd-0" } else { "ctrl-0" }, ResetZoom, ctx),
     ]);
     bindings
 }

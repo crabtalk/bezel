@@ -569,17 +569,21 @@ fn bind_edits(cx: &mut App) {
     }
     cx.set_global(Bound);
     let context = Some(KEY_CONTEXT);
-    let modifier = if cfg!(target_os = "macos") {
-        "cmd"
-    } else {
-        "ctrl"
-    };
+    let is_mac = cx.platform_info().is_mac();
     cx.bind_keys([
-        KeyBinding::new(&format!("{modifier}-c"), Copy, context),
-        KeyBinding::new(&format!("{modifier}-x"), Cut, context),
-        KeyBinding::new(&format!("{modifier}-v"), Paste, context),
-        KeyBinding::new(&format!("{modifier}-a"), SelectAll, context),
-        KeyBinding::new(&format!("{modifier}-z"), Undo, context),
-        KeyBinding::new(&format!("{modifier}-shift-z"), Redo, context),
+        KeyBinding::new(if is_mac { "cmd-c" } else { "ctrl-c" }, Copy, context),
+        KeyBinding::new(if is_mac { "cmd-x" } else { "ctrl-x" }, Cut, context),
+        KeyBinding::new(if is_mac { "cmd-v" } else { "ctrl-v" }, Paste, context),
+        KeyBinding::new(if is_mac { "cmd-a" } else { "ctrl-a" }, SelectAll, context),
+        KeyBinding::new(if is_mac { "cmd-z" } else { "ctrl-z" }, Undo, context),
+        KeyBinding::new(
+            if is_mac {
+                "cmd-shift-z"
+            } else {
+                "ctrl-shift-z"
+            },
+            Redo,
+            context,
+        ),
     ]);
 }

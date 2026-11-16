@@ -315,7 +315,7 @@ pub(crate) const STEPS: [Step; 3] = [
 /// these name shortcuts this app would wire itself. [`keys::printed`] is what
 /// keeps them the platform's own: a row that reaches the keymap instead wants
 /// [`Item::with_shortcut`].
-pub(crate) fn demo_menus() -> Vec<Menu> {
+pub(crate) fn demo_menus(cx: &App) -> Vec<Menu> {
     vec![
         Menu::new(
             "File",
@@ -325,13 +325,13 @@ pub(crate) fn demo_menus() -> Vec<Menu> {
                 // never show that column.
                 Item::action("New Window")
                     .with_icon(icons::glyph::FilePlus)
-                    .with_keystroke(keys::printed("secondary-n")),
+                    .with_keystroke(keys::printed("secondary-n", cx)),
                 // The described row, and the one that shows what a
                 // description too long for its line does: it clips, and the
                 // tooltip carries the whole of it.
                 Item::action("Open…")
                     .with_icon(icons::glyph::FolderOpen)
-                    .with_keystroke(keys::printed("secondary-o"))
+                    .with_keystroke(keys::printed("secondary-o", cx))
                     .with_long_description("Choose a markdown file from this workspace to edit"),
                 Item::submenu(
                     "Open Recent",
@@ -345,24 +345,24 @@ pub(crate) fn demo_menus() -> Vec<Menu> {
                 Item::Separator,
                 Item::action("Save")
                     .with_icon(icons::glyph::Save)
-                    .with_keystroke(keys::printed("secondary-s")),
+                    .with_keystroke(keys::printed("secondary-s", cx)),
                 Item::action("Save As…")
                     .with_icon(icons::glyph::Save)
-                    .with_keystroke(keys::printed("secondary-shift-s"))
+                    .with_keystroke(keys::printed("secondary-shift-s", cx))
                     .disabled(true),
             ],
         ),
         Menu::new(
             "Edit",
             vec![
-                Item::action("Undo").with_keystroke(keys::printed("secondary-z")),
+                Item::action("Undo").with_keystroke(keys::printed("secondary-z", cx)),
                 Item::action("Redo")
-                    .with_keystroke(keys::printed("secondary-shift-z"))
+                    .with_keystroke(keys::printed("secondary-shift-z", cx))
                     .disabled(true),
                 Item::Separator,
-                Item::action("Cut").with_keystroke(keys::printed("secondary-x")),
-                Item::action("Copy").with_keystroke(keys::printed("secondary-c")),
-                Item::action("Paste").with_keystroke(keys::printed("secondary-v")),
+                Item::action("Cut").with_keystroke(keys::printed("secondary-x", cx)),
+                Item::action("Copy").with_keystroke(keys::printed("secondary-c", cx)),
+                Item::action("Paste").with_keystroke(keys::printed("secondary-v", cx)),
             ],
         ),
         Menu::new(
@@ -376,12 +376,13 @@ pub(crate) fn demo_menus() -> Vec<Menu> {
                     0,
                 ),
                 Item::Separator,
-                Item::action("Toggle Sidebar").with_keystroke(keys::printed("secondary-b")),
+                Item::action("Toggle Sidebar").with_keystroke(keys::printed("secondary-b", cx)),
                 Item::action("Full Screen").with_keystroke(keys::printed(
-                    match cfg!(target_os = "macos") {
+                    match cx.platform_info().is_mac() {
                         true => "ctrl-cmd-f",
                         false => "f11",
                     },
+                    cx,
                 )),
                 Item::Separator,
                 Item::submenu(

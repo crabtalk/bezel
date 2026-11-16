@@ -292,7 +292,7 @@ impl Gallery {
         .detach();
         // The bar reports a place in the menus it was given; the host is what
         // turns that back into a name, and what decides it means anything.
-        let menubar = cx.new(|cx| Menubar::new(demo_menus(), cx));
+        let menubar = cx.new(|cx| Menubar::new(demo_menus(cx), cx));
         cx.subscribe(&menubar, |view, bar, event, cx| {
             let MenubarEvent::Selected { menu, path } = event;
             if let Some(Item::Action { label, .. }) = bar.read(cx).menus()[*menu].at(path) {

@@ -69,7 +69,7 @@ impl Tooltip {
         cx: &mut App,
     ) -> AnyView {
         let text = text.into();
-        let keystroke = keys::shortcut(action, window);
+        let keystroke = keys::shortcut(action, window, cx);
         cx.new(|_| Self { text, keystroke }).into()
     }
 
@@ -83,7 +83,7 @@ impl Tooltip {
         cx: &mut App,
     ) -> AnyView {
         let text = text.into();
-        let keystroke = keys::shortcut_in(action, context, window);
+        let keystroke = keys::shortcut_in(action, context, window, cx);
         cx.new(|_| Self { text, keystroke }).into()
     }
 }

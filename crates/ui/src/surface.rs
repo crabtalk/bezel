@@ -305,7 +305,7 @@ impl Element for Surface {
                     edge_width: gpui::px(spec.edge_width),
                     edge_aa: gpui::px(spec.edge_aa),
                 };
-                window.paint_layer(bounds, |window| {
+                window.paint_layer(|window| {
                     window.paint_backdrop_blur(bounds, corners, effect);
                     if spec.shadow {
                         window.paint_drop_shadows_outside(
@@ -323,13 +323,6 @@ impl Element for Surface {
             );
             self.child.as_mut().unwrap().paint(window, cx);
         });
-    }
-}
-
-impl IntoElement for Surface {
-    type Element = Self;
-    fn into_element(self) -> Self {
-        self
     }
 }
 
@@ -382,20 +375,12 @@ impl Element for Layered {
         &mut self,
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        _bounds: Bounds<Pixels>,
         _request_layout: &mut Self::RequestLayoutState,
         _prepaint: &mut Self::PrepaintState,
         window: &mut Window,
         cx: &mut App,
     ) {
-        window.paint_layer(bounds, |window| self.child.paint(window, cx));
-    }
-}
-
-impl IntoElement for Layered {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
+        window.paint_layer(|window| self.child.paint(window, cx));
     }
 }

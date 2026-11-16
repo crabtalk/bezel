@@ -1,7 +1,6 @@
 use gpui::{
     App, Bounds, Corners, CursorStyle, Element, ElementId, FocusHandle, GlobalElementId, Hitbox,
-    HitboxBehavior, InspectorElementId, IntoElement, LayoutId, Pixels, RenderImage, Style, Window,
-    relative,
+    HitboxBehavior, InspectorElementId, LayoutId, Pixels, RenderImage, Style, Window, relative,
 };
 use std::{
     cell::Cell,
@@ -45,14 +44,6 @@ pub(crate) trait Surface: 'static {
 /// Fills its parent and places a surface over itself.
 pub(crate) struct Host<S: Surface> {
     pub(crate) surface: Rc<S>,
-}
-
-impl<S: Surface> IntoElement for Host<S> {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
-    }
 }
 
 impl<S: Surface> Element for Host<S> {

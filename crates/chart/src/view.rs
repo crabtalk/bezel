@@ -5,9 +5,9 @@ use std::{cell::Cell, collections::HashMap, f32::consts::FRAC_PI_2, rc::Rc};
 
 use gpui::{
     App, Bounds, ContentMask, Corners, DispatchPhase, Element, ElementId, Font, GlobalElementId,
-    Hitbox, HitboxBehavior, Hsla, InspectorElementId, IntoElement, LayoutId, MouseMoveEvent, Path,
-    PathBuilder, Pixels, Point, Refineable, ShapedLine, SharedString, Style, StyleRefinement,
-    Styled, TextAlign, TextRun, Window, fill, point, px, relative, size,
+    Hitbox, HitboxBehavior, Hsla, InspectorElementId, LayoutId, MouseMoveEvent, Path, PathBuilder,
+    Pixels, Point, Refineable, ShapedLine, SharedString, Style, StyleRefinement, Styled, TextAlign,
+    TextRun, Window, fill, point, px, relative, size,
 };
 use theme::{TextStyle, Theme};
 
@@ -55,14 +55,6 @@ impl Styled for ChartView {
     }
 }
 
-impl IntoElement for ChartView {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
-    }
-}
-
 /// What a plan was made from. Equal keys make equal plans.
 #[derive(Clone, PartialEq)]
 struct Key {
@@ -70,18 +62,17 @@ struct Key {
     layers: Vec<(u64, Mark, Encoding)>,
     title: Option<SharedString>,
     size: [f32; 2],
+    origin: Point<Pixels>,
     font: Font,
     font_size: f32,
     colors: [Hsla; 2],
 }
 
-/// A plan and everything painting it needs that does not change with it:
-/// tessellated paths at the chart's own origin, and shaped labels.
 struct Built {
     key: Key,
     plan: Plan,
     /// Series, path, and whether it is a fill.
-    paths: Vec<(usize, Path<Pixels>, bool)>,
+    paths: Vec<(usize, Path, bool)>,
     labels: HashMap<SharedString, ShapedLine>,
     title: Option<ShapedLine>,
     line: f32,
@@ -143,6 +134,7 @@ impl Element for ChartView {
                 .collect(),
             title: self.chart.title.clone(),
             size: [bounds.size.width.as_f32(), bounds.size.height.as_f32()],
+            origin: bounds.origin,
             font: window.text_style().font(),
             font_size: TextStyle::Caption.painted(),
             colors: [theme.text, theme.text_muted],
@@ -196,7 +188,7 @@ impl Element for ChartView {
         let tip = prepainted.hover.get().and_then(|at| built.plan.hit(at));
         paint_chart(&built, origin, tip.as_ref(), &theme, window, cx);
         if let (Some(tip), Some(at)) = (tip, prepainted.hover.get()) {
-            window.paint_layer(bounds, |window| {
+            window.paint_layer(|window| {
                 paint_tip(&built, &tip, at, bounds, &theme, window, cx);
             });
         }
@@ -237,22 +229,28 @@ fn build(chart: &Chart, key: Key, window: &mut Window) -> Option<Built> {
     for (s, series) in plan.series.iter().enumerate() {
         match &series.marks {
             Marks::Lines(runs) => {
-                paths.extend(runs.iter().filter_map(|run| Some((s, stroke(run)?, false))));
+                paths.extend(
+                    runs.iter()
+                        .filter_map(|run| Some((s, stroke(run, key.origin)?, false))),
+                );
             }
             Marks::Areas(outlines) => {
                 for outline in outlines {
                     let mut builder = PathBuilder::fill();
                     builder.add_polygon(&points(outline), true);
+                    builder.translate(key.origin);
                     paths.extend(builder.build().ok().map(|path| (s, path, true)));
-                    paths
-                        .extend(stroke(&outline[..outline.len() - 2]).map(|path| (s, path, false)));
+                    paths.extend(
+                        stroke(&outline[..outline.len() - 2], key.origin)
+                            .map(|path| (s, path, false)),
+                    );
                 }
             }
             Marks::Slices(slices) => {
                 paths.extend(
                     slices
                         .iter()
-                        .filter_map(|slice| Some((s, wedge(slice)?, true))),
+                        .filter_map(|slice| Some((s, wedge(slice, key.origin)?, true))),
                 );
             }
             Marks::Bars(_) | Marks::Points(_) => {}
@@ -272,7 +270,7 @@ fn points(run: &[[f32; 2]]) -> Vec<Point<Pixels>> {
     run.iter().map(|&[x, y]| point(px(x), px(y))).collect()
 }
 
-fn stroke(run: &[[f32; 2]]) -> Option<Path<Pixels>> {
+fn stroke(run: &[[f32; 2]], origin: Point<Pixels>) -> Option<Path> {
     let mut builder = PathBuilder::stroke(px(LINE_WIDTH));
     match run {
         [] => return None,
@@ -282,10 +280,11 @@ fn stroke(run: &[[f32; 2]]) -> Option<Path<Pixels>> {
         }
         _ => builder.add_polygon(&points(run), false),
     }
+    builder.translate(origin);
     builder.build().ok()
 }
 
-fn wedge(slice: &Slice) -> Option<Path<Pixels>> {
+fn wedge(slice: &Slice, origin: Point<Pixels>) -> Option<Path> {
     let [cx, cy] = slice.center;
     let span = slice.end - slice.start;
     let steps = (span / std::f32::consts::TAU * TURN_SEGMENTS)
@@ -302,17 +301,8 @@ fn wedge(slice: &Slice) -> Option<Path<Pixels>> {
     }));
     let mut builder = PathBuilder::fill();
     builder.add_polygon(&outline, true);
+    builder.translate(origin);
     builder.build().ok()
-}
-
-/// `path`, built at the chart's origin, moved to `origin`.
-fn moved(path: &Path<Pixels>, origin: Point<Pixels>) -> Path<Pixels> {
-    let mut path = path.clone();
-    path.bounds.origin += origin;
-    for vertex in &mut path.vertices {
-        vertex.xy_position += origin;
-    }
-    path
 }
 
 fn bounds_of(rect: Rect, origin: Point<Pixels>) -> Bounds<Pixels> {
@@ -407,7 +397,7 @@ fn paint_chart(
                 } else {
                     color
                 };
-                window.paint_path(moved(path, origin), color);
+                window.paint_path(path.clone(), color);
             }
             match &series.marks {
                 Marks::Bars(bars) => {

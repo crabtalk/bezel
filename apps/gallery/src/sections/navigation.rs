@@ -25,7 +25,7 @@ impl Gallery {
                             .tooltip(|window, cx| {
                                 Tooltip::with_keystroke(
                                     "Copy path",
-                                    keys::printed("secondary-c"),
+                                    keys::printed("secondary-c", cx),
                                     window,
                                     cx,
                                 )

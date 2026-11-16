@@ -8,7 +8,7 @@
 use std::{cell::Cell, rc::Rc};
 
 use gpui::{
-    Modifiers, ScrollDelta, ScrollHandle, ScrollWheelEvent, TestAppContext, VisualTestContext, div,
+    Modifiers, ScrollDelta, ScrollEvent, ScrollHandle, TestAppContext, VisualTestContext, div,
     point, prelude::*, px, size,
 };
 use ui::{
@@ -75,11 +75,12 @@ fn open(layered: bool, cx: &mut TestAppContext) -> (gpui::Entity<Page>, VisualTe
 }
 
 fn wheel(at: gpui::Point<gpui::Pixels>, cx: &mut VisualTestContext) {
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         position: at,
         delta: ScrollDelta::Pixels(point(px(0.0), px(-40.0))),
         modifiers: Default::default(),
         touch_phase: Default::default(),
+        source: Default::default(),
     });
     cx.run_until_parked();
 }

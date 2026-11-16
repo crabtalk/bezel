@@ -308,14 +308,6 @@ struct AtGrab {
     child: AnyElement,
 }
 
-impl IntoElement for AtGrab {
-    type Element = Self;
-
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
 impl Element for AtGrab {
     type RequestLayoutState = ();
     type PrepaintState = ();
