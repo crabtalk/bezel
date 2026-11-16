@@ -1,5 +1,19 @@
 [
   {
+    "version": "0.2.28",
+    "date": "2026-11-17",
+    "summary": "Glass selection foreground and fitted tab tracks.",
+    "new": [
+      "`ui::surface::Control::material` lets hosts enable native glass selection on controls."
+    ],
+    "changed": [
+      "Bare tab tracks fit their tabs without extra padding or reserved border space."
+    ],
+    "fixed": [
+      "Selection foreground paints outside the native highlight scope, preserving content wider than the highlight."
+    ]
+  },
+  {
     "version": "0.2.27",
     "date": "2026-11-16",
     "summary": "Published GPUI upgrade and host-aware keyboard shortcuts.",
