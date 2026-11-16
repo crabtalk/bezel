@@ -15,6 +15,7 @@ use crate::{
     icons,
     input::{FieldEvent, TextField},
     keys, popover, scroll,
+    surface::Control,
     tooltip::Tooltip,
 };
 use gpui::{
@@ -389,8 +390,8 @@ impl Item {
     ///
     /// Still nothing to dispatch: the row's click stays the caller's, and the
     /// action passed here is read, never run.
-    pub fn with_shortcut(self, action: &dyn Action, window: &Window) -> Self {
-        match keys::shortcut(action, window) {
+    pub fn with_shortcut(self, action: &dyn Action, window: &Window, cx: &App) -> Self {
+        match keys::shortcut(action, window, cx) {
             Some(keystroke) => self.with_keystroke(keystroke),
             None => self,
         }
@@ -400,8 +401,14 @@ impl Item {
     /// focused — which is most menu rows, since opening the menu took focus
     /// off whatever the row acts on. `context` is the one the binding was
     /// scoped to (`editor::CONTEXT`, [`crate::input::KEY_CONTEXT`]).
-    pub fn with_shortcut_in(self, action: &dyn Action, context: &str, window: &Window) -> Self {
-        match keys::shortcut_in(action, context, window) {
+    pub fn with_shortcut_in(
+        self,
+        action: &dyn Action,
+        context: &str,
+        window: &Window,
+        cx: &App,
+    ) -> Self {
+        match keys::shortcut_in(action, context, window, cx) {
             Some(keystroke) => self.with_keystroke(keystroke),
             None => self,
         }
@@ -770,18 +777,22 @@ pub fn edit_items(
     pasteable: bool,
     actions: [&dyn Action; 4],
     window: &Window,
+    cx: &App,
 ) -> Vec<Item> {
     let [cut, copy, paste, select_all] = actions;
     let enable = |item: Item, on: bool| item.disabled(!on);
     vec![
-        enable(Item::action("Cut").with_shortcut(cut, window), selected),
-        enable(Item::action("Copy").with_shortcut(copy, window), selected),
+        enable(Item::action("Cut").with_shortcut(cut, window, cx), selected),
         enable(
-            Item::action("Paste").with_shortcut(paste, window),
+            Item::action("Copy").with_shortcut(copy, window, cx),
+            selected,
+        ),
+        enable(
+            Item::action("Paste").with_shortcut(paste, window, cx),
             pasteable,
         ),
         Item::Separator,
-        Item::action("Select All").with_shortcut(select_all, window),
+        Item::action("Select All").with_shortcut(select_all, window, cx),
     ]
 }
 
@@ -1229,7 +1240,7 @@ impl<V: 'static> Tree<V> {
                     (true, true) => theme.text,
                     (true, false) => theme.text_muted,
                 };
-                let cell = div()
+                let cell = Control::new(div(), chosen)
                     .id(row_id(&self.id, &path))
                     .flex_1()
                     .min_w_0()

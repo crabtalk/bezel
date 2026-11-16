@@ -12,8 +12,9 @@
 //! it, and binding it somewhere the hint cannot see.
 
 use gpui::{
-    Context, FocusHandle, IntoElement, KeyBinding, KeyContext, NoAction, Render, TestAppContext,
-    VisualTestContext, Window, actions, div, prelude::*, px, size,
+    Context, FocusHandle, IntoElement, KeyBinding, KeyContext, NoAction, OperatingSystem,
+    PlatformInfo, PlatformTarget, Render, TestAppContext, VisualTestContext, Window, actions, div,
+    prelude::*, px, size,
 };
 use ui::{keys, menu::Item};
 
@@ -78,7 +79,7 @@ fn modifiers_are_in_the_platform_order(cx: &mut TestAppContext) {
         cx,
     );
     let label = visual
-        .update(|window, _| keys::shortcut(&Bold, window))
+        .update(|window, cx| keys::shortcut(&Bold, window, cx))
         .unwrap();
     #[cfg(target_os = "macos")]
     assert_eq!(label.as_ref(), "⌃⌥⇧⌘B");
@@ -97,10 +98,10 @@ fn named_keys_print_as_the_platform_writes_them(cx: &mut TestAppContext) {
         ],
         cx,
     );
-    let (bold, italic) = visual.update(|window, _| {
+    let (bold, italic) = visual.update(|window, cx| {
         (
-            keys::shortcut(&Bold, window).unwrap(),
-            keys::shortcut(&Italic, window).unwrap(),
+            keys::shortcut(&Bold, window, cx).unwrap(),
+            keys::shortcut(&Italic, window, cx).unwrap(),
         )
     });
     #[cfg(target_os = "macos")]
@@ -124,7 +125,7 @@ fn a_chord_prints_as_two_keystrokes(cx: &mut TestAppContext) {
         cx,
     );
     let label = visual
-        .update(|window, _| keys::shortcut(&Bold, window))
+        .update(|window, cx| keys::shortcut(&Bold, window, cx))
         .unwrap();
     #[cfg(target_os = "macos")]
     assert_eq!(label.as_ref(), "⌃K ⌃B");
@@ -138,7 +139,7 @@ fn a_chord_prints_as_two_keystrokes(cx: &mut TestAppContext) {
 fn an_unbound_action_has_no_label(cx: &mut TestAppContext) {
     let mut visual = open(vec![KeyBinding::new("cmd-b", Bold, Some(SURFACE))], cx);
     assert_eq!(
-        visual.update(|window, _| keys::shortcut(&Unbound, window)),
+        visual.update(|window, cx| keys::shortcut(&Unbound, window, cx)),
         None
     );
 }
@@ -150,7 +151,7 @@ fn an_unbound_action_has_no_label(cx: &mut TestAppContext) {
 fn a_global_binding_resolves_from_inside_a_context(cx: &mut TestAppContext) {
     let mut visual = open(vec![KeyBinding::new("cmd-k", Bold, None)], cx);
     let label = visual
-        .update(|window, _| keys::shortcut(&Bold, window))
+        .update(|window, cx| keys::shortcut(&Bold, window, cx))
         .unwrap();
     #[cfg(target_os = "macos")]
     assert_eq!(label.as_ref(), "⌘K");
@@ -172,7 +173,7 @@ fn rebinding_moves_the_label(cx: &mut TestAppContext) {
         cx,
     );
     let label = visual
-        .update(|window, _| keys::shortcut(&Bold, window))
+        .update(|window, cx| keys::shortcut(&Bold, window, cx))
         .unwrap();
     #[cfg(target_os = "macos")]
     assert_eq!(label.as_ref(), "⇧⌘B");
@@ -192,7 +193,7 @@ fn unbinding_takes_the_label_away(cx: &mut TestAppContext) {
         cx,
     );
     assert_eq!(
-        visual.update(|window, _| keys::shortcut(&Bold, window)),
+        visual.update(|window, cx| keys::shortcut(&Bold, window, cx)),
         None
     );
 }
@@ -205,11 +206,11 @@ fn unbinding_takes_the_label_away(cx: &mut TestAppContext) {
 fn a_context_out_of_the_focus_path_needs_shortcut_in(cx: &mut TestAppContext) {
     let mut visual = open(vec![KeyBinding::new("cmd-b", Bold, Some("Elsewhere"))], cx);
     assert_eq!(
-        visual.update(|window, _| keys::shortcut(&Bold, window)),
+        visual.update(|window, cx| keys::shortcut(&Bold, window, cx)),
         None
     );
     let label = visual
-        .update(|window, _| keys::shortcut_in(&Bold, "Elsewhere", window))
+        .update(|window, cx| keys::shortcut_in(&Bold, "Elsewhere", window, cx))
         .unwrap();
     #[cfg(target_os = "macos")]
     assert_eq!(label.as_ref(), "⌘B");
@@ -223,14 +224,31 @@ fn a_context_out_of_the_focus_path_needs_shortcut_in(cx: &mut TestAppContext) {
 #[gpui::test]
 fn a_menu_row_fills_its_accelerator_from_the_keymap(cx: &mut TestAppContext) {
     let mut visual = open(vec![KeyBinding::new("cmd-b", Bold, Some("Elsewhere"))], cx);
-    let (bound, unbound, printed) = visual.update(|window, _| {
+    let (bound, unbound, printed) = visual.update(|window, cx| {
         (
-            Item::action("Bold").with_shortcut_in(&Bold, "Elsewhere", window),
-            Item::action("Italic").with_shortcut_in(&Italic, "Elsewhere", window),
-            keys::shortcut_in(&Bold, "Elsewhere", window).unwrap(),
+            Item::action("Bold").with_shortcut_in(&Bold, "Elsewhere", window, cx),
+            Item::action("Italic").with_shortcut_in(&Italic, "Elsewhere", window, cx),
+            keys::shortcut_in(&Bold, "Elsewhere", window, cx).unwrap(),
         )
     });
     assert_eq!(bound, Item::action("Bold").with_keystroke(printed));
     // Nothing bound leaves the row bare rather than inventing a chord.
     assert_eq!(unbound, Item::action("Italic"));
+}
+
+#[gpui::test]
+fn printed_shortcuts_follow_the_browser_host(cx: &mut TestAppContext) {
+    let chord = String::from("secondary-shift-s");
+    for (os, expected) in [
+        (OperatingSystem::Mac, "⇧⌘S"),
+        (OperatingSystem::Windows, "Ctrl+Shift+S"),
+        (OperatingSystem::Linux, "Ctrl+Shift+S"),
+    ] {
+        cx.set_platform_info(PlatformInfo {
+            os,
+            target: PlatformTarget::Web,
+        });
+        let actual = cx.update(|cx| keys::printed(&chord, cx));
+        assert_eq!(actual.as_ref(), expected);
+    }
 }

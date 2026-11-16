@@ -17,7 +17,7 @@ use gpui::{
 
 use theme::{TextStyle, Theme, Typeset};
 
-use crate::{keys, popover, surface::Surfaced as _};
+use crate::{keys, popover, surface};
 
 type Label = Rc<dyn Fn(&dyn Action) -> SharedString>;
 
@@ -56,36 +56,38 @@ impl Render for PendingKeys {
                 .cloned()
                 .map(KeybindingKeystroke::from_keystroke)
                 .collect::<Vec<_>>(),
+            cx,
         );
         let mut next: Vec<(SharedString, SharedString)> = Vec::new();
         for binding in window.possible_bindings_for_input(&held) {
-            let rest = keys::format(&binding.keystrokes()[held.len()..]);
+            let rest = keys::format(&binding.keystrokes()[held.len()..], cx);
             // A shadowed binding on the same keys cannot fire.
             if !next.iter().any(|(keys, _)| *keys == rest) {
                 next.push((rest, (self.label)(binding.action())));
             }
         }
-        popover::popover_card(&theme)
-            .flex()
-            .flex_col()
-            .gap(px(4.0))
-            .text_style(TextStyle::Callout)
-            .child(
-                div()
-                    .text_style(TextStyle::Subheadline)
-                    .text_color(theme.text_faint)
-                    .child(format!("{prefix} …")),
-            )
-            .children(next.into_iter().map(|(keys, label)| {
-                div()
-                    .flex()
-                    .flex_row()
-                    .gap(px(Theme::SPACE))
-                    .child(div().min_w(px(48.0)).child(keys))
-                    .child(div().text_color(theme.text_muted).child(label))
-            }))
-            .surface(&theme, theme.popover_surface)
-            .into_any_element()
+        surface::of("pending-keys", theme.popover_surface, move |theme, _, _| {
+            popover::popover_card(theme)
+                .flex()
+                .flex_col()
+                .gap(px(4.0))
+                .text_style(TextStyle::Callout)
+                .child(
+                    div()
+                        .text_style(TextStyle::Subheadline)
+                        .text_color(theme.text_faint)
+                        .child(format!("{prefix} …")),
+                )
+                .children(next.into_iter().map(|(keys, label)| {
+                    div()
+                        .flex()
+                        .flex_row()
+                        .gap(px(Theme::SPACE))
+                        .child(div().min_w(px(48.0)).child(keys))
+                        .child(div().text_color(theme.text_muted).child(label))
+                }))
+        })
+        .into_any_element()
     }
 }
 

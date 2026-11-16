@@ -23,30 +23,29 @@ use gpui::{
 };
 use theme::{TextStyle, Theme, Typeset};
 
-use crate::surface::{Surface, Surfaced};
+use crate::surface::{self, Surface};
 
-/// A dragged item's floating copy.
-pub trait Carried: Styled + IntoElement + Sized {
-    /// A [`Domain::with_ghost`] or docking copy, on
-    /// [`Theme::carried_surface`]. It keeps the element's own rounding.
-    fn ghost(self, theme: &Theme) -> Surface {
-        self.surface(theme, theme.carried_surface)
-    }
+/// Build a dragged item's floating copy within its native material appearance.
+pub fn ghost<E: Styled + IntoElement>(
+    id: impl Into<ElementId>,
+    build: impl FnOnce(&Theme, &mut Window, &mut App) -> E + 'static,
+) -> Surface {
+    surface::carried(id, build)
 }
 
-impl<E: Styled + IntoElement> Carried for E {}
-
-/// A row or tab in flight, as a label: a truncated pill under the pointer.
-pub fn ghost_label(label: impl Into<SharedString>, theme: &Theme) -> Surface {
-    div()
-        .rounded(px(Theme::control_radius()))
-        .px(px(10.0))
-        .py(px(4.0))
-        .text_style(TextStyle::Callout)
-        .text_color(theme.text)
-        .truncate()
-        .child(label.into())
-        .ghost(theme)
+/// A row or tab in flight, as a truncated label under the pointer.
+pub fn ghost_label(id: impl Into<ElementId>, label: impl Into<SharedString>) -> Surface {
+    let label = label.into();
+    ghost(id, move |theme, _, _| {
+        div()
+            .rounded(px(Theme::control_radius()))
+            .px(px(10.0))
+            .py(px(4.0))
+            .text_style(TextStyle::Callout)
+            .text_color(theme.text)
+            .truncate()
+            .child(label)
+    })
 }
 
 /// An overlay over its parent that paints [`Theme::drop_target`] while files
@@ -307,14 +306,6 @@ struct AtGrab {
     cursor: Point<Pixels>,
     grab: Point<Pixels>,
     child: AnyElement,
-}
-
-impl IntoElement for AtGrab {
-    type Element = Self;
-
-    fn into_element(self) -> Self {
-        self
-    }
 }
 
 impl Element for AtGrab {

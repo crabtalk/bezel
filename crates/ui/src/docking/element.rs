@@ -1,6 +1,5 @@
 use super::{Dock, OnDrop, Target, Tween};
-use crate::drag::Carry;
-use crate::surface::Surfaced;
+use crate::{drag::Carry, surface};
 use gpui::{
     AnyElement, App, AvailableSpace, Bounds, ContentMask, DragMoveEvent, Element, ElementId,
     GlobalElementId, InspectorElementId, IntoElement, LayoutId, Pixels, RenderOnce, Window, div,
@@ -56,15 +55,6 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> RenderOnce 
 struct SurfaceElement<P, I> {
     dock: Dock<P, I>,
     child: AnyElement,
-}
-
-impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> IntoElement
-    for SurfaceElement<P, I>
-{
-    type Element = Self;
-    fn into_element(self) -> Self {
-        self
-    }
 }
 
 impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
@@ -123,7 +113,8 @@ impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
                 .rounded(px(6.));
             // The surface's flat fallback is opaque and would hide the pane.
             overlay = overlay.child(if crate::surface::lensed(theme) {
-                target.surface(theme, theme.drop_preview).into_any_element()
+                surface::of("dock-preview", theme.drop_preview, move |_, _, _| target)
+                    .into_any_element()
             } else {
                 target.bg(theme.drop_target).into_any_element()
             });
@@ -219,12 +210,6 @@ pub struct Pane<P, I> {
     pub(super) child: AnyElement,
 }
 
-impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> IntoElement for Pane<P, I> {
-    type Element = Self;
-    fn into_element(self) -> Self {
-        self
-    }
-}
 impl<P: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element for Pane<P, I> {
     type RequestLayoutState = ();
     type PrepaintState = Bounds<Pixels>;

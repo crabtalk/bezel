@@ -23,13 +23,6 @@ impl TiledImage {
     }
 }
 
-impl IntoElement for TiledImage {
-    type Element = Self;
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
 impl Element for TiledImage {
     type RequestLayoutState = (AnyElement, LayoutId);
     type PrepaintState = Size<Pixels>;

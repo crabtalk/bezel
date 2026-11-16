@@ -6,7 +6,6 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-homepage.workspace = true
 readme.workspace = true
 keywords.workspace = true
 categories.workspace = true
@@ -34,4 +33,5 @@ windows-sys = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
+gpui = { workspace = true, features = ["test-support"] }
 serde_json.workspace = true

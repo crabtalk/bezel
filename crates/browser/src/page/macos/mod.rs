@@ -1,33 +1,48 @@
-use super::{Edit, Report};
-use gpui::{App, RenderImage, Window};
+use crate::page::{Edit, Report};
+use gpui::{App, RenderImage, Window, native_view::NativeViewState};
 use std::{
     cell::{Cell, OnceCell},
+    rc::Rc,
     sync::Arc,
 };
 use wry::WebViewExtMacOS;
 
 mod cursor;
+mod input;
+mod presentation;
 mod press;
 
 pub(super) const BINDS_EDITS: bool = true;
 
-pub(super) struct State {
+pub(crate) struct State {
     cursor: OnceCell<cursor::Watch>,
     press: OnceCell<Option<press::Monitor>>,
+    root: Rc<input::GuiRoot>,
 }
 
 impl State {
-    pub(super) fn new(_cx: &App) -> Self {
+    pub(super) fn new(
+        _cx: &App,
+        input: Rc<NativeViewState>,
+        _reports: async_channel::Sender<Report>,
+    ) -> Self {
         Self {
             cursor: OnceCell::new(),
             press: OnceCell::new(),
+            root: Rc::new(input::GuiRoot::new(input)),
         }
     }
 
     pub(super) fn attach(&self, view: &wry::WebView, reports: &async_channel::Sender<Report>) {
         let page = view.webview();
+        page.setAutoresizingMask(objc2_app_kit::NSAutoresizingMaskOptions::ViewNotSizable);
+        page.removeFromSuperview();
         let _ = self.cursor.set(cursor::Watch::new(&page));
-        let _ = self.press.set(press::Monitor::new(&page, reports.clone()));
+        let _ = self.press.set(press::Monitor::new(
+            &page,
+            self.root.clone(),
+            reports.clone(),
+        ));
     }
 
     pub(super) fn parked(&self) {
@@ -42,15 +57,15 @@ impl State {
         holds(&view.webview())
     }
 
-    pub(super) fn take_keys(&self, view: &wry::WebView) {
-        let _ = view.focus();
+    pub(super) fn take_keys(&self, _view: &wry::WebView) {
+        self.root.input.request_focus(
+            true,
+            self.root.window.get().map(|window| window.window_id()),
+        );
     }
 
-    /// Makes the page's superview, gpui's view in the window the page is in
-    /// now, first responder. wry's `focus_parent` picks the view the page was
-    /// built in.
     pub(super) fn give_keys(&self, view: &wry::WebView) {
-        release(&view.webview());
+        self.root.release(&view.webview());
     }
 }
 
@@ -88,13 +103,6 @@ pub(super) fn reparent(view: &wry::WebView, window: &Window) -> bool {
     // Taken out of its old superview first.
     parent.addSubview(&view.webview());
     true
-}
-
-fn release(page: &objc2_app_kit::NSView) {
-    // SAFETY: called on the main thread.
-    if let (Some(window), Some(parent)) = (page.window(), unsafe { page.superview() }) {
-        window.makeFirstResponder(Some(&parent));
-    }
 }
 
 /// Whether the page, or a view inside it, is its window's first responder.
@@ -338,4 +346,27 @@ pub(super) fn store_usage(
         );
         data.fetchDataRecordsOfTypes_completionHandler(&types, &handler);
     }
+}
+
+pub(super) fn navigate(
+    view: &wry::WebView,
+    url: &str,
+    read_access: Option<&std::path::Path>,
+) -> anyhow::Result<()> {
+    if let Some(directory) = read_access.filter(|_| url.starts_with("file:")) {
+        use objc2_foundation::{NSString, NSURL};
+        let url = NSURL::URLWithString(&NSString::from_str(url))
+            .ok_or_else(|| anyhow::anyhow!("invalid file URL"))?;
+        let root = NSURL::fileURLWithPath_isDirectory(
+            &NSString::from_str(&directory.to_string_lossy()),
+            true,
+        );
+        unsafe {
+            view.webview()
+                .loadFileURL_allowingReadAccessToURL(&url, &root);
+        }
+    } else {
+        view.load_url(url)?;
+    }
+    Ok(())
 }

@@ -28,7 +28,10 @@
 //! Whichever it does, what is printed follows — that is what the rest of this
 //! module is for.
 
-use gpui::{Action, KeyContext, KeybindingKeystroke, Keystroke, Modifiers, SharedString, Window};
+use gpui::{
+    Action, App, KeyContext, KeybindingKeystroke, Keystroke, Modifiers, OperatingSystem,
+    SharedString, Window,
+};
 
 /// The chord bound to `action` for whatever holds focus right now, formatted
 /// for the platform.
@@ -37,9 +40,9 @@ use gpui::{Action, KeyContext, KeybindingKeystroke, Keystroke, Modifiers, Shared
 /// belongs to — a formatting bar above a focused editor, a button in the panel
 /// it acts on. `None` when nothing is bound, or when what is focused is out of
 /// the binding's context.
-pub fn shortcut(action: &dyn Action, window: &Window) -> Option<SharedString> {
+pub fn shortcut(action: &dyn Action, window: &Window, cx: &App) -> Option<SharedString> {
     let binding = window.highest_precedence_binding_for_action(action)?;
-    Some(format(binding.keystrokes()))
+    Some(format(binding.keystrokes(), cx))
 }
 
 /// The chord bound to `action` in a named key context, whatever holds focus.
@@ -48,13 +51,18 @@ pub fn shortcut(action: &dyn Action, window: &Window) -> Option<SharedString> {
 /// that is not focused — a menu row printing the editor's `⌘B` while the menu
 /// itself holds focus. The context is the one the binding was scoped to:
 /// [`crate::input::KEY_CONTEXT`], `editor::CONTEXT`, and so on.
-pub fn shortcut_in(action: &dyn Action, context: &str, window: &Window) -> Option<SharedString> {
+pub fn shortcut_in(
+    action: &dyn Action,
+    context: &str,
+    window: &Window,
+    cx: &App,
+) -> Option<SharedString> {
     // `new_with_defaults` rather than `default`, because it sets the `os` key
     // a binding is free to predicate on.
-    let mut key_context = KeyContext::new_with_defaults();
+    let mut key_context = KeyContext::new_with_defaults(cx.platform_info().os);
     key_context.add(context.to_owned());
     let binding = window.highest_precedence_binding_for_action_in_context(action, key_context)?;
-    Some(format(binding.keystrokes()))
+    Some(format(binding.keystrokes(), cx))
 }
 
 /// A chord nothing is bound to, written the way this platform writes it.
@@ -68,13 +76,13 @@ pub fn shortcut_in(action: &dyn Action, context: &str, window: &Window) -> Optio
 /// all name the platform key itself and print `⌘S` against `Win+S`. Whitespace
 /// separates the keystrokes of a sequence, and one that will not parse is
 /// dropped rather than printed wrong.
-pub fn printed(chord: &str) -> SharedString {
+pub fn printed(chord: &str, cx: &App) -> SharedString {
     let keystrokes = chord
         .split_whitespace()
-        .filter_map(|keystroke| Keystroke::parse(keystroke).ok())
+        .filter_map(|keystroke| Keystroke::parse_with_os(keystroke, cx.platform_info().os).ok())
         .map(KeybindingKeystroke::from_keystroke)
         .collect::<Vec<_>>();
-    format(&keystrokes)
+    format(&keystrokes, cx)
 }
 
 /// Format a binding's keystrokes the way the platform writes them.
@@ -88,46 +96,42 @@ pub fn printed(chord: &str) -> SharedString {
 /// Written here rather than taken from gpui's `Display` because that one
 /// orders `⌘` before `⇧` and leaves `enter`, `delete` and `space` spelled as
 /// words in among the glyphs.
-pub fn format(keystrokes: &[KeybindingKeystroke]) -> SharedString {
+pub fn format(keystrokes: &[KeybindingKeystroke], cx: &App) -> SharedString {
     let mut out = String::new();
     for keystroke in keystrokes {
         if !out.is_empty() {
             out.push(' ');
         }
-        modifiers(keystroke.modifiers(), &mut out);
-        out.push_str(&key(keystroke.key()));
+        modifiers(keystroke.modifiers(), &mut out, cx.platform_info().os);
+        out.push_str(&key(keystroke.key(), cx.platform_info().os));
     }
     SharedString::from(out)
 }
 
-#[cfg(target_os = "macos")]
-fn modifiers(modifiers: &Modifiers, out: &mut String) {
-    // Apple's order, which is not the order the struct declares them in.
-    if modifiers.function {
-        out.push_str("fn");
-    }
-    if modifiers.control {
-        out.push('⌃');
-    }
-    if modifiers.alt {
-        out.push('⌥');
-    }
-    if modifiers.shift {
-        out.push('⇧');
+fn modifiers(modifiers: &Modifiers, out: &mut String, os: OperatingSystem) {
+    if os == OperatingSystem::Mac {
+        if modifiers.function {
+            out.push_str("fn");
+        }
+        if modifiers.control {
+            out.push('⌃');
+        }
+        if modifiers.alt {
+            out.push('⌥');
+        }
+        if modifiers.shift {
+            out.push('⇧');
+        }
+        if modifiers.platform {
+            out.push('⌘');
+        }
+        return;
     }
     if modifiers.platform {
-        out.push('⌘');
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn modifiers(modifiers: &Modifiers, out: &mut String) {
-    // The platform key leads here, where on macOS it trails: Windows prints
-    // its own chords `Win+Shift+S` and `Win+Ctrl+Shift+B`, and GNOME writes
-    // `Super+` first for the same reason. Apple's `⌘` last is Apple's order,
-    // and copying it here is how this printed a chord nobody else writes.
-    if modifiers.platform {
-        out.push_str(PLATFORM_MODIFIER);
+        out.push_str(match os {
+            OperatingSystem::Windows => "Win+",
+            _ => "Super+",
+        });
     }
     if modifiers.control {
         out.push_str("Ctrl+");
@@ -140,48 +144,28 @@ fn modifiers(modifiers: &Modifiers, out: &mut String) {
     }
 }
 
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
-const PLATFORM_MODIFIER: &str = "Super+";
-#[cfg(target_os = "windows")]
-const PLATFORM_MODIFIER: &str = "Win+";
-#[cfg(not(any(
-    target_os = "macos",
-    target_os = "linux",
-    target_os = "freebsd",
-    target_os = "windows"
-)))]
-const PLATFORM_MODIFIER: &str = "Super+";
-
-/// The key itself. macOS spells most of the named keys as glyphs; everywhere
-/// else they stay words, title-cased so they sit beside `Ctrl+` as one label.
-#[cfg(target_os = "macos")]
-fn key(key: &str) -> String {
-    let glyph = match key {
-        "backspace" => "⌫",
-        "delete" => "⌦",
-        "enter" => "↩",
-        "tab" => "⇥",
-        "escape" => "⎋",
-        "up" => "↑",
-        "down" => "↓",
-        "left" => "←",
-        "right" => "→",
-        "pageup" => "⇞",
-        "pagedown" => "⇟",
-        "home" => "↖",
-        "end" => "↘",
-        "space" => "Space",
-        // A single character is the character, upper case — `cmd-b` prints
-        // `⌘B`. Anything longer is a name (`f1`, `capslock`) and is title-cased
-        // with the rest of the words.
-        key if key.chars().count() == 1 => return key.to_uppercase(),
-        key => return title_case(key),
-    };
-    glyph.to_owned()
-}
-
-#[cfg(not(target_os = "macos"))]
-fn key(key: &str) -> String {
+fn key(key: &str, os: OperatingSystem) -> String {
+    if os == OperatingSystem::Mac {
+        let glyph = match key {
+            "backspace" => "⌫",
+            "delete" => "⌦",
+            "enter" => "↩",
+            "tab" => "⇥",
+            "escape" => "⎋",
+            "up" => "↑",
+            "down" => "↓",
+            "left" => "←",
+            "right" => "→",
+            "pageup" => "⇞",
+            "pagedown" => "⇟",
+            "home" => "↖",
+            "end" => "↘",
+            "space" => "Space",
+            key if key.chars().count() == 1 => return key.to_uppercase(),
+            key => return title_case(key),
+        };
+        return glyph.to_owned();
+    }
     match key {
         key if key.chars().count() == 1 => key.to_uppercase(),
         key => title_case(key),

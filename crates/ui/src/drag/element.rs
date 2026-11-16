@@ -175,15 +175,6 @@ struct RegionElement<R, I> {
     child: AnyElement,
 }
 
-impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> IntoElement
-    for RegionElement<R, I>
-{
-    type Element = Self;
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
 impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> Element
     for RegionElement<R, I>
 {
@@ -292,13 +283,6 @@ impl<R, I> Handle<R, I> {
             item,
             child: Some(child),
         }
-    }
-}
-
-impl<R: Clone + PartialEq + 'static, I: Clone + PartialEq + 'static> IntoElement for Handle<R, I> {
-    type Element = Self;
-    fn into_element(self) -> Self {
-        self
     }
 }
 

@@ -1,23 +1,57 @@
-use crate::{ConsoleMessage, DataStore, LoadState, host::Surface};
-use gpui::{AnyWindowHandle, App, Bounds, FocusHandle, Keystroke, Pixels, RenderImage, Window};
+use crate::{ConsoleMessage, DataStore, LoadState, Presentation, host::Surface};
+use gpui::{
+    AnyWindowHandle, App, Bounds, FocusHandle, Hitbox, Keystroke, Pixels, RenderImage, Window,
+    native_view::NativeViewState,
+};
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
     sync::Arc,
 };
 
-#[cfg_attr(target_os = "macos", path = "page/macos.rs")]
-#[cfg_attr(target_os = "windows", path = "page/windows.rs")]
-#[cfg_attr(
-    not(any(target_os = "macos", target_os = "windows")),
-    path = "page/stub.rs"
-)]
-mod platform;
+#[cfg_attr(target_os = "macos", path = "macos/mod.rs")]
+#[cfg_attr(target_os = "windows", path = "windows/mod.rs")]
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), path = "stub.rs")]
+pub(crate) mod platform;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+mod script;
+
+pub(crate) type SnapshotDone = Box<dyn FnOnce(Result<Arc<RenderImage>, String>) + Send>;
+
+pub(crate) trait Present {
+    fn available(&self, window: &Window) -> bool {
+        window.native_surfaces.views
+    }
+    const COMPOSITED: bool = false;
+    fn paint(
+        &self,
+        _page: &Rc<Page>,
+        _bounds: Bounds<Pixels>,
+        _hitbox: &Hitbox,
+        _owner: u64,
+        _window: &mut Window,
+        _cx: &mut App,
+    ) {
+    }
+}
 
 /// Sent from the page's callbacks to the view.
 #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
 pub(crate) enum Report {
     Pressed,
+    #[cfg(target_os = "windows")]
+    Frame,
+    #[cfg(target_os = "windows")]
+    Windows {
+        epoch: u64,
+        report: Box<Report>,
+    },
+    #[cfg(target_os = "windows")]
+    Failed(String),
+    #[cfg(target_os = "macos")]
+    Released(u64),
+    #[cfg(target_os = "macos")]
+    Presented(AnyWindowHandle),
     /// A key the page took that the keymap binds.
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     Key(Keystroke),
@@ -28,10 +62,39 @@ pub(crate) enum Report {
     /// The page asked for a window of its own, for this URL.
     Opened(String),
     Console(ConsoleMessage),
+    Evaluated {
+        id: u64,
+        answer: Result<String, String>,
+    },
     /// A still of the page, taken for a cover; `None` if the capture failed.
+    #[cfg(target_os = "macos")]
     Still(Option<Arc<RenderImage>>),
     /// The page was built, or failed to be, after the paint that asked for it.
     Built,
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    Unavailable,
+}
+
+impl Report {
+    #[cfg(any(target_os = "macos", target_os = "windows", test))]
+    pub(crate) fn evaluated(body: &str) -> Option<Self> {
+        #[derive(serde::Deserialize)]
+        struct Evaluation {
+            evaluation: u64,
+            value: Option<String>,
+            error: Option<String>,
+        }
+        let evaluation: Evaluation = serde_json::from_str(body).ok()?;
+        let answer = match (evaluation.value, evaluation.error) {
+            (Some(value), None) => Ok(value),
+            (None, Some(error)) => Err(error),
+            _ => return None,
+        };
+        Some(Self::Evaluated {
+            id: evaluation.evaluation,
+            answer,
+        })
+    }
 }
 
 /// Whether something is painted over the page.
@@ -60,23 +123,26 @@ pub(crate) enum Edit {
 pub(crate) struct Page {
     /// What the page is built with; unread once it is built.
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
-    url: RefCell<String>,
+    pub(crate) url: RefCell<String>,
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) user_agent: RefCell<Option<String>>,
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) store: RefCell<DataStore>,
+    pub(crate) read_access: RefCell<Option<std::path::PathBuf>>,
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) console: Cell<bool>,
     #[cfg(feature = "inspector")]
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) inspector: Cell<bool>,
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     view: std::cell::OnceCell<Option<wry::WebView>>,
     /// A build is on its way; see [`Page::request`].
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     building: Cell<bool>,
     /// Where the page last sat; `None` before the first paint and while parked.
-    placed: Cell<Option<Bounds<Pixels>>>,
+    pub(crate) placed: Cell<Option<Bounds<Pixels>>>,
+    pub(crate) presentation: Cell<Option<Presentation>>,
+    pub(crate) input: Rc<NativeViewState>,
     /// The window the page is in; `None` before the first paint.
     window: Cell<Option<AnyWindowHandle>>,
     owner: Cell<u64>,
@@ -87,12 +153,13 @@ pub(crate) struct Page {
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     reports: async_channel::Sender<Report>,
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
-    platform: platform::State,
+    pub(crate) platform: platform::State,
 }
 
 impl Page {
     /// Whether the view binds the edit keys to [`Edit`]s.
     pub(crate) const BINDS_EDITS: bool = platform::BINDS_EDITS;
+    pub(crate) const COMPOSITED: bool = <platform::State as Present>::COMPOSITED;
 
     pub(crate) fn new(
         url: String,
@@ -100,32 +167,56 @@ impl Page {
         reports: async_channel::Sender<Report>,
         cx: &App,
     ) -> Self {
+        let input = Rc::new(NativeViewState::default());
+        input.enabled.set(true);
         Self {
             url: RefCell::new(url),
             user_agent: RefCell::new(None),
             store: RefCell::new(DataStore::default()),
+            read_access: RefCell::new(None),
             console: Cell::new(false),
             #[cfg(feature = "inspector")]
             inspector: Cell::new(false),
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            #[cfg(target_os = "macos")]
             view: std::cell::OnceCell::new(),
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            #[cfg(target_os = "macos")]
             building: Cell::new(false),
             placed: Cell::new(None),
+            presentation: Cell::new(None),
+            input: input.clone(),
             window: Cell::new(None),
             owner: Cell::new(0),
             cover: RefCell::new(Cover::Off),
             dropped: RefCell::new(None),
             focus,
+            platform: platform::State::new(cx, input, reports.clone()),
             reports,
-            platform: platform::State::new(cx),
         }
     }
 }
 
 impl Surface for Page {
+    const COMPOSITED: bool = Page::COMPOSITED;
+
+    fn accepts_input(&self) -> bool {
+        self.presentation
+            .get()
+            .is_none_or(|presentation| presentation.interactive)
+    }
+
+    fn paint(
+        this: &Rc<Self>,
+        bounds: Bounds<Pixels>,
+        hitbox: &Hitbox,
+        owner: u64,
+        window: &mut Window,
+        cx: &mut App,
+    ) {
+        this.platform.paint(this, bounds, hitbox, owner, window, cx);
+    }
+
     fn focus(&self) -> Option<&FocusHandle> {
-        Some(&self.focus)
+        self.accepts_input().then_some(&self.focus)
     }
 
     fn owner(&self) -> &Cell<u64> {
@@ -166,6 +257,7 @@ impl Surface for Page {
 
 impl Page {
     /// Parks the page for the still if it is still covered.
+    #[cfg(target_os = "macos")]
     pub(crate) fn captured(&self, still: Option<Arc<RenderImage>>) {
         if matches!(*self.cover.borrow(), Cover::Capturing) {
             Page::park(self);
@@ -178,7 +270,7 @@ impl Page {
         self.window.get()
     }
 
-    /// Run before the page is placed.
+    #[cfg(not(target_os = "windows"))]
     fn uncover(&self) {
         if let Cover::On(still) = self.cover.replace(Cover::Off) {
             *self.dropped.borrow_mut() = still;
@@ -186,60 +278,16 @@ impl Page {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 impl Page {
     /// Where a parked page waits. Hidden alone, a WKWebView stays registered as
     /// a drag destination over its last rect and takes every drag that crosses
     /// it.
     const PARKED: f64 = -20_000.0;
 
-    /// Run in the main frame, where wry defines `window.ipc`.
-    const MOVED: &str = "(() => {
-        const moved = () => window.ipc.postMessage('moved');
-        for (const name of ['pushState', 'replaceState']) {
-            const original = history[name];
-            history[name] = function (...args) {
-                const result = original.apply(this, args);
-                moved();
-                return result;
-            };
-        }
-        addEventListener('popstate', moved);
-        addEventListener('hashchange', moved);
-    })();";
-
-    /// Run in every frame. wry defines `window.ipc` in the main frame only on
-    /// macOS, so this posts to the handler behind it. Each message is
-    /// `{level, text}` as JSON.
-    // TODO: whether `chrome.webview` exists in a WebView2 iframe is unchecked.
-    const CONSOLE: &str = "(() => {
-        const handler = window.webkit?.messageHandlers?.ipc ?? window.chrome?.webview;
-        if (!handler) return;
-        const text = (value) => {
-            if (typeof value === 'string') return value;
-            if (value instanceof Error) return value.stack || String(value);
-            try {
-                return JSON.stringify(value) ?? String(value);
-            } catch {
-                return String(value);
-            }
-        };
-        const send = (level, values) => {
-            try {
-                handler.postMessage(JSON.stringify({ level, text: values.map(text).join(' ') }));
-            } catch {}
-        };
-        for (const level of ['debug', 'log', 'info', 'warn', 'error']) {
-            const original = console[level];
-            console[level] = function (...values) {
-                send(level, values);
-                return original.apply(this, values);
-            };
-        }
-        addEventListener('error', (event) => send('error', [event.error ?? event.message]));
-        addEventListener('unhandledrejection', (event) =>
-            send('error', ['Uncaught (in promise)', event.reason]));
-    })();";
+    pub(crate) fn ready(&self) -> bool {
+        self.view.get().is_some_and(Option::is_some)
+    }
 
     fn place(this: &Rc<Self>, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         this.uncover();
@@ -272,9 +320,6 @@ impl Page {
     /// Builds the page in a task of its own, between gpui updates, and reports
     /// [`Report::Built`] when it lands. The page is built hidden and shown by
     /// the next [`Page::place`].
-    ///
-    /// On Windows wry starts WebView2 by pumping the thread's messages, and a
-    /// message that enters gpui while the `App` is borrowed aborts the process.
     fn request(this: &Rc<Self>, bounds: Bounds<Pixels>, window: &mut Window, cx: &mut App) {
         if this.building.replace(true) {
             return;
@@ -314,15 +359,23 @@ impl Page {
             };
             let builder = builder
                 .with_incognito(store.incognito)
-                .with_url(url.as_str())
+                .with_url(
+                    if self.read_access.borrow().is_some() && url.starts_with("file:") {
+                        "about:blank"
+                    } else {
+                        url.as_str()
+                    },
+                )
                 .with_bounds(rect(bounds))
                 .with_visible(false)
-                .with_initialization_script(Self::MOVED)
+                .with_initialization_script(script::MOVED)
                 .with_ipc_handler(move |request| {
                     let report = match request.body().as_str() {
                         "moved" => Report::Moved,
-                        body => match logged(body, request.uri().to_string()) {
-                            Some(message) => Report::Console(message),
+                        body => match Report::evaluated(body).or_else(|| {
+                            logged(body, request.uri().to_string()).map(Report::Console)
+                        }) {
+                            Some(report) => report,
                             None => return,
                         },
                     };
@@ -352,7 +405,7 @@ impl Page {
                 None => builder,
             };
             let builder = if self.console.get() {
-                builder.with_initialization_script_for_main_only(Self::CONSOLE, false)
+                builder.with_initialization_script_for_main_only(script::CONSOLE, false)
             } else {
                 builder
             };
@@ -365,11 +418,28 @@ impl Page {
                 .ok()
         })?;
         self.platform.attach(&view, &self.reports);
+        if self.read_access.borrow().is_some()
+            && url.starts_with("file:")
+            && let Err(error) =
+                platform::navigate(&view, &url, self.read_access.borrow().as_deref())
+        {
+            tracing::warn!(%error, "load local page");
+        }
         Some(view)
     }
 
     fn built(&self) -> Option<&wry::WebView> {
         self.view.get()?.as_ref()
+    }
+
+    pub(crate) fn snapshot(&self, done: SnapshotDone) {
+        let Some(view) = self.built() else {
+            done(Err("page has not rendered".into()));
+            return;
+        };
+        platform::capture(view, move |image| {
+            done(image.ok_or_else(|| "WebKit snapshot unavailable".into()))
+        });
     }
 
     /// Whether a still was asked for; it arrives as [`Report::Still`].
@@ -429,7 +499,7 @@ impl Page {
     pub(crate) fn load(&self, url: String) {
         match self.built() {
             Some(view) => {
-                let _ = view.load_url(&url);
+                let _ = platform::navigate(view, &url, self.read_access.borrow().as_deref());
             }
             None => *self.url.borrow_mut() = url,
         }
@@ -468,7 +538,7 @@ impl Page {
         let Some(view) = self.built() else {
             return;
         };
-        if self.placed.get().is_some() && !platform::closed(view) {
+        if Self::COMPOSITED || (self.placed.get().is_some() && !platform::closed(view)) {
             self.platform.take_keys(view);
         }
     }
@@ -476,7 +546,7 @@ impl Page {
     /// Hands keyboard focus back to gpui's view if the page holds it.
     pub(crate) fn give_keys(&self) {
         if let Some(view) = self.built()
-            && self.holds_keys()
+            && (Self::COMPOSITED || self.holds_keys())
         {
             self.platform.give_keys(view);
         }
@@ -489,6 +559,11 @@ impl Page {
         let Some(bounds) = self.placed.take() else {
             return;
         };
+        if Self::COMPOSITED {
+            self.platform.parked();
+            let _ = view.set_visible(false);
+            return;
+        }
         self.give_keys();
         self.platform.parked();
         let _ = view.set_visible(false);
@@ -506,10 +581,10 @@ impl Page {
 
 /// The native window a page is built in, by its raw handle: the build runs
 /// while gpui's `Window` is not borrowed.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 struct Parent(raw_window_handle::RawWindowHandle);
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 impl Parent {
     fn of(window: &Window) -> Option<Self> {
         raw_window_handle::HasWindowHandle::window_handle(window)
@@ -518,7 +593,7 @@ impl Parent {
     }
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 impl raw_window_handle::HasWindowHandle for Parent {
     fn window_handle(
         &self,
@@ -531,7 +606,7 @@ impl raw_window_handle::HasWindowHandle for Parent {
     }
 }
 
-/// A console message the [`Page::CONSOLE`] script posted from `source`.
+/// A console message the [`script::CONSOLE`] script posted from `source`.
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn logged(body: &str, source: String) -> Option<ConsoleMessage> {
     #[derive(serde::Deserialize)]
@@ -558,7 +633,7 @@ fn logged(body: &str, source: String) -> Option<ConsoleMessage> {
 
 /// Runs `build` with the context for `directory`, or with none, which has wry
 /// make the page its own.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 fn with_context<T>(
     directory: Option<std::path::PathBuf>,
     build: impl FnOnce(Option<&mut wry::WebContext>) -> T,
@@ -572,7 +647,7 @@ fn with_context<T>(
 /// Runs `f` with the context for `directory`, `None` being the platform's
 /// default store. A context lives as long as the thread: pages built with it
 /// hold on to it.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 fn shared_context<T>(
     directory: Option<std::path::PathBuf>,
     f: impl FnOnce(&mut wry::WebContext) -> T,
@@ -604,7 +679,7 @@ pub(crate) fn store_usage(
     platform::store_usage(store, done);
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 fn rect(bounds: Bounds<Pixels>) -> wry::Rect {
     wry::Rect {
         position: wry::dpi::LogicalPosition::new(
@@ -643,3 +718,7 @@ mod tests {
         assert!(logged(r#"{"level":"trace","text":""}"#, String::new()).is_none());
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/evaluation.rs"]
+mod evaluation_tests;

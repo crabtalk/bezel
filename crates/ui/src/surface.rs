@@ -1,56 +1,147 @@
-//! [`crate::surface`] — the backdrop surface a floating card sits on: wraps a
-//! popover/dialog card so its ENTIRE subtree paints inside one scene layer (a
-//! single draw order).
-//!
-//! The single layer order is the point: with per-primitive bounds-tree
-//! ordering, a hover repaint elsewhere can reassign the card's quads relative
-//! to siblings — inside one layer the card's stacking is structural.
-//!
-//! The blur is painted first, structurally under the content: inside one layer
-//! the order is blur, then shadow, tint, border, rows, text. It needs
-//! `Window::paint_backdrop_blur` from our gpui fork, which the Metal and wgpu
-//! renderers carry and the DirectX one does not; see [`theme::LENSED`]. Where
-//! it is missing the card fills with [`theme::SurfaceSpec::flat`] instead.
-//!
-//! Material and glass are different things — a material has thickness, a glass
-//! has a variant — and they meet only at the numbers they resolve to, which is
-//! why one element paints both and [`theme::SurfaceStyle`] names which.
+//! Floating surfaces with platform-owned material treatment.
 
 use gpui::{
-    AbsoluteLength, AnyElement, App, Bounds, Corners, Element, GlobalElementId, InspectorElementId,
-    IntoElement, LayoutId, Pixels, Styled, Window, fill, px,
+    self, AbsoluteLength, AnyElement, App, Bounds, Corners, Div, Element, ElementId,
+    GlobalElementId, InspectorElementId, InteractiveElement, Interactivity, IntoElement, LayoutId,
+    ParentElement, Pixels, RenderOnce, StatefulInteractiveElement, StyleRefinement, Styled, Window,
+    native_material::{MaterialState, MaterialStyle},
 };
+use theme::{Appearance, SurfaceStyle, Theme};
 
-use theme::{SurfaceSpec, SurfaceStyle, Theme};
+/// Build a styled card inside its material's content appearance.
+pub fn of<E: Styled + IntoElement>(
+    id: impl Into<ElementId>,
+    style: SurfaceStyle,
+    build: impl FnOnce(&Theme, &mut Window, &mut App) -> E + 'static,
+) -> Surface {
+    Surface::styled(id.into(), Look::Shipped(style), build)
+}
 
-/// Paint an already-composed card as a surface, at the rounding the caller
-/// states — the shape the popover layers need, where the card arrives erased to
-/// an [`AnyElement`] and cannot be chained onto. The look comes off whichever
-/// theme paints it; a caller wanting its own hands one over through
-/// [`Surfaced::surface`].
-pub fn of(corner_radius: f32, style: SurfaceStyle, child: impl IntoElement) -> Surface {
-    Surface {
-        corners: uniform(corner_radius),
-        glass: Look::Shipped(style),
-        tint: None,
-        child: child.into_any_element(),
+/// Build a carried item using the theme's carried-surface style.
+pub fn carried<E: Styled + IntoElement>(
+    id: impl Into<ElementId>,
+    build: impl FnOnce(&Theme, &mut Window, &mut App) -> E + 'static,
+) -> Surface {
+    Surface::styled(id.into(), Look::Carried, build)
+}
+
+/// Build popover content at the caller's corner radius.
+pub fn popover<E: IntoElement>(
+    id: impl Into<ElementId>,
+    corner_radius: f32,
+    build: impl FnOnce(&Theme, &mut Window, &mut App) -> E + 'static,
+) -> Surface {
+    Surface::new(id.into(), Look::Popover, move |theme, window, cx| {
+        (
+            uniform(corner_radius),
+            build(theme, window, cx).into_any_element(),
+        )
+    })
+}
+
+/// Group related glass surfaces without merging their shapes.
+pub fn group<E: IntoElement>(
+    id: impl Into<ElementId>,
+    build: impl FnOnce(&Theme, &mut Window, &mut App) -> E + 'static,
+) -> Surface {
+    Surface::new(id.into(), Look::Group, move |theme, window, cx| {
+        (uniform(0.), build(theme, window, cx).into_any_element())
+    })
+}
+
+/// A selection material whose bounds may move independently of its foreground.
+pub fn selection(
+    id: impl Into<ElementId>,
+    child: impl IntoElement,
+    place: impl FnMut(Bounds<Pixels>, &mut Window, &mut App) -> Option<(Bounds<Pixels>, Pixels)>
+    + 'static,
+) -> Surface {
+    let child = child.into_any_element();
+    let mut surface = Surface::new(id.into(), Look::Selection, move |_, _, _| {
+        (uniform(0.), child)
+    });
+    surface.selection = Some(Box::new(place));
+    surface
+}
+
+/// A control whose selected background uses the platform material.
+#[derive(gpui::IntoElement)]
+pub struct Control {
+    inner: Div,
+    selected: bool,
+}
+
+impl Control {
+    pub fn new(inner: Div, selected: bool) -> Self {
+        Self { inner, selected }
+    }
+
+    pub fn id(mut self, id: impl Into<ElementId>) -> Self {
+        self.inner.interactivity().element_id = Some(id.into());
+        self
+    }
+
+    pub(crate) fn material(mut self, selected: bool) -> Self {
+        self.selected = selected;
+        self
     }
 }
 
-/// The same, on [`Theme::popover_surface`] — what the popover layers mount on, so an
-/// app moves every menu between frost and glass by moving one token.
-pub fn popover(corner_radius: f32, child: impl IntoElement) -> Surface {
-    Surface {
-        corners: uniform(corner_radius),
-        glass: Look::Popover,
-        tint: None,
-        child: child.into_any_element(),
+impl From<Div> for Control {
+    fn from(inner: Div) -> Self {
+        Self::new(inner, false)
     }
 }
 
-/// One radius on all four corners.
+impl Styled for Control {
+    fn style(&mut self) -> &mut StyleRefinement {
+        self.inner.style()
+    }
+}
+
+impl ParentElement for Control {
+    fn extend(&mut self, elements: impl IntoIterator<Item = AnyElement>) {
+        self.inner.extend(elements);
+    }
+}
+
+impl InteractiveElement for Control {
+    fn interactivity(&mut self) -> &mut Interactivity {
+        self.inner.interactivity()
+    }
+}
+
+impl StatefulInteractiveElement for Control {}
+
+impl RenderOnce for Control {
+    fn render(mut self, window: &mut Window, cx: &mut App) -> impl IntoElement {
+        if !self.selected || !window.native_surfaces.materials || !Theme::of(cx).glass {
+            return self.inner.into_any_element();
+        }
+        let id = Element::id(&self.inner).unwrap_or_else(|| "selection-material".into());
+        let corners = corners_of(&mut self.inner);
+        self.inner.style().background = None;
+        self.inner.style().box_shadow = Some(Vec::new());
+        selection(id, self.inner, move |bounds, window, _| {
+            let rem = window.rem_size();
+            let radius = [
+                corners.top_left,
+                corners.top_right,
+                corners.bottom_right,
+                corners.bottom_left,
+            ]
+            .into_iter()
+            .map(|radius| radius.to_pixels(rem))
+            .max()
+            .unwrap_or_default();
+            Some((bounds, radius))
+        })
+        .into_any_element()
+    }
+}
+
 fn uniform(radius: f32) -> Corners<AbsoluteLength> {
-    let radius = AbsoluteLength::from(px(radius));
+    let radius = AbsoluteLength::from(gpui::px(radius));
     Corners {
         top_left: radius,
         top_right: radius,
@@ -59,75 +150,8 @@ fn uniform(radius: f32) -> Corners<AbsoluteLength> {
     }
 }
 
-/// Where a [`Material`]'s numbers come from. The popover layers carry no theme
-/// of their own, so they name a look and it resolves against whichever theme
-/// paints them; a caller tuning its own glass hands the numbers over instead.
-#[derive(Clone, Copy)]
-enum Look {
-    /// Whatever [`Theme::popover_surface`] says — the popover layers' choice.
-    Popover,
-    Shipped(SurfaceStyle),
-    Tuned(Tokens),
-}
-
-impl Look {
-    fn tokens(self, theme: &Theme) -> Tokens {
-        match self {
-            Look::Popover => Tokens::of(theme, theme.popover_surface),
-            Look::Shipped(style) => Tokens::of(theme, style),
-            Look::Tuned(tokens) => tokens,
-        }
-    }
-}
-
-/// The glass numbers, read off the theme the way every other widget reads its
-/// colours. Not parameters: a caller who wants different glass hands over a
-/// different theme.
-#[derive(Clone, Copy)]
-struct Tokens {
-    spec: SurfaceSpec,
-    magnify: f32,
-    dispersion: f32,
-}
-
-impl Tokens {
-    fn of(theme: &Theme, style: SurfaceStyle) -> Self {
-        Self {
-            spec: style.spec(theme),
-            magnify: theme.glass_magnify,
-            dispersion: theme.glass_dispersion,
-        }
-    }
-}
-
-/// The backdrop surfaces, on any element carrying a corner radius.
-pub trait Surfaced: Styled + IntoElement + Sized {
-    /// Paint this card as `style`'s surface.
-    ///
-    /// Blur, bevel and tint all come off [`Theme`], and the shape off the
-    /// card's own rounding: the lens dies if any of the three is wrong.
-    ///
-    /// It clears the card's `bg`, since the lens paints the fill. Where the
-    /// lens cannot run — the DirectX renderer, or [`Theme::glass`] off — it paints
-    /// [`SurfaceSpec::flat`] instead, so the surface is never invisible.
-    fn surface(mut self, theme: &Theme, style: SurfaceStyle) -> Surface {
-        let corners = corners_of(&mut self);
-        // The lens paints the fill, so the card's own is dropped here rather
-        // than at the call site: painting both is what buries the lens, and a
-        // caller who has to remember that is a caller who will forget.
-        self.style().background = None;
-        Surface {
-            corners,
-            glass: Look::Tuned(Tokens::of(theme, style)),
-            tint: None,
-            child: self.into_any_element(),
-        }
-    }
-}
-
-/// The rounding an element already carries, as the blur needs it.
 fn corners_of(styled: &mut impl Styled) -> Corners<AbsoluteLength> {
-    let square = AbsoluteLength::from(px(0.0));
+    let square = AbsoluteLength::from(gpui::px(0.));
     let radii = &styled.style().corner_radii;
     Corners {
         top_left: radii.top_left.unwrap_or(square),
@@ -137,42 +161,107 @@ fn corners_of(styled: &mut impl Styled) -> Corners<AbsoluteLength> {
     }
 }
 
-impl<E: Styled + IntoElement> Surfaced for E {}
-
-pub struct Surface {
-    /// The glass's own tint, when the caller wants one. `None` is
-    /// [`Theme::glass_clear`]'s neutral lift.
-    tint: Option<gpui::Hsla>,
-    /// Held unresolved: a rem-rounded card only becomes pixels against the
-    /// window's rem size, which paint is the first place to have.
-    corners: Corners<AbsoluteLength>,
-    /// Which look to paint, and where its numbers come from.
-    glass: Look,
-    child: AnyElement,
+#[derive(Clone, Copy)]
+enum Look {
+    Popover,
+    Carried,
+    Shipped(SurfaceStyle),
+    Group,
+    Selection,
 }
 
-/// Whether [`Surfaced::surface`] will actually refract here, or fall back to
-/// [`SurfaceSpec::flat`]. Capability and choice both: the primitive is macOS
-/// Metal's and wgpu's, and components with glass off paint no lens.
+type Selection =
+    dyn FnMut(Bounds<Pixels>, &mut Window, &mut App) -> Option<(Bounds<Pixels>, Pixels)>;
+
+type Content = dyn FnOnce(&Theme, &mut Window, &mut App) -> (Corners<AbsoluteLength>, AnyElement);
+
+#[cfg(not(target_os = "macos"))]
+struct Optics {
+    spec: theme::SurfaceSpec,
+    magnify: f32,
+    dispersion: f32,
+}
+
+/// A keyed material host and its lazy content.
+pub struct Surface {
+    id: ElementId,
+    tint: Option<gpui::Hsla>,
+    corners: Corners<AbsoluteLength>,
+    look: Look,
+    build: Option<Box<Content>>,
+    child: Option<AnyElement>,
+    material: MaterialState,
+    selection: Option<Box<Selection>>,
+    #[cfg(not(target_os = "macos"))]
+    optics: Option<Optics>,
+}
+
+/// Whether material surfaces are enabled for this build and theme.
 pub fn lensed(theme: &Theme) -> bool {
     theme::LENSED && theme.glass
 }
 
 impl Surface {
-    /// Tint the glass — SwiftUI's `Glass.tint(_:)`, for a control important
-    /// enough to carry colour. Pass the colour at the coverage you want; it
-    /// stands in for [`Theme::glass_clear`]'s neutral lift rather than adding
-    /// to it, so a heavy alpha reads as paint and a light one as glass.
-    ///
-    /// A plain material's fill is still its caller's, and this does not
-    /// reach it.
+    fn styled<E: Styled + IntoElement>(
+        id: ElementId,
+        look: Look,
+        build: impl FnOnce(&Theme, &mut Window, &mut App) -> E + 'static,
+    ) -> Self {
+        Self::new(id, look, move |theme, window, cx| {
+            let mut child = build(theme, window, cx);
+            let corners = corners_of(&mut child);
+            child.style().background = None;
+            (corners, child.into_any_element())
+        })
+    }
+
+    fn new(
+        id: ElementId,
+        look: Look,
+        build: impl FnOnce(&Theme, &mut Window, &mut App) -> (Corners<AbsoluteLength>, AnyElement)
+        + 'static,
+    ) -> Self {
+        Self {
+            id,
+            tint: None,
+            corners: uniform(0.),
+            look,
+            build: Some(Box::new(build)),
+            child: None,
+            material: MaterialState::default(),
+            selection: None,
+            #[cfg(not(target_os = "macos"))]
+            optics: None,
+        }
+    }
+
+    /// Override optical parameters on renderer-backed platforms.
+    #[cfg(not(target_os = "macos"))]
+    pub fn optics(mut self, theme: &Theme, style: SurfaceStyle) -> Self {
+        self.optics = Some(Optics {
+            spec: style.spec(theme),
+            magnify: theme.glass_magnify,
+            dispersion: theme.glass_dispersion,
+        });
+        self
+    }
+
+    /// Tint the native glass, or the renderer's glass on other platforms.
     pub fn tint(mut self, color: gpui::Hsla) -> Self {
         self.tint = Some(color);
         self
     }
 
-    /// The card's rounding in pixels, which only a rem size resolves — clamped
-    /// to the box, since gpui reads a radius past half of it as a sharp corner.
+    fn appearance(&self, cx: &App) -> Appearance {
+        if !Theme::of(cx).glass {
+            return Theme::of(cx).appearance;
+        }
+        self.material
+            .appearance()
+            .map(Appearance::from_window)
+            .unwrap_or_else(|| Theme::of(cx).appearance)
+    }
+
     fn corners(&self, bounds: Bounds<Pixels>, rem: Pixels) -> Corners<Pixels> {
         Corners {
             top_left: self.corners.top_left.to_pixels(rem),
@@ -188,114 +277,182 @@ impl Element for Surface {
     type RequestLayoutState = ();
     type PrepaintState = ();
 
-    fn id(&self) -> Option<gpui::ElementId> {
-        None
+    fn id(&self) -> Option<ElementId> {
+        Some(self.id.clone())
     }
-
     fn source_location(&self) -> Option<&'static core::panic::Location<'static>> {
         None
     }
 
     fn request_layout(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
+        id: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, ()) {
-        (self.child.request_layout(window, cx), ())
+        let id = id.expect("surface identity");
+        self.material = window.with_element_state(id, |state: Option<MaterialState>, _| {
+            let state = state.unwrap_or_default();
+            (state.clone(), state)
+        });
+        Theme::with_appearance(self.appearance(cx), cx, |cx| {
+            let theme = Theme::of(cx).clone();
+            let (corners, child) =
+                self.build.take().expect("surface content already built")(&theme, window, cx);
+            self.corners = corners;
+            self.child = Some(child);
+            (self.child.as_mut().unwrap().request_layout(window, cx), ())
+        })
     }
 
     fn prepaint(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
+        _: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
-        _request_layout: &mut Self::RequestLayoutState,
+        _: &mut (),
         window: &mut Window,
         cx: &mut App,
     ) {
-        crate::cover::record(bounds, window, cx);
-        self.child.prepaint(window, cx);
+        if !matches!(self.look, Look::Group | Look::Selection) {
+            crate::cover::record(bounds, window, cx);
+        }
+        Theme::with_appearance(self.appearance(cx), cx, |cx| {
+            self.child.as_mut().unwrap().prepaint(window, cx)
+        });
     }
 
     fn paint(
         &mut self,
-        _id: Option<&GlobalElementId>,
-        _inspector_id: Option<&InspectorElementId>,
+        id: Option<&GlobalElementId>,
+        _: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
-        _request_layout: &mut Self::RequestLayoutState,
-        _prepaint: &mut Self::PrepaintState,
+        _: &mut (),
+        _: &mut (),
         window: &mut Window,
         cx: &mut App,
     ) {
-        let theme = Theme::of(cx);
-        let glass = self.glass.tokens(theme);
-        let corners = self.corners(bounds, window.rem_size());
-        // The backdrop-blur primitive is macOS Metal's and wgpu's alone. The
-        // surface's fill lives inside it, so anywhere it will not run the fill
-        // is painted here — the tone the look settles on, at full coverage.
-        // The tint on its own is a coverage over a blur: painted flat it left
-        // the text behind a composer legible through it (user report).
-        if !lensed(theme) {
-            let tint = self.tint.unwrap_or(glass.spec.tint);
-            window.paint_quad(
-                fill(bounds, glass.spec.flat(tint).unwrap_or(tint)).corner_radii(corners),
-            );
-        }
-        if theme.glass {
-            let extent = f32::from(bounds.size.width.min(bounds.size.height));
-            let effect = gpui::GlassEffect {
-                blur_radius: px(glass.spec.blur),
-                // A length, not a share of the box — but two rims cannot meet
-                // in the middle of a small one.
-                lens: px(glass.spec.rim.min(extent / 2.0)),
-                // A length, like the lens: the measured drag is one curve of
-                // distance from the rim, the same on a 96pt box and a 320pt
-                // one. Held under half the box, where two reaches would cross.
-                reach: px(glass.spec.reach.min(extent / 2.0)),
-                gain: glass.spec.gain,
-                saturation: glass.spec.saturation,
-                magnify: glass.magnify,
-                dispersion: glass.dispersion,
-                tint: self.tint.unwrap_or(glass.spec.tint),
-                edge: glass.spec.edge,
-                edge_width: px(glass.spec.edge_width),
-                edge_aa: px(glass.spec.edge_aa),
+        Theme::with_appearance(self.appearance(cx), cx, |cx| {
+            let theme = Theme::of(cx).clone();
+            let corners = self.corners(bounds, window.rem_size());
+            let style = match self.look {
+                Look::Popover => Some(theme.popover_surface),
+                Look::Carried => Some(theme.carried_surface),
+                Look::Shipped(style) => Some(style),
+                Look::Group | Look::Selection => None,
             };
-            window.paint_layer(bounds, |window| {
-                window.paint_backdrop_blur(bounds, corners, effect);
-                // After the blur, never before: the blur samples what is
-                // beneath it, so a shadow painted first is one the surface
-                // shows through itself. Cut to outside the shape, so it lands
-                // on the page and nowhere else.
-                if glass.spec.shadow {
-                    window.paint_drop_shadows_outside(bounds, corners, &theme::surface_shadows());
+            if matches!(self.look, Look::Selection) {
+                let placed = self.selection.as_mut().unwrap()(bounds, window, cx);
+                if window.native_surfaces.materials
+                    && theme.glass
+                    && let Some((placed, radius)) = placed
+                {
+                    let material = MaterialStyle::Glass {
+                        clear: false,
+                        tint: self.tint,
+                        corner_radius: radius,
+                        interactive: true,
+                    };
+                    window.with_content_mask(Some(gpui::ContentMask::new(bounds)), |window| {
+                        window
+                            .paint_native_material(
+                                id.expect("surface identity"),
+                                &self.material,
+                                material,
+                                placed,
+                                |window| self.child.as_mut().unwrap().paint(window, cx),
+                            )
+                            .expect("native material capability changed during paint");
+                    });
+                    return;
                 }
-                self.child.paint(window, cx);
-            });
-        } else {
-            self.child.paint(window, cx);
-        }
+                self.child.as_mut().unwrap().paint(window, cx);
+                return;
+            }
+            if window.native_surfaces.materials && theme.glass {
+                let radius = corners
+                    .top_left
+                    .max(corners.top_right)
+                    .max(corners.bottom_right)
+                    .max(corners.bottom_left);
+                let material = match style {
+                    Some(SurfaceStyle::Glass(glass)) => MaterialStyle::Glass {
+                        clear: glass == theme::Glass::Clear,
+                        tint: self.tint,
+                        corner_radius: radius,
+                        interactive: false,
+                    },
+                    Some(SurfaceStyle::Material(_)) => MaterialStyle::Popover {
+                        corner_radius: radius,
+                    },
+                    None => MaterialStyle::Group {
+                        spacing: gpui::px(0.),
+                    },
+                };
+                window
+                    .paint_native_material(
+                        id.expect("surface identity"),
+                        &self.material,
+                        material,
+                        bounds,
+                        |window| self.child.as_mut().unwrap().paint(window, cx),
+                    )
+                    .expect("native material capability changed during paint");
+                return;
+            }
+            let Some(style) = style else {
+                self.child.as_mut().unwrap().paint(window, cx);
+                return;
+            };
+            let spec = style.spec(&theme);
+            #[cfg(not(target_os = "macos"))]
+            let spec = self.optics.as_ref().map_or(spec, |optics| optics.spec);
+            let tint = self.tint.unwrap_or(spec.tint);
+            #[cfg(not(target_os = "macos"))]
+            if lensed(&theme) {
+                let extent = f32::from(bounds.size.width.min(bounds.size.height));
+                let effect = gpui::GlassEffect {
+                    blur_radius: gpui::px(spec.blur),
+                    lens: gpui::px(spec.rim.min(extent / 2.)),
+                    reach: gpui::px(spec.reach.min(extent / 2.)),
+                    gain: spec.gain,
+                    saturation: spec.saturation,
+                    magnify: self
+                        .optics
+                        .as_ref()
+                        .map_or(theme.glass_magnify, |optics| optics.magnify),
+                    dispersion: self
+                        .optics
+                        .as_ref()
+                        .map_or(theme.glass_dispersion, |optics| optics.dispersion),
+                    tint,
+                    edge: spec.edge,
+                    edge_width: gpui::px(spec.edge_width),
+                    edge_aa: gpui::px(spec.edge_aa),
+                };
+                window.paint_layer(|window| {
+                    window.paint_backdrop_blur(bounds, corners, effect);
+                    if spec.shadow {
+                        window.paint_drop_shadows_outside(
+                            bounds,
+                            corners,
+                            &theme::surface_shadows(),
+                        );
+                    }
+                    self.child.as_mut().unwrap().paint(window, cx);
+                });
+                return;
+            }
+            window.paint_quad(
+                gpui::fill(bounds, spec.flat(tint).unwrap_or(tint)).corner_radii(corners),
+            );
+            self.child.as_mut().unwrap().paint(window, cx);
+        });
     }
 }
 
-impl IntoElement for Surface {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
-    }
-}
-
-/// Paint `child` in its own scene layer, giving it a fresh draw order above
-/// everything painted so far in the enclosing layer.
-///
-/// Needed for overlays INSIDE a material card: the card's single layer means
-/// every primitive shares one draw order, and equal orders render grouped by
-/// primitive kind (quads, then icons, then images) — so a close button's
-/// circle painted "after" a thumbnail still shows up UNDER the image. A
-/// nested layer restores the intended stacking.
+/// Paint `child` in its own scene layer above preceding GPU primitives.
 pub fn layered(child: impl IntoElement) -> Layered {
     Layered {
         child: child.into_any_element(),
@@ -344,20 +501,12 @@ impl Element for Layered {
         &mut self,
         _id: Option<&GlobalElementId>,
         _inspector_id: Option<&InspectorElementId>,
-        bounds: Bounds<Pixels>,
+        _bounds: Bounds<Pixels>,
         _request_layout: &mut Self::RequestLayoutState,
         _prepaint: &mut Self::PrepaintState,
         window: &mut Window,
         cx: &mut App,
     ) {
-        window.paint_layer(bounds, |window| self.child.paint(window, cx));
-    }
-}
-
-impl IntoElement for Layered {
-    type Element = Self;
-
-    fn into_element(self) -> Self::Element {
-        self
+        window.paint_layer(|window| self.child.paint(window, cx));
     }
 }

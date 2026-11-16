@@ -286,13 +286,6 @@ struct Covered {
     color: Hsla,
 }
 
-impl gpui::IntoElement for TerminalElement {
-    type Element = Self;
-    fn into_element(self) -> Self {
-        self
-    }
-}
-
 impl gpui::Element for TerminalElement {
     type RequestLayoutState = ();
     type PrepaintState = TerminalPrepaint;

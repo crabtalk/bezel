@@ -255,6 +255,7 @@ impl Editor {
             cx.read_from_clipboard().is_some(),
             [&Cut, &Copy, &Paste, &SelectAll],
             window,
+            cx,
         );
         self.text_menu.open(Dropped::new(items, position));
         cx.notify();

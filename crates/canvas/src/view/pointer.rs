@@ -281,7 +281,7 @@ impl CanvasView {
 
     pub(super) fn wheel(
         &mut self,
-        event: &ScrollWheelEvent,
+        event: &ScrollEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {

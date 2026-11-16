@@ -6,7 +6,6 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-homepage.workspace = true
 readme = "README.md"
 exclude = ["tests/"]
 keywords.workspace = true

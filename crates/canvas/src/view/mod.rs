@@ -30,8 +30,8 @@ use gpui::{
     AnyElement, App, Bounds, ClipboardItem, Context, CursorStyle, DispatchPhase, ElementId, Entity,
     EventEmitter, ExternalPaths, FocusHandle, Focusable, HitboxBehavior, Hsla, KeyContext,
     KeyDownEvent, KeyUpEvent, Modifiers, ModifiersChangedEvent, MouseButton, MouseDownEvent,
-    MouseMoveEvent, MouseUpEvent, PinchEvent, Pixels, Point, Render, ScrollWheelEvent,
-    Subscription, WeakEntity, Window, canvas as painter, div, point, prelude::*, px, size,
+    MouseMoveEvent, MouseUpEvent, PinchEvent, Pixels, Point, Render, ScrollEvent, Subscription,
+    WeakEntity, Window, canvas as painter, div, point, prelude::*, px, size,
 };
 use motion::{AppExt as _, LAYOUT};
 use std::{
@@ -66,7 +66,7 @@ pub mod keys;
 /// Install the canvas key bindings. Call after `editor::init`.
 pub fn init(cx: &mut App) {
     ui::input::init(cx);
-    cx.bind_keys(keys::bindings());
+    cx.bind_keys(keys::bindings(cx));
 }
 
 /// Canvas positions, by node id.
@@ -589,7 +589,7 @@ impl Render for CanvasView {
                     this.feed(position, cx);
                 }
             }))
-            .on_scroll_wheel(cx.listener(Self::wheel))
+            .on_scroll(cx.listener(Self::wheel))
             .on_pinch(cx.listener(Self::pinch))
             .child(edges)
             .children(labels)

@@ -6,21 +6,27 @@ prompt: Put the floating inspector on liquid glass with an accent tint, and keep
 
 ```rust
 use theme::{Glass, Material, SurfaceStyle, Theme};
-use ui::surface::{self, Surfaced as _};
+use ui::surface;
 
-div()
-    .rounded(px(Theme::surface_radius()))
-    .surface(&theme, SurfaceStyle::Material(Material::Regular))
+surface::of("card", SurfaceStyle::Material(Material::Regular), |theme, _, _| {
+    div()
+        .rounded(px(Theme::surface_radius()))
+        .text_color(theme.text)
+        .child("Inspector")
+})
 
-div()
-    .rounded(px(Theme::surface_radius()))
-    .child(thumbnail)
-    .child(surface::layered(close_button))
-    .surface(&theme, SurfaceStyle::Glass(Glass::Clear))
-    .tint(theme.accent.opacity(0.3))
+surface::of("preview", SurfaceStyle::Glass(Glass::Clear), move |_, _, _| {
+    div()
+        .rounded(px(Theme::surface_radius()))
+        .child(thumbnail)
+        .child(surface::layered(close_button))
+})
+.tint(Theme::of(cx).accent.opacity(0.3))
 ```
 
-- Round the element before `.surface`: the blur and the lens are cut to its own corner radius. `.surface` clears the element's `bg`.
-- A surface is one scene layer, where equal draw orders render grouped by primitive kind (quads, then icons, then images). Wrap an overlay in `surface::layered` to keep it on top.
-- The lens needs `Window::paint_backdrop_blur` from bezel's gpui fork (Metal and wgpu). Elsewhere, or with `theme.glass` off, the surface paints a flat tint. Gate glass-only code on `surface::lensed(&theme)`.
-- Menus, dialogs, sheets and tooltips mount on `theme.popover_surface`.
+- Give each surface a stable element id. Build its content inside the callback, using the supplied theme for foreground colors.
+- Round the styled content; the surface takes its corner radius and clears its background.
+- macOS uses Liquid Glass on macOS 26 and native popover materials on older systems. Each foreground lives in its material's content view. System appearance and accessibility settings control native effects.
+- Other platforms use their renderer's material capability, with an opaque fill where effects are unavailable. `Surface::optics` is available on renderer backends.
+- `surface::group` groups related glass surfaces without merging their shapes. `surface::layered` gives a GPU overlay a separate draw order.
+- Menus, dialogs, sheets and tooltips use `theme.popover_surface`.

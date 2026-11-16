@@ -6,7 +6,6 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
-homepage.workspace = true
 # Not the workspace README: an inherited `readme` resolves against the workspace
 # root, and this crate has one of its own.
 readme = "README.md"

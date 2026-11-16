@@ -1,43 +1,45 @@
 use crate::{
     DataStore,
     host::Host,
-    page::{Edit, Page, Report},
+    page::{Edit, Page, Present as _, Report},
 };
+use anyhow::{Result, ensure};
 use gpui::{
     Action, AnyWindowHandle, App, Context, EventEmitter, FocusHandle, Focusable, Global,
-    IntoElement, KeyBinding, Render, Subscription, Task, Window, actions, div, prelude::*,
+    IntoElement, KeyBinding, Render, RenderImage, Subscription, Task, Window, actions, div,
+    native_view::Viewport, prelude::*,
 };
 use serde::de::DeserializeOwned;
-use std::{fmt, rc::Rc, time::Duration};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    fmt,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
+use theme::{TextStyle, Typeset as _};
+static EVALUATION_ID: AtomicU64 = AtomicU64::new(1);
 
-/// A webview showing one page.
+type EvaluationReplies =
+    Rc<RefCell<HashMap<u64, async_channel::Sender<Result<String, EvalError>>>>>;
+
+/// A retained page, built after its first paint. Hiding it preserves document
+/// state; showing it in another window moves the same page there.
 ///
-/// The page is built after the first time the view is painted, in the window
-/// it is painted in, and shows from the paint after that; until then its place
-/// is empty. It moves to each other window the view is painted in. It sits
-/// at the element's bounds in every frame the element is painted and is parked
-/// in every frame it is not. A parked page stays loaded. A view painted in two
-/// windows in turn moves its page on every paint.
+/// On macOS, GPUI composes the native view with its clips, overlays and materials.
+/// [`Self::set_presentation`] fixes the logical viewport independently of the
+/// displayed rectangle and controls whether native page input is enabled.
+/// AppKit handles page input, including keyboard focus and pointer gestures.
 ///
-/// The page takes keys while the view's focus handle is focused, and a press
-/// in the page focuses the handle. On macOS, a press on gpui's view outside
-/// the page takes the keys back, whether or not the handle loses focus, and
-/// key equivalents (cmd or ctrl held) reach gpui's key dispatch before the
-/// page sees them. On Windows, a key with ctrl or alt held, or a function key,
-/// goes to gpui's key dispatch in place of the page when the keymap binds it
-/// in the view's key context.
-///
-/// gpui elements behind the page are not hovered, and gpui's cursor over the
-/// page is the arrow. On macOS the page sets the cursor over itself.
-///
-/// In a frame where a [`ui::cover`] recorded after the view overlaps it, the
-/// page is parked. On macOS a still of the page, taken while it is still up,
-/// is painted in its place; until the still arrives the page stays over the
-/// cover. Elsewhere the place is left empty.
-///
-/// Paints nothing off macOS and Windows.
+/// Windows composes live WebView2 Graphics Capture frames through shared D3D
+/// textures.
 pub struct WebView {
     page: Rc<Page>,
+    evaluations: EvaluationReplies,
     location: Option<String>,
     title: String,
     loading: bool,
@@ -47,6 +49,14 @@ pub struct WebView {
     focus_window: Option<AnyWindowHandle>,
     _focus: [Subscription; 2],
     _reports: Task<()>,
+    pub error: Option<String>,
+}
+
+/// Fixed logical page viewport and input ownership for a native canvas frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Presentation {
+    pub viewport: Viewport,
+    pub interactive: bool,
 }
 
 /// What the page reports about itself.
@@ -70,6 +80,8 @@ pub enum WebViewEvent {
     NewWindow(String),
     /// The page logged, with a page built [`WebView::with_console`].
     Console(ConsoleMessage),
+    /// The page backend or runtime failed.
+    Error(String),
 }
 
 /// One `console` call, uncaught error or unhandled rejection in the page.
@@ -111,6 +123,7 @@ pub enum EvalError {
     Script,
     /// The JSON does not decode as the asked type.
     Decode(serde_json::Error),
+    JavaScript(String),
 }
 
 impl fmt::Display for EvalError {
@@ -120,6 +133,7 @@ impl fmt::Display for EvalError {
             Self::Timeout => f.write_str("script timed out"),
             Self::Script => f.write_str("script threw or returned no JSON value"),
             Self::Decode(error) => write!(f, "script value: {error}"),
+            Self::JavaScript(error) => f.write_str(error),
         }
     }
 }
@@ -127,6 +141,15 @@ impl fmt::Display for EvalError {
 impl std::error::Error for EvalError {}
 
 impl WebView {
+    pub const HAS_INSPECTOR: bool = cfg!(all(
+        feature = "inspector",
+        any(target_os = "macos", target_os = "windows")
+    ));
+
+    pub fn can_evaluate(&self) -> bool {
+        self.error.is_none() && self.page.ready()
+    }
+
     pub fn new(url: impl Into<String>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         Page::start(window, cx);
         bind_edits(cx);
@@ -141,8 +164,11 @@ impl WebView {
                 }
             }
         });
+        let page = Rc::new(Page::new(url.into(), focus, reports, cx));
         Self {
-            page: Rc::new(Page::new(url.into(), focus, reports, cx)),
+            evaluations: Rc::default(),
+            page,
+            error: None,
             location: None,
             title: String::new(),
             loading: false,
@@ -153,6 +179,34 @@ impl WebView {
         }
     }
 
+    /// `None` restores a responsive viewport and page input.
+    pub fn set_presentation(
+        &mut self,
+        presentation: Option<Presentation>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<()> {
+        ensure!(
+            Page::COMPOSITED && self.page.platform.available(window),
+            "live browser composition is unavailable on this backend"
+        );
+        if self.page.presentation.replace(presentation) == presentation {
+            return Ok(());
+        }
+        self.page
+            .input
+            .enabled
+            .set(presentation.is_none_or(|presentation| presentation.interactive));
+        if presentation.is_some_and(|presentation| !presentation.interactive) {
+            self.page.give_keys();
+            if self.page.focus.is_focused(window) {
+                window.blur(cx);
+            }
+        }
+        cx.notify();
+        Ok(())
+    }
+
     /// Focus listeners are per window.
     fn listen(
         focus: &FocusHandle,
@@ -161,10 +215,18 @@ impl WebView {
     ) -> [Subscription; 2] {
         [
             cx.on_focus(focus, window, |this: &mut Self, window, _| {
-                this.page.watch_keys(window);
-                this.page.take_keys()
+                if this.page.window() == Some(window.window_handle()) {
+                    this.page.watch_keys(window);
+                    this.page.take_keys();
+                }
             }),
-            cx.on_blur(focus, window, |this: &mut Self, _, _| this.page.give_keys()),
+            cx.on_blur(focus, window, |this: &mut Self, window, _| {
+                if this.page.window() == Some(window.window_handle())
+                    && (!Page::COMPOSITED || !this.page.focus.is_focused(window))
+                {
+                    this.page.give_keys();
+                }
+            }),
         ]
     }
 
@@ -210,6 +272,13 @@ impl WebView {
         self
     }
 
+    /// Grants macOS file pages access to resources under `directory`.
+    /// Set before the page's first paint.
+    pub fn with_read_access(self, directory: impl Into<std::path::PathBuf>) -> Self {
+        *self.page.read_access.borrow_mut() = Some(directory.into());
+        self
+    }
+
     /// The store the page is built with, in place of the platform's default.
     /// Read at the first paint. A page keeps the store it was built with: a
     /// different store takes a new `WebView`.
@@ -237,6 +306,7 @@ impl WebView {
     /// Before the first paint, replaces the URL the page is built with.
     /// After it, navigates the page.
     pub fn load(&mut self, url: impl Into<String>) {
+        self.error = None;
         self.page.load(url.into());
     }
 
@@ -254,12 +324,43 @@ impl WebView {
         self.page.forward();
     }
 
+    /// Copies the current page viewport into an owned BGRA image.
+    /// Loading, failed and unrendered pages return an error.
+    pub fn snapshot(&self, cx: &App) -> Task<Result<Arc<RenderImage>, String>> {
+        if self.loading || self.error.is_some() {
+            return Task::ready(Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "page is still loading".into())));
+        }
+        let (answer, answered) = async_channel::bounded(1);
+        let timer = answer.clone();
+        self.page.snapshot(Box::new(move |image| {
+            let _ = answer.try_send(image);
+        }));
+        let expired = cx.background_executor().timer(Duration::from_secs(10));
+        cx.foreground_executor()
+            .spawn(async move {
+                expired.await;
+                let _ = timer.try_send(Err("page snapshot timed out".into()));
+            })
+            .detach();
+        cx.foreground_executor().spawn(async move {
+            answered
+                .recv()
+                .await
+                .unwrap_or_else(|_| Err("page closed during snapshot".into()))
+        })
+    }
+
     pub fn reload(&mut self) {
+        self.error = None;
         self.page.reload();
     }
 
     /// Reloads from the network, past the cache.
     pub fn reload_bypassing_cache(&mut self) {
+        self.error = None;
         self.page.reload_bypassing_cache();
     }
 
@@ -305,8 +406,75 @@ impl WebView {
         })
     }
 
+    /// Evaluates a main-frame expression and awaits its promise, if any.
+    /// The result must have a JSON representation. Timeout stops waiting;
+    /// it does not cancel JavaScript already running in the page.
+    pub fn eval_async<T: DeserializeOwned + 'static>(
+        &self,
+        script: &str,
+        timeout: Duration,
+        cx: &App,
+    ) -> Task<Result<T, EvalError>> {
+        let id = EVALUATION_ID.fetch_add(1, Ordering::Relaxed);
+        let (answer, answered) = async_channel::bounded(1);
+        self.evaluations.borrow_mut().insert(id, answer.clone());
+        let script = format!(
+            r#"void (async () => {{
+            const bridge = window.ipc ?? window.webkit?.messageHandlers?.ipc ?? window.chrome?.webview;
+            let reply;
+            try {{
+                const value = await (
+{script}
+);
+                const json = JSON.stringify(value ?? null);
+                if (json === undefined) throw new Error('result has no JSON representation');
+                reply = {{ evaluation: {id}, value: json }};
+            }} catch (error) {{
+                reply = {{ evaluation: {id}, error: String(error?.stack ?? error) }};
+            }}
+            bridge.postMessage(JSON.stringify(reply));
+        }})();"#
+        );
+        let script = format!("(() => {{ {script}\n return true; }})()");
+        let started = answer.clone();
+        if !self.page.eval(&script, move |value| {
+            if value != "true" {
+                let _ = started.try_send(Err(EvalError::Script));
+            }
+        }) {
+            self.evaluations.borrow_mut().remove(&id);
+            return Task::ready(Err(EvalError::Unavailable));
+        }
+        let expired = cx.background_executor().timer(timeout);
+        cx.foreground_executor()
+            .spawn(async move {
+                expired.await;
+                let _ = answer.try_send(Err(EvalError::Timeout));
+            })
+            .detach();
+        let evaluations = self.evaluations.clone();
+        cx.foreground_executor().spawn(async move {
+            let result = answered.recv().await;
+            evaluations.borrow_mut().remove(&id);
+            let json = result.map_err(|_| EvalError::Unavailable)??;
+            serde_json::from_str(&json).map_err(EvalError::Decode)
+        })
+    }
+
     fn report(&mut self, report: Report, cx: &mut Context<Self>) {
         match report {
+            Report::Evaluated { id, answer } => {
+                if let Some(reply) = self.evaluations.borrow_mut().remove(&id) {
+                    let _ = reply.try_send(answer.map_err(EvalError::JavaScript));
+                }
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            Report::Unavailable => {
+                let error = "Embedded browsing is not supported on this platform".to_owned();
+                self.error = Some(error.clone());
+                cx.emit(WebViewEvent::Error(error));
+                cx.notify();
+            }
             // Deferred: the window's handlers may update this view.
             Report::Pressed => {
                 if self.page.holds_keys()
@@ -318,6 +486,41 @@ impl WebView {
                     });
                 }
             }
+            #[cfg(target_os = "macos")]
+            Report::Released(generation) => {
+                if self.page.input.focus.get().generation == generation
+                    && let Some(handle) = self.page.window()
+                {
+                    let page = self.page.clone();
+                    App::defer(cx, move |cx| {
+                        let _ = handle.update(cx, |_, window, cx| {
+                            if page.input.focus.get().generation == generation
+                                && page.focus.is_focused(window)
+                            {
+                                window.blur(cx);
+                            }
+                        });
+                    });
+                }
+            }
+            #[cfg(target_os = "macos")]
+            Report::Presented(handle) => {
+                let view = cx.entity().downgrade();
+                App::defer(cx, move |cx| {
+                    let _ = handle.update(cx, |_, window, cx| {
+                        if let Some(view) = view.upgrade() {
+                            view.update(cx, |this, cx| {
+                                if this.page.window() == Some(handle)
+                                    && this.focus_window != Some(handle)
+                                {
+                                    this._focus = Self::listen(&this.page.focus, window, cx);
+                                    this.focus_window = Some(handle);
+                                }
+                            });
+                        }
+                    });
+                });
+            }
             Report::Key(keystroke) => {
                 if let Some(window) = self.page.window() {
                     App::defer(cx, move |cx| {
@@ -326,6 +529,28 @@ impl WebView {
                         });
                     });
                 }
+            }
+            #[cfg(target_os = "windows")]
+            Report::Frame => cx.notify(),
+            #[cfg(target_os = "windows")]
+            Report::Windows { epoch, report } => {
+                if self
+                    .page
+                    .platform
+                    .epoch
+                    .load(std::sync::atomic::Ordering::Acquire)
+                    == epoch
+                {
+                    self.report(*report, cx);
+                }
+            }
+            #[cfg(target_os = "windows")]
+            Report::Failed(error) => {
+                self.page.platform.failed.set(true);
+                self.loading = false;
+                self.error = Some(error.clone());
+                cx.emit(WebViewEvent::Error(error));
+                cx.notify();
             }
             Report::Moved => {
                 if let Some(url) = self.page.location() {
@@ -348,6 +573,7 @@ impl WebView {
             }
             Report::Opened(url) => cx.emit(WebViewEvent::NewWindow(url)),
             Report::Console(message) => cx.emit(WebViewEvent::Console(message)),
+            #[cfg(target_os = "macos")]
             Report::Still(still) => {
                 self.page.captured(still);
                 cx.notify();
@@ -366,6 +592,7 @@ impl WebView {
     }
 
     fn locate(&mut self, url: String, cx: &mut Context<Self>) {
+        *self.page.url.borrow_mut() = url.clone();
         if self.location.as_ref() != Some(&url) {
             self.location = Some(url.clone());
             cx.emit(WebViewEvent::Location(url));
@@ -391,6 +618,25 @@ impl Render for WebView {
         if self.page.focus.is_focused(window) {
             self.page.watch_keys(window);
         }
+        let content = match &self.error {
+            Some(error) => div()
+                .size_full()
+                .flex()
+                .items_center()
+                .justify_center()
+                .p_6()
+                .child(
+                    div()
+                        .text_style(TextStyle::Body)
+                        .max_w(gpui::px(560.))
+                        .child(error.clone()),
+                )
+                .into_any_element(),
+            None => Host {
+                surface: self.page.clone(),
+            }
+            .into_any_element(),
+        };
         div()
             .size_full()
             .key_context(KEY_CONTEXT)
@@ -400,9 +646,7 @@ impl Render for WebView {
             .on_action(on_edit::<SelectAll>(Edit::SelectAll, cx))
             .on_action(on_edit::<Undo>(Edit::Undo, cx))
             .on_action(on_edit::<Redo>(Edit::Redo, cx))
-            .child(Host {
-                surface: self.page.clone(),
-            })
+            .child(content)
     }
 }
 
@@ -414,7 +658,13 @@ fn on_edit<A: Action>(
     edit: Edit,
     cx: &mut Context<WebView>,
 ) -> impl Fn(&A, &mut Window, &mut App) + 'static {
-    cx.listener(move |this, _: &A, _, _| this.page.edit(edit))
+    cx.listener(move |this, _: &A, window, cx| {
+        if this.page.window() == Some(window.window_handle()) {
+            this.page.edit(edit);
+        } else {
+            cx.propagate();
+        }
+    })
 }
 
 /// Binds the edit keys in the view's context, once per app.
@@ -427,12 +677,21 @@ fn bind_edits(cx: &mut App) {
     }
     cx.set_global(Bound);
     let context = Some(KEY_CONTEXT);
+    let is_mac = cx.platform_info().is_mac();
     cx.bind_keys([
-        KeyBinding::new("cmd-c", Copy, context),
-        KeyBinding::new("cmd-x", Cut, context),
-        KeyBinding::new("cmd-v", Paste, context),
-        KeyBinding::new("cmd-a", SelectAll, context),
-        KeyBinding::new("cmd-z", Undo, context),
-        KeyBinding::new("cmd-shift-z", Redo, context),
+        KeyBinding::new(if is_mac { "cmd-c" } else { "ctrl-c" }, Copy, context),
+        KeyBinding::new(if is_mac { "cmd-x" } else { "ctrl-x" }, Cut, context),
+        KeyBinding::new(if is_mac { "cmd-v" } else { "ctrl-v" }, Paste, context),
+        KeyBinding::new(if is_mac { "cmd-a" } else { "ctrl-a" }, SelectAll, context),
+        KeyBinding::new(if is_mac { "cmd-z" } else { "ctrl-z" }, Undo, context),
+        KeyBinding::new(
+            if is_mac {
+                "cmd-shift-z"
+            } else {
+                "ctrl-shift-z"
+            },
+            Redo,
+            context,
+        ),
     ]);
 }

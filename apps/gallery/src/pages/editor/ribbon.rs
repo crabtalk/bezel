@@ -36,9 +36,9 @@ use gpui::{
 use markdown::Mark;
 use motion::{Fade, Painter};
 use theme::{TextStyle, Theme, Typeset};
-use ui::scroll::{self, Axes};
 use ui::{
     popover::{self, Popup},
+    scroll::{self, Axes},
     tooltip::Tooltip,
     widgets::{ButtonStyle, Buttons, Controls},
 };
@@ -324,7 +324,7 @@ impl Render for RibbonDemo {
             .text_color(theme.text_faint)
             .child(format!(
                 "{} {}",
-                ui::keys::printed("secondary-e"),
+                ui::keys::printed("secondary-e", cx),
                 match formatting.fenceable {
                     true => "fences",
                     false => "is inline code",

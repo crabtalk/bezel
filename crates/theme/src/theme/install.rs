@@ -1,12 +1,11 @@
 //! Installing a palette as the gpui global, and the per-app palette builder.
 
-use crate::AppExt as _;
-use gpui::{App, Global};
-
 use crate::{
-    Appearance, paint,
+    AppExt as _, Appearance, paint,
     theme::{Theme, layout},
 };
+use gpui::{App, Global};
+use std::{cell::Cell, rc::Rc};
 
 impl Theme {
     /// Install the palette for `appearance` as the gpui global and point the
@@ -17,12 +16,8 @@ impl Theme {
     /// Which palette that is comes from [`crate::AppExt::set_palette`], so an app with its own
     /// colours keeps them across a light/dark switch.
     pub fn install(appearance: Appearance, cx: &mut App) {
-        let mut theme = match cx.try_global::<Palette>() {
-            Some(palette) => (palette.0)(appearance),
-            None => Self::for_appearance(appearance),
-        };
+        let theme = Self::from_palette(appearance, cx);
         let brand = cx.brand();
-        brand.apply(&mut theme);
         layout::set_base_radius(brand.radius);
         Self::install_custom(theme, cx);
     }
@@ -59,9 +54,86 @@ impl Theme {
         cx.refresh_windows();
     }
 
-    /// Read the theme global.
+    /// Read the current content scope's palette, or the app's palette.
     pub fn of(cx: &App) -> &Theme {
+        if let Some(scope) = cx.try_global::<ContentThemes>() {
+            match scope.active.get() {
+                Some(Appearance::Light) => return &scope.light,
+                Some(Appearance::Dark) => return &scope.dark,
+                None => {}
+            }
+        }
         cx.global::<Theme>()
+    }
+
+    fn from_palette(appearance: Appearance, cx: &App) -> Self {
+        let mut theme = match cx.try_global::<Palette>() {
+            Some(palette) => (palette.0)(appearance),
+            None => Self::for_appearance(appearance),
+        };
+        cx.brand().apply(&mut theme);
+        theme
+    }
+
+    /// Resolve content colors locally without changing the app's appearance.
+    pub fn with_appearance<R>(
+        appearance: Appearance,
+        cx: &mut App,
+        build: impl FnOnce(&mut App) -> R,
+    ) -> R {
+        if Self::of(cx).appearance == appearance {
+            return build(cx);
+        }
+        let revision = paint::palette_revision();
+        if cx
+            .try_global::<ContentThemes>()
+            .is_none_or(|themes| themes.revision != revision)
+        {
+            let light = Self::from_palette(Appearance::Light, cx);
+            let dark = Self::from_palette(Appearance::Dark, cx);
+            if cx.has_global::<ContentThemes>() {
+                let themes = cx.global_mut::<ContentThemes>();
+                themes.light = light;
+                themes.dark = dark;
+                themes.revision = revision;
+            } else {
+                cx.set_global(ContentThemes {
+                    light,
+                    dark,
+                    revision,
+                    active: Rc::new(Cell::new(None)),
+                });
+            }
+        }
+        let active = cx.global::<ContentThemes>().active.clone();
+        let previous = active.replace(Some(appearance));
+        let _scope = ContentScope {
+            active,
+            previous,
+            _paint: paint::AppearanceScope::new(appearance),
+        };
+        build(cx)
+    }
+}
+
+struct ContentThemes {
+    light: Theme,
+    dark: Theme,
+    revision: u32,
+    active: Rc<Cell<Option<Appearance>>>,
+}
+
+impl Global for ContentThemes {}
+
+struct ContentScope {
+    active: Rc<Cell<Option<Appearance>>>,
+    previous: Option<Appearance>,
+    _paint: paint::AppearanceScope,
+}
+
+impl Drop for ContentScope {
+    fn drop(&mut self) {
+        self.active.set(self.previous);
     }
 }
 

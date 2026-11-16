@@ -181,7 +181,7 @@ fn paint(window: &mut Window, bounds: Bounds<Pixels>, pose: &Pose, head: Hsla, i
     let mid = bounds.center();
     let map = |x: f32, y: f32| point(mid.x + px(x * unit), mid.y + px(y * unit));
 
-    window.paint_layer(bounds, |window| {
+    window.paint_layer(|window| {
         fill(
             window,
             map(pose.outline[0].0, pose.outline[0].1),

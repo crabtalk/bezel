@@ -261,6 +261,7 @@ impl TextField {
                 .is_some(),
             [&Cut, &Copy, &Paste, &SelectAll],
             window,
+            cx,
         );
         self.menu.open(
             (),
@@ -314,7 +315,7 @@ impl TextField {
     /// this, and the caret is left wherever it was.
     pub(super) fn on_scroll_wheel(
         &mut self,
-        event: &gpui::ScrollWheelEvent,
+        event: &gpui::ScrollEvent,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) {

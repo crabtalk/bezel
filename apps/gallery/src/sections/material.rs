@@ -124,6 +124,7 @@ impl Gallery {
                 // The chips load a look's numbers and the knobs move them from
                 // there, so what the probe paints is always `probe_spec` — one
                 // conduit, whichever style named the numbers in it.
+                #[cfg(not(target_os = "macos"))]
                 let probe_theme = Theme {
                     glass_regular: self.material.probe_spec,
                     glass_magnify: self.material.probe_magnify * 32.0 - 16.0,
@@ -219,11 +220,11 @@ impl Gallery {
                                 &self.material.probe_at,
                                 point(px(120.0), px(120.0)),
                                 {
-                                    let glass = div()
-                                        .w(px(pw))
-                                        .h(px(ph))
-                                        .rounded(px(pr))
-                                        .surface(&probe_theme, SurfaceStyle::Glass(Glass::Regular));
+                                    let glass = surface::of("glass-probe-material", self.material.probe_style, move |_, _, _| {
+                                        div().w(px(pw)).h(px(ph)).rounded(px(pr))
+                                    });
+                                    #[cfg(not(target_os = "macos"))]
+                                    let glass = glass.optics(&probe_theme, SurfaceStyle::Glass(Glass::Regular));
                                     if self.material.probe_tint {
                                         glass
                                             .tint(
@@ -255,7 +256,7 @@ impl Gallery {
                             .items_center()
                             .gap_3()
                             .flex_wrap()
-                            .children(PROBE_STYLES.map(|style| {
+                            .children(PROBE_STYLES.into_iter().filter(|style| !cfg!(target_os = "macos") || !matches!(style, SurfaceStyle::Material(material) if *material != Material::Regular)).map(|style| {
                                 let on = self.material.probe_style == style;
                                 div()
                                     .id(probe_style_name(style))
@@ -340,6 +341,7 @@ impl Gallery {
                                 1.0,
                                 format!("r {}", pr as i32).into(),
                             ))
+                            .when(!cfg!(target_os = "macos"), |row| { row
                             .child(knob(
                                 "probe-blur",
                                 6,
@@ -411,6 +413,7 @@ impl Gallery {
                                 DISPERSION_RANGE,
                                 format!("disp {:.3}", self.material.probe_disp).into(),
                             ))
+                            })
                             // Only a tinted surface reads this: everywhere else
                             // the look's own tint is the fill.
                             .when(self.material.probe_tint, |row| {
@@ -434,10 +437,8 @@ impl Gallery {
                     ))
                     .when(!ui::surface::lensed(&theme), |el| {
                         el.child(theme.warning_strip(
-                            "Liquid glass is macOS only — the lens is a Metal \
-                             primitive. Here it falls back to the tone the look \
-                             settles on: the card and its shape, opaque, without \
-                             the refraction at the rim.",
+                            "Material effects are unavailable in this build. \
+                             Surfaces use an opaque fill.",
                         ))
                     })
                     .child(probe)

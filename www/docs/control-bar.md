@@ -5,7 +5,7 @@ prompt: Float a playback bar over the bottom of the page with shuffle on the lef
 ---
 
 ```rust
-use ui::control_bar::{self, Shape};
+use ui::{control_bar::{self, Shape}, icons::glyph};
 
 div().relative().size_full()
     .child(page)
@@ -13,7 +13,11 @@ div().relative().size_full()
         div().absolute().bottom(px(20.0)).left_0().right_0()
             .flex().justify_center()
             .child(div().w_full().max_w(px(880.0)).child(
-                control_bar::control_bar(&theme, Shape::Pill, leading, Some(centre), trailing),
+                control_bar::control_bar("transport", Shape::Pill, move |theme, _, _| {
+                    let leading = control_bar::bar_button(glyph::Shuffle, 30., theme.text_muted);
+                    let trailing = control_bar::bar_button(glyph::Volume2, 30., theme.text_muted);
+                    (vec![leading.into_any_element()], Some(div().child("Now playing").into_any_element()), vec![trailing.into_any_element()])
+                }),
             )),
     )
 ```

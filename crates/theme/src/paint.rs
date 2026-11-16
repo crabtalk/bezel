@@ -2,44 +2,59 @@
 //! free functions ([`ink`], [`hairline`], [`wash`], …) that element builders
 //! call without a `cx` in scope.
 
-use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
+use std::{
+    cell::Cell,
+    sync::atomic::{AtomicU8, AtomicU32, Ordering},
+};
 
 use gpui::{BoxShadow, Hsla, hsla, point, px};
 
 use crate::Appearance;
 
-/// Process-wide mirror of the installed theme's appearance.
-///
-/// The paint helpers ([`ink`], [`hairline`], [`wash`], …) are free functions
-/// called from deep inside element builders that have no `cx` in scope, so they
-/// read the appearance from here instead of the gpui global. Appearance is
-/// genuinely process-wide — one setting for every window — so a single mirror is
-/// sound; [`Theme::install`](crate::theme::Theme::install) is the only writer
-/// outside tests.
+/// Appearance outside a local material scope.
 static CURRENT_APPEARANCE: AtomicU8 = AtomicU8::new(0);
 
-/// Bumped every time a palette is installed — an appearance switch, and equally
-/// a brand change, which moves every token while the appearance stands still.
-///
-/// Anything that caches *resolved colors* — most importantly the markdown
-/// renderer's cross-frame `TextRun` cache, which bakes an `Hsla` into every run —
-/// is only valid for the palette that produced it. Those caches were written when
-/// the theme was a compile-time constant, so their validity keys cover content
-/// only. Rather than thread the palette through every key, they compare this
-/// counter and drop everything when it moves.
+/// Revision of the installed palette.
 static THEME_GENERATION: AtomicU32 = AtomicU32::new(0);
 
 /// The appearance the context-free paint helpers are painting for.
 pub fn current_appearance() -> Appearance {
+    if let Some(appearance) = SCOPED_APPEARANCE.with(Cell::get) {
+        return appearance;
+    }
     match CURRENT_APPEARANCE.load(Ordering::Relaxed) {
         1 => Appearance::Light,
         _ => Appearance::Dark,
     }
 }
 
-/// Monotonic id of the current palette.
+/// Cache key for the installed palette and current content appearance.
 pub fn theme_generation() -> u32 {
+    palette_revision()
+        .wrapping_mul(2)
+        .wrapping_add(u32::from(current_appearance() == Appearance::Light))
+}
+
+pub(crate) fn palette_revision() -> u32 {
     THEME_GENERATION.load(Ordering::Relaxed)
+}
+
+thread_local! {
+    static SCOPED_APPEARANCE: Cell<Option<Appearance>> = const { Cell::new(None) };
+}
+
+pub(crate) struct AppearanceScope(Option<Appearance>);
+
+impl AppearanceScope {
+    pub(crate) fn new(appearance: Appearance) -> Self {
+        Self(SCOPED_APPEARANCE.with(|scope| scope.replace(Some(appearance))))
+    }
+}
+
+impl Drop for AppearanceScope {
+    fn drop(&mut self) {
+        SCOPED_APPEARANCE.with(|scope| scope.set(self.0));
+    }
 }
 
 /// [`CURRENT_APPEARANCE`] is process-wide, so under the parallel test runner

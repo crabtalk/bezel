@@ -369,7 +369,7 @@ impl CanvasView {
             move |bounds, hitbox, window, cx| {
                 let zoom_view = view.clone();
                 let hitbox = hitbox.clone();
-                window.on_mouse_event(move |event: &ScrollWheelEvent, phase, window, cx| {
+                window.on_mouse_event(move |event: &ScrollEvent, phase, window, cx| {
                     if phase == DispatchPhase::Capture
                         && hitbox.should_handle_scroll(window)
                         && (event.modifiers.platform || event.modifiers.control)

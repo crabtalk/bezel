@@ -169,10 +169,9 @@ impl Gallery {
                             "floating-demo",
                             &self.overlays.panel_demo,
                             gpui::point(px(40.0), px(40.0)),
-                            popover::popover_card(&theme)
-                                .w(px(180.0))
-                                .child(popover::menu_heading(&theme, "Drag me"))
-                                .surface(&theme, theme.popover_surface),
+                            surface::of("floating-demo-material", theme.popover_surface, |theme, _, _| {
+                                popover::popover_card(theme).w(px(180.)).child(popover::menu_heading(theme, "Drag me"))
+                            }),
                         )),
                 )
                 .child(hint(
@@ -229,15 +228,20 @@ impl Gallery {
                                     cx.notify();
                                 }))
                                 .child(
-                                    popover::popover_card(&theme)
+                                    {
+                                        let answer = self.overlays.layer_answer.clone();
+                                        surface::of("floating-band-material", theme.popover_surface, move |theme, _, _| {
+                                    popover::popover_card(theme)
                                         .px(px(16.0))
-                                        .child(match &self.overlays.layer_answer {
+                                        .child(match &answer {
                                             Some(what) => {
                                                 SharedString::from(format!("{what} took the press"))
                                             }
                                             None => SharedString::from("Press the band"),
                                         })
-                                        .surface(&theme, theme.popover_surface),
+
+                                        })
+                                    },
                                 ),
                         ),
                 )
@@ -251,7 +255,7 @@ impl Gallery {
                         // a chord that drifts.
                         .child(popover::key_hint_text(
                             &theme,
-                            keys::shortcut(&OpenPalette, window).unwrap_or_default(),
+                            keys::shortcut(&OpenPalette, window, cx).unwrap_or_default(),
                             "open palette",
                         ))
                         .when_some(self.last_command.clone(), |r, cmd| {

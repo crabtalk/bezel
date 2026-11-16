@@ -7,14 +7,13 @@
 //! `theme.toggle(..)`, `theme.slider(..)`, `theme.toggle_group()`,
 //! `theme.segmented(..)`, `theme.picture_picker(..)`.
 
-use crate::stack;
-use std::rc::Rc;
-
+use crate::{stack, surface::Control};
 use gpui::{
     AnyElement, App, Axis, BoxShadow, Div, DragMoveEvent, ElementId, SharedString, Stateful,
     Window, div, point, prelude::*, px,
 };
 use icons::Icon;
+use std::rc::Rc;
 use theme::{TextStyle, Theme, ThemeExt, Typeset};
 
 /// The drag payload of a [`Controls::slider`], carrying the id of the slider
@@ -314,7 +313,7 @@ pub trait Controls: ThemeExt {
     /// An unselected segment carries its own `hover`, and gpui panics on a
     /// second: chain a `group_hover`, never `.hover(..)`. The same holds for
     /// [`Self::toggle_group_icon`].
-    fn toggle_group_item(&self, label: impl Into<SharedString>, selected: bool) -> Div {
+    fn toggle_group_item(&self, label: impl Into<SharedString>, selected: bool) -> Control {
         segment(self.theme(), selected)
             .px(px(10.0))
             .py(px(4.0))
@@ -353,7 +352,7 @@ pub trait Controls: ThemeExt {
     ///
     /// The tooltip is the caller's, and a glyph nobody recognises says nothing
     /// without one.
-    fn toggle_group_icon(&self, icon: impl Into<Icon>, selected: bool) -> Div {
+    fn toggle_group_icon(&self, icon: impl Into<Icon>, selected: bool) -> Control {
         let theme = self.theme();
         // Built here rather than taken, the way `control_bar::bar_button` does
         // it: gpui reads an svg's colour off that element's own style, so a
@@ -467,7 +466,7 @@ fn well(ring: gpui::Hsla, color: gpui::Hsla) -> Div {
 ///
 /// An unselected segment takes its own `hover`, and gpui panics on a second
 /// one — reach for a `group_hover` rather than chaining `.hover(..)` on.
-fn segment(theme: &Theme, selected: bool) -> Div {
+fn segment(theme: &Theme, selected: bool) -> Control {
     let wash = theme.element_hover;
     let item = div()
         .rounded(px(on_track_radius()))
@@ -475,14 +474,15 @@ fn segment(theme: &Theme, selected: bool) -> Div {
         .border_color(crate::widgets::RING_SLOT)
         .text_style(TextStyle::Callout)
         .cursor_pointer();
-    if selected {
+    let item = if selected {
         item.bg(theme.element_active)
             .font_weight(gpui::FontWeight::MEDIUM)
             .text_color(theme.text)
     } else {
         item.text_color(theme.text_muted)
             .hover(move |el| el.bg(wash))
-    }
+    };
+    Control::new(item, selected)
 }
 
 impl Controls for Theme {}

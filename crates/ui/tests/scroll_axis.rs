@@ -3,7 +3,7 @@
 //! axes the pane scrolls.
 
 use gpui::{
-    AnyElement, Point, ScrollDelta, ScrollHandle, ScrollWheelEvent, SharedString, TestAppContext,
+    AnyElement, Point, ScrollDelta, ScrollEvent, ScrollHandle, SharedString, TestAppContext,
     VisualTestContext, div, point, prelude::*, px, size,
 };
 use ui::scroll::{self, Axes};
@@ -40,11 +40,12 @@ fn swipe(axes: Axes, delta: Point<gpui::Pixels>, cx: &mut TestAppContext) -> (f3
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.simulate_resize(size(px(WIDTH), px(HEIGHT)));
     cx.run_until_parked();
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         position: point(px(WIDTH / 2.0), px(HEIGHT / 2.0)),
         delta: ScrollDelta::Pixels(delta),
         modifiers: Default::default(),
         touch_phase: Default::default(),
+        source: Default::default(),
     });
     cx.run_until_parked();
     cx.update(|_, cx| {
@@ -151,12 +152,13 @@ fn swipe_board(delta: Point<gpui::Pixels>, cx: &mut TestAppContext) -> (f32, f32
     let mut cx = VisualTestContext::from_window(window.into(), cx);
     cx.simulate_resize(size(px(WIDTH), px(HEIGHT)));
     cx.run_until_parked();
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         // Inside the first column, which is inside the board.
         position: point(px(COLUMN / 2.0), px(HEIGHT / 2.0)),
         delta: ScrollDelta::Pixels(delta),
         modifiers: Default::default(),
         touch_phase: Default::default(),
+        source: Default::default(),
     });
     cx.run_until_parked();
     cx.update(|_, cx| {

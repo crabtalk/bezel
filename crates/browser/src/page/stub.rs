@@ -1,18 +1,31 @@
-use super::{Edit, Page};
-use gpui::{App, Bounds, Pixels, Window};
+use crate::page::{Edit, Page, Present, Report};
+use gpui::{App, Bounds, Pixels, Window, native_view::NativeViewState};
 use std::rc::Rc;
 
 pub(super) const BINDS_EDITS: bool = false;
 
-pub(super) struct State;
+pub(crate) struct State;
 
 impl State {
-    pub(super) fn new(_cx: &App) -> Self {
+    pub(super) fn new(
+        _cx: &App,
+        _input: Rc<NativeViewState>,
+        reports: async_channel::Sender<Report>,
+    ) -> Self {
+        let _ = reports.try_send(Report::Unavailable);
         Self
     }
 }
 
 impl Page {
+    pub(crate) fn snapshot(&self, done: crate::page::SnapshotDone) {
+        done(Err("page snapshots are unavailable on this platform".into()));
+    }
+
+    pub(crate) fn ready(&self) -> bool {
+        false
+    }
+
     pub(super) fn place(this: &Rc<Self>, bounds: Bounds<Pixels>, window: &Window, _cx: &mut App) {
         this.uncover();
         this.window.set(Some(window.window_handle()));
@@ -33,6 +46,7 @@ impl Page {
 
     pub(crate) fn load(&self, url: String) {
         *self.url.borrow_mut() = url;
+        self.reload();
     }
 
     pub(crate) fn back(&self) {}
@@ -43,9 +57,13 @@ impl Page {
         (false, false)
     }
 
-    pub(crate) fn reload(&self) {}
+    pub(crate) fn reload(&self) {
+        let _ = self.reports.try_send(Report::Unavailable);
+    }
 
-    pub(crate) fn reload_bypassing_cache(&self) {}
+    pub(crate) fn reload_bypassing_cache(&self) {
+        self.reload();
+    }
 
     pub(crate) fn location(&self) -> Option<String> {
         None
@@ -78,4 +96,10 @@ pub(super) fn store_usage(
     done: impl FnOnce(Option<crate::Usage>) + Send + 'static,
 ) {
     done(None);
+}
+
+impl Present for State {
+    fn available(&self, _window: &Window) -> bool {
+        false
+    }
 }

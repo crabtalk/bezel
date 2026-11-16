@@ -7,7 +7,7 @@
 //! reaches both.
 
 use gpui::{
-    ScrollDelta, ScrollHandle, ScrollWheelEvent, TestAppContext, VisualTestContext, div, point,
+    ScrollDelta, ScrollEvent, ScrollHandle, TestAppContext, VisualTestContext, div, point,
     prelude::*, px, size,
 };
 use ui::scroll::{self, Axes, ClaimState};
@@ -69,11 +69,12 @@ fn open(claims: bool, cx: &mut TestAppContext) -> (gpui::Entity<Nested>, VisualT
 
 /// One notch of wheel with the pointer over the inner pane.
 fn wheel_over_inner(cx: &mut VisualTestContext) {
-    cx.simulate_event(ScrollWheelEvent {
+    cx.simulate_event(ScrollEvent {
         position: point(px(WIDTH / 2.0), px(INNER_BOX / 2.0)),
         delta: ScrollDelta::Pixels(point(px(0.0), px(NOTCH))),
         modifiers: Default::default(),
         touch_phase: Default::default(),
+        source: Default::default(),
     });
     cx.run_until_parked();
 }
@@ -274,11 +275,12 @@ mod contained {
     fn a_sideways_gesture_is_still_the_pages(cx: &mut TestAppContext) {
         let (view, mut cx) = open(cx);
 
-        cx.simulate_event(ScrollWheelEvent {
+        cx.simulate_event(ScrollEvent {
             position: point(px(WIDTH / 2.0), px(INNER_BOX / 2.0)),
             delta: ScrollDelta::Pixels(point(px(NOTCH), px(0.0))),
             modifiers: Default::default(),
             touch_phase: Default::default(),
+            source: Default::default(),
         });
         cx.run_until_parked();
         // The page scrolls vertically only, so nothing should move — the point

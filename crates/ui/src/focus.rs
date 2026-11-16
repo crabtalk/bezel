@@ -30,8 +30,7 @@
 //!     .child(focus::focusable(&theme, &self.ok_focus, popover::button(&theme, "OK", "ok")))
 //! ```
 
-use gpui::{App, Div, FocusHandle, KeyBinding, Window, actions, prelude::*};
-
+use gpui::{App, Div, FocusHandle, InteractiveElement, KeyBinding, Window, actions, prelude::*};
 use theme::Theme;
 
 actions!(
@@ -154,7 +153,7 @@ fn claims_tab(window: &Window) -> bool {
 ///
 /// Pressing dispatches [`Activate`]. Use [`pressable`] to route it and a click
 /// through one callback, or handle it separately for custom interaction.
-pub fn focusable(theme: &Theme, handle: &FocusHandle, el: Div) -> Div {
+pub fn focusable<E: InteractiveElement>(theme: &Theme, handle: &FocusHandle, el: E) -> E {
     // `tab_stop` writes through to the shared focus entry, so re-asserting it
     // every render is free and keeps the flag next to the element that wants
     // it, rather than at whatever distant place the handle was constructed.

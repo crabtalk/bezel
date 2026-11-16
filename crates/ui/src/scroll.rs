@@ -232,7 +232,7 @@ pub fn contain_sideways<E: gpui::InteractiveElement>(el: E) -> E {
 ///
 /// The page is still reachable: move the pointer off the box.
 pub fn contain_wheel<E: gpui::InteractiveElement>(el: E, axes: Axes) -> E {
-    el.on_scroll_wheel(move |event, window, cx| {
+    el.on_scroll(move |event, window, cx| {
         let delta = event.delta.pixel_delta(window.line_height());
         // The dominant axis, not "any horizontal component": a trackpad puts a
         // little of both into every gesture, and a mostly-vertical one still

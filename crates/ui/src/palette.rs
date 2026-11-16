@@ -25,7 +25,7 @@ use gpui::{
 
 use theme::Theme;
 
-use crate::{input, popover, search::SearchList, surface::Surfaced as _};
+use crate::{input, popover, search::SearchList, surface};
 
 actions!(
     bezel_command_palette,
@@ -142,17 +142,25 @@ impl Focusable for CommandPalette {
 
 impl Render for CommandPalette {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = Theme::of(cx).clone();
-        let card = popover::popover_card(&theme)
-            .w(px(420.0))
-            .child(self.search.body(
-                &theme,
-                None,
-                None,
-                |view| &mut view.search,
-                Self::choose,
-                cx,
-            ));
+        let view = cx.entity();
+        let card = surface::of(
+            "command-palette",
+            Theme::of(cx).popover_surface,
+            move |theme, _, cx| {
+                view.update(cx, |this, cx| {
+                    popover::popover_card(theme)
+                        .w(px(420.0))
+                        .child(this.search.body(
+                            theme,
+                            None,
+                            None,
+                            |view| &mut view.search,
+                            Self::choose,
+                            cx,
+                        ))
+                })
+            },
+        );
 
         // The actions live on a wrapper, not the card, because the card is
         // handed to `material` — which frosts the backdrop so the content
@@ -164,7 +172,7 @@ impl Render for CommandPalette {
             .on_action(cx.listener(Self::select_previous))
             .on_action(cx.listener(Self::confirm))
             .on_action(cx.listener(Self::dismiss))
-            .child(card.surface(&theme, theme.popover_surface))
+            .child(card)
     }
 }
 

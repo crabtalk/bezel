@@ -70,7 +70,7 @@ pub fn claim_wheel<E: gpui::StatefulInteractiveElement>(
     // too: a wheel the pane could not act on produces no `notify` and so no
     // render, and the reading below has to stay true across that gap.
     state.set(travel(&handle, axes));
-    el.on_scroll_wheel(move |_, _, cx| {
+    el.on_scroll(move |_, _, cx| {
         let now = travel(&handle, axes);
         if now != state.get() {
             state.set(now);

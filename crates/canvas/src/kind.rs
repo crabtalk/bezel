@@ -23,8 +23,8 @@ use crate::{
     presentation::Measure,
 };
 use gpui::{
-    AnyElement, App, Div, Global, Hsla, ObjectFit, Pixels, Size, Styled, StyledImage, Window, div,
-    img, prelude::*, px,
+    AnyElement, App, Div, Global, Hsla, ObjectFit, Pixels, Size, Styled, StyledImage, Task, Window,
+    div, img, prelude::*, px,
 };
 use markdown::{AppExt as _, Doc, Editing, Typography};
 use std::{
@@ -168,6 +168,7 @@ pub type Controls = Rc<dyn Fn(&Node, &Card, &mut Window, &mut App) -> Option<Any
 
 /// A node's content. See [`text_style`] and [`chrome`].
 pub type Paint = Rc<dyn Fn(&Node, Look, &mut Window, &mut App) -> AnyElement>;
+pub type PrepareExport = Rc<dyn Fn(&Node, &mut App) -> Task<Result<Paint, String>>>;
 pub type Read = Rc<dyn Fn(&Node) -> String>;
 pub type Write = Rc<dyn Fn(&mut Node, String)>;
 pub type OpenHandler = Rc<dyn Fn(&Node, &mut App)>;
@@ -321,6 +322,7 @@ pub struct Rules {
 #[derive(Clone)]
 pub struct Kind {
     pub exportable: bool,
+    pub prepare_export: Option<PrepareExport>,
     pub retained: bool,
     pub rules: Rules,
     /// Pointer interactions belong in `controls`; the drag surface covers this content.
@@ -339,6 +341,7 @@ impl Kind {
     ) -> Self {
         Self {
             exportable: false,
+            prepare_export: None,
             retained: false,
             rules: Rules {
                 can: Capabilities::ALL,
@@ -358,6 +361,16 @@ impl Kind {
     /// child views. Fixed-size bodies can be cached independently of overlays.
     pub fn retained(mut self) -> Self {
         self.retained = true;
+        self
+    }
+
+    /// Acquires an owned renderer before image export begins.
+    pub fn with_export(
+        mut self,
+        prepare: impl Fn(&Node, &mut App) -> Task<Result<Paint, String>> + 'static,
+    ) -> Self {
+        self.exportable = true;
+        self.prepare_export = Some(Rc::new(prepare));
         self
     }
 

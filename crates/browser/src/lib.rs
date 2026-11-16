@@ -1,8 +1,9 @@
-//! A platform webview hosted in a gpui window.
+//! Platform web pages hosted in GPUI windows.
 //!
-//! The page is a native view (WKWebView on macOS, WebView2 on Windows) above
-//! gpui's own surface, not pixels gpui paints. gpui paints under it, and gpui's content masks do not clip it. On the web
-//! build, [`Frame`] is an `<iframe>` above the canvas, under the same limits.
+//! macOS participates in native/GPU scene composition, including content masks
+//! and overlay stacking. Windows imports WebView2 capture textures. On the web,
+//! [`Frame`] hosts an iframe above the canvas. Native browsing is unavailable on
+//! Linux.
 
 #[cfg(target_family = "wasm")]
 mod frame;
@@ -14,4 +15,6 @@ mod view;
 #[cfg(target_family = "wasm")]
 pub use frame::Frame;
 pub use store::{DataStore, Usage};
-pub use view::{ConsoleLevel, ConsoleMessage, EvalError, LoadState, WebView, WebViewEvent};
+pub use view::{
+    ConsoleLevel, ConsoleMessage, EvalError, LoadState, Presentation, WebView, WebViewEvent,
+};
