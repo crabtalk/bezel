@@ -1,8 +1,6 @@
 # Browser surfaces in a design canvas
 
-Implementation contract, 14 November 2026. Pages must remain live and
-interactive inside the canvas on supported native platforms. Native presentation is implemented for macOS, Linux and Windows.
-Windows platform compilation and runtime verification remain user-owned. Linux software rendering is covered by automated WPE/GPUI checks; physical GPU compatibility remains user-owned.
+Implementation contract, 14 November 2026. Pages must remain live and interactive inside the canvas on supported native platforms. Native presentation is implemented for macOS and Windows. Linux browsing is unavailable. Windows platform compilation and runtime verification remain user-owned.
 
 ## Geometry and frame ownership
 
@@ -44,14 +42,10 @@ and restart must not wait on the UI thread.
 
 | Platform | Existing or available path | Boundary |
 | --- | --- | --- |
-| Linux | WPEPlatform DMA-BUF or shared-memory frames | Public WPE platform integration and GPUI composition; software path verified, hardware review pending |
+| Linux | No browser backend | Native browsing and live page composition are unavailable |
 | macOS | Live WKWebView hosted between GPU layers | Fixed viewport, native transforms, scene clips and overlay hit regions; GPU-only exports exclude native content |
 | Windows | WebView2 composition controller and Windows Graphics Capture | GPUI shared D3D texture import implemented locally; composition hosting, bounded capture and transformed pointer input implemented; Windows verification pending |
 | Web | Existing iframe overlay | Does not provide same-origin-independent composited pixels; excluded from this native surface contract |
-
-Linux's WPE implementation is not a macOS or Windows backend. Do not claim
-live cross-platform canvas rendering from Linux results. A snapshot can be
-exported or compared, but is not an interactive live page.
 
 ## Platform prerequisites
 
@@ -92,11 +86,7 @@ browser panel to interact with a still does not meet the contract.
 
 ## Image export
 
-`WebView::snapshot` returns owned BGRA pixels. macOS uses WKWebView snapshots;
-Windows copies the retained capture texture through a staging resource; Linux
-uses the public WebKit snapshot API and exports a separate sealed pixel descriptor.
-Snapshot requests do not change live presentation to a CPU frame path. Loading,
-failed, unrendered and timed-out pages return errors.
+`WebView::snapshot` returns owned BGRA pixels. macOS uses WKWebView snapshots; Windows copies the retained capture texture through a staging resource. Snapshot requests do not change live presentation to a CPU frame path. Loading, failed, unrendered and timed-out pages return errors.
 
 Canvas kinds can prepare an owned export renderer asynchronously. The existing
 canvas export pass composes those renderers with text and images at the chosen
@@ -105,7 +95,6 @@ its node id; it is never silently omitted.
 
 ## Sources
 
-- [WPEPlatform](https://wpewebkit.org/about/architecture.html)
 - [WKWebView snapshots](https://developer.apple.com/documentation/webkit/wksnapshotconfiguration)
 - [WebView2 rendering APIs](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/overview-features-apis)
 

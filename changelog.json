@@ -5,6 +5,7 @@
     "summary": "Published GPUI upgrade and host-aware keyboard shortcuts.",
     "changed": [
       "Built on the published bezel-gpui 0.3.25 packages.",
+      "Linux browser support is disabled and no longer requires WPE.",
       "Breaking: shortcut formatting, menu shortcut helpers, edit_items, and editor and canvas bindings now take an app context.",
       "Custom elements, chart paths and scroll events use the updated GPUI APIs."
     ],

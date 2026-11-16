@@ -1,4 +1,4 @@
-use crate::page::{input::Input, platform::State};
+use crate::page::platform::State;
 use gpui::{App, Modifiers, Pixels, Point};
 use webview2_com::Microsoft::Web::WebView2::Win32 as webview;
 use windows::Win32::Foundation::POINT;
@@ -80,8 +80,8 @@ impl State {
     }
 }
 
-impl Input for State {
-    fn mouse(
+impl State {
+    pub(super) fn mouse(
         &self,
         kind: &str,
         position: Point<Pixels>,
@@ -112,7 +112,7 @@ impl Input for State {
         };
         self.mouse_input(kind, position, data, modifiers);
     }
-    fn wheel(
+    pub(super) fn wheel(
         &self,
         position: Point<Pixels>,
         delta: Point<f32>,

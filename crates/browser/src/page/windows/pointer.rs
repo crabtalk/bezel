@@ -3,8 +3,6 @@ use gpui::{
     self, DispatchPhase, Hitbox, Modifiers, MouseButton, MouseDownEvent, MouseMoveEvent,
     MouseUpEvent, NavigationDirection, Pixels, Point, ScrollEvent, Window,
 };
-#[cfg(target_os = "linux")]
-use gpui::{KeyDownEvent, KeyUpEvent};
 use std::rc::Rc;
 
 trait PointerButton {
@@ -20,25 +18,6 @@ impl PointerButton for MouseButton {
             Self::Navigate(NavigationDirection::Forward) => 5,
         }
     }
-}
-
-pub(crate) trait Input {
-    fn mouse(
-        &self,
-        kind: &str,
-        position: Point<Pixels>,
-        button: u32,
-        modifiers: Modifiers,
-        count: usize,
-    );
-    fn wheel(
-        &self,
-        position: Point<Pixels>,
-        delta: Point<f32>,
-        precise: bool,
-        stop: bool,
-        modifiers: Modifiers,
-    );
 }
 
 impl Page {
@@ -193,54 +172,5 @@ impl Page {
             );
             cx.stop_propagation();
         });
-        #[cfg(target_os = "linux")]
-        {
-            let page = Rc::downgrade(this);
-            window.on_key_event(move |event: &KeyDownEvent, phase, window, cx| {
-                let Some(page) = page.upgrade() else {
-                    return;
-                };
-                if phase == DispatchPhase::Bubble
-                    && page.focus.is_focused(window)
-                    && page.input.enabled.get()
-                {
-                    page.platform.share_clipboard(cx);
-                    page.platform.key(&event.keystroke, true);
-                    cx.stop_propagation();
-                }
-            });
-            let page = Rc::downgrade(this);
-            window.on_key_event(move |event: &KeyUpEvent, phase, window, cx| {
-                let Some(page) = page.upgrade() else {
-                    return;
-                };
-                if phase == DispatchPhase::Bubble
-                    && page.focus.is_focused(window)
-                    && page.input.enabled.get()
-                {
-                    page.platform.key(&event.keystroke, false);
-                    cx.stop_propagation();
-                }
-            });
-        }
-    }
-}
-
-impl Page {
-    #[cfg(target_os = "linux")]
-    pub(crate) fn screen_position(&self, position: Point<Pixels>) -> Option<Point<Pixels>> {
-        let bounds = self.placed.get()?;
-        let viewport = self
-            .presentation
-            .get()
-            .map(|p| p.viewport)
-            .or_else(|| gpui::native_view::Viewport::try_from(bounds.size).ok())?;
-        Some(
-            bounds.origin
-                + gpui::point(
-                    position.x * (bounds.size.width / viewport.width),
-                    position.y * (bounds.size.height / viewport.height),
-                ),
-        )
     }
 }

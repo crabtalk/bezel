@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Native Linux builds require WPE WebKit 2.54+ with WPEPlatform.
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -11,12 +10,4 @@ apt-get install -y --no-install-recommends \
     libfontconfig-dev \
     libwayland-dev \
     libx11-xcb-dev \
-    libxkbcommon-x11-dev \
-    libwpewebkit-2.0-dev \
-    libjson-glib-dev \
-    libgbm-dev \
-    libegl-dev \
-    libgles-dev
-pkg-config --print-errors --exists \
-    'wpe-webkit-2.0 >= 2.54' wpe-platform-2.0 \
-    json-glib-1.0 gbm egl glesv2 xkbcommon
+    libxkbcommon-x11-dev

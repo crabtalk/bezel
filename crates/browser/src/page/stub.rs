@@ -10,8 +10,9 @@ impl State {
     pub(super) fn new(
         _cx: &App,
         _input: Rc<NativeViewState>,
-        _reports: async_channel::Sender<Report>,
+        reports: async_channel::Sender<Report>,
     ) -> Self {
+        let _ = reports.try_send(Report::Unavailable);
         Self
     }
 }
@@ -45,6 +46,7 @@ impl Page {
 
     pub(crate) fn load(&self, url: String) {
         *self.url.borrow_mut() = url;
+        self.reload();
     }
 
     pub(crate) fn back(&self) {}
@@ -55,9 +57,13 @@ impl Page {
         (false, false)
     }
 
-    pub(crate) fn reload(&self) {}
+    pub(crate) fn reload(&self) {
+        let _ = self.reports.try_send(Report::Unavailable);
+    }
 
-    pub(crate) fn reload_bypassing_cache(&self) {}
+    pub(crate) fn reload_bypassing_cache(&self) {
+        self.reload();
+    }
 
     pub(crate) fn location(&self) -> Option<String> {
         None
@@ -92,4 +98,8 @@ pub(super) fn store_usage(
     done(None);
 }
 
-impl Present for State {}
+impl Present for State {
+    fn available(&self, _window: &Window) -> bool {
+        false
+    }
+}

@@ -21,7 +21,6 @@ members = [
     "apps/hello",
     "apps/browse",
     "apps/parity",
-    "tools/wpe-proof",
 ]
 
 [workspace.package]
@@ -38,8 +37,6 @@ rust-version = "1.90"
 [workspace.dependencies]
 futures = "0.3"
 windows-numerics = "0.3"
-cc = "1"
-sha2 = "0.10"
 anyhow = "1"
 url = "2"
 # The short names are taken on crates.io, so packages publish as `bezel-*`; the

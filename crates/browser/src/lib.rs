@@ -1,9 +1,9 @@
 //! Platform web pages hosted in GPUI windows.
 //!
 //! macOS participates in native/GPU scene composition, including content masks
-//! and overlay stacking. Linux imports WPE buffers and Windows imports WebView2
-//! capture textures. On the web,
-//! [`Frame`] hosts an iframe above the canvas.
+//! and overlay stacking. Windows imports WebView2 capture textures. On the web,
+//! [`Frame`] hosts an iframe above the canvas. Native browsing is unavailable on
+//! Linux.
 
 #[cfg(target_family = "wasm")]
 mod frame;

@@ -27,9 +27,6 @@ static EVALUATION_ID: AtomicU64 = AtomicU64::new(1);
 type EvaluationReplies =
     Rc<RefCell<HashMap<u64, async_channel::Sender<Result<String, EvalError>>>>>;
 
-#[cfg(target_os = "linux")]
-mod linux;
-
 /// A retained page, built after its first paint. Hiding it preserves document
 /// state; showing it in another window moves the same page there.
 ///
@@ -38,8 +35,8 @@ mod linux;
 /// displayed rectangle and controls whether native page input is enabled.
 /// AppKit handles page input, including keyboard focus and pointer gestures.
 ///
-/// Linux composes WPEPlatform buffers through GPUI. Windows composes live
-/// WebView2 Graphics Capture frames through shared D3D textures.
+/// Windows composes live WebView2 Graphics Capture frames through shared D3D
+/// textures.
 pub struct WebView {
     page: Rc<Page>,
     evaluations: EvaluationReplies,
@@ -53,10 +50,6 @@ pub struct WebView {
     _focus: [Subscription; 2],
     _reports: Task<()>,
     pub error: Option<String>,
-    #[cfg(target_os = "linux")]
-    menu: ui::context_menu::ContextMenu<Self>,
-    #[cfg(target_os = "linux")]
-    menu_was_open: bool,
 }
 
 /// Fixed logical page viewport and input ownership for a native canvas frame.
@@ -172,16 +165,10 @@ impl WebView {
             }
         });
         let page = Rc::new(Page::new(url.into(), focus, reports, cx));
-        #[cfg(target_os = "linux")]
-        let _ = page.platform.view.set(cx.entity().downgrade());
         Self {
             evaluations: Rc::default(),
             page,
             error: None,
-            #[cfg(target_os = "linux")]
-            menu: ui::context_menu::ContextMenu::default(),
-            #[cfg(target_os = "linux")]
-            menu_was_open: false,
             location: None,
             title: String::new(),
             loading: false,
@@ -481,8 +468,13 @@ impl WebView {
                     let _ = reply.try_send(answer.map_err(EvalError::JavaScript));
                 }
             }
-            #[cfg(target_os = "linux")]
-            Report::Linux(event) => self.linux_event(event, cx),
+            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+            Report::Unavailable => {
+                let error = "Embedded browsing is not supported on this platform".to_owned();
+                self.error = Some(error.clone());
+                cx.emit(WebViewEvent::Error(error));
+                cx.notify();
+            }
             // Deferred: the window's handlers may update this view.
             Report::Pressed => {
                 if self.page.holds_keys()
@@ -645,17 +637,6 @@ impl Render for WebView {
             }
             .into_any_element(),
         };
-        #[cfg(target_os = "linux")]
-        let menu = {
-            if self.menu_was_open && !self.menu.is_open() {
-                self.page
-                    .platform
-                    .command(serde_json::json!({"cmd":"dismiss-menu"}));
-            }
-            self.menu_was_open = self.menu.is_open();
-            self.menu
-                .render("browser-page-menu", |this| &mut this.menu, window, cx)
-        };
         div()
             .size_full()
             .key_context(KEY_CONTEXT)
@@ -666,16 +647,6 @@ impl Render for WebView {
             .on_action(on_edit::<Undo>(Edit::Undo, cx))
             .on_action(on_edit::<Redo>(Edit::Redo, cx))
             .child(content)
-            .children({
-                #[cfg(target_os = "linux")]
-                {
-                    menu
-                }
-                #[cfg(not(target_os = "linux"))]
-                {
-                    None::<gpui::AnyElement>
-                }
-            })
     }
 }
 
@@ -689,8 +660,6 @@ fn on_edit<A: Action>(
 ) -> impl Fn(&A, &mut Window, &mut App) + 'static {
     cx.listener(move |this, _: &A, window, cx| {
         if this.page.window() == Some(window.window_handle()) {
-            #[cfg(target_os = "linux")]
-            this.page.platform.share_clipboard(cx);
             this.page.edit(edit);
         } else {
             cx.propagate();

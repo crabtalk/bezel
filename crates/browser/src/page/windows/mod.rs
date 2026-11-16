@@ -37,6 +37,7 @@ use windows_numerics::{Vector2, Vector3};
 mod accelerator;
 mod capture;
 mod input;
+mod pointer;
 
 pub(super) const BINDS_EDITS: bool = false;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);

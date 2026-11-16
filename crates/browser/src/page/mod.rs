@@ -9,17 +9,11 @@ use std::{
     sync::Arc,
 };
 
-#[cfg(any(target_os = "linux", target_os = "windows"))]
-mod input;
 #[cfg_attr(target_os = "macos", path = "macos/mod.rs")]
 #[cfg_attr(target_os = "windows", path = "windows/mod.rs")]
-#[cfg_attr(target_os = "linux", path = "linux/mod.rs")]
-#[cfg_attr(
-    not(any(target_os = "macos", target_os = "windows", target_os = "linux")),
-    path = "stub.rs"
-)]
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), path = "stub.rs")]
 pub(crate) mod platform;
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 mod script;
 
 pub(crate) type SnapshotDone = Box<dyn FnOnce(Result<Arc<RenderImage>, String>) + Send>;
@@ -77,12 +71,12 @@ pub(crate) enum Report {
     Still(Option<Arc<RenderImage>>),
     /// The page was built, or failed to be, after the paint that asked for it.
     Built,
-    #[cfg(target_os = "linux")]
-    Linux(platform::Message),
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    Unavailable,
 }
 
 impl Report {
-    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux", test))]
+    #[cfg(any(target_os = "macos", target_os = "windows", test))]
     pub(crate) fn evaluated(body: &str) -> Option<Self> {
         #[derive(serde::Deserialize)]
         struct Evaluation {
@@ -276,7 +270,7 @@ impl Page {
         self.window.get()
     }
 
-    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    #[cfg(not(target_os = "windows"))]
     fn uncover(&self) {
         if let Cover::On(still) = self.cover.replace(Cover::Off) {
             *self.dropped.borrow_mut() = still;
@@ -424,12 +418,12 @@ impl Page {
                 .ok()
         })?;
         self.platform.attach(&view, &self.reports);
-        if self.read_access.borrow().is_some() && url.starts_with("file:") {
-            if let Err(error) =
+        if self.read_access.borrow().is_some()
+            && url.starts_with("file:")
+            && let Err(error) =
                 platform::navigate(&view, &url, self.read_access.borrow().as_deref())
-            {
-                tracing::warn!(%error, "load local page");
-            }
+        {
+            tracing::warn!(%error, "load local page");
         }
         Some(view)
     }
@@ -613,7 +607,7 @@ impl raw_window_handle::HasWindowHandle for Parent {
 }
 
 /// A console message the [`script::CONSOLE`] script posted from `source`.
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn logged(body: &str, source: String) -> Option<ConsoleMessage> {
     #[derive(serde::Deserialize)]
     struct Logged {

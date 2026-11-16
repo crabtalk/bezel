@@ -25,18 +25,13 @@ jobs:
   check:
     name: fmt + clippy
     runs-on: ubuntu-latest
-    container: debian:sid-slim
     steps:
-      - name: Install container tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends ca-certificates curl git
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: .github/scripts/linux-deps
+      - run: sudo .github/scripts/linux-deps
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace
 
@@ -46,27 +41,17 @@ jobs:
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            container: debian:sid-slim
-          - os: windows-latest
-            container: ''
+        os: [ubuntu-latest, windows-latest]
     steps:
-      - if: runner.os == 'Linux'
-        name: Install container tools
-        run: |
-          apt-get update
-          apt-get install -y --no-install-recommends ca-certificates curl git
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: taiki-e/install-action@nextest
       - if: runner.os == 'Linux'
-        run: .github/scripts/linux-deps
+        run: sudo .github/scripts/linux-deps
       # The spec examples the markdown conformance test reads.
       - run: crates/markdown/tests/spec/fetch.sh
         shell: bash
