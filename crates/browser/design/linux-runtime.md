@@ -1,7 +1,6 @@
 # Linux browser runtime
 
-The Linux backend uses a separate WPEPlatform helper. Platform compilation
-and runtime behavior still need verification on Linux.
+The Linux backend uses a separate WPEPlatform helper. The software-buffer path has automated coverage on Debian sid aarch64 with WPE 2.54.2 and Mesa llvmpipe. Physical GPU and distribution compatibility remain unverified.
 
 ## Runtime contract
 
@@ -39,17 +38,16 @@ process reaping run in background tasks. Failure reaches `WebViewEvent::Error`;
 loading or reloading starts a new session after failure.
 
 WPE negotiates single-plane AR24 DMA-BUF modifiers with GPUI's Vulkan device.
-Unsupported imports use shared-memory frames. Producer buffers remain held until
-GPU reads finish. Presentation acknowledgments follow GPUI display callbacks.
-Viewport generations reject obsolete frames after resize.
+Unsupported imports use immutable shared-memory frames. Producer buffers remain held until GPU reads finish; GPUI upload-completion callbacks acknowledge them. WPE owns browser rendering cadence. Viewport generations reject obsolete frames after resize.
+
+The helper implements the public WPE display and view contracts, delegates EGL display creation to WPEPlatform headless, and uses its headless toplevel. Native WebKit snapshots cross the socket in separate sealed pixel files. Persistent profiles use an exclusive `profile.lock`.
 
 Pointer coordinates and IME caret bounds use the fixed page viewport and painted
 bounds. Text clipboard, edit commands, context menus and option menus cross the
 helper boundary; rich clipboard formats and an inspector UI are unavailable.
 
 The helper build requires a C compiler and pkg-config modules `wpe-webkit-2.0`
-(2.54+), `wpe-platform-2.0`, `json-glib-1.0`, `gbm`, `egl`, `glesv2` and
-`xkbcommon`. Runtime users do not need development headers or pkg-config.
+(2.54+), `wpe-platform-headless-2.0`, `json-glib-1.0` and `xkbcommon`. Runtime users do not need development headers or pkg-config.
 
 ## Package availability
 
@@ -68,8 +66,7 @@ incremental download depends on the user's installed packages. Do not use
 these numbers as a bundled runtime budget.
 
 Developers additionally need the matching development package supplying
-`wpe-webkit-2.0` and `wpe-platform-2.0` pkg-config modules, a C compiler, and
-any graphics libraries the custom platform implementation uses. Runtime
+`wpe-webkit-2.0` and `wpe-platform-headless-2.0` pkg-config modules and a C compiler. Runtime
 users do not need development headers or pkg-config.
 
 ## Sources

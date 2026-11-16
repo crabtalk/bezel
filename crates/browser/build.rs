@@ -7,11 +7,8 @@ fn main() {
     }
     let packages = [
         "wpe-webkit-2.0 >= 2.54",
-        "wpe-platform-2.0",
+        "wpe-platform-headless-2.0",
         "json-glib-1.0",
-        "gbm",
-        "egl",
-        "glesv2",
         "xkbcommon",
     ];
     let flags = Command::new(env::var_os("PKG_CONFIG").unwrap_or_else(|| "pkg-config".into()))

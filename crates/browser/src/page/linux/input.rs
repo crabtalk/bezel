@@ -264,15 +264,14 @@ impl Page {
 
     pub(crate) fn caret_bounds(&self) -> Option<gpui::Bounds<Pixels>> {
         let input = self.platform.route.input.lock().unwrap();
-        let configuration = (*self.platform.route.configuration.lock().unwrap())?;
         let caret = &input["caret"];
-        let x = caret[0].as_f64()? as f32 / configuration.scale;
-        let y = caret[1].as_f64()? as f32 / configuration.scale;
-        let width = caret[2].as_f64().unwrap_or(1.) as f32 / configuration.scale;
-        let height = caret[3].as_f64().unwrap_or(18.) as f32 / configuration.scale;
+        let x = caret[0].as_f64()? as f32;
+        let y = caret[1].as_f64()? as f32;
+        let width = caret[2].as_f64().unwrap_or(1.) as f32;
+        let height = caret[3].as_f64().unwrap_or(18.) as f32;
         let origin = self.screen_position(gpui::point(gpui::px(x), gpui::px(y)))?;
         let end = self.screen_position(gpui::point(gpui::px(x + width), gpui::px(y + height)))?;
-        Some(gpui::Bounds::new(origin, end - origin))
+        Some(gpui::Bounds::new(origin, (end - origin).into()))
     }
 }
 

@@ -2,7 +2,7 @@ use crate::{
     DataStore,
     page::platform::{
         Route, presentation,
-        transport::{self, Outbox, Reader},
+        transport::{Outbox, Packet, Reader},
     },
 };
 use anyhow::{Context as _, Result, bail, ensure};
@@ -179,7 +179,7 @@ impl Worker {
         socket.set_read_timeout(Some(STARTUP_TIMEOUT))?;
         let mut reader = Reader::new(socket.try_clone()?);
         let startup = (|| -> Result<()> {
-            let (kind, _, bytes) = reader
+            let Packet { kind, bytes, .. } = reader
                 .next()
                 .context("WPE helper did not start; install system WPE WebKit 2.54+ with WPEPlatform and reload the tab")?;
             if kind == b'E' {
@@ -205,7 +205,7 @@ impl Worker {
             return Err(error);
         }
         socket.set_read_timeout(None)?;
-        let outbox = transport::writer(socket.try_clone()?)?;
+        let outbox = Outbox::new(socket.try_clone()?)?;
         let routes: Arc<Mutex<HashMap<u32, Registration>>> = Arc::default();
         let stopped = Arc::new(AtomicBool::new(false));
         let worker = Arc::new(Self {
@@ -220,7 +220,9 @@ impl Worker {
             .spawn(move || {
                 let result = (|| -> Result<()> {
                     loop {
-                        let (kind, id, data) = reader.next()?;
+                        let packet = reader.next()?;
+                        let kind = packet.kind;
+                        let id = packet.page;
                         let route = routes.lock().unwrap().get(&id).and_then(|registration| {
                             registration
                                 .route
@@ -228,34 +230,27 @@ impl Worker {
                                 .map(|route| (route, registration.epoch))
                         });
                         let Some((route, epoch)) = route else {
-                            if kind == b'B' {
-                                reader.take_fd()?;
-                            }
                             continue;
                         };
                         let _gate = route.gate.lock().unwrap();
                         if route.epoch.load(Ordering::Acquire) != epoch {
-                            if kind == b'B' {
-                                reader.take_fd()?;
-                            }
                             continue;
                         }
                         match kind {
-                            b'B' | b'X' | b'F' | b'V' | b'K' => {
-                                if presentation::packet(
-                                    &route,
+                            b'B' | b'X' | b'F' | b'K' => {
+                                let configuration = *route.configuration.lock().unwrap();
+                                let event = route.surface.lock().unwrap().receive(
+                                    configuration,
                                     &outbox,
-                                    id,
-                                    kind,
-                                    &data,
-                                    &mut reader,
-                                )?
-                                .is_some()
-                                {
-                                    route.wake();
+                                    packet,
+                                )?;
+                                match event {
+                                    presentation::Received::Unchanged => (),
+                                    presentation::Received::Changed => route.wake(),
+                                    presentation::Received::Snapshot { .. } => (),
                                 }
                             }
-                            _ => route.packet(kind, &data)?,
+                            _ => route.packet(kind, &packet.bytes)?,
                         }
                     }
                 })();

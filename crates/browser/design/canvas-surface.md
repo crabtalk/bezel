@@ -44,7 +44,7 @@ and restart must not wait on the UI thread.
 
 | Platform | Existing or available path | Boundary |
 | --- | --- | --- |
-| Linux | WPEPlatform DMA-BUF or shared-memory frames | Backend and GPUI import/scheduling implemented locally; Linux verification pending |
+| Linux | WPEPlatform DMA-BUF or shared-memory frames | Public WPE platform integration and GPUI composition; software path verified, hardware review pending |
 | macOS | Live WKWebView hosted between GPU layers | Fixed viewport, native transforms, scene clips and overlay hit regions; GPU-only exports exclude native content |
 | Windows | WebView2 composition controller and Windows Graphics Capture | GPUI shared D3D texture import implemented locally; browser capture and transformed input unfinished |
 | Web | Existing iframe overlay | Does not provide same-origin-independent composited pixels; excluded from this native surface contract |
@@ -89,6 +89,8 @@ user-owned; the capture/hosting backend has not been implemented.
 
 The canvas release requires these platform prerequisites. Opening another
 browser panel to interact with a still does not meet the contract.
+
+Linux software rendering is covered by the independent WPE/GPUI harness. Physical GPU and distribution compatibility remain unverified.
 
 ## Sources
 

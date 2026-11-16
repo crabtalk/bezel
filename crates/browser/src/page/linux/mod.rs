@@ -3,7 +3,7 @@ use crate::{
     page::{
         Edit, Page, Present, Report,
         platform::{
-            presentation::{Presenter, Surface},
+            presentation::{Configuration, Presenter, Surface},
             runtime::Session,
         },
         script,
@@ -60,12 +60,6 @@ pub(crate) enum Event {
     },
 }
 
-pub(super) enum NativeEvent {
-    Frame,
-    Vsync,
-    Cursor,
-}
-
 #[derive(Clone, Default, Deserialize)]
 pub(crate) struct Snapshot {
     pub(crate) url: Option<String>,
@@ -74,20 +68,6 @@ pub(crate) struct Snapshot {
     pub(crate) can_back: bool,
     pub(crate) can_forward: bool,
     pub(crate) error: Option<String>,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-struct Configuration {
-    viewport: Viewport,
-    scale: f32,
-    generation: u32,
-}
-
-impl Configuration {
-    fn command(self) -> Value {
-        json!({"cmd":"resize", "width": f32::from(self.viewport.width).ceil() as u32,
-            "height":f32::from(self.viewport.height).ceil() as u32, "scale":self.scale, "generation":self.generation})
-    }
 }
 
 pub(crate) struct Route {
@@ -162,6 +142,7 @@ impl Route {
     fn packet(&self, kind: u8, bytes: &[u8]) -> io::Result<()> {
         let value = || serde_json::from_slice::<Value>(bytes).map_err(io::Error::other);
         match kind {
+            b'E' => self.fail(String::from_utf8_lossy(bytes).into_owned()),
             b'S' => {
                 *self.snapshot.lock().unwrap() =
                     serde_json::from_slice(bytes).map_err(io::Error::other)?;
@@ -247,7 +228,6 @@ pub(crate) struct State {
     starting: Cell<bool>,
     failed: Cell<bool>,
     needs_load: Cell<bool>,
-    ticking: Cell<bool>,
     focused: Cell<bool>,
     pub(crate) pressed: Cell<u8>,
     hovered: Cell<bool>,
@@ -270,7 +250,6 @@ impl State {
             starting: Cell::new(false),
             failed: Cell::new(false),
             needs_load: Cell::new(true),
-            ticking: Cell::new(false),
             focused: Cell::new(false),
             pressed: Cell::new(0),
             hovered: Cell::new(false),
@@ -379,7 +358,6 @@ impl State {
         self.starting.set(false);
         self.failed.set(false);
         self.needs_load.set(true);
-        self.ticking.set(false);
         self.route.surface.lock().unwrap().clear();
         self.route.configuration.lock().unwrap().take();
         *self.route.input.lock().unwrap() = json!({});
@@ -425,9 +403,7 @@ impl Present for State {
             return;
         }
         let shown = page.placed.replace(Some(bounds)).is_some();
-        if page.window.replace(Some(window.window_handle())) != Some(window.window_handle()) {
-            self.ticking.set(false);
-        }
+        page.window.set(Some(window.window_handle()));
         page.owner.set(owner);
         if self.failed.get() {
             return;
@@ -470,7 +446,17 @@ impl Present for State {
         }
 
         if let Some(presenter) = self.presenter.borrow_mut().as_mut() {
-            presenter.paint(&self.route, &mut self.image.borrow_mut(), bounds, window);
+            let configuration = *self.route.configuration.lock().unwrap();
+            if let Err(error) = presenter.paint(
+                &self.route.surface,
+                configuration,
+                &mut self.image.borrow_mut(),
+                bounds,
+                window,
+            ) {
+                self.route
+                    .fail(format!("Browser presentation failed: {error:#}"));
+            }
         }
         if page.input.enabled.get() {
             Page::install_input(page, hitbox, window);
@@ -481,39 +467,7 @@ impl Present for State {
                 window.handle_input(&page.focus, ElementInputHandler::new(bounds, view), cx);
             }
         }
-        if !self.ticking.replace(true) {
-            tick(
-                Rc::downgrade(page),
-                self.route.epoch.load(Ordering::Acquire),
-                window,
-            );
-        }
     }
-}
-
-fn tick(page: std::rc::Weak<Page>, epoch: u64, window: &Window) {
-    window.on_next_display_frame(move |window, _| {
-        let Some(page) = page.upgrade() else {
-            return;
-        };
-        if page.platform.route.epoch.load(Ordering::Acquire) != epoch
-            || page.window.get() != Some(window.window_handle())
-        {
-            return;
-        }
-        if page.placed.get().is_none() {
-            page.platform.ticking.set(false);
-            return;
-        }
-        if !page.platform.route.surface.lock().unwrap().vsync {
-            page.platform.ticking.set(false);
-            return;
-        }
-        if let Some(presenter) = page.platform.presenter.borrow_mut().as_mut() {
-            presenter.vblank();
-        }
-        tick(Rc::downgrade(&page), epoch, window);
-    });
 }
 
 impl Page {
@@ -537,9 +491,6 @@ impl Page {
         if self.placed.take().is_some() {
             self.platform.sync_focus(false, false);
             self.platform.command(json!({"cmd":"visible","value":0}));
-            if let Some(presenter) = self.platform.presenter.borrow_mut().as_mut() {
-                presenter.reset_refresh();
-            }
         }
     }
     pub(crate) fn start(_window: &Window, _cx: &mut App) {}

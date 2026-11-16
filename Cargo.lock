@@ -834,6 +834,7 @@ dependencies = [
  "bezel-gpui-linux",
  "bezel-gpui-macos",
  "bezel-gpui-web",
+ "bezel-gpui-wgpu",
  "bezel-gpui-windows",
  "bezel-zed-reqwest-client",
  "console_error_panic_hook",
@@ -905,6 +906,7 @@ dependencies = [
  "bytemuck",
  "cosmic-text",
  "etagere",
+ "image",
  "itertools 0.14.0",
  "js-sys",
  "log",
@@ -1297,6 +1299,19 @@ dependencies = [
  "raw-window-handle",
  "static_assertions",
  "web-sys",
+]
+
+[[package]]
+name = "bezel-wpe-proof"
+version = "0.2.27"
+dependencies = [
+ "anyhow",
+ "bezel-gpui",
+ "bezel-gpui-platform",
+ "image",
+ "libc",
+ "serde_json",
+ "tracing",
 ]
 
 [[package]]

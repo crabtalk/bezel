@@ -21,6 +21,7 @@ members = [
     "apps/hello",
     "apps/browse",
     "apps/parity",
+    "tools/wpe-proof",
 ]
 
 [workspace.package]
