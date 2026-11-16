@@ -625,6 +625,7 @@ dependencies = [
  "bezel-zed-sum-tree",
  "bitflags 2.13.1",
  "chrono",
+ "criterion",
  "derive_more",
  "embed-resource",
  "etagere",

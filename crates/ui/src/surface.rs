@@ -361,9 +361,10 @@ impl Element for Surface {
                                 &self.material,
                                 material,
                                 placed,
-                                |window| self.child.as_mut().unwrap().paint(window, cx),
+                                |_| {},
                             )
                             .expect("native material capability changed during paint");
+                        self.child.as_mut().unwrap().paint(window, cx);
                     });
                     return;
                 }

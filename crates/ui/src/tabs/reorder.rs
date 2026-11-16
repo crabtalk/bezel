@@ -370,6 +370,12 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
                 .when(track != Track::Bordered, |frame| {
                     frame.border_color(transparent_black())
                 })
+                .when(track == Track::Bare, |frame| {
+                    frame
+                        .p_0()
+                        .border_0()
+                        .h(px(widgets::on_track_height(TRACK_HEIGHT, TRACK_PAD)))
+                })
                 .when(track == Track::Flat, |frame| frame.bg(transparent_black())),
         };
         let region = if native && track.is_some() {

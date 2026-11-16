@@ -95,5 +95,11 @@ fn moving_material_keeps_the_foreground_viewport(cx: &mut TestAppContext) {
             .unwrap();
         assert_eq!(foreground.content_mask.bounds.size.width.0, 200. * scale);
         assert_eq!(foreground.content_mask.bounds.size.height.0, 30. * scale);
+        let scene = window.rendered_scene();
+        assert_eq!(scene.native_materials.len(), 1);
+        assert!(
+            foreground.order > scene.native_materials[0].end_order,
+            "the moving highlight must not own the wider foreground"
+        );
     });
 }
