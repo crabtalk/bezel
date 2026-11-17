@@ -50,12 +50,14 @@ fn native_selections_preserve_control_geometry_and_independent_clicks(cx: &mut T
     visual.update(|_, cx| assert_eq!(host.read(cx).clicks, [0, 1]));
 }
 
-struct MovingSelection;
+struct MovingSelection {
+    clipped: bool,
+}
 
 impl Render for MovingSelection {
     fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         window.native_surfaces.materials = true;
-        surface::selection(
+        let selection = surface::selection(
             "moving-selection",
             div().w(px(200.)).h(px(30.)).bg(gpui::rgb(0x123456)),
             |bounds, _, _| {
@@ -67,7 +69,12 @@ impl Render for MovingSelection {
                     px(15.),
                 ))
             },
-        )
+        );
+        div()
+            .w(px(180.))
+            .h(px(40.))
+            .when(self.clipped, |view| view.overflow_hidden())
+            .child(selection)
     }
 }
 
@@ -82,18 +89,40 @@ fn moving_material_keeps_the_foreground_viewport(cx: &mut TestAppContext) {
             cx,
         )
     });
-    let window = cx.add_window(|_, _| MovingSelection);
-    let mut visual = VisualTestContext::from_window(window.into(), cx);
-    visual.simulate_resize(size(px(300.), px(80.)));
-    visual.run_until_parked();
-    visual.update(|window, _| {
-        let scale = window.scale_factor();
-        let quads = window.painted_quads();
-        let foreground = quads
-            .iter()
-            .find(|quad| quad.bounds.size.width.0 == 200. * scale)
-            .unwrap();
-        assert_eq!(foreground.content_mask.bounds.size.width.0, 200. * scale);
-        assert_eq!(foreground.content_mask.bounds.size.height.0, 30. * scale);
-    });
+    for clipped in [false, true] {
+        let window = cx.add_window(|_, _| MovingSelection { clipped });
+        let mut visual = VisualTestContext::from_window(window.into(), cx);
+        visual.simulate_resize(size(px(300.), px(80.)));
+        visual.run_until_parked();
+        visual.update(|window, _| {
+            let scale = window.scale_factor();
+            let quads = window.painted_quads();
+            let foreground = quads
+                .iter()
+                .find(|quad| quad.bounds.size.width.0 == 200. * scale)
+                .unwrap();
+            let foreground_width = if clipped { 180. } else { 200. };
+            assert_eq!(
+                foreground.content_mask.bounds.size.width.0,
+                foreground_width * scale
+            );
+            assert_eq!(foreground.content_mask.bounds.size.height.0, 30. * scale);
+            let scene = window.rendered_scene();
+            assert_eq!(scene.native_materials.len(), 1);
+            let material = &scene.native_materials[0];
+            let mask_size = if clipped { (180., 40.) } else { (300., 80.) };
+            assert_eq!(
+                material.content_mask.bounds.size.width.0,
+                mask_size.0 * scale
+            );
+            assert_eq!(
+                material.content_mask.bounds.size.height.0,
+                mask_size.1 * scale
+            );
+            assert!(
+                foreground.order > material.end_order,
+                "the moving highlight must not own the wider foreground"
+            );
+        });
+    }
 }

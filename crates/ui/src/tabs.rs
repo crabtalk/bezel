@@ -371,8 +371,7 @@ pub const MAX_WIDTH: f32 = 180.0;
 /// The narrowest a tab on a [`Track`] gets before its strip scrolls.
 pub const TRACK_MIN_WIDTH: f32 = 120.0;
 
-/// How tall a [`Track`] stands. Its tabs fill it inside its border and
-/// [`TRACK_PAD`].
+/// The height callers reserve for a tab track.
 pub const TRACK_HEIGHT: f32 = 30.0;
 
 /// The padding between a [`Track`]'s border and its tabs.
