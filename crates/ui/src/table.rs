@@ -142,6 +142,7 @@ pub fn header(theme: &Theme) -> gpui::Div {
 /// simply never adds the `.id`/`.on_click` that would make it.
 pub fn header_cell(theme: &Theme, column: &Column, sorted: Option<bool>) -> gpui::Div {
     cell_frame(column)
+        .truncate()
         .py(px(8.0))
         .gap(px(4.0))
         .text_style(TextStyle::Subheadline)
@@ -179,6 +180,17 @@ pub fn row(
     selected: Selection,
     cells: Vec<AnyElement>,
 ) -> gpui::Div {
+    row_with_wrapping(theme, columns, first, selected, cells, |_| false)
+}
+
+pub fn row_with_wrapping(
+    theme: &Theme,
+    columns: &[Column],
+    first: bool,
+    selected: Selection,
+    cells: Vec<AnyElement>,
+    wraps: impl Fn(&Column) -> bool,
+) -> gpui::Div {
     debug_assert_eq!(
         cells.len(),
         columns.len(),
@@ -202,19 +214,21 @@ pub fn row(
         row.hover(|s| s.bg(theme.element_hover))
     };
     row.children(columns.iter().zip(cells).map(|(column, content)| {
-        cell_frame(column).py(px(9.0)).child(
-            div()
-                .min_w_0()
-                .w_full()
-                .when(column.align == Align::End, |cell| cell.text_right())
-                .child(content),
-        )
+        let wrap = wraps(column);
+        cell_frame(column)
+            .when(wrap, |cell| cell.overflow_hidden().whitespace_normal())
+            .when(!wrap, |cell| cell.truncate())
+            .py(px(9.0))
+            .child(
+                div()
+                    .min_w_0()
+                    .w_full()
+                    .when(column.align == Align::End, |cell| cell.text_right())
+                    .child(content),
+            )
     }))
 }
 
-/// Width and alignment from the column — the shared shape that makes a header
-/// cell and a body cell land in the same place. A cell clips to its width, and
-/// text in it stays on one line and ends in `…` where it does not fit.
 fn cell_frame(column: &Column) -> gpui::Div {
     let cell = div()
         .flex()
@@ -222,7 +236,6 @@ fn cell_frame(column: &Column) -> gpui::Div {
         .items_center()
         .min_w_0()
         .px(px(CELL_X))
-        .truncate()
         .when(column.align == Align::End, |cell| cell.justify_end());
     match column.width {
         Width::Fixed(width) => cell.flex_none().w(width),
