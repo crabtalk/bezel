@@ -354,16 +354,16 @@ impl Element for Surface {
                         corner_radius: radius,
                         interactive: true,
                     };
+                    window
+                        .paint_native_material(
+                            id.expect("surface identity"),
+                            &self.material,
+                            material,
+                            placed,
+                            |_| {},
+                        )
+                        .expect("native material capability changed during paint");
                     window.with_content_mask(Some(gpui::ContentMask::new(bounds)), |window| {
-                        window
-                            .paint_native_material(
-                                id.expect("surface identity"),
-                                &self.material,
-                                material,
-                                placed,
-                                |_| {},
-                            )
-                            .expect("native material capability changed during paint");
                         self.child.as_mut().unwrap().paint(window, cx);
                     });
                     return;
