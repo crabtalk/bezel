@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.2.29",
+    "date": "2026-11-17",
+    "summary": "Native selection shadows respect ancestor clipping.",
+    "fixed": [
+      "Native selection surfaces retain their shadows while respecting ancestor clips; selection content stays clipped to the control bounds."
+    ]
+  },
+  {
     "version": "0.2.28",
     "date": "2026-11-17",
     "summary": "Glass selection foreground and fitted tab tracks.",
