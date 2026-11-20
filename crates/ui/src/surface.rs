@@ -64,6 +64,11 @@ pub fn selection(
     surface
 }
 
+/// Whether selection on window chrome uses native glass for this theme.
+pub fn native_selection_on_chrome(theme: &Theme) -> bool {
+    theme.glass && theme.appearance.is_dark()
+}
+
 /// A control whose selected background uses the platform material.
 #[derive(gpui::IntoElement)]
 pub struct Control {

@@ -50,6 +50,33 @@ fn native_selections_preserve_control_geometry_and_independent_clicks(cx: &mut T
     visual.update(|_, cx| assert_eq!(host.read(cx).clicks, [0, 1]));
 }
 
+#[gpui::test]
+fn light_tabs_paint_the_themed_selection_on_a_native_window(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::install_custom(
+            Theme {
+                glass: true,
+                ..Theme::light()
+            },
+            cx,
+        )
+    });
+    let window = cx.add_window(|_, _| Controls { clicks: Vec::new() });
+    let mut visual = VisualTestContext::from_window(window.into(), cx);
+    visual.simulate_resize(size(px(300.), px(80.)));
+    visual.run_until_parked();
+    visual.update(|window, cx| {
+        let fill = Theme::of(cx).card_selected_bg().into();
+        assert!(
+            window
+                .painted_quads()
+                .iter()
+                .any(|quad| quad.background == fill)
+        );
+        assert!(window.rendered_scene().native_materials.is_empty());
+    });
+}
+
 struct MovingSelection {
     clipped: bool,
 }
