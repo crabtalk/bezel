@@ -221,7 +221,8 @@ impl<Id: Clone + PartialEq + 'static> RenderOnce for Bar<Id> {
         pill.borrow_mut()
             .places
             .retain(|(id, _)| order.contains(id));
-        let native = window.native_surfaces.materials && theme.glass;
+        let native =
+            window.native_surfaces.materials && surface::native_selection_on_chrome(&theme);
         let flat = track == Some(Track::Flat);
         // On a track the front tab's pill is drawn under the tabs rather than
         // by the tab, so it can slide between them. It is placed when painted:

@@ -13,20 +13,20 @@
 //! A press on the diagram pans it and does not reach the editor; the band
 //! above it does, which is how the source is reached for editing.
 
-mod fonts;
-
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    hash::{DefaultHasher, Hash, Hasher},
-    rc::Rc,
-    sync::Arc,
+use crate::fence::{
+    copy_button, fence_band, fence_panel,
+    mermaid::fonts::{Families, Shaper},
 };
-
+use ::mermaid::{Colors, Options, Rgba};
 use gpui::{
-    AnyElement, App, AsyncApp, ElementId, Entity, Global, Hsla, ImageSource, MouseButton,
+    AnyElement, App, AsyncApp, ElementId, Entity, EntityId, Global, Hsla, ImageSource, MouseButton,
     MouseDownEvent, MouseMoveEvent, Pixels, Point, RenderImage, Rgba as GpuiRgba, SharedString,
-    Size, Window, div, img, prelude::*, px,
+    Size, WeakEntity, Window, div, img, prelude::*, px,
+};
+use std::{
+    collections::{HashMap, VecDeque},
+    hash::{DefaultHasher, Hash, Hasher},
+    sync::Arc,
 };
 use theme::{TextStyle, Theme};
 use ui::{
@@ -35,10 +35,7 @@ use ui::{
     widgets::{ButtonStyle, Buttons as _},
 };
 
-use ::mermaid::{Colors, Options, Rgba};
-
-use self::fonts::{Families, Shaper};
-use super::{copy_button, fence_band, fence_panel};
+mod fonts;
 
 pub const LANGUAGE: &str = "mermaid";
 
@@ -46,7 +43,7 @@ pub const LANGUAGE: &str = "mermaid";
 /// selects.
 pub const DIAGRAM_SELECTOR: &str = "mermaid-diagram";
 
-/// Diagrams kept laid out. Past this the cache starts over.
+/// Completed drawings retained beyond the fences displaying them.
 const CACHED: usize = 64;
 
 /// How far the corner buttons zoom a diagram. `cx.set_mermaid_zoom(zoom)`
@@ -120,33 +117,74 @@ const MAX_HEIGHT: f32 = 480.0;
 
 /// A drawn diagram, or the error's text for source that did not draw, so a
 /// fence being typed is not parsed again every frame.
-type Drawing = Result<Rc<Diagram>, SharedString>;
+type Drawing = Result<Entity<Diagram>, SharedString>;
 
-/// Diagrams by key: drawn, or `None` while being drawn.
+type Waiters = HashMap<EntityId, WeakEntity<Fence>>;
+
 #[derive(Default)]
-struct Cache(HashMap<u64, Option<Drawing>>);
+struct Cache {
+    completed: VecDeque<(u64, Drawing)>,
+    pending: HashMap<u64, Waiters>,
+}
 
 impl Global for Cache {}
+
+impl Cache {
+    fn get(&mut self, key: u64) -> Option<Drawing> {
+        let index = self.completed.iter().position(|(id, _)| *id == key)?;
+        let entry = self.completed.remove(index)?;
+        let drawing = entry.1.clone();
+        self.completed.push_back(entry);
+        Some(drawing)
+    }
+
+    fn finish(&mut self, key: u64, drawing: Drawing) -> Waiters {
+        if self.completed.len() == CACHED {
+            self.completed.pop_front();
+        }
+        self.completed.push_back((key, drawing));
+        self.pending.remove(&key).unwrap_or_default()
+    }
+}
+
+#[derive(Default)]
+struct Fence {
+    key: Option<u64>,
+    drawing: Option<Drawing>,
+    last: Option<Shown>,
+}
+
+#[derive(Clone)]
+struct Shown {
+    key: u64,
+    id: String,
+    diagram: Entity<Diagram>,
+}
 
 /// A drawn diagram: its SVG parsed, its size, and its last raster with the
 /// device scale that was made at.
 struct Diagram {
     svg: usvg::Tree,
     natural: (f32, f32),
-    raster: RefCell<Option<(f32, Arc<RenderImage>)>>,
+    raster: Option<(f32, Arc<RenderImage>)>,
 }
 
 impl Diagram {
     /// The diagram at `scale` device pixels to its own, made again only when
     /// the scale moves.
-    fn raster(&self, scale: f32, window: &mut Window, cx: &mut App) -> Option<Arc<RenderImage>> {
-        if let Some((at, image)) = &*self.raster.borrow()
+    fn raster(
+        &mut self,
+        scale: f32,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Option<Arc<RenderImage>> {
+        if let Some((at, image)) = &self.raster
             && *at == scale
         {
             return Some(image.clone());
         }
         let image = rasterize(&self.svg, scale)?;
-        if let Some((_, old)) = self.raster.replace(Some((scale, image.clone()))) {
+        if let Some((_, old)) = self.raster.replace((scale, image.clone())) {
             cx.drop_image(old, Some(window));
         }
         Some(image)
@@ -203,13 +241,11 @@ fn colors(theme: &Theme) -> Colors {
     }
 }
 
-/// `code` drawn at text size `size` in the theme's colours and fonts, kept;
-/// `None` while it is being drawn, the windows refreshed when it is.
 fn drawn(
     code: &str,
     size: f32,
     theme: &Theme,
-    window: &mut Window,
+    fence: &Entity<Fence>,
     cx: &mut App,
 ) -> (u64, Option<Drawing>) {
     let fonts = ui::fonts::database();
@@ -218,21 +254,29 @@ fn drawn(
     let mut hasher = DefaultHasher::new();
     (code, size.to_bits(), &colors, &families, fonts.generation).hash(&mut hasher);
     let key = hasher.finish();
-    if let Some(found) = cx.default_global::<Cache>().0.get(&key) {
-        return (key, found.clone());
+    let current = fence.read(cx);
+    if current.key == Some(key) {
+        return (key, current.drawing.clone());
     }
-    let cache = std::mem::take(&mut cx.default_global::<Cache>().0);
-    let cache = if cache.len() >= CACHED {
-        for diagram in cache.into_values().flatten().flatten() {
-            if let Some((_, image)) = diagram.raster.take() {
-                cx.drop_image(image, Some(window));
-            }
-        }
-        HashMap::new()
-    } else {
-        cache
-    };
-    cx.default_global::<Cache>().0 = cache;
+    let retained = current
+        .last
+        .as_ref()
+        .filter(|last| last.key == key)
+        .map(|last| Ok(last.diagram.clone()));
+    let drawing = retained.or_else(|| cx.default_global::<Cache>().get(key));
+    fence.update(cx, |fence, _| {
+        fence.key = Some(key);
+        fence.drawing = drawing.clone();
+    });
+    if drawing.is_some() {
+        return (key, drawing);
+    }
+    let waiting = cx.default_global::<Cache>().pending.entry(key).or_default();
+    let start = waiting.is_empty();
+    waiting.insert(fence.entity_id(), fence.downgrade());
+    if !start {
+        return (key, None);
+    }
     let parsing = usvg::Options {
         font_family: families.sans.clone(),
         fontdb: fonts.fonts.clone(),
@@ -257,18 +301,32 @@ fn drawn(
         let result: Result<(usvg::Tree, (f32, f32)), SharedString> = job.await;
         cx.update(|cx| {
             let drawing = result.map(|(svg, natural)| {
-                Rc::new(Diagram {
-                    svg,
-                    natural,
-                    raster: RefCell::new(None),
+                cx.new(|cx| {
+                    cx.on_release(|diagram: &mut Diagram, cx| {
+                        if let Some((_, image)) = diagram.raster.take() {
+                            cx.drop_image(image, None);
+                        }
+                    })
+                    .detach();
+                    Diagram {
+                        svg,
+                        natural,
+                        raster: None,
+                    }
                 })
             });
-            cx.default_global::<Cache>().0.insert(key, Some(drawing));
-            cx.refresh_windows();
+            let waiting = cx.default_global::<Cache>().finish(key, drawing.clone());
+            for fence in waiting.into_values() {
+                let _ = fence.update(cx, |fence, cx| {
+                    if fence.key == Some(key) {
+                        fence.drawing = Some(drawing.clone());
+                        cx.notify();
+                    }
+                });
+            }
         });
     })
     .detach();
-    cx.default_global::<Cache>().0.insert(key, None);
     (key, None)
 }
 
@@ -294,31 +352,30 @@ pub(crate) fn render(
 ) -> Result<AnyElement, SharedString> {
     let size = TextStyle::Callout.painted();
     let theme = Theme::of(cx).clone();
-    let (key, drawing) = drawn(code, size, &theme, window, cx);
-    // The diagram this fence last showed and its view's id, shown while the
-    // next is drawn.
-    let last = window.use_keyed_state(
-        ElementId::from(SharedString::from(format!("mermaid-last-{block}"))),
+    let fence = window.use_keyed_state(
+        ElementId::named_usize("mermaid-fence", block),
         cx,
-        |_, _| None::<(String, Rc<Diagram>)>,
+        |_, _| Fence::default(),
     );
-    let (id, diagram) = match drawing {
+    let (key, drawing) = drawn(code, size, &theme, &fence, cx);
+    let shown = match drawing {
         Some(drawing) => {
             let diagram = drawing?;
-            // The view outlives a change of theme or font; the drawing does not.
-            let mut hasher = DefaultHasher::new();
-            (code, size.to_bits()).hash(&mut hasher);
-            let id = format!("mermaid-{:x}", hasher.finish());
-            if !last
-                .read(cx)
-                .as_ref()
-                .is_some_and(|(_, shown)| Rc::ptr_eq(shown, &diagram))
-            {
-                last.update(cx, |last, _| *last = Some((id.clone(), diagram.clone())));
+            if let Some(last) = fence.read(cx).last.as_ref().filter(|last| last.key == key) {
+                last.clone()
+            } else {
+                let mut hasher = DefaultHasher::new();
+                (code, size.to_bits()).hash(&mut hasher);
+                let shown = Shown {
+                    key,
+                    id: format!("mermaid-{:x}", hasher.finish()),
+                    diagram,
+                };
+                fence.update(cx, |fence, _| fence.last = Some(shown.clone()));
+                shown
             }
-            (id, diagram)
         }
-        None => match last.read(cx).clone() {
+        None => match fence.read(cx).last.clone() {
             Some(shown) => shown,
             None => {
                 return Ok(fence_panel(&theme)
@@ -333,9 +390,10 @@ pub(crate) fn render(
             }
         },
     };
+    let Shown { id, diagram, .. } = shown;
     // The box keeps the unzoomed diagram's height, so zooming moves what is in
     // it rather than the page under it.
-    let natural = diagram.natural;
+    let natural = diagram.read(cx).natural;
     let state = window.use_keyed_state(
         ElementId::from(SharedString::from(id.clone())),
         cx,
@@ -348,7 +406,9 @@ pub(crate) fn render(
     // Until a press, a diagram larger than its box opens fitted to it.
     let scale = view.zoom.unwrap_or(fit).clamp(floor, zoom.max);
     let image = diagram
-        .raster(scale * window.scale_factor(), window, cx)
+        .update(cx, |diagram, cx| {
+            diagram.raster(scale * window.scale_factor(), window, cx)
+        })
         .ok_or_else(|| SharedString::from("The diagram could not be drawn."))?;
 
     let (press, follow, release, release_out, measure) = (
@@ -512,3 +572,7 @@ fn controls(
         ))
         .into_any_element()
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/mermaid_cache.rs"]
+mod tests;

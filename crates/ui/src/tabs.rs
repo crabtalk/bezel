@@ -32,7 +32,7 @@
 //! ```
 
 use crate::{
-    surface::Control,
+    surface::{self, Control},
     widgets::{self, Buttons as _},
 };
 use gpui::{
@@ -484,7 +484,7 @@ pub fn chip(theme: &Theme, state: State) -> Control {
                 el.bg(theme.card_selected_bg())
                     .shadow(theme::glass_selected_shadows())
             }),
-        state == State::Focused,
+        state == State::Focused && surface::native_selection_on_chrome(theme),
     )
 }
 

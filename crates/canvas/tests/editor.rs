@@ -199,3 +199,27 @@ fn each_editor_makes_with_its_own_kinds() {
         assert_eq!(editor.selected(), Some(made.as_str()));
     }
 }
+
+#[test]
+fn select_all_keeps_canvas_order_on_a_large_board() {
+    let board = Canvas {
+        nodes: (0..5_000)
+            .map(|i| Node {
+                id: i.to_string(),
+                kind: "text".into(),
+                ..Node::default()
+            })
+            .collect(),
+        ..Canvas::default()
+    };
+    let mut editor = CanvasEditor::new(board, layout::FREE);
+    editor.select_all();
+    assert!(
+        editor.selected_nodes().into_iter().eq(editor
+            .canvas()
+            .nodes
+            .iter()
+            .map(|node| node.id.as_str()))
+    );
+    assert_eq!(editor.selected(), Some("4999"));
+}

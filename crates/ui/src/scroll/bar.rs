@@ -171,6 +171,68 @@ impl ScrollbarState {
         }
     }
 
+    fn vertical(
+        &self,
+        id: &SharedString,
+        handle: &Scroller,
+        place: Place,
+    ) -> Option<(Stateful<Div>, Stateful<Div>, gpui::AnyElement)> {
+        let end_inset = place.end;
+        let viewport = handle.bounds().size.height;
+        let range = thumb_in_track(
+            viewport,
+            handle.max_offset().y,
+            handle.offset().y,
+            viewport - 2. * BAR_INSET - end_inset,
+        )?;
+        let track_id = id.clone();
+        let drag_handle = handle.clone();
+        let drag_state = self.clone();
+        let release_state = self.clone();
+        let release = move |_: &gpui::MouseUpEvent, _: &mut Window, _: &mut App| {
+            release_state.grab.set(None);
+        };
+        let track = track(id, place, Axis::Vertical)
+            .on_drag_move(move |event, _, cx| {
+                drag_state.drag(&track_id, &drag_handle, event, end_inset, cx);
+            })
+            .on_mouse_up(MouseButton::Left, release.clone())
+            .on_mouse_up_out(MouseButton::Left, release);
+
+        let debug_id = id.clone();
+        let press_state = self.clone();
+        let press_handle = handle.clone();
+        let thumb = div()
+            .debug_selector(move || format!("{debug_id}-thumb"))
+            .id(SharedString::from(format!("{id}-thumb")))
+            .absolute()
+            .top(range.start)
+            .h(range.end - range.start)
+            .right(place.inner())
+            .w(px(THUMB))
+            .rounded_full()
+            .bg(if self.dragging() { ink(0.38) } else { ink(0.2) })
+            .hover(|s| s.bg(ink(0.32)))
+            .on_mouse_down(MouseButton::Left, move |event, _, cx| {
+                press_state.begin(&press_handle, event, end_inset);
+                press_state.painter.notify(cx);
+            })
+            .on_drag(ScrollbarDrag(id.clone()), |_, _, _, cx| cx.new(|_| Empty));
+
+        let settle = canvas(
+            move |bounds, window, _| {
+                if (bounds.size.height + 2. * BAR_INSET + end_inset - viewport).abs() > px(0.5) {
+                    window.request_animation_frame();
+                }
+            },
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .size_full()
+        .into_any_element();
+        Some((track, thumb, settle))
+    }
+
     fn begin(&self, handle: &Scroller, event: &gpui::MouseDownEvent, end_inset: Pixels) {
         let viewport = handle.bounds().size.height;
         if let Some(range) = thumb_in_track(
@@ -299,75 +361,10 @@ pub(super) fn scrollbar_placed(
     state: &ScrollbarState,
     place: Place,
 ) -> gpui::AnyElement {
-    let end_inset = place.end;
-    let viewport = handle.bounds().size.height;
-    let max_offset = handle.max_offset().y;
-    let Some(range) = thumb_in_track(
-        viewport,
-        max_offset,
-        handle.offset().y,
-        viewport - 2. * BAR_INSET - end_inset,
-    ) else {
-        return Empty.into_any_element();
-    };
-    let size = range.end - range.start;
-    let dragging = state.dragging();
-
-    let track_id = id.clone();
-    let drag_handle = handle.clone();
-    let drag_state = state.clone();
-    let release_state = state.clone();
-    let press_state = state.clone();
-    let press_handle = handle.clone();
-    let released = move |_: &gpui::MouseUpEvent, _: &mut Window, _: &mut App| {
-        release_state.grab.set(None);
-    };
-
-    let thumb_debug_id = id.clone();
-    track(&id, place, Axis::Vertical)
-        .on_drag_move(move |event, _, cx| {
-            drag_state.drag(&track_id, &drag_handle, event, end_inset, cx);
-        })
-        // Both, because a release can land anywhere on screen; a grab left set
-        // would make the next press continue the last gesture.
-        .on_mouse_up(MouseButton::Left, released.clone())
-        .on_mouse_up_out(MouseButton::Left, released)
-        .child(
-            div()
-                .debug_selector(move || format!("{thumb_debug_id}-thumb"))
-                .id(SharedString::from(format!("{id}-thumb")))
-                .absolute()
-                .top(range.start)
-                .h(size)
-                .right(place.inner())
-                .w(px(THUMB))
-                .rounded_full()
-                .bg(if dragging { ink(0.38) } else { ink(0.2) })
-                .hover(|s| s.bg(ink(0.32)))
-                .on_mouse_down(MouseButton::Left, move |event, _, cx| {
-                    press_state.begin(&press_handle, event, end_inset);
-                    press_state.painter.notify(cx);
-                })
-                .on_drag(ScrollbarDrag(id.clone()), |_, _, _, cx| cx.new(|_| Empty)),
-        )
-        .child(
-            canvas(
-                move |bounds, window, _| {
-                    // Laid out taller or shorter than the geometry above was
-                    // computed from: that geometry came from last frame's
-                    // handle. Ask for the frame that will paint it right.
-                    // Self-limiting — once they agree, nothing is requested.
-                    if (bounds.size.height + 2. * BAR_INSET + end_inset - viewport).abs() > px(0.5)
-                    {
-                        window.request_animation_frame();
-                    }
-                },
-                |_, _, _, _| {},
-            )
-            .absolute()
-            .size_full(),
-        )
-        .into_any_element()
+    match state.vertical(&id, handle, place) {
+        Some((track, thumb, settle)) => track.child(thumb).child(settle).into_any_element(),
+        None => Empty.into_any_element(),
+    }
 }
 
 /// Whether `room` beside the content is enough for a rail to paint in. A
@@ -487,19 +484,10 @@ pub(super) fn transient_placed(
     reduce_motion: bool,
     place: Place,
 ) -> gpui::AnyElement {
-    let end_inset = place.end;
-    let viewport = handle.bounds().size.height;
-    let max_offset = handle.max_offset().y;
-    let Some(range) = thumb_in_track(
-        viewport,
-        max_offset,
-        handle.offset().y,
-        viewport - 2. * BAR_INSET - end_inset,
-    ) else {
+    let Some((track, thumb, settle)) = state.bar.vertical(&id, handle, place) else {
         return Empty.into_any_element();
     };
-    let size = range.end - range.start;
-
+    let max_offset = handle.max_offset().y;
     // Any change in the scroll state is activity: bump the generation so the
     // fade restarts under a fresh animation id. The half-pixel slack keeps a
     // sub-pixel layout jitter from re-showing a settled bar.
@@ -511,62 +499,18 @@ pub(super) fn transient_placed(
         state.cell.set(cell);
     }
     let generation = cell.2;
-    let dragging = state.bar.dragging();
-
-    let track_id = id.clone();
-    let drag_handle = handle.clone();
-    let drag_state = state.clone();
-    let release_state = state.clone();
-    let press_state = state.clone();
-    let press_handle = handle.clone();
-    let released = move |_: &gpui::MouseUpEvent, _: &mut Window, _: &mut App| {
-        release_state.bar.grab.set(None);
+    let track = if reduce_motion {
+        track
+    } else {
+        let hover_state = state.clone();
+        let hover_painter = state.bar.painter;
+        hover_track(track, state.hover.clone(), move |_, cx| {
+            let mut cell = hover_state.cell.get();
+            cell.2 += 1;
+            hover_state.cell.set(cell);
+            hover_painter.notify(cx);
+        })
     };
-
-    let thumb_debug_id = id.clone();
-    let track = track(&id, place, Axis::Vertical)
-        .on_drag_move(move |event, _, cx| {
-            drag_state
-                .bar
-                .drag(&track_id, &drag_handle, event, end_inset, cx);
-        })
-        // Both, because a release can land anywhere on screen; a grab left set
-        // would make the next press continue the last gesture.
-        .on_mouse_up(MouseButton::Left, released.clone())
-        .on_mouse_up_out(MouseButton::Left, released)
-        .map(|track| {
-            if reduce_motion {
-                track
-            } else {
-                // The thumb's stand-in at rest: hovering the strip raises it,
-                // and leaving starts its fade.
-                let hover_state = state.clone();
-                let hover_painter = state.bar.painter;
-                hover_track(track, state.hover.clone(), move |_, cx| {
-                    let mut cell = hover_state.cell.get();
-                    cell.2 += 1;
-                    hover_state.cell.set(cell);
-                    hover_painter.notify(cx);
-                })
-            }
-        });
-
-    let thumb = div()
-        .debug_selector(move || format!("{thumb_debug_id}-thumb"))
-        .id(SharedString::from(format!("{id}-thumb")))
-        .absolute()
-        .top(range.start)
-        .h(size)
-        .right(place.inner())
-        .w(px(THUMB))
-        .rounded_full()
-        .bg(if dragging { ink(0.38) } else { ink(0.2) })
-        .hover(|s| s.bg(ink(0.32)))
-        .on_mouse_down(MouseButton::Left, move |event, _, cx| {
-            press_state.bar.begin(&press_handle, event, end_inset);
-            press_state.bar.painter.notify(cx);
-        })
-        .on_drag(ScrollbarDrag(id.clone()), |_, _, _, cx| cx.new(|_| Empty));
 
     let thumb: gpui::AnyElement = if reduce_motion {
         thumb.into_any_element()
@@ -592,24 +536,5 @@ pub(super) fn transient_placed(
             .into_any_element()
     };
 
-    track
-        .child(thumb)
-        .child(
-            canvas(
-                move |bounds, window, _| {
-                    // Laid out taller or shorter than the geometry above was
-                    // computed from: that geometry came from last frame's
-                    // handle. Ask for the frame that will paint it right.
-                    // Self-limiting — once they agree, nothing is requested.
-                    if (bounds.size.height + 2. * BAR_INSET + end_inset - viewport).abs() > px(0.5)
-                    {
-                        window.request_animation_frame();
-                    }
-                },
-                |_, _, _, _| {},
-            )
-            .absolute()
-            .size_full(),
-        )
-        .into_any_element()
+    track.child(thumb).child(settle).into_any_element()
 }

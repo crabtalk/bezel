@@ -37,6 +37,7 @@ impl CanvasView {
     ) -> Vec<AnyElement> {
         let (z, pan) = (self.editor.zoom(), self.editor.pan());
         let canvas = self.editor.painted();
+        let selected = self.editor.selected_edge();
         self.label_layouts
             .borrow_mut()
             .retain(|id, _| self.geometry.paths.get(id).is_some());
@@ -123,7 +124,7 @@ impl CanvasView {
                         .child(text.unwrap_or_default())
                         .into_any_element(),
                 };
-                let picked = self.editor.selected_edge() == Some(edge.id.as_str());
+                let picked = selected == Some(edge.id.as_str());
                 let id = edge.id.clone();
                 let label = div()
                     .id(ElementId::Name(format!("edge-label-{}", edge.id).into()))
