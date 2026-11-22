@@ -1,5 +1,16 @@
 [
   {
+    "version": "0.2.30",
+    "date": "2026-11-21",
+    "summary": "Opt-in table cell wrapping and clearer selection on light window chrome.",
+    "new": [
+      "`ui::table::row_with_wrapping` lets hosts choose which columns wrap their cell text."
+    ],
+    "fixed": [
+      "Selected tabs stay visible on light window chrome, including while being reordered."
+    ]
+  },
+  {
     "version": "0.2.29",
     "date": "2026-11-17",
     "summary": "Native selection shadows respect ancestor clipping.",
