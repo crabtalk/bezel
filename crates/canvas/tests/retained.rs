@@ -29,6 +29,15 @@ fn retained_fixed_bodies_skip_camera_renders_and_invalidate_on_zoom(cx: &mut Tes
     cx.update(|window, cx| window.draw(cx).clear(cx));
     assert_eq!(renders.get(), before);
     view.update(&mut cx, |view, cx| {
+        view.update_editor(cx, |editor| {
+            editor.submit([Change::MoveNodes {
+                moves: vec![("a".into(), (40, 15))],
+            }]);
+        });
+    });
+    cx.update(|window, cx| window.draw(cx).clear(cx));
+    assert_eq!(renders.get(), before);
+    view.update(&mut cx, |view, cx| {
         view.update_editor(cx, |editor| editor.set_zoom(0.5))
     });
     cx.update(|window, cx| window.draw(cx).clear(cx));

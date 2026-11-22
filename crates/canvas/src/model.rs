@@ -36,7 +36,7 @@ pub struct Canvas {
     pub extra: Map<String, Value>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Node {
     pub id: String,
@@ -128,7 +128,50 @@ pub enum TextMode {
     Label,
 }
 
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        (self.x, self.y) == (other.x, other.y) && self.content() == other.content()
+    }
+}
+
 impl Node {
+    pub(crate) fn content(&self) -> impl PartialEq + '_ {
+        let Self {
+            id,
+            kind,
+            x: _,
+            y: _,
+            width,
+            height,
+            color,
+            text,
+            font_size,
+            text_mode,
+            file,
+            subpath,
+            url,
+            label,
+            background,
+            background_style,
+            shape,
+            extra,
+        } = self;
+
+        (
+            (id, kind, width, height, color, text, font_size, text_mode),
+            (
+                file,
+                subpath,
+                url,
+                label,
+                background,
+                background_style,
+                shape,
+                extra,
+            ),
+        )
+    }
+
     pub fn is_label(&self) -> bool {
         self.kind == TEXT && self.text_mode == Some(TextMode::Label)
     }
