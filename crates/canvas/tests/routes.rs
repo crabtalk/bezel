@@ -82,3 +82,25 @@ fn resizing_to_the_same_size_keeps_routes() {
     assert!(!canvas.edge("ab").unwrap().points.is_empty());
     assert_eq!(canvas.nodes[0].shape.unwrap_or_default(), Shape::Rect);
 }
+
+#[test]
+fn a_bulk_move_and_its_undo_preserve_repeated_moves_and_routes() {
+    let before = Canvas::parse(ROUTED).unwrap();
+    let mut canvas = before.clone();
+    let undo = change::apply_all(
+        &mut canvas,
+        &[Change::MoveNodes {
+            moves: vec![
+                ("b".into(), (20, 300)),
+                ("a".into(), (10, 0)),
+                ("missing".into(), (50, 50)),
+                ("b".into(), (30, 400)),
+            ],
+        }],
+    );
+    let b = canvas.node("b").unwrap();
+    assert_eq!((b.x, b.y), (30, 400));
+    assert!(canvas.edges.iter().all(|edge| edge.points.is_empty()));
+    change::apply_all(&mut canvas, &undo);
+    assert_eq!(canvas, before);
+}

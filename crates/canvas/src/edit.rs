@@ -11,11 +11,6 @@
 //!
 //! [`CanvasView`]: crate::CanvasView
 
-use std::{cell::OnceCell, rc::Rc};
-
-use gpui::{Pixels, Point, Size, point};
-use std::path::PathBuf;
-
 use crate::{
     change::{self, Change},
     clip, contain,
@@ -31,6 +26,8 @@ use crate::{
     preview::Preview,
     snap::{Guide, Snap},
 };
+use gpui::{Pixels, Point, Size, point};
+use std::{cell::OnceCell, collections::HashSet, path::PathBuf, rc::Rc};
 
 // A change is handed on and dropped, never kept in bulk; boxing its node would
 // only put a `Box::new` in every filter.
@@ -396,6 +393,24 @@ impl CanvasEditor {
             .is_some_and(|node| self.kinds.allows(node, what))
     }
 
+    fn retain_allowed(&self, ids: &mut Vec<String>, what: Capability) {
+        if ids.len() <= 1 {
+            ids.retain(|id| self.node_can(id, what));
+            return;
+        }
+        if self.options.read_only && what != Capability::Selectable {
+            ids.clear();
+            return;
+        }
+        let canvas = self.canvas();
+        let indices = canvas.node_indices();
+        ids.retain(|id| {
+            indices
+                .get(id.as_str())
+                .is_some_and(|&index| self.kinds.allows(&canvas.nodes[index], what))
+        });
+    }
+
     pub fn edge_can(&self, id: &str, what: Capability) -> bool {
         if self.options.read_only && what != Capability::Selectable {
             return false;
@@ -413,11 +428,8 @@ impl CanvasEditor {
 
     /// Select these nodes, the primary last, those that may be selected. Any
     /// lets the edge go.
-    pub fn set_selection(&mut self, ids: Vec<String>) {
-        let ids: Vec<String> = ids
-            .into_iter()
-            .filter(|id| self.node_can(id, Capability::Selectable))
-            .collect();
+    pub fn set_selection(&mut self, mut ids: Vec<String>) {
+        self.retain_allowed(&mut ids, Capability::Selectable);
         if !ids.is_empty() {
             self.select_edge(None);
         }
@@ -455,13 +467,7 @@ impl CanvasEditor {
 
     /// Let go of what the document no longer holds.
     fn prune(&mut self) {
-        let kept = self
-            .selected_nodes()
-            .into_iter()
-            .filter(|id| self.document.canvas.node(id).is_some())
-            .map(str::to_owned)
-            .collect();
-        self.set_selection(kept);
+        self.set_selection(self.nodes());
         if self
             .selected_edge()
             .is_some_and(|id| self.document.canvas.edge(id).is_none())
@@ -582,10 +588,11 @@ impl CanvasEditor {
 
     /// The selection, each with its branch under a layout that grows trees.
     fn reach(&self) -> Vec<String> {
-        let mut ids: Vec<String> = Vec::new();
+        let mut ids = Vec::new();
+        let mut seen = HashSet::new();
         for id in self.selected_nodes() {
             for id in (self.layout.reach)(&self.document.canvas, id) {
-                if !ids.contains(&id) {
+                if seen.insert(id.clone()) {
                     ids.push(id);
                 }
             }
@@ -627,11 +634,8 @@ impl CanvasEditor {
             return;
         };
         // What will not be deleted stays, and the rest goes.
-        let ids: Vec<String> = self
-            .reach()
-            .into_iter()
-            .filter(|id| self.node_can(id, Capability::Deletable))
-            .collect();
+        let mut ids = self.reach();
+        self.retain_allowed(&mut ids, Capability::Deletable);
         if ids.is_empty() {
             return;
         }
@@ -656,11 +660,8 @@ impl CanvasEditor {
     /// What a `shift`-arrow does: move what may be dragged, pinned under a
     /// tree. What a container holds goes with it either way.
     pub fn nudge(&mut self, arrow: Arrow) {
-        let ids: Vec<String> = self
-            .nodes()
-            .into_iter()
-            .filter(|id| self.node_can(id, Capability::Draggable))
-            .collect();
+        let mut ids = self.nodes();
+        self.retain_allowed(&mut ids, Capability::Draggable);
         if ids.is_empty() {
             return;
         }

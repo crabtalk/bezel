@@ -8,6 +8,7 @@
 //! makes.
 
 use crate::model::{Canvas, Edge, Node};
+use std::collections::{HashMap, HashSet};
 
 // Handed on and dropped, never kept in bulk; boxing the node would only put a
 // `Box::new` in every filter.
@@ -76,13 +77,12 @@ pub fn apply_all(canvas: &mut Canvas, changes: &[Change]) -> Vec<Change> {
 
 /// Clear the route of every edge touching `ids`, answering what puts them
 /// back.
-fn unroute(canvas: &mut Canvas, ids: &[&str]) -> Vec<Change> {
+fn unroute(canvas: &mut Canvas, includes: impl Fn(&str) -> bool) -> Vec<Change> {
     canvas
         .edges
         .iter_mut()
         .filter(|edge| {
-            !edge.points.is_empty()
-                && (ids.contains(&edge.from_node.as_str()) || ids.contains(&edge.to_node.as_str()))
+            !edge.points.is_empty() && (includes(&edge.from_node) || includes(&edge.to_node))
         })
         .map(|edge| {
             let old = edge.clone();
@@ -97,11 +97,13 @@ pub fn apply(canvas: &mut Canvas, change: &Change) -> Vec<Change> {
     match change {
         Change::OrderNodes { ids } => {
             let old: Vec<String> = canvas.nodes.iter().map(|node| node.id.clone()).collect();
-            canvas.nodes.sort_by_key(|node| {
-                ids.iter()
-                    .position(|id| *id == node.id)
-                    .unwrap_or(usize::MAX)
-            });
+            let mut order = HashMap::with_capacity(ids.len());
+            for (index, id) in ids.iter().enumerate() {
+                order.entry(id.as_str()).or_insert(index);
+            }
+            canvas
+                .nodes
+                .sort_by_key(|node| order.get(node.id.as_str()).copied().unwrap_or(usize::MAX));
             if canvas.nodes.iter().map(|node| &node.id).eq(old.iter()) {
                 Vec::new()
             } else {
@@ -128,7 +130,8 @@ pub fn apply(canvas: &mut Canvas, change: &Change) -> Vec<Change> {
             }]
         }
         Change::RemoveNodes { ids } => {
-            let gone = |id: &String| ids.contains(id);
+            let ids: HashSet<&str> = ids.iter().map(String::as_str).collect();
+            let gone = |id: &str| ids.contains(id);
             // Put back lowest index first, so each lands where it was.
             let mut undo: Vec<Change> = canvas
                 .nodes
@@ -158,23 +161,35 @@ pub fn apply(canvas: &mut Canvas, change: &Change) -> Vec<Change> {
             undo
         }
         Change::RemoveEdges { ids } => {
+            let ids: HashSet<&str> = ids.iter().map(String::as_str).collect();
             let undo = canvas
                 .edges
                 .iter()
                 .enumerate()
-                .filter(|(_, edge)| ids.contains(&edge.id))
+                .filter(|(_, edge)| ids.contains(edge.id.as_str()))
                 .map(|(ix, edge)| Change::AddEdge {
                     edge: edge.clone(),
                     index: Some(ix),
                 })
                 .collect();
-            canvas.edges.retain(|edge| !ids.contains(&edge.id));
+            canvas.edges.retain(|edge| !ids.contains(edge.id.as_str()));
             undo
         }
         Change::MoveNodes { moves } => {
-            let mut back = Vec::new();
-            for (id, to) in moves {
-                if let Some(node) = canvas.node_mut(id) {
+            let indices = (moves.len() > 1).then(|| {
+                let indices = canvas.node_indices();
+                moves
+                    .iter()
+                    .map(|(id, _)| indices.get(id.as_str()).copied())
+                    .collect::<Vec<_>>()
+            });
+            let mut back = Vec::with_capacity(moves.len());
+            for (offset, (id, to)) in moves.iter().enumerate() {
+                let node = match &indices {
+                    Some(indices) => indices[offset].map(|index| &mut canvas.nodes[index]),
+                    None => canvas.node_mut(id),
+                };
+                if let Some(node) = node {
                     back.push((id.clone(), (node.x, node.y)));
                     (node.x, node.y) = *to;
                 }
@@ -184,9 +199,13 @@ pub fn apply(canvas: &mut Canvas, change: &Change) -> Vec<Change> {
             if back.is_empty() {
                 return Vec::new();
             }
-            let moved: Vec<&str> = moves.iter().map(|(id, _)| id.as_str()).collect();
             let mut undo = vec![Change::MoveNodes { moves: back }];
-            undo.extend(unroute(canvas, &moved));
+            if let [(id, _)] = moves.as_slice() {
+                undo.extend(unroute(canvas, |candidate| candidate == id));
+            } else {
+                let moved: HashSet<&str> = moves.iter().map(|(id, _)| id.as_str()).collect();
+                undo.extend(unroute(canvas, |id| moved.contains(id)));
+            }
             undo
         }
         Change::Resize { id, size } => match canvas.node_mut(id) {
@@ -198,7 +217,7 @@ pub fn apply(canvas: &mut Canvas, change: &Change) -> Vec<Change> {
                     size: old,
                 }];
                 if old != *size {
-                    undo.extend(unroute(canvas, &[id.as_str()]));
+                    undo.extend(unroute(canvas, |candidate| candidate == id));
                 }
                 undo
             }

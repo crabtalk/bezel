@@ -61,7 +61,8 @@ impl CanvasView {
         ix: usize,
         at: (f32, f32),
         connecting: Option<&str>,
-        picked: &[&str],
+        selected: bool,
+        alone: bool,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<AnyElement> {
@@ -82,7 +83,6 @@ impl CanvasView {
             .filter(|s| s.node_id() == Some(node.id.as_str()));
         // A node being typed in keeps the editor's own cursor.
         let draggable = editing.is_none();
-        let selected = picked.contains(&node.id.as_str());
         let mark = Mark {
             width: w,
             height: h,
@@ -133,7 +133,7 @@ impl CanvasView {
                 });
         // A node picked alone, with nothing held, shows the handles its kind
         // declares, less what it will not let the reader do.
-        let shows = selected && draggable && picked.len() == 1 && self.holding.is_none();
+        let shows = selected && draggable && alone && self.holding.is_none();
         let allowed = |role: Role| match role {
             Role::Connect => self.editor.node_can(&node.id, Capability::Connectable),
             Role::Resize => self.editor.node_can(&node.id, Capability::Resizable),

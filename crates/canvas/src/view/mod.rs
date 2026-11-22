@@ -443,15 +443,25 @@ impl Render for CanvasView {
         let edges = self.edge_layer(&theme, cx.entity().downgrade());
         let canvas = self.editor.painted();
         let connecting = self.connect_target();
-        let picked = self.editor.selected_nodes();
+        let selection = self.editor.selected_nodes();
+        let alone = selection.len() == 1;
+        let picked: HashSet<_> = selection.into_iter().collect();
         let nodes: Vec<AnyElement> = self
             .geometry
             .order
             .iter()
             .copied()
             .filter_map(|ix| {
-                let at = shown[&canvas.nodes[ix].id];
-                self.paint_node(ix, at, connecting.as_deref(), &picked, window, cx)
+                let id = &canvas.nodes[ix].id;
+                self.paint_node(
+                    ix,
+                    shown[id],
+                    connecting.as_deref(),
+                    picked.contains(id.as_str()),
+                    alone,
+                    window,
+                    cx,
+                )
             })
             .collect();
         let labels = self.labels(&theme, window, cx);

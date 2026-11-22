@@ -213,6 +213,14 @@ impl Canvas {
         self.nodes.iter().position(|node| node.id == id)
     }
 
+    pub(crate) fn node_indices(&self) -> HashMap<&str, usize> {
+        let mut indices = HashMap::with_capacity(self.nodes.len());
+        for (index, node) in self.nodes.iter().enumerate() {
+            indices.entry(node.id.as_str()).or_insert(index);
+        }
+        indices
+    }
+
     pub fn node(&self, id: &str) -> Option<&Node> {
         self.nodes.iter().find(|node| node.id == id)
     }
