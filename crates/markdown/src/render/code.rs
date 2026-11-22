@@ -18,11 +18,13 @@ pub(super) fn code_lines(
     // no highlighter installed paints the same block in one plain run.
     // Markdown is the one language this crate can colour on its own, which is
     // what a source view is painted with where no highlighter reaches.
-    let spans = crate::fence::highlight::spans(cx, language, code).or_else(|| {
-        language
-            .filter(|language| crate::source::is_markdown(language))
-            .map(|_| crate::source::spans(code))
-    });
+    let spans = crate::fence::highlight::spans(cx, language, code)
+        .or_else(|| {
+            language
+                .filter(|language| crate::source::is_markdown(language))
+                .map(|_| crate::source::spans(code))
+        })
+        .map(Highlights::from);
     // Each source line's own layout, with the slice of the code it covers —
     // the caret and a click both resolve through these. A wrapped line is
     // several rows of one layout, which is the case `range_rects` already
@@ -35,7 +37,7 @@ pub(super) fn code_lines(
         .map(|line| {
             let start = offset;
             offset += line.len() + 1;
-            let (styled, runs) = code_line(line, start, spans.as_deref(), theme);
+            let (styled, runs) = code_line(line, start, spans.as_ref(), theme);
             rows.push((start..start + line.len(), styled.layout().clone(), runs));
             styled.into_any_element()
         })
@@ -81,6 +83,40 @@ pub(super) fn code_lines(
 /// A highlighted byte range of a text.
 pub(super) type Span = (Range<usize>, theme::HighlightKind);
 
+#[derive(Clone)]
+pub(super) struct Highlights {
+    pub spans: Rc<[Span]>,
+    ordered: bool,
+}
+
+impl From<Vec<Span>> for Highlights {
+    fn from(spans: Vec<Span>) -> Self {
+        let ordered = spans.windows(2).all(|pair| {
+            let (first, second) = (&pair[0].0, &pair[1].0);
+            first.start <= second.start && first.end <= second.end
+        });
+        Self {
+            spans: spans.into(),
+            ordered,
+        }
+    }
+}
+
+impl Highlights {
+    fn within(&self, start: usize, end: usize) -> impl Iterator<Item = &Span> {
+        let spans = if self.ordered {
+            let first = self.spans.partition_point(|(range, _)| range.end <= start);
+            let rest = &self.spans[first..];
+            &rest[..rest.partition_point(|(range, _)| range.start < end)]
+        } else {
+            &self.spans
+        };
+        spans
+            .iter()
+            .filter(move |(range, _)| range.end > start && range.start < end)
+    }
+}
+
 /// One line of code, coloured by the spans over the text it came from, and
 /// its runs.
 ///
@@ -89,7 +125,7 @@ pub(super) type Span = (Range<usize>, theme::HighlightKind);
 pub(super) fn code_line(
     line: &str,
     start: usize,
-    spans: Option<&[Span]>,
+    spans: Option<&Highlights>,
     theme: &Theme,
 ) -> (StyledText, Vec<TextRun>) {
     let mono = font(theme.font_mono.clone());
@@ -105,7 +141,7 @@ pub(super) fn code_line(
     let mut pos = 0usize;
     if let Some(spans) = spans {
         let end = start + line.len();
-        for (range, kind) in spans.iter().filter(|(r, _)| r.end > start && r.start < end) {
+        for (range, kind) in spans.within(start, end) {
             let s = range.start.clamp(start, end) - start;
             let e = range.end.min(end) - start;
             if s > pos {
@@ -359,3 +395,7 @@ pub(super) fn code_body(
         .into_any_element()
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/highlights.rs"]
+mod tests;

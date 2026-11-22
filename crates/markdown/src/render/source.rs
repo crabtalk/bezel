@@ -14,7 +14,7 @@ pub struct SourceText {
     code: Arc<str>,
     ranges: Rc<[Range<usize>]>,
     hashes: Rc<[u64]>,
-    spans: Option<Rc<[Span]>>,
+    spans: Option<Highlights>,
     /// Moved by every edit and rehighlight. A [`SpanJob`] carries the one it
     /// was taken at.
     generation: u64,
@@ -100,7 +100,9 @@ impl SourceText {
     /// and the [`Self::set_spans`] that follows it, the spans from before the
     /// edit, shifted past it, and none over the bytes it replaced.
     pub fn spans(&self) -> Option<&[(Range<usize>, theme::HighlightKind)]> {
-        self.spans.as_deref()
+        self.spans
+            .as_ref()
+            .map(|highlights| highlights.spans.as_ref())
     }
 
     /// Make the text `code`. The change is taken to be the one run of bytes
@@ -160,7 +162,7 @@ impl SourceText {
                     .map(|range| shift(range.start)..shift(range.end)),
             )
             .collect();
-        self.spans = self.spans.as_ref().map(|spans| {
+        self.spans = self.spans().map(|spans| {
             let mut kept = Vec::with_capacity(spans.len());
             for (range, kind) in spans.iter() {
                 if range.start < prefix {
@@ -382,8 +384,7 @@ pub fn render_source(source: &SourceText, editing: Editing, cx: &mut App) -> Any
         build: Box::new(move |index, window, _| {
             let span = ranges[index].clone();
             let paint = paint.hollow(!window.is_window_active());
-            let (styled, runs) =
-                code_line(&code[span.clone()], span.start, spans.as_deref(), &theme);
+            let (styled, runs) = code_line(&code[span.clone()], span.start, spans.as_ref(), &theme);
             let layout = styled.layout().clone();
             let sink = sink.clone();
             let over = {
