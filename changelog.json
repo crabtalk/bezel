@@ -1,13 +1,34 @@
 [
   {
+    "version": "0.2.31",
+    "date": "2026-11-27",
+    "summary": "Canvases open at a fitted or saved camera, and web pages magnify on macOS.",
+    "new": [
+      "`CanvasEditor::open_with` frames a canvas the first time its view knows its size, either fitted with `Opening::Fit` or at a saved `Camera`. `CanvasEditor::camera` reads where the view looks, for a host to save.",
+      "`WebView::set_magnification` and `WebView::magnification` magnify a page's drawing without laying it out again. `WebView::with_pinch_zoom` lets a pinch magnify it, and `WebViewEvent::Magnified` reports the change. macOS only; elsewhere nothing changes."
+    ],
+    "changed": [
+      "A canvas draws no nodes or edges until its view knows its size, so it never shows a frame at the starting zoom before it is framed.",
+      "The canvas view paints no background of its own; the host's shows through.",
+      "Breaking: `Theme::canvas_bg` is removed. A theme file that sets `canvas_bg` reports it as an unknown token.",
+      "Breaking: `WebViewEvent` gains the `Magnified` variant."
+    ]
+  },
+  {
     "version": "0.2.30",
     "date": "2026-11-21",
-    "summary": "Opt-in table cell wrapping and clearer selection on light window chrome.",
+    "summary": "Opt-in table cell wrapping, clearer tab selection, and faster canvas and Markdown rendering.",
     "new": [
       "`ui::table::row_with_wrapping` lets hosts choose which columns wrap their cell text."
     ],
+    "changed": [
+      "Markdown code rendering indexes highlight spans by byte range, reducing work when drawing highlighted text.",
+      "Canvas bulk edits and selection lookups use indexes, and retained cards reuse their existing state when their content stays the same.",
+      "The workspace lockfile resolves bezel-gpui 0.3.30."
+    ],
     "fixed": [
-      "Selected tabs stay visible on light window chrome, including while being reordered."
+      "Selected tabs stay visible on light window chrome, including while being reordered.",
+      "The Mermaid drawing cache keeps up to 64 completed diagrams and evicts the least recently used entry when full."
     ]
   },
   {
@@ -35,10 +56,17 @@
   {
     "version": "0.2.27",
     "date": "2026-11-16",
-    "summary": "Published GPUI upgrade and host-aware keyboard shortcuts.",
+    "summary": "Native macOS materials, live composited browser pages on macOS and Windows, and host-aware keyboard shortcuts.",
+    "new": [
+      "Glass surfaces use native Liquid Glass on macOS 26 and native popover materials on earlier macOS versions.",
+      "Live WebKit pages on macOS follow GPUI scene clipping and stacking. Windows uses WebView2 composition and Windows Graphics Capture for live pages.",
+      "`WebView::set_presentation` sets a fixed layout viewport and controls whether the page receives input. `WebView::snapshot` captures page pixels for export.",
+      "`Kind::with_export` lets canvas node kinds prepare content asynchronously for image export, including browser snapshots."
+    ],
     "changed": [
       "Built on the published bezel-gpui 0.3.25 packages.",
       "Linux browser support is disabled and no longer requires WPE.",
+      "Breaking: build material surfaces with a stable element ID and a content callback through `ui::surface::of` in place of `Surfaced::surface`.",
       "Breaking: shortcut formatting, menu shortcut helpers, edit_items, and editor and canvas bindings now take an app context.",
       "Custom elements, chart paths and scroll events use the updated GPUI APIs."
     ],
@@ -49,17 +77,14 @@
   {
     "version": "0.2.26",
     "date": "2026-11-12",
-    "summary": "Faster canvas rendering, content-specific editors, and reliable node controls.",
+    "summary": "Faster canvas rendering, reliable node controls, and more flexible link editing.",
     "new": [
-      "Canvas fields select text, document, name, URL or external editors through `Field::with_control`; `Kind::open_in_host` delegates opening to the host.",
-      "`Kind::retained` opts fixed-size node bodies into caching across camera movement.",
-      "Themes expose dedicated canvas background and grid colors."
+      "`Kind::retained` opts fixed-size node bodies into caching across camera movement."
     ],
     "changed": [
       "Built on the published bezel-gpui 0.3.23 packages.",
       "Canvas rendering retains geometry, gesture previews and edge paths across updates, and culls connection labels using measured bounds.",
-      "Breaking: `kind::Open` callbacks are renamed to `OpenHandler`; `Open` is now an enum. `Field` gains `control`; `Kind` gains `retained` and `controls`; `snap::settle` takes visible bounds.",
-      "Breaking: `CanvasEvent` gains `OpenRequested` and `EditRequested`; `Theme` gains `canvas_bg` and `canvas_grid`.",
+      "Breaking: `Kind` gains `retained` and `controls`. `snap::settle` takes visible bounds.",
       "Breaking: the canvas drag surface intercepts node-body mouse events. Put interactive elements in `Kind::controls`, above the drag surface."
     ],
     "fixed": [
@@ -78,6 +103,8 @@
       "Canvas editing adds grouping, alignment and distribution, clipboard commands, read-only mode, and host events for context menus, file drops and connection requests.",
       "`CanvasView::export_image` renders the full canvas or current viewport at a chosen scale.",
       "Canvas nodes and connection labels support authored text sizes; text nodes support plain labels or document cards.",
+      "Canvas fields select text, document, name, URL or external editors through `Field::with_control`; `Kind::open_in_host` delegates opening to the host.",
+      "Themes expose dedicated canvas background and grid colors.",
       "`ui::tiled_image::TiledImage` repeats images at their intrinsic size; canvas groups support tiled backgrounds.",
       "`ui::menu::MenuHeight` configures the menu height limit, defaulting to 12 rows. `markdown::render::Bookmark` supports bounded preview cards."
     ],
@@ -86,6 +113,7 @@
       "`bezel-canvas` exposes its JSON Canvas model without GPUI when default features are disabled.",
       "Breaking: canvas `Look::zoom` moves to `Look::card.zoom`; the shared `Card` also carries resolved bounds, typography, sizing and measurement. `Style::far_zoom` and `Overlays::placeholder` are removed.",
       "Breaking: canvas `Node` gains `font_size` and `text_mode`; `Edge` gains `font_size`. Markdown `Editing` gains `text_color`.",
+      "Breaking: `kind::Open` becomes an enum, and the callback type moves to `OpenHandler`. `Field` gains `control`, `CanvasEvent` gains `OpenRequested` and `EditRequested`, and `Theme` gains `canvas_bg` and `canvas_grid`.",
       "Canvas content scales with zoom without switching to summaries or hiding connection labels. Fixed cards share header and scrolling layout."
     ],
     "fixed": [
