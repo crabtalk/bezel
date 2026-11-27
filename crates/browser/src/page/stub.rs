@@ -69,6 +69,12 @@ impl Page {
         None
     }
 
+    pub(crate) fn magnification(&self) -> f64 {
+        1.
+    }
+
+    pub(crate) fn magnify(&self, _level: f64) {}
+
     #[cfg(feature = "inspector")]
     pub(crate) fn open_inspector(&self) {}
 

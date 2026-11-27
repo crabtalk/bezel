@@ -52,6 +52,9 @@ pub(crate) enum Report {
     Released(u64),
     #[cfg(target_os = "macos")]
     Presented(AnyWindowHandle),
+    /// A gesture magnified the page; the level is read back from the page.
+    #[cfg(target_os = "macos")]
+    Magnified,
     /// A key the page took that the keymap binds.
     #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
     Key(Keystroke),
@@ -134,6 +137,12 @@ pub(crate) struct Page {
     #[cfg(feature = "inspector")]
     #[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
     pub(crate) inspector: Cell<bool>,
+    /// What the page is magnified to while it is not built, and is built at.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub(crate) magnification: Cell<f64>,
+    /// Whether a pinch magnifies the page; read when it is built.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    pub(crate) pinch: Cell<bool>,
     #[cfg(target_os = "macos")]
     view: std::cell::OnceCell<Option<wry::WebView>>,
     /// A build is on its way; see [`Page::request`].
@@ -177,6 +186,8 @@ impl Page {
             console: Cell::new(false),
             #[cfg(feature = "inspector")]
             inspector: Cell::new(false),
+            magnification: Cell::new(1.),
+            pinch: Cell::new(false),
             #[cfg(target_os = "macos")]
             view: std::cell::OnceCell::new(),
             #[cfg(target_os = "macos")]
@@ -418,6 +429,8 @@ impl Page {
                 .ok()
         })?;
         self.platform.attach(&view, &self.reports);
+        platform::allow_magnification(&view, self.pinch.get());
+        platform::magnify(&view, self.magnification.get());
         if self.read_access.borrow().is_some()
             && url.starts_with("file:")
             && let Err(error) =
@@ -519,6 +532,18 @@ impl Page {
 
     pub(crate) fn location(&self) -> Option<String> {
         self.built()?.url().ok()
+    }
+
+    pub(crate) fn magnification(&self) -> f64 {
+        self.built()
+            .map_or(self.magnification.get(), platform::magnification)
+    }
+
+    pub(crate) fn magnify(&self, level: f64) {
+        self.magnification.set(level);
+        if let Some(view) = self.built() {
+            platform::magnify(view, level);
+        }
     }
 
     #[cfg(feature = "inspector")]

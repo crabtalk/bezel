@@ -150,6 +150,26 @@ pub(super) fn forward(view: &wry::WebView) {
     unsafe { view.webview().goForward() };
 }
 
+pub(super) fn allow_magnification(view: &wry::WebView, allowed: bool) {
+    // SAFETY: called on the main thread.
+    unsafe { view.webview().setAllowsMagnification(allowed) };
+}
+
+pub(super) fn magnification(view: &wry::WebView) -> f64 {
+    // SAFETY: called on the main thread.
+    unsafe { view.webview().magnification() }
+}
+
+/// About the middle of the page's bounds.
+pub(super) fn magnify(view: &wry::WebView, level: f64) {
+    let page = view.webview();
+    let bounds = page.bounds();
+    let middle =
+        objc2_core_foundation::CGPoint::new(bounds.size.width / 2., bounds.size.height / 2.);
+    // SAFETY: called on the main thread.
+    unsafe { page.setMagnification_centeredAtPoint(level, middle) };
+}
+
 pub(super) fn reload_bypassing_cache(view: &wry::WebView) {
     // SAFETY: called on the main thread.
     unsafe { view.webview().reloadFromOrigin() };
