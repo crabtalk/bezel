@@ -70,11 +70,12 @@ impl CanvasView {
         let (z, pan) = (self.editor.zoom(), self.editor.pan());
         let (x, y) = (pan.x + at.0 * z, pan.y + at.1 * z);
         let (w, h) = (node.width as f32 * z, node.height as f32 * z);
-        if let Some(viewport) = self.viewport.get() {
-            let (vw, vh) = (viewport.size.width.as_f32(), viewport.size.height.as_f32());
-            if x > vw || y > vh || x + w < 0.0 || y + h < 0.0 {
-                return None;
-            }
+        // Nothing is drawn before the view knows its size: the camera is not
+        // framed until then.
+        let viewport = self.viewport.get()?;
+        let (vw, vh) = (viewport.size.width.as_f32(), viewport.size.height.as_f32());
+        if x > vw || y > vh || x + w < 0.0 || y + h < 0.0 {
+            return None;
         }
         let kind = self.editor.kinds().get(&node.kind);
         let editing = self
@@ -297,10 +298,12 @@ impl CanvasView {
         // Each curve in view, its colour and its weight.
         let canvas = self.editor.painted();
         let seen = self.editor.visible();
+        let measured = self.viewport.get().is_some();
         let picked = self.editor.selected_edge();
         let mut strokes: Vec<(Rc<Path>, Stroke, Hsla, f32)> = canvas
             .edges
             .iter()
+            .filter(|_| measured)
             .filter_map(|edge| {
                 let path = self.geometry.paths.get(&edge.id)?.clone();
                 let (x0, y0, x1, y1) = path.hull();

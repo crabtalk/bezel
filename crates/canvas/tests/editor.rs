@@ -2,7 +2,7 @@
 //! in view, layouts and kinds, driven by its commands.
 
 use canvas::{
-    Canvas, CanvasEditor, CanvasEvent, Change, Item, Kinds,
+    Camera, Canvas, CanvasEditor, CanvasEvent, Change, Item, Kinds, Opening,
     kind::Kind,
     layout::{self, Arrow},
     mindmap,
@@ -140,6 +140,35 @@ fn fit_shows_everything() {
     for id in ["a", "b", "c"] {
         assert!(in_view(&editor, id), "{id} is out of view");
     }
+}
+
+#[test]
+fn an_opening_waits_for_the_viewport() {
+    let mut editor = free(WIDE);
+    editor.open_with(Opening::Fit);
+    editor.frame();
+    assert_eq!(editor.camera(), None);
+    editor.set_viewport(size(800.0, 600.0));
+    editor.frame();
+    for id in ["a", "b", "c"] {
+        assert!(in_view(&editor, id), "{id} is out of view");
+    }
+}
+
+#[test]
+fn an_opening_camera_is_where_the_view_looks() {
+    let camera = Camera {
+        center: (1500.0, 600.0),
+        zoom: 0.5,
+    };
+    let mut editor = free(WIDE);
+    editor.set_viewport(size(800.0, 600.0));
+    editor.open_with(Opening::At(camera));
+    editor.frame();
+    assert_eq!(editor.camera(), Some(camera));
+    editor.set_viewport(size(1000.0, 600.0));
+    editor.frame();
+    assert_eq!(editor.camera().map(|seen| seen.zoom), Some(0.5));
 }
 
 #[test]

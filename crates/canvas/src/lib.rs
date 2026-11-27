@@ -65,7 +65,7 @@ mod view;
 #[cfg(feature = "gpui")]
 pub use edge::{EdgeKind, EdgeKinds};
 #[cfg(feature = "gpui")]
-pub use edit::{CanvasEditor, CanvasEvent, Item};
+pub use edit::{Camera, CanvasEditor, CanvasEvent, Item, Opening};
 #[cfg(feature = "gpui")]
 pub use kind::{Kind, Kinds};
 #[cfg(feature = "gpui")]

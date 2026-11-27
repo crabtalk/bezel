@@ -80,6 +80,8 @@ pub enum WebViewEvent {
     NewWindow(String),
     /// The page logged, with a page built [`WebView::with_console`].
     Console(ConsoleMessage),
+    /// A pinch or a smart magnify changed [`WebView::magnification`].
+    Magnified,
     /// The page backend or runtime failed.
     Error(String),
 }
@@ -301,6 +303,25 @@ impl WebView {
     #[cfg(feature = "inspector")]
     pub fn open_inspector(&self) {
         self.page.open_inspector();
+    }
+
+    /// Lets a pinch magnify the page. Read at the first paint. macOS only.
+    pub fn with_pinch_zoom(self) -> Self {
+        self.page.pinch.set(true);
+        self
+    }
+
+    /// How far the page's drawing is magnified; 1 is unmagnified.
+    pub fn magnification(&self) -> f32 {
+        self.page.magnification() as f32
+    }
+
+    /// Magnifies the page's drawing about its middle without laying the page
+    /// out again; the page scrolls within the magnified drawing. Before the
+    /// first paint, the page is built at `level`. macOS only; elsewhere
+    /// nothing changes.
+    pub fn set_magnification(&mut self, level: f32) {
+        self.page.magnify(f64::from(level));
     }
 
     /// Before the first paint, replaces the URL the page is built with.
@@ -573,6 +594,8 @@ impl WebView {
             }
             Report::Opened(url) => cx.emit(WebViewEvent::NewWindow(url)),
             Report::Console(message) => cx.emit(WebViewEvent::Console(message)),
+            #[cfg(target_os = "macos")]
+            Report::Magnified => cx.emit(WebViewEvent::Magnified),
             #[cfg(target_os = "macos")]
             Report::Still(still) => {
                 self.page.captured(still);

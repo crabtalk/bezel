@@ -7,7 +7,7 @@ use crate::page::{
 };
 use block2::RcBlock;
 use objc2::{Message as _, rc::Retained, runtime::AnyObject};
-use objc2_app_kit::{NSEvent, NSEventMask, NSView};
+use objc2_app_kit::{NSEvent, NSEventMask, NSEventType, NSView};
 use std::{
     ptr::{self, NonNull},
     rc::Rc,
@@ -24,8 +24,17 @@ impl Monitor {
         let page = page.retain();
         let block = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
             // SAFETY: AppKit supplies a live event on the main thread.
-            if let Some(hit) = unsafe { event.as_ref() }.target(&page) {
-                if hit.isDescendantOf(&page) {
+            let event_ref = unsafe { event.as_ref() };
+            let magnify = matches!(
+                event_ref.r#type(),
+                NSEventType::Magnify | NSEventType::SmartMagnify
+            );
+            if let Some(hit) = event_ref.target(&page) {
+                if magnify {
+                    if hit.isDescendantOf(&page) {
+                        let _ = reports.try_send(Report::Magnified);
+                    }
+                } else if hit.isDescendantOf(&page) {
                     let _ = reports.try_send(Report::Pressed);
                 } else if platform::holds(&page)
                     && root
@@ -40,8 +49,11 @@ impl Monitor {
             }
             event.as_ptr()
         });
-        let mask =
-            NSEventMask::LeftMouseDown | NSEventMask::RightMouseDown | NSEventMask::OtherMouseDown;
+        let mask = NSEventMask::LeftMouseDown
+            | NSEventMask::RightMouseDown
+            | NSEventMask::OtherMouseDown
+            | NSEventMask::Magnify
+            | NSEventMask::SmartMagnify;
         // SAFETY: the block returns the event unchanged.
         let monitor =
             unsafe { NSEvent::addLocalMonitorForEventsMatchingMask_handler(mask, &block) }?;

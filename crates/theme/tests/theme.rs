@@ -901,3 +901,26 @@ fn bundled_families_parse() {
     let gruvbox = ThemeFamily::named("gruvbox").expect("gruvbox is bundled");
     assert!(gruvbox.theme(Appearance::Dark).is_some());
 }
+
+/// A selection is glass unless an app asks for a fill, in either appearance.
+#[test]
+fn a_selection_is_glass_unless_a_fill_is_asked_for() {
+    assert_eq!(
+        Brand::default().selection_material,
+        SelectionMaterial::Glass
+    );
+    let fill = Brand {
+        selection_material: SelectionMaterial::Fill,
+        ..Brand::default()
+    };
+    for appearance in [Appearance::Light, Appearance::Dark] {
+        assert_eq!(
+            Theme::branded(&Brand::default(), appearance).selection_material,
+            SelectionMaterial::Glass
+        );
+        assert_eq!(
+            Theme::branded(&fill, appearance).selection_material,
+            SelectionMaterial::Fill
+        );
+    }
+}

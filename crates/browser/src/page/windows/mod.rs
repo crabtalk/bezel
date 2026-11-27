@@ -696,6 +696,12 @@ impl Page {
         }
         (back.as_bool(), forward.as_bool())
     }
+    pub(crate) fn magnification(&self) -> f64 {
+        1.
+    }
+
+    pub(crate) fn magnify(&self, _level: f64) {}
+
     pub(crate) fn location(&self) -> Option<String> {
         let hosted = self.platform.hosted.borrow();
         let hosted = hosted.as_ref()?;

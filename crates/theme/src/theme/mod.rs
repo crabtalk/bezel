@@ -222,8 +222,6 @@ pub struct Theme {
     pub border: Hsla,
     /// Stronger border for focused/raised edges.
     pub border_strong: Hsla,
-    /// Canvas workspace background.
-    pub canvas_bg: Hsla,
     /// Canvas background grid dots.
     pub canvas_grid: Hsla,
 
@@ -380,6 +378,8 @@ pub struct Theme {
     /// Whether components paint glass — translucent popovers and cards, and
     /// the lens. An opaque window can still carry it.
     pub glass: bool,
+    /// What a selected row or tab on window chrome is drawn with.
+    pub selection_material: crate::SelectionMaterial,
     /// The surfaces this theme can paint. Blur belongs to the look, not to
     /// the caller: Apple exposes no blur parameter on either family, only the
     /// thickness or the variant.

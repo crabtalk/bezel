@@ -30,7 +30,6 @@ impl Theme {
             border_faint: paint::hairline_for(Appearance::Dark, 0.06),
             border: paint::hairline_for(Appearance::Dark, 0.08),
             border_strong: paint::hairline_for(Appearance::Dark, 0.14),
-            canvas_bg: color::grey(0x16),
             canvas_grid: paint::hairline_for(Appearance::Dark, 0.08),
             text: TextInk::color(Appearance::Dark, Ink::APPKIT.dark.text),
             text_muted: TextInk::color(Appearance::Dark, Ink::APPKIT.dark.muted),
@@ -81,6 +80,7 @@ impl Theme {
             window_blur: Self::WINDOW_BLUR,
             vibrancy: crate::behind_window_blending(),
             glass: crate::LENSED,
+            selection_material: crate::SelectionMaterial::Glass,
             // SwiftUI's frost, measured 2026-08-31: `tint / (1 - gain)` implies
             // one tone across all five thicknesses (49.8 down to 45.3), and the
             // sigma does not move with them. The rim is bezel's, not Apple's —
@@ -192,7 +192,6 @@ impl Theme {
             border_faint: paint::hairline_for(Appearance::Light, 0.06),
             border: paint::hairline_for(Appearance::Light, 0.08),
             border_strong: paint::hairline_for(Appearance::Light, 0.14),
-            canvas_bg: color::grey(0xee),
             canvas_grid: paint::hairline_for(Appearance::Light, 0.08),
             text: TextInk::color(Appearance::Light, Ink::APPKIT.light.text),
             text_muted: TextInk::color(Appearance::Light, Ink::APPKIT.light.muted),
@@ -247,6 +246,7 @@ impl Theme {
             window_blur: Self::WINDOW_BLUR,
             vibrancy: crate::behind_window_blending(),
             glass: crate::LENSED,
+            selection_material: crate::SelectionMaterial::Glass,
             // Measured 2026-08-30, macOS 26.3 LIGHT, same instruments. The
             // material is not a tone-flip of dark: `regular` keeps its opacity
             // (86%) and swaps a 19% grey base for a 97% white one, which is why

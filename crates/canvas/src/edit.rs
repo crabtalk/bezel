@@ -70,6 +70,22 @@ pub enum Item {
     Edge(String),
 }
 
+/// Where a view looks: the canvas point in its middle, and its zoom.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Camera {
+    pub center: (f32, f32),
+    pub zoom: f32,
+}
+
+/// How a view first frames its document, in the first frame it knows its
+/// size.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Opening {
+    /// The whole document in view, as [`CanvasEditor::fit`].
+    Fit,
+    At(Camera),
+}
+
 /// Decides each change before it lands: it, another, or `None` to refuse. It
 /// sees the document and the change, nothing else.
 type Filter = Rc<dyn Fn(&Canvas, Change) -> Option<Change>>;
@@ -95,6 +111,8 @@ pub struct CanvasEditor {
     framed: Option<Size<f32>>,
     /// Panned or zoomed, so a new viewport no longer re-centres.
     touched: bool,
+    /// Applied by [`Self::frame`] once the viewport is known.
+    opening: Option<Opening>,
     /// A node to bring into view once layout has placed it.
     reveal: Option<String>,
     stale: bool,
@@ -134,6 +152,7 @@ impl CanvasEditor {
             viewport: None,
             framed: None,
             touched: false,
+            opening: None,
             reveal: None,
             stale: true,
             preview: None,
@@ -879,6 +898,25 @@ impl CanvasEditor {
         ))
     }
 
+    /// Frame the document as `opening` says in the first frame the viewport
+    /// is known, in place of centring it. A viewport already known takes it
+    /// at the next frame.
+    pub fn open_with(&mut self, opening: Opening) {
+        self.opening = Some(opening);
+    }
+
+    /// Where the view looks. `None` until the viewport is known.
+    pub fn camera(&self) -> Option<Camera> {
+        let viewport = self.viewport?;
+        Some(Camera {
+            center: (
+                (viewport.width / 2.0 - self.pan.x) / self.zoom,
+                (viewport.height / 2.0 - self.pan.y) / self.zoom,
+            ),
+            zoom: self.zoom,
+        })
+    }
+
     /// Pan so canvas point `at` sits in the middle of the view.
     pub fn center_on(&mut self, at: (f32, f32)) {
         let middle = self.middle();
@@ -928,6 +966,19 @@ impl CanvasEditor {
     /// a wide tree still shows its root — and bring a node asked for into
     /// view. The view calls it each frame, after [`Self::reflow`].
     pub fn frame(&mut self) {
+        if self.viewport.is_some()
+            && let Some(opening) = self.opening.take()
+        {
+            match opening {
+                Opening::Fit => self.fit(),
+                Opening::At(camera) => {
+                    self.zoom = camera
+                        .zoom
+                        .clamp(self.options.min_zoom, self.options.max_zoom);
+                    self.center_on(camera.center);
+                }
+            }
+        }
         if let Some(viewport) = self
             .viewport
             .filter(|v| !self.touched && self.framed != Some(*v))

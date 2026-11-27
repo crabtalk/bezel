@@ -80,6 +80,7 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
     "std",
     "block2",
     "objc2-app-kit",
+    "objc2-core-foundation",
     "WKNavigation",
     "WKSnapshotConfiguration",
     "WKWebView",

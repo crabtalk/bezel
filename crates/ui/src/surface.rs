@@ -66,7 +66,7 @@ pub fn selection(
 
 /// Whether selection on window chrome uses native glass for this theme.
 pub fn native_selection_on_chrome(theme: &Theme) -> bool {
-    theme.glass && theme.appearance.is_dark()
+    theme.glass && theme.selection_material == theme::SelectionMaterial::Glass
 }
 
 /// A control whose selected background uses the platform material.

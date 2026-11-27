@@ -2,7 +2,7 @@ use gpui::{
     Bounds, Context, Modifiers, MouseButton, Render, TestAppContext, VisualTestContext, Window,
     div, point, prelude::*, px, size,
 };
-use theme::Theme;
+use theme::{SelectionMaterial, Theme};
 use ui::{surface, tabs};
 
 struct Controls {
@@ -51,11 +51,30 @@ fn native_selections_preserve_control_geometry_and_independent_clicks(cx: &mut T
 }
 
 #[gpui::test]
-fn light_tabs_paint_the_themed_selection_on_a_native_window(cx: &mut TestAppContext) {
+fn light_tabs_select_with_glass_on_a_native_window(cx: &mut TestAppContext) {
     cx.update(|cx| {
         Theme::install_custom(
             Theme {
                 glass: true,
+                ..Theme::light()
+            },
+            cx,
+        )
+    });
+    let window = cx.add_window(|_, _| Controls { clicks: Vec::new() });
+    let mut visual = VisualTestContext::from_window(window.into(), cx);
+    visual.simulate_resize(size(px(300.), px(80.)));
+    visual.run_until_parked();
+    visual.update(|window, _| assert!(!window.rendered_scene().native_materials.is_empty()));
+}
+
+#[gpui::test]
+fn tabs_asked_for_a_fill_paint_the_themed_selection(cx: &mut TestAppContext) {
+    cx.update(|cx| {
+        Theme::install_custom(
+            Theme {
+                glass: true,
+                selection_material: SelectionMaterial::Fill,
                 ..Theme::light()
             },
             cx,
