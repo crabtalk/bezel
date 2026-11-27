@@ -489,7 +489,6 @@ impl Render for CanvasView {
         let prompt = self.edit_prompt(window, cx);
         div()
             .id("bezel-canvas")
-            .bg(theme.canvas_bg)
             .key_context(key_context())
             .track_focus(&self.focus)
             .relative()
