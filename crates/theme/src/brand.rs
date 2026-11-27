@@ -162,6 +162,16 @@ impl Vibrancy {
     }
 }
 
+/// What a selected row or tab on window chrome is drawn with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SelectionMaterial {
+    /// A flat fill.
+    Fill,
+    /// Regular Liquid Glass, where [`Theme::glass`] is on.
+    #[default]
+    Glass,
+}
+
 /// What an app changes about the shipped palette without redesigning it.
 ///
 /// Installed as a gpui [`Global`]; [`Theme::install`] applies it to whatever
@@ -199,6 +209,8 @@ pub struct Brand {
     /// answer: a Mica window carries no glass, since the blur a card lays over
     /// the content it covers is [`LENSED`](crate::LENSED) and Mica is not.
     pub glass: bool,
+    /// What a selected row or tab on window chrome is drawn with.
+    pub selection_material: SelectionMaterial,
     /// The text roles' alphas. [`Ink::APPKIT`] is what the palettes ship.
     pub ink: Ink,
 }
@@ -216,6 +228,7 @@ impl Default for Brand {
             window_blur: Theme::WINDOW_BLUR,
             vibrancy: Vibrancy::Auto,
             glass: crate::LENSED,
+            selection_material: SelectionMaterial::Glass,
             ink: Ink::APPKIT,
         }
     }
@@ -259,6 +272,7 @@ impl Brand {
         theme.content_opacity = self.content_opacity;
         theme.window_blur = self.window_blur;
         theme.glass = self.glass;
+        theme.selection_material = self.selection_material;
         self.ink.for_appearance(theme.appearance).paint(theme);
         // Every colour token, with the rule doing the choosing: a token that is
         // already grey takes the tint, and one that already carries a hue —

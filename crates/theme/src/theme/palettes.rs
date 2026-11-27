@@ -80,6 +80,7 @@ impl Theme {
             window_blur: Self::WINDOW_BLUR,
             vibrancy: crate::behind_window_blending(),
             glass: crate::LENSED,
+            selection_material: crate::SelectionMaterial::Glass,
             // SwiftUI's frost, measured 2026-08-31: `tint / (1 - gain)` implies
             // one tone across all five thicknesses (49.8 down to 45.3), and the
             // sigma does not move with them. The rim is bezel's, not Apple's —
@@ -245,6 +246,7 @@ impl Theme {
             window_blur: Self::WINDOW_BLUR,
             vibrancy: crate::behind_window_blending(),
             glass: crate::LENSED,
+            selection_material: crate::SelectionMaterial::Glass,
             // Measured 2026-08-30, macOS 26.3 LIGHT, same instruments. The
             // material is not a tone-flip of dark: `regular` keeps its opacity
             // (86%) and swaps a 19% grey base for a 97% white one, which is why

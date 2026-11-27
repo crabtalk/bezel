@@ -46,7 +46,7 @@ mod platform;
 mod selection;
 mod theme;
 
-pub use brand::{BASE_COLORS, Brand, Ink, TextInk, Tint, Vibrancy};
+pub use brand::{BASE_COLORS, Brand, Ink, SelectionMaterial, TextInk, Tint, Vibrancy};
 
 pub use platform::{LENSED, behind_window_blending};
 

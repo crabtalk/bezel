@@ -378,6 +378,8 @@ pub struct Theme {
     /// Whether components paint glass — translucent popovers and cards, and
     /// the lens. An opaque window can still carry it.
     pub glass: bool,
+    /// What a selected row or tab on window chrome is drawn with.
+    pub selection_material: crate::SelectionMaterial,
     /// The surfaces this theme can paint. Blur belongs to the look, not to
     /// the caller: Apple exposes no blur parameter on either family, only the
     /// thickness or the variant.
